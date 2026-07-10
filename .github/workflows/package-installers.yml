@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6.0.8
@@ -77,7 +77,7 @@ jobs:
       MAC_SIGNING_AVAILABLE: ${{ secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6.0.8
@@ -341,7 +341,7 @@ jobs:
       WINDOWS_SIGNING_AVAILABLE: ${{ secrets.SSL_COM_USERNAME != '' && secrets.SSL_COM_PASSWORD != '' && secrets.SSL_COM_CREDENTIAL_ID != '' && secrets.SSL_COM_TOTP_SECRET != '' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6.0.8
@@ -444,7 +444,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7
 
       - name: Download Linux artifacts
         uses: actions/download-artifact@v8.0.1
@@ -594,7 +594,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7
 
       - name: Download Linux artifacts
         uses: actions/download-artifact@v8.0.1
