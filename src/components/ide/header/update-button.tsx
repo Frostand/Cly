@@ -8,7 +8,7 @@ import type { UpdateStatusEvent } from "@/types/ide";
 const getUpdateLabel = (status: UpdateStatusEvent) => {
   if (status.state === "downloaded") {
     return status.updateVersion
-      ? `Install Dream ${status.updateVersion}`
+      ? `Install Cly ${status.updateVersion}`
       : "Install update";
   }
 
@@ -21,7 +21,7 @@ const getUpdateLabel = (status: UpdateStatusEvent) => {
 
   if (status.state === "available") {
     return status.updateVersion
-      ? `Downloading Dream ${status.updateVersion}`
+      ? `Downloading Cly ${status.updateVersion}`
       : "Downloading update";
   }
 

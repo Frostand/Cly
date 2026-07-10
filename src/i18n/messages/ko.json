@@ -1,9 +1,9 @@
 {
   "app": {
-    "loadingDream": "Dream 로드 중"
+    "loadingDream": "Cly 로드 중"
   },
   "common": {
-    "appName": "Dream",
+    "appName": "Cly",
     "archived": "보관됨",
     "browser": "브라우저",
     "cancel": "취소",

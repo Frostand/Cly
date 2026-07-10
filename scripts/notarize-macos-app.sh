@@ -19,7 +19,7 @@ fi
 log_dir="${MACOS_PACKAGE_LOG_DIR:-$PWD/macos-package-logs}"
 mkdir -p "$log_dir"
 
-notary_zip="${RUNNER_TEMP:-$PWD}/Dream-notarization.zip"
+notary_zip="${RUNNER_TEMP:-$PWD}/Cly-notarization.zip"
 submit_json="$log_dir/notary-submit.json"
 wait_json="$log_dir/notary-wait.json"
 notary_log_json="$log_dir/notary-log.json"

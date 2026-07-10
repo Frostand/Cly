@@ -1275,7 +1275,7 @@ function runDrizzleMigrations(database) {
   }
 }
 
-function getStateDatabase(databasePath = resolveStateDatabasePath()) {
+export function getStateDatabase(databasePath = resolveStateDatabasePath()) {
   const resolvedDatabasePath =
     resolveConfiguredStateDatabasePath(databasePath) ??
     resolveStateDatabasePath();

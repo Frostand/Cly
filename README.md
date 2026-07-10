@@ -1,87 +1,40 @@
-# Dream
+# Cly
 
-Dream is a desktop IDE for working with multiple AI coding agents.
+Cly is a local-first, AI-native research operating system that connects scientific sources, code, experiments, artifacts, and claims in one auditable workspace.
 
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/8b863bec-76ff-4973-b6c3-a66b1683500f" />
+Cly is built on the open-source [Dream IDE](https://github.com/dreamide/dream). Dream supplies the Electron workspace, multi-agent chat, terminal, Git, file navigation, and browser foundation. Cly adds a structured research-object graph, provenance, source and claim management, experiment tracking, and reproducibility workflows.
 
+## Status
 
-## Features
-
-- Multi-project workspace with project tabs
-- View multiple chats at once
-- Git status, branch, commit, push, and PR workflows
-- File explorer, diff rendering, and editor launch integration
-- Integrated terminal
-- Built-in browser preview panel
-
-## Requirements
-At least one supported agent CLI:
-- Codex
-- Claude Code
-- OpenCode
-- Cursor Agent
-
-## Download
-
-### macOS
-- [ARM64](https://files.dreamide.app/latest/Dream-mac-arm64.dmg)
-- [x64](https://files.dreamide.app/latest/Dream-mac-x64.dmg)
-
-### Windows
-- [x64](https://files.dreamide.app/latest/Dream-windows-x64.exe)
-
-### Linux
-- [DEB x64](https://files.dreamide.app/latest/Dream-linux-x64.deb)
-- [RPM x64](https://files.dreamide.app/latest/Dream-linux-x64.rpm)
-- [AppImage x64](https://files.dreamide.app/latest/Dream-linux-x64.AppImage)
-
-## Installation
-
-Install dependencies:
-
-```sh
-pnpm install
-```
+Cly is in foundation development. The current branch retains Dream's working IDE while product identity, safety controls, architecture boundaries, and the first research workflow are established. It is not ready for production research data.
 
 ## Development
 
-```sh
+Requirements: Node.js 22 or newer, pnpm 11, and at least one supported agent CLI (Codex, Claude Code, OpenCode, or Cursor Agent).
+
+```bash
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-## Build
+Quality checks:
 
-Create a production build:
-
-```sh
-pnpm build
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test --run
+pnpm vite:build
 ```
 
-Run the Electron app against the production build:
+## Documentation
 
-```sh
-pnpm start
-```
+- [Product plan](docs/product-plan.md)
+- [Architecture](docs/architecture.md)
+- [Roadmap](docs/roadmap.md)
+- [Upstream synchronization](docs/upstream-sync.md)
+- [Architecture decisions](docs/adr/README.md)
 
-## Packaging
+## Upstream and license
 
-Build the renderer and package the Electron app:
+Cly preserves Dream's Git history and MIT license. `origin` is the private Cly repository; `upstream` is the public Dream repository. See [NOTICE.md](NOTICE.md) for attribution and [LICENSE](LICENSE) for license terms.
 
-```sh
-pnpm package
-```
-
-Artifacts are written to `release/` by `electron-builder`.
-
-Platform-specific and unpacked variants:
-
-```sh
-pnpm package:dir
-pnpm package:mac
-pnpm package:win
-pnpm package:linux
-```
-
-## License
-
-MIT

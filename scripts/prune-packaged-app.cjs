@@ -41,14 +41,14 @@ const PLATFORM_VENDOR_DIRS = {
 };
 
 function getUpdateFeedUrl() {
-  const rawUrl = process.env.DREAM_UPDATE_FEED_URL?.trim();
+  const rawUrl = process.env.CLY_UPDATE_FEED_URL?.trim();
 
   if (rawUrl) {
     return rawUrl.replace(/\/+$/, "");
   }
 
   throw new Error(
-    "Missing DREAM_UPDATE_FEED_URL. Set it to the public R2 releases URL, for example https://downloads.example.com/releases.",
+    "Missing CLY_UPDATE_FEED_URL. Set it to the public R2 releases URL, for example https://downloads.example.com/releases.",
   );
 }
 

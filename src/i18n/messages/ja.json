@@ -1,9 +1,9 @@
 {
   "app": {
-    "loadingDream": "Dream を読み込み中"
+    "loadingDream": "Cly を読み込み中"
   },
   "common": {
-    "appName": "Dream",
+    "appName": "Cly",
     "archived": "アーカイブ済み",
     "browser": "ブラウザ",
     "cancel": "キャンセル",

@@ -55,7 +55,7 @@ const buildCursorConversationPrompt = ({
     : "";
 
   return [
-    "You are Cursor Agent running inside the Dream desktop IDE.",
+    "You are Cursor Agent running inside the Cly desktop IDE.",
     `Active project: ${projectPath}`,
     "Complete the latest user request below. Use Cursor's project tools to inspect files, search the repository, and run shell commands when that is useful. Do not answer from generic context when the request asks about this repository or its code.",
     currentTurnProjectReferences,
