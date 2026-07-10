@@ -1,4 +1,4 @@
-import { Code, Files, Globe, TerminalSquare } from "lucide-react";
+import { BookOpenText, Code, Files, Globe, TerminalSquare } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { memo } from "react";
 import type { RightPanelView } from "@/types/ide";
@@ -54,6 +54,14 @@ const WorkspaceRightRailImpl = ({
         title={t("browser")}
       >
         <Globe className="size-4" />
+      </WorkspaceNavButton>
+      <WorkspaceNavButton
+        aria-label="Research"
+        active={rightVisible && rightPanelView === "research"}
+        onClick={() => onSelectRightPanelView("research")}
+        title="Research"
+      >
+        <BookOpenText className="size-4" />
       </WorkspaceNavButton>
       <WorkspaceNavButton
         aria-label={t("terminal")}

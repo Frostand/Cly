@@ -78,7 +78,8 @@ const isRightPanelView = (value: unknown): value is RightPanelView =>
   value === "browser" ||
   value === "explorer" ||
   value === "changes" ||
-  value === "terminal";
+  value === "terminal" ||
+  value === "research";
 
 const normalizeBrowserTab = (value: unknown): BrowserTabState | null => {
   if (!value || typeof value !== "object") {

@@ -537,7 +537,7 @@ export const streamOpenCodeResponse = ({
             writeCodexTextPart(
               (event) => writer.write(event),
               `opencode-output-limit-${++textPartIndex}`,
-              `\n\n[OpenCode output stopped after ${MAX_OPENCODE_TEXT_CHARS.toLocaleString()} characters to keep Dream responsive.]`,
+              `\n\n[OpenCode output stopped after ${MAX_OPENCODE_TEXT_CHARS.toLocaleString()} characters to keep Cly responsive.]`,
               "text",
             );
             finish(resolve);

@@ -720,7 +720,7 @@ export const MessageResponse = memo(
               Large message preview. Showing {largeTextPercentShown}% (
               {largeTextVisibleChars.toLocaleString()} of{" "}
               {largeTextTotalChars.toLocaleString()} characters). Markdown
-              rendering was skipped to keep Dream responsive.
+              rendering was skipped to keep Cly responsive.
             </div>
             {largeTextPercentShown < 100 ? (
               <div className="flex shrink-0 items-center gap-1">

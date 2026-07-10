@@ -26,7 +26,7 @@ const STATE_LOAD_TIMEOUT_MS = 8000;
 const requireDesktopApi = () => {
   const desktopApi = getDesktopApi();
   if (!desktopApi) {
-    throw new Error("Dream desktop API is unavailable.");
+    throw new Error("Cly desktop API is unavailable.");
   }
 
   return desktopApi;
@@ -60,11 +60,11 @@ export const loadPersistedIdeState = async (): Promise<PersistedIdeState> => {
     const rawState = await withTimeout(
       desktopApi.loadState(),
       STATE_LOAD_TIMEOUT_MS,
-      "Timed out loading persisted Dream state.",
+      "Timed out loading persisted Cly state.",
     );
     return mergePersistedState(rawState);
   } catch (error) {
-    console.warn("Unable to load persisted Dream state.", error);
+    console.warn("Unable to load persisted Cly state.", error);
     return createEmptyPersistedState();
   }
 };

@@ -1,0 +1,29 @@
+name: Research risk
+description: Record a risk to validity, provenance, privacy, or reproducibility.
+title: "[Research risk]: "
+labels: [research-risk]
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Validity
+        - Reproducibility
+        - Provenance
+        - Privacy
+        - Prompt injection
+        - Data integrity
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk and affected claims or artifacts
+    validations:
+      required: true
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Proposed mitigation or guardrail
+

@@ -281,7 +281,7 @@ function Get-RunningPackagedAppProcess {
 
   $normalizedUnpackedDir = [System.IO.Path]::GetFullPath($unpackedDir).TrimEnd("\")
 
-  Get-CimInstance Win32_Process -Filter "name = 'Dream.exe'" |
+  Get-CimInstance Win32_Process -Filter "name = 'Cly.exe'" |
     Where-Object {
       $_.ExecutablePath -and
       [System.IO.Path]::GetFullPath($_.ExecutablePath).StartsWith(
@@ -330,7 +330,7 @@ function Assert-UnpackedDirIsWritable {
   } catch {
     throw @"
 Could not clean release\win-unpacked before packaging.
-Close any running Dream app or Explorer window that is using files in:
+Close any running Cly app or Explorer window that is using files in:
 $unpackedDir
 
 Original error: $($_.Exception.Message)
@@ -410,7 +410,7 @@ Invoke-Step "Package unpacked Windows app" {
   pnpm exec electron-builder --win dir --x64 "--config.directories.output=$buildReleaseDir" --config.win.signExecutable=false --publish never
 }
 
-$appExe = Join-Path $unpackedDir "Dream.exe"
+$appExe = Join-Path $unpackedDir "Cly.exe"
 if (-not (Test-Path -LiteralPath $appExe)) {
   throw "Could not find unpacked app executable: $appExe"
 }

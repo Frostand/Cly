@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ResearchPanel } from "@/features/research/components/research-panel";
 import { useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
 import type { ProjectConfig } from "@/types/ide";
@@ -83,6 +84,12 @@ export const RightPanelViews = (props: RightPanelViewsProps) => {
               onClosePanel={props.onClosePanel}
               onToggleExpanded={props.onToggleBrowserExpanded}
               project={props.project}
+            />
+          </RightPanelViewSlot>
+          <RightPanelViewSlot active={rightPanelView === "research"}>
+            <ResearchPanel
+              onClosePanel={props.onClosePanel}
+              projectId={props.project.id}
             />
           </RightPanelViewSlot>
           {rightPanelView === "terminal" ? (

@@ -1,7 +1,7 @@
 {
-  "name": "dream",
-  "productName": "Dream",
-  "description": "Dream is a desktop IDE for working with AI coding agents.",
+  "name": "cly",
+  "productName": "Cly",
+  "description": "Cly is an AI-native research operating system built on Dream IDE.",
   "version": "0.5.0",
   "private": true,
   "scripts": {
@@ -10,7 +10,7 @@
     "vite:dev": "vite --host 127.0.0.1 --port 3210 --strictPort",
     "vite:build": "vite build",
     "electron:dev": "node scripts/prepare-electron-dev-app.mjs && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=true electron electron/main.js",
-    "electron:dev:update": "node scripts/prepare-electron-dev-app.mjs && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=true DREAM_ENABLE_DEV_UPDATES=1 DREAM_UPDATE_FEED_URL=https://files.dreamide.app/releases DREAM_DEV_UPDATE_CURRENT_VERSION=0.1.0 electron electron/main.js",
+    "electron:dev:update": "node scripts/prepare-electron-dev-app.mjs && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=true CLY_ENABLE_DEV_UPDATES=1 CLY_DEV_UPDATE_CURRENT_VERSION=0.1.0 electron electron/main.js",
     "dev:update": "pnpm electron:dev:update",
     "db:generate": "drizzle-kit generate",
     "import:codex-chats": "node scripts/import-codex-chats.mjs",
@@ -25,6 +25,9 @@
     "dist": "pnpm package",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "format": "biome format --write ."
   },
   "dependencies": {
@@ -63,11 +66,15 @@
     "@biomejs/biome": "2.4.13",
     "@opentelemetry/api": "1.9.0",
     "@pierre/trees": "1.0.0-beta.3",
+    "@playwright/test": "^1.61.1",
     "@streamdown/cjk": "^1.0.3",
     "@streamdown/code": "^1.1.1",
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
     "@tailwindcss/postcss": "^4.3.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^25.9.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19",
@@ -84,6 +91,7 @@
     "drizzle-kit": "^0.31.10",
     "electron": "^41.7.2",
     "electron-builder": "^26.15.3",
+    "jsdom": "^29.1.1",
     "lucide-react": "^1.18.0",
     "material-icon-theme": "^5.35.0",
     "motion": "^12.40.0",
@@ -102,13 +110,14 @@
     "typescript": "^6.0.3",
     "use-stick-to-bottom": "^1.1.6",
     "vite": "^8.0.16",
+    "vitest": "^4.1.10",
     "zustand": "^5.0.14"
   },
   "main": "electron/main.js",
   "build": {
-    "appId": "ai.dreamdream.dream",
-    "productName": "Dream",
-    "executableName": "Dream",
+    "appId": "ai.cly.cly",
+    "productName": "Cly",
+    "executableName": "Cly",
     "npmRebuild": false,
     "directories": {
       "output": "release"
@@ -116,8 +125,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "dreamide",
-        "repo": "dream"
+        "owner": "Frostand",
+        "repo": "Cly"
       }
     ],
     "afterPack": "scripts/prune-packaged-app.cjs",
@@ -175,7 +184,7 @@
         "deb",
         "rpm"
       ],
-      "maintainer": "Dream <support@dreamide.ai>",
+      "maintainer": "Cly <support@cly.ai>",
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     }
   },

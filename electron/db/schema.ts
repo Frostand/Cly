@@ -85,3 +85,85 @@ export const chatMessages = sqliteTable(
     index("idx_chat_messages_chat_order").on(table.chatId, table.sortOrder),
   ],
 );
+
+export const researchObjects = sqliteTable(
+  "research_objects",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    payload: text("payload").notNull().default("{}"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check("research_objects_payload_json", sql`json_valid(${table.payload})`),
+    index("idx_research_objects_project_type").on(table.projectId, table.type),
+  ],
+);
+
+export const researchRelationships = sqliteTable(
+  "research_relationships",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    fromObjectId: text("from_object_id")
+      .notNull()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    toObjectId: text("to_object_id")
+      .notNull()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("idx_research_relationships_project_from").on(
+      table.projectId,
+      table.fromObjectId,
+    ),
+    index("idx_research_relationships_project_to").on(
+      table.projectId,
+      table.toObjectId,
+    ),
+    uniqueIndex("research_relationship_unique").on(
+      table.projectId,
+      table.fromObjectId,
+      table.toObjectId,
+      table.type,
+    ),
+  ],
+);
+
+export const provenanceEvents = sqliteTable(
+  "provenance_events",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    objectId: text("object_id").references(() => researchObjects.id, {
+      onDelete: "set null",
+    }),
+    action: text("action").notNull(),
+    actorType: text("actor_type").notNull(),
+    actorId: text("actor_id"),
+    metadata: text("metadata").notNull().default("{}"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "provenance_events_metadata_json",
+      sql`json_valid(${table.metadata})`,
+    ),
+    index("idx_provenance_events_project_created").on(
+      table.projectId,
+      table.createdAt,
+    ),
+  ],
+);

@@ -1,9 +1,9 @@
 {
   "app": {
-    "loadingDream": "Carregando Dream"
+    "loadingDream": "Carregando Cly"
   },
   "common": {
-    "appName": "Dream",
+    "appName": "Cly",
     "archived": "Arquivado",
     "browser": "Navegador",
     "cancel": "Cancelar",

@@ -40,7 +40,7 @@ function getErrorMessage(error) {
 }
 
 function getUpdateFeedUrl() {
-  const url = process.env.DREAM_UPDATE_FEED_URL?.trim();
+  const url = process.env.CLY_UPDATE_FEED_URL?.trim();
 
   return url ? url.replace(/\/+$/, "") : null;
 }
@@ -80,7 +80,7 @@ function getBaseUpdateFeedUrl() {
 }
 
 function getDevUpdateCurrentVersion() {
-  const version = process.env.DREAM_DEV_UPDATE_CURRENT_VERSION?.trim();
+  const version = process.env.CLY_DEV_UPDATE_CURRENT_VERSION?.trim();
   if (!version) {
     return null;
   }
@@ -88,7 +88,7 @@ function getDevUpdateCurrentVersion() {
   const parsed = updaterSemver.parse(version);
   if (!parsed) {
     console.warn(
-      `[updater] Ignoring invalid DREAM_DEV_UPDATE_CURRENT_VERSION: ${version}`,
+      `[updater] Ignoring invalid CLY_DEV_UPDATE_CURRENT_VERSION: ${version}`,
     );
     return null;
   }
@@ -112,7 +112,7 @@ function writeDevUpdateConfig(app, updateFeedUrl) {
     configPath,
     `provider: generic
 url: ${JSON.stringify(updateFeedUrl)}
-updaterCacheDirName: dream-updater
+updaterCacheDirName: cly-updater
 `,
     "utf8",
   );
@@ -161,15 +161,15 @@ function sanitizeHeaderValue(value) {
 
 function getUpdateTelemetryHeaders(payload) {
   const headers = {
-    "X-Dream-Arch": sanitizeHeaderValue(payload.arch),
-    "X-Dream-Channel": sanitizeHeaderValue(payload.channel),
-    "X-Dream-Platform": sanitizeHeaderValue(payload.platform),
-    "X-Dream-Update-Check": sanitizeHeaderValue(payload.check),
-    "X-Dream-Version": sanitizeHeaderValue(payload.version),
+    "X-Cly-Arch": sanitizeHeaderValue(payload.arch),
+    "X-Cly-Channel": sanitizeHeaderValue(payload.channel),
+    "X-Cly-Platform": sanitizeHeaderValue(payload.platform),
+    "X-Cly-Update-Check": sanitizeHeaderValue(payload.check),
+    "X-Cly-Version": sanitizeHeaderValue(payload.version),
   };
 
   if (payload.installId) {
-    headers["X-Dream-Install-Id"] = sanitizeHeaderValue(payload.installId);
+    headers["X-Cly-Install-Id"] = sanitizeHeaderValue(payload.installId);
   }
 
   return headers;
@@ -247,7 +247,7 @@ export function initializeAutoUpdater({
   isDevelopment,
 }) {
   const devUpdatesEnabled =
-    isDevelopment && process.env.DREAM_ENABLE_DEV_UPDATES === "1";
+    isDevelopment && process.env.CLY_ENABLE_DEV_UPDATES === "1";
   const devCurrentVersion = devUpdatesEnabled
     ? getDevUpdateCurrentVersion()
     : null;
@@ -364,7 +364,7 @@ export function initializeAutoUpdater({
 
   if (devUpdatesEnabled && !updateFeedUrl) {
     console.warn(
-      "[updater] Dev update checks need DREAM_UPDATE_FEED_URL to point at the public R2 releases URL.",
+      "[updater] Dev update checks need CLY_UPDATE_FEED_URL to point at the Cly release feed.",
     );
   }
 

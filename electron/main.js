@@ -56,9 +56,9 @@ const rendererStartupTimeoutMs = Number(
   process.env.VITE_READY_TIMEOUT_MS ?? 45000,
 );
 const rendererProbeIntervalMs = 300;
-const APP_NAME = "Dream";
-const APP_ID = "ai.dreamdream.dream";
-const APP_USER_DATA_DIR_NAME = "dreamide";
+const APP_NAME = "Cly";
+const APP_ID = "ai.cly.cly";
+const APP_USER_DATA_DIR_NAME = "cly";
 const APP_USER_DATA_PATH = path.join(
   app.getPath("appData"),
   APP_USER_DATA_DIR_NAME,

@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
 
 # vite
 /dist/
@@ -50,3 +52,14 @@ nul
 .codex
 .claude
 .next
+.worktrees/
+
+# local research data and generated artifacts
+/.cly/
+/datasets/
+/artifacts/
+/research-output/
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm

@@ -2,11 +2,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 function getFeedUrl() {
-  const rawUrl = process.env.DREAM_UPDATE_FEED_URL?.trim();
+  const rawUrl = process.env.CLY_UPDATE_FEED_URL?.trim();
 
   if (!rawUrl) {
     throw new Error(
-      "Missing DREAM_UPDATE_FEED_URL. Set it to the public R2 releases URL.",
+      "Missing CLY_UPDATE_FEED_URL. Set it to the public R2 releases URL.",
     );
   }
 

@@ -1,5 +1,5 @@
 /**
- * Hono-based API server for Dream IDE.
+ * Hono-based API server for Cly.
  *
  * Migrated from Next.js App Router route handlers.  Each route keeps the same
  * Request/Response contract so the renderer `fetch("/api/…")` calls work
@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import { registerChatRoutes } from "./chat-routes.js";
 import { registerProjectGitRoutes } from "./project-git-routes.js";
 import { registerProviderRoutes } from "./provider-routes.js";
+import { registerResearchRoutes } from "./research/routes.js";
 import { registerToolApprovalRoutes } from "./tool-approvals.js";
 
 export const API_SESSION_TOKEN_HEADER = "x-dream-api-token";
@@ -49,6 +50,7 @@ function createApiApp(apiToken) {
   registerProviderRoutes(guardedApp);
   registerChatRoutes(guardedApp);
   registerProjectGitRoutes(guardedApp);
+  registerResearchRoutes(guardedApp);
 
   return guardedApp;
 }
