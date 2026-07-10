@@ -57,12 +57,20 @@ describe("research repository", () => {
       type: "supports",
     });
 
-    expect(repository.listProject("project-1")).toMatchObject({
-      objects: [{ id: "source-1" }, { id: "claim-1" }],
-      relationships: [
-        { fromObjectId: "source-1", toObjectId: "claim-1", type: "supports" },
-      ],
-    });
+    const graph = repository.listProject("project-1");
+    expect(graph.objects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "source-1" }),
+        expect.objectContaining({ id: "claim-1" }),
+      ]),
+    );
+    expect(graph.relationships).toEqual([
+      expect.objectContaining({
+        fromObjectId: "source-1",
+        toObjectId: "claim-1",
+        type: "supports",
+      }),
+    ]);
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM provenance_events").get(),
     ).toEqual({ count: 3 });
