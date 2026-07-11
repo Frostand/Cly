@@ -11,6 +11,6 @@ This documentation defines Cly as a standalone research platform. Coding environ
 | `testing/` | Test strategy and fixtures. |
 | `integrations/` | Contracts for external systems. |
 | `research-model/` | Research-object and provenance model specifications. |
-| `operations/` | Local service and release operations. |
+| `development/` | Local research-core setup and the Linear-to-GitHub delivery workflow. |
 
 No production model, persistence schema, or runtime boundary is changed by this documentation baseline.

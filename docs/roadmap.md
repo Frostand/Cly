@@ -5,7 +5,7 @@
 - Independent Cly identity, release path, and local service boundary
 - CI, tests, repository governance, and security policy
 - Research-core contracts and client integration contracts
-- Migration plan for the current embedded code workspace
+- Repository clean-up and transition away from inherited IDE infrastructure
 
 Exit criterion: Cly builds independently, research capabilities do not depend on an IDE fork, and changes are protected by automated checks.
 
@@ -47,4 +47,4 @@ Exit criterion: a user can add a source, record a claim, connect them, restart C
 
 ## Later phases
 
-Focused code editing and artifact inspection may remain embedded as a convenience after the research core and integrations are validated. General IDE replacement is not a roadmap goal. The complete scope and acceptance scenario live in [product-plan.md](product-plan.md).
+Cly will not provide an embedded code editor. Its external integrations carry research context into researchers' existing tools. The complete scope and acceptance scenario lives in [product-plan.md](product-plan.md).

@@ -2,28 +2,26 @@
 
 Cly is a local-first research workspace that connects scientific sources, code, experiments, artifacts, decisions, and claims in one auditable system of record.
 
-Cly owns the research process; researchers may use its built-in code workspace or keep working in VS Code, Cursor, Jupyter, terminals, and GitHub. Code editing is an integrated capability—not Cly's product identity.
+Cly owns the research process; researchers keep working in VS Code, Cursor, Jupyter, terminals, and GitHub. Cly integrates with those tools, but does not include or maintain an IDE.
 
 ## Status
 
-Cly is in an architecture-transition phase. The current desktop shell and code-workspace components are transitional implementation assets while the standalone research core, local service, and external integrations are established. It is not ready for production research data.
+Cly is in an architecture-transition phase. This repository now contains the standalone research-core contracts and product plan; the local service and external integrations will be built on those boundaries. It is not ready for production research data.
 
 ## Development
 
-Requirements: Node.js 22 or newer, pnpm 11, and at least one supported agent CLI (Codex, Claude Code, OpenCode, or Cursor Agent).
+Requirements: Node.js 22 or newer and pnpm 11.
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm dev
+pnpm test
 ```
 
 Quality checks:
 
 ```bash
-pnpm lint
 pnpm typecheck
-pnpm test --run
-pnpm vite:build
+pnpm test
 ```
 
 ## Documentation

@@ -7,11 +7,11 @@ Linear is the planning system of record; GitHub is the code review and release s
 3. Create a short-lived branch from `main`: `feature/CLY-123-literature-matrix` (or `fix/`, `research/`, `experiment/`, `refactor/`, `docs/`, `chore/`).
 4. Move Linear through **In Progress → In Review → In Validation → Done**. Merging is not Done; validate acceptance criteria first.
 5. Use focused Conventional Commits, for example `feat(literature): add matrix query API [CLY-123]`.
-6. Open one focused PR per issue, use the repository PR template, link Linear, require checks and review, squash merge, then delete the branch.
+6. Open one focused PR per issue, link Linear, require checks and review, squash merge, then delete the branch.
 
 ## GitHub configuration still required
 
-Repository files cannot enforce hosted settings. In GitHub, protect `main`: require PRs, one approving review, CODEOWNERS review for sensitive paths, dismissal of stale approvals, required `Quality / Lint, typecheck, and build`, and required CodeQL checks. Disable direct pushes and force pushes; enable squash merge and branch deletion. Add a second required reviewer for authentication, secrets, provider transmission, command execution, migrations, graph/provenance, and experiment execution.
+Repository files cannot enforce hosted settings. In GitHub, protect `main`: require PRs, one approving review, dismissal of stale approvals, and required checks for typecheck and tests. Disable direct pushes and force pushes; enable squash merge and branch deletion. Add a second required reviewer for authentication, secrets, provider transmission, command execution, migrations, graph/provenance, and experiment execution.
 
 ## Workflow states
 

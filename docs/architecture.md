@@ -2,13 +2,13 @@
 
 ## Direction
 
-Cly is a standalone research platform. Its durable core is independent of any editor implementation; the desktop application, embedded code workspace, IDE extensions, notebooks, CLI, and GitHub integration are clients of that core.
+Cly is a standalone research platform. Its durable core is independent of any editor implementation; the future desktop application, IDE extensions, notebooks, CLI, and GitHub integration are clients of that core.
 
 ## Layers
 
 1. **Research core:** typed research objects, relationships, provenance events, policies, and validation rules.
 2. **Local Cly service:** project-scoped storage, file and Git observation, experiment/run capture, artifact indexing, context retrieval, and permission-gated agent execution.
-3. **Clients:** desktop research application, optional embedded code workspace, VS Code-compatible extension, Jupyter integration, CLI, and GitHub adapter.
+3. **Clients:** desktop research application, VS Code-compatible extension, Jupyter integration, CLI, and GitHub adapter.
 4. **Research experience:** sources, graph, objectives, decisions, experiments, claims, provenance, audits, and agent control.
 
 ## Local-first storage
@@ -19,7 +19,7 @@ Provider credentials belong in the operating-system credential store. They must 
 
 ## Integration boundary
 
-The research core must depend only on small adapters for persistence, project identity, Git state, execution, and external tools. The current code workspace is a transitional client; no product capability may require a specific IDE fork or upstream synchronization.
+The research core must depend only on small adapters for persistence, project identity, Git state, execution, and external tools. No product capability may require a specific IDE, editor fork, or upstream synchronization.
 
 ## Data flow
 

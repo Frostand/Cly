@@ -16,6 +16,6 @@ Unrestricted autonomous agents, automatic merges, automatic scientific-conflict 
 
 - Persist provenance with every extracted or inferred fact; inferred graph edges remain unconfirmed until a user confirms them.
 - Keep user control over model transmission, cost, tools, and sensitive actions.
-- Keep the research core independent from any editor shell; treat the built-in coding workspace and external IDEs as replaceable clients.
+- Keep the research core independent from any editor shell; external IDEs and notebooks are integration clients, not Cly-owned workspaces.
 - Make Cly active in the work: watch repositories, connect commits and runs to research objects, and surface research context where code is edited.
 - Prefer explainable recommendations and audit findings to opaque scores.

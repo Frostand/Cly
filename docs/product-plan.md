@@ -4,7 +4,7 @@
 
 **Cly is a local-first research workspace that connects literature, code, experiments, outputs, decisions, and claims.** It is the system of record for agentic and computational research—not another general-purpose IDE.
 
-Researchers retain their preferred editing environment. Cly can include a focused code workspace for quick edits, notebooks, diffs, and artifact inspection, while VS Code-compatible editors, Jupyter, terminals, and GitHub connect through a local Cly service.
+Researchers retain their preferred editing environment. VS Code-compatible editors, Jupyter, terminals, and GitHub connect to Cly through a local Cly service; Cly does not include or maintain a code editor.
 
 ## Product boundary
 
@@ -22,7 +22,6 @@ Cly research application
        ├─ experiment and artifact capture
        ├─ permission-gated agent execution
        └─ context and provenance APIs
-            ├─ focused Cly code workspace
             ├─ VS Code-compatible extension
             ├─ Jupyter integration / experiment SDK
             ├─ CLI and MCP interface
@@ -31,7 +30,7 @@ Cly research application
 
 ## MVP outcome
 
-Demonstrate one verified research chain: question → source discovery and review → objective/hypothesis → code or notebook in Cly or an external tool → experiment → artifact → claim → evidence and reproducibility audit.
+Demonstrate one verified research chain: question → source discovery and review → objective/hypothesis → code or notebook in an external tool → experiment → artifact → claim → evidence and reproducibility audit.
 
 The user can see why a file or commit exists, which task and hypothesis it serves, which sources informed it, which environment produced a result, and whether that result supports a claim.
 
@@ -41,11 +40,10 @@ The user can see why a file or commit exists, which task and hypothesis it serve
 2. **Research workspace:** dashboard, source library, literature matrix, graph, objectives, decisions, experiments, claims, audits, and agent manager.
 3. **Computational research:** notebook/code linking, environment capture, runs, metrics, figures/tables, and artifact lineage.
 4. **Companion mode:** VS Code-compatible extension, Jupyter integration, experiment SDK, CLI/MCP, and GitHub integration.
-5. **Optional focused workspace:** embedded editing, terminal, diffs, and notebook inspection as a convenience client—not the core platform.
 
 ## Non-goals
 
-- Maintaining an IDE fork or tracking an IDE upstream.
+- Building or maintaining an IDE, editor, terminal, debugger, or source-control client.
 - Rebuilding language servers, debugging, editor extensions, or general IDE compatibility.
 - Passive dashboard behavior that requires manual status entry to remain useful.
 - Autonomous merges, destructive actions, or unreviewed claim changes.

@@ -15,7 +15,7 @@ Use the **Cly Research** Linear team (`CLY`). Cly is a standalone research platf
 
 ## Critical path
 
-Standalone core and local service → research object graph → sources and literature → experiment/provenance capture → claims and reproducibility → companion integrations. The embedded code workspace may evolve in parallel only as an optional client.
+Standalone core and local service → research object graph → sources and literature → experiment/provenance capture → claims and reproducibility → companion integrations. Cly does not include an embedded code workspace.
 
 ## First project: Standalone research platform boundary
 
@@ -23,7 +23,7 @@ Standalone core and local service → research object graph → sources and lite
 | --- | --- | --- |
 | Define standalone core and client contracts | Separate research domain and local-service interfaces from desktop/editor implementation. | A client contract supports desktop, extension, notebook, and CLI callers without importing editor-specific state. |
 | Establish local service and repository observer | Define project identity, filesystem/Git observation, permission boundaries, and provenance event capture. | A repository change is associated with a project and records a reviewable provenance event. |
-| Create embedded-workspace transition plan | Classify retained code-workspace capabilities as retain, adapt, or replace. | Each retained capability has a Cly interface, owner, and exit criterion; no upstream-sync dependency remains. |
+| Remove inherited IDE infrastructure | Remove the former editor runtime, packaging, and IDE tooling while preserving Cly documentation and research-core contracts. | No Dream IDE runtime, Electron packaging, or editor UI remains on the default branch. |
 | Define companion-mode integration contract | Specify deep links, code/selection attachment, task context, diff review, and approval behavior. | An external client can attach code or a commit to a Cly research object through the local service. |
 
 Every issue must state the problem, user value, bounded scope and non-goals, acceptance criteria, dependencies, privacy/security risks, testing, documentation, and observability. Split implementation work above 5 points.
