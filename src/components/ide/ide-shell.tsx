@@ -1,0 +1,404 @@
+import { useEffect } from "react";
+import { AppLoadingScreen } from "@/components/dream-loading-screen";
+import { getDesktopApi, hasDesktopApi } from "@/lib/electron";
+import {
+  getConnectedProviders,
+  getDefaultModelForProvider,
+  getDefaultModelSelection,
+  getModelsForProvider,
+  normalizeClaudeCodeModelId,
+  normalizeDefaultModelSettings,
+} from "@/lib/ide-defaults";
+import { useUiStore } from "@/lib/ui-store";
+import { cn } from "@/lib/utils";
+import { EmptyProjectWorkspace } from "./empty-project-workspace";
+import { IdeHeader } from "./ide-header";
+import { useIdeStore } from "./ide-store";
+import { dedupeModels } from "./ide-types";
+import { ProjectWorkspace } from "./project-workspace";
+import { SettingsDialog } from "./settings-dialog";
+
+export const IdeShell = () => {
+  // ── Store selectors ─────────────────────────────────────────────────
+  const appReady = useIdeStore((s) => s.appReady);
+  const setAppReady = useIdeStore((s) => s.setAppReady);
+  const stateHydrated = useIdeStore((s) => s.stateHydrated);
+  const projects = useIdeStore((s) => s.projects);
+  const activeProjectId = useIdeStore((s) => s.activeProjectId);
+  const settings = useIdeStore((s) => s.settings);
+  const settingsOpen = useIdeStore((s) => s.settingsOpen);
+  const settingsSection = useIdeStore((s) => s.settingsSection);
+
+  const hydrate = useIdeStore((s) => s.hydrate);
+  const setIsMacOs = useIdeStore((s) => s.setIsMacOs);
+  const setIsElectron = useIdeStore((s) => s.setIsElectron);
+  const appendTerminalOutput = useIdeStore((s) => s.appendTerminalOutput);
+  const setTerminalStatus = useIdeStore((s) => s.setTerminalStatus);
+  const setTerminalTransport = useIdeStore((s) => s.setTerminalTransport);
+  const setTerminalShell = useIdeStore((s) => s.setTerminalShell);
+  const setBrowserError = useIdeStore((s) => s.setBrowserError);
+  const refreshProviderModels = useIdeStore((s) => s.refreshProviderModels);
+
+  // ── Effects ─────────────────────────────────────────────────────────
+
+  // Detect macOS and Electron
+  useEffect(() => {
+    setIsMacOs(/mac/i.test(window.navigator.userAgent));
+    setIsElectron(hasDesktopApi());
+  }, [setIsMacOs, setIsElectron]);
+
+  // Hydrate state from storage
+  useEffect(() => {
+    void hydrate();
+    useUiStore.getState().hydrateUi();
+  }, [hydrate]);
+
+  // Dev-only: log main-thread stalls (>=100ms) so interaction delays (e.g.
+  // slow tab switches) can be attributed instead of guessed at.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    if (typeof PerformanceObserver === "undefined") return;
+
+    let observer: PerformanceObserver | null = null;
+    try {
+      observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.duration >= 100) {
+            console.warn(
+              `[perf] main thread blocked for ${Math.round(entry.duration)}ms`,
+            );
+          }
+        }
+      });
+      observer.observe({ entryTypes: ["longtask"] });
+    } catch {
+      // longtask entries unsupported — nothing to observe.
+    }
+
+    return () => observer?.disconnect();
+  }, []);
+
+  // Mark app ready once hydration completes, and auto-refresh models
+  useEffect(() => {
+    if (!stateHydrated) return;
+    void refreshProviderModels();
+    setAppReady(true);
+  }, [stateHydrated, setAppReady, refreshProviderModels]);
+
+  useEffect(() => {
+    if (!appReady) return;
+    document.querySelector(".boot-loading")?.remove();
+  }, [appReady]);
+
+  // Subscribe to persisted state changes for auto-persistence (debounced)
+  useEffect(() => {
+    let prev = {
+      activeProjectId: useIdeStore.getState().activeProjectId,
+      activeBrowserTabIdByProject:
+        useIdeStore.getState().activeBrowserTabIdByProject,
+      browserTabsByProject: useIdeStore.getState().browserTabsByProject,
+      chatSort: useIdeStore.getState().chatSort,
+      chats: useIdeStore.getState().chats,
+      closedProjects: useIdeStore.getState().closedProjects,
+      messagesByChatId: useIdeStore.getState().messagesByChatId,
+      projects: useIdeStore.getState().projects,
+      settings: useIdeStore.getState().settings,
+    };
+    let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const unsub = useIdeStore.subscribe((state) => {
+      const next = {
+        activeProjectId: state.activeProjectId,
+        activeBrowserTabIdByProject: state.activeBrowserTabIdByProject,
+        browserTabsByProject: state.browserTabsByProject,
+        chatSort: state.chatSort,
+        chats: state.chats,
+        closedProjects: state.closedProjects,
+        messagesByChatId: state.messagesByChatId,
+        projects: state.projects,
+        settings: state.settings,
+      };
+
+      if (
+        next.activeProjectId !== prev.activeProjectId ||
+        next.activeBrowserTabIdByProject !== prev.activeBrowserTabIdByProject ||
+        next.browserTabsByProject !== prev.browserTabsByProject ||
+        next.chats !== prev.chats ||
+        next.closedProjects !== prev.closedProjects ||
+        next.messagesByChatId !== prev.messagesByChatId ||
+        next.projects !== prev.projects ||
+        next.settings !== prev.settings ||
+        next.chatSort !== prev.chatSort
+      ) {
+        prev = next;
+        if (state.stateHydrated) {
+          if (persistTimer !== null) clearTimeout(persistTimer);
+          persistTimer = setTimeout(() => {
+            persistTimer = null;
+            // Serializing the full state for IPC blocks the renderer thread;
+            // run it during an idle period so it never lands in the middle of
+            // a click-driven animation frame. The timeout still guarantees a
+            // save within ~2s even if the thread stays busy.
+            const runPersist = () => useIdeStore.getState().persist();
+            if (typeof requestIdleCallback === "function") {
+              requestIdleCallback(runPersist, { timeout: 2000 });
+            } else {
+              runPersist();
+            }
+          }, 300);
+        }
+      }
+    });
+
+    return () => {
+      unsub();
+      if (persistTimer !== null) {
+        clearTimeout(persistTimer);
+        // Flush pending persist on unmount.
+        useIdeStore.getState().persist();
+      }
+    };
+  }, []);
+
+  // Desktop event listeners
+  useEffect(() => {
+    const desktopApi = getDesktopApi();
+    if (!desktopApi) return;
+
+    const removeTerminalData = desktopApi.onTerminalData((event) => {
+      appendTerminalOutput(event.projectId, event.chunk);
+    });
+
+    const removeTerminalStatus = desktopApi.onTerminalStatus((event) => {
+      setTerminalStatus(event.projectId, event.status);
+      if (event.transport) {
+        setTerminalTransport(event.projectId, event.transport);
+      }
+
+      const shell = typeof event.shell === "string" ? event.shell.trim() : "";
+      if (shell) {
+        setTerminalShell(event.projectId, shell);
+      }
+    });
+
+    const removeBrowserError = desktopApi.onBrowserError((event) => {
+      setBrowserError(
+        `${String(event.code)}${event.description ? `: ${event.description}` : ""}`,
+      );
+    });
+
+    return () => {
+      removeTerminalData();
+      removeTerminalStatus();
+      removeBrowserError();
+    };
+  }, [
+    appendTerminalOutput,
+    setTerminalStatus,
+    setTerminalTransport,
+    setTerminalShell,
+    setBrowserError,
+  ]);
+
+  // Auto-refresh models when settings panel opens
+  useEffect(() => {
+    if (!settingsOpen || settingsSection !== "providers") {
+      return;
+    }
+    void refreshProviderModels();
+  }, [refreshProviderModels, settingsOpen, settingsSection]);
+
+  // Sync settings integrity (dedupe models, fix connected providers)
+  useEffect(() => {
+    const store = useIdeStore.getState();
+    const prev = settings;
+
+    const openAiSelectedModels = dedupeModels(prev.openAiSelectedModels);
+    const anthropicSelectedModels = dedupeModels(
+      prev.anthropicSelectedModels.map(normalizeClaudeCodeModelId),
+    );
+    const openCodeSelectedModels = dedupeModels(prev.openCodeSelectedModels);
+    const cursorSelectedModels = dedupeModels(prev.cursorSelectedModels);
+    const nextSettings = {
+      ...prev,
+      anthropicSelectedModels,
+      cursorSelectedModels,
+      openCodeSelectedModels,
+      openAiSelectedModels,
+    };
+    const normalizedDefaultSettings =
+      normalizeDefaultModelSettings(nextSettings);
+    const enabledProviders = getConnectedProviders(nextSettings);
+
+    const changed =
+      normalizedDefaultSettings.defaultModel !== prev.defaultModel ||
+      normalizedDefaultSettings.defaultGitGenerationModel !==
+        prev.defaultGitGenerationModel ||
+      normalizedDefaultSettings.defaultModelSpeed !== prev.defaultModelSpeed ||
+      normalizedDefaultSettings.defaultReasoningEffort !==
+        prev.defaultReasoningEffort ||
+      openAiSelectedModels.length !== prev.openAiSelectedModels.length ||
+      anthropicSelectedModels.length !== prev.anthropicSelectedModels.length ||
+      openCodeSelectedModels.length !== prev.openCodeSelectedModels.length ||
+      cursorSelectedModels.length !== prev.cursorSelectedModels.length ||
+      !openAiSelectedModels.every(
+        (m, i) => prev.openAiSelectedModels[i] === m,
+      ) ||
+      !anthropicSelectedModels.every(
+        (m, i) => prev.anthropicSelectedModels[i] === m,
+      ) ||
+      !openCodeSelectedModels.every(
+        (m, i) => prev.openCodeSelectedModels[i] === m,
+      ) ||
+      !cursorSelectedModels.every((m, i) => prev.cursorSelectedModels[i] === m);
+
+    if (changed) {
+      store.setSettings(normalizedDefaultSettings);
+    }
+
+    // Fix projects whose provider/model is no longer valid.
+    const effectiveSettings = normalizedDefaultSettings;
+    const defaultSelection = getDefaultModelSelection(effectiveSettings);
+    const { chats, projects } = store;
+    let projectsChanged = false;
+    let chatsChanged = false;
+    const nextProjects = projects.map((project) => {
+      let next = project;
+
+      if (
+        !enabledProviders.includes(next.provider) &&
+        enabledProviders.length > 0
+      ) {
+        next = {
+          ...next,
+          model:
+            defaultSelection.model ||
+            getDefaultModelForProvider(
+              defaultSelection.provider,
+              effectiveSettings,
+            ),
+          provider: defaultSelection.provider,
+        };
+        projectsChanged = true;
+      }
+
+      const providerModels = getModelsForProvider(
+        next.provider,
+        effectiveSettings,
+      );
+      const fallbackModel = getDefaultModelForProvider(
+        next.provider,
+        effectiveSettings,
+      );
+
+      if (
+        !providerModels.includes(next.model) &&
+        next.model !== fallbackModel
+      ) {
+        next = { ...next, model: fallbackModel };
+        projectsChanged = true;
+      }
+
+      return next;
+    });
+
+    if (projectsChanged) {
+      store.setProjects(nextProjects);
+    }
+
+    const nextChats = chats.map((chat) => {
+      let next = chat;
+      const project = nextProjects.find((item) => item.id === chat.projectId);
+
+      if (!project) {
+        return next;
+      }
+
+      if (
+        !enabledProviders.includes(next.provider) &&
+        enabledProviders.length > 0
+      ) {
+        next = {
+          ...next,
+          model:
+            defaultSelection.model ||
+            getDefaultModelForProvider(
+              defaultSelection.provider,
+              effectiveSettings,
+            ),
+          provider: defaultSelection.provider,
+        };
+        chatsChanged = true;
+      }
+
+      const providerModels = getModelsForProvider(
+        next.provider,
+        effectiveSettings,
+      );
+      const fallbackModel = getDefaultModelForProvider(
+        next.provider,
+        effectiveSettings,
+      );
+
+      if (
+        !providerModels.includes(next.model) &&
+        next.model !== fallbackModel
+      ) {
+        next = { ...next, model: fallbackModel };
+        chatsChanged = true;
+      }
+
+      return next;
+    });
+
+    if (chatsChanged) {
+      useIdeStore.setState({ chats: nextChats });
+    }
+  }, [settings]);
+
+  // ── Render ──────────────────────────────────────────────────────────
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-surface-50 dark:bg-surface-900 text-foreground">
+      {!appReady && <AppLoadingScreen />}
+      <IdeHeader />
+
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        {!stateHydrated ? null : (
+          <>
+            {projects.map((project) => {
+              const active = project.id === activeProjectId;
+
+              return (
+                <div
+                  aria-hidden={!active}
+                  className={cn(
+                    "absolute inset-0 min-h-0",
+                    active
+                      ? "visible translate-x-0 pointer-events-auto opacity-100"
+                      : // `invisible` (visibility: hidden) drops inactive
+                        // workspaces out of paint/hit-testing entirely while
+                        // preserving layout and keeping <webview>/terminal
+                        // state alive (unlike display: none, which destroys
+                        // webview surfaces and forces an expensive re-show).
+                        "invisible translate-x-full pointer-events-none opacity-0",
+                  )}
+                  inert={!active}
+                  key={project.id}
+                >
+                  <ProjectWorkspace active={active} project={project} />
+                </div>
+              );
+            })}
+            {!activeProjectId ? (
+              <div className="absolute inset-0 p-3">
+                <EmptyProjectWorkspace />
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+
+      <SettingsDialog />
+    </div>
+  );
+};

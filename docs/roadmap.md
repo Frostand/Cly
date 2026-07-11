@@ -1,50 +1,72 @@
 # Cly Roadmap
 
-## Phase 0 — Standalone platform boundary
+## Phase 0 — Foundation and assessment ✅
 
-- Independent Cly identity, release path, and local service boundary
+- Independent Cly identity and release path
 - CI, tests, repository governance, and security policy
-- Research-core contracts and client integration contracts
-- Repository clean-up and transition away from inherited IDE infrastructure
+- Dream architecture, licensing, packaging, and upgrade assessment
+- Reuse / extend / replace decision map
+- UI shell prototype with full fixture-backed navigation
 
-Exit criterion: Cly builds independently, research capabilities do not depend on an IDE fork, and changes are protected by automated checks.
+Exit criterion: Cly builds independently, changes are protected by automated checks, and upstream merges have a documented process.
 
-## Phase 1 — Research core and desktop workspace
+## Phase 1 — Research core with real persistence
 
-- Relational research-object graph
-- Sources and claims
-- Evidence relationships and provenance
-- Research dashboard, objectives, decisions, and research graph
+- Project-scoped relational persistence replacing mock services
+- Source import (file, URL, BibTeX) with hashing and metadata
+- Claim/evidence graph with supporting and contradicting relationships
+- Experiment and run manifests
+- Artifact provenance (hash, regeneration state, staleness detection)
+- Context composer backed by real research objects
+- Research graph with neighborhood queries
 
-Exit criterion: a user can add a source, record a claim, connect them, restart Cly, and recover the relationship.
+Exit criterion: a user can add a source, record a claim, connect them to an experiment and artifact, restart Cly, and recover the full relationship chain with provenance.
 
-## Phase 2 — Literature intelligence
+## Phase 2 — Literature and code intelligence
 
 - Metadata import and normalization
-- OpenAlex or arXiv retrieval
-- Reading lists and literature matrix
-- Grounded summaries and duplicate detection
+- Semantic paper search (OpenAlex or arXiv)
+- Reading lists and literature matrix with persistence
+- Static notebook scanner (`.ipynb` parsing, cell extraction)
+- Code-symbol indexing and objective/method linking
 
-## Phase 3 — Code, notebook, and repository integration
+Exit criterion: a user can import papers, scan notebooks, and link code to research objects with the results persisting across restart.
 
-- Notebook cell extraction
-- Code-symbol indexing
-- Objective and method linking
-- Scientific-risk annotations
-- Git and filesystem observation through the local Cly service
+## Phase 3 — External integrations
 
-## Phase 4 — Experiments and provenance
+- VS Code / Cursor extension (send code to Cly, view active tasks, annotate claims)
+- GitHub integration (commit tracking, branch-to-experiment linking)
+- Jupyter extension (notebook metadata sync, experiment registration)
+- CLI and Python SDK (`from cly import experiment`)
+- MCP server for agent tool access
 
-- Experiment definitions and run tracking
-- Commit, configuration, dataset, and metric capture
+Exit criterion: a researcher can work in VS Code or Jupyter and have Cly track their experiments, claims, and provenance automatically.
+
+## Phase 4 — Reproducibility and audits
+
+- Deterministic reproducibility checks (environment, seed, data, git, command)
+- Claim audit board with automated validation
 - Figure/table lineage and staleness detection
+- Decision log with supersession tracking
+- Report and manuscript audit generation
 
-## Phase 5 — External workflow integrations
+Exit criterion: clicking a claim shows the full provenance chain and any broken or stale links are flagged automatically.
 
-- VS Code-compatible extension and deep links
-- Jupyter extension and experiment SDK
-- CLI, MCP/server interfaces, and GitHub integration
+## Phase 5 — Agent orchestration
+
+- Local signed-in agent routing (Codex, Claude, local tools)
+- Context packs with token budgets and compression
+- Agent task execution with approval workflows
+- Multi-agent patterns (review, debate, hierarchical)
+- Planner: rule-based next steps with agent suggestions
+
+Exit criterion: an agent can execute a research task, record provenance of its changes, and the user can audit the result.
 
 ## Later phases
 
-Cly will not provide an embedded code editor. Its external integrations carry research context into researchers' existing tools. The complete scope and acceptance scenario lives in [product-plan.md](product-plan.md).
+- Team collaboration
+- Remote compute and cluster job tracking
+- Institution-level research compliance
+- Advanced multi-agent research orchestration
+
+The complete scope and acceptance scenarios live in [product-plan.md](product-plan.md).
