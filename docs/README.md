@@ -1,6 +1,6 @@
-# Cly research IDE documentation
+# Cly research workspace documentation
 
-This documentation turns the Dream IDE fork into an AI-native research operating system without prematurely coupling research features to the IDE core.
+This documentation defines Cly as a standalone research platform. Coding environments are connected clients, not the foundation of the product.
 
 | Area | Purpose |
 | --- | --- |
@@ -11,6 +11,6 @@ This documentation turns the Dream IDE fork into an AI-native research operating
 | `testing/` | Test strategy and fixtures. |
 | `integrations/` | Contracts for external systems. |
 | `research-model/` | Research-object and provenance model specifications. |
-| `operations/` | Upstream synchronization and release operations. |
+| `operations/` | Local service and release operations. |
 
 No production model, persistence schema, or runtime boundary is changed by this documentation baseline.

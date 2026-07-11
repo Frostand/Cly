@@ -1,7 +1,7 @@
 {
   "name": "cly",
   "productName": "Cly",
-  "description": "Cly is an AI-native research operating system built on Dream IDE.",
+  "description": "Cly is a local-first research workspace for sources, code, experiments, and claims.",
   "version": "0.5.0",
   "private": true,
   "scripts": {

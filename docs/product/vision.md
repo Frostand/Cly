@@ -2,7 +2,7 @@
 
 ## Vision
 
-Cly is an AI-native, Git-integrated research operating system built on Dream IDE. Its system of record is a traceable graph connecting sources, decisions, code, experiments, artifacts, and claims.
+Cly is a local-first research workspace and system of record. It connects sources, decisions, code, experiments, artifacts, and claims through a traceable research graph.
 
 ## MVP outcome
 
@@ -10,11 +10,12 @@ Demonstrate one verified chain: research topic → paper search and explainable 
 
 ## Explicit MVP exclusions
 
-Unrestricted autonomous agents, automatic merges, automatic scientific-conflict resolution, a complete manuscript editor, a plugin marketplace, institutional administration, and exhaustive source/provider integrations are out of scope.
+Unrestricted autonomous agents, automatic merges, automatic scientific-conflict resolution, a full replacement for general-purpose IDEs, a plugin marketplace, institutional administration, and exhaustive source/provider integrations are out of scope.
 
 ## Product principles
 
 - Persist provenance with every extracted or inferred fact; inferred graph edges remain unconfirmed until a user confirms them.
 - Keep user control over model transmission, cost, tools, and sensitive actions.
-- Extend Dream through isolated services, panels, adapters, and domain modules before changing core IDE paths.
+- Keep the research core independent from any editor shell; treat the built-in coding workspace and external IDEs as replaceable clients.
+- Make Cly active in the work: watch repositories, connect commits and runs to research objects, and surface research context where code is edited.
 - Prefer explainable recommendations and audit findings to opaque scores.

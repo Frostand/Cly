@@ -1,14 +1,10 @@
-# Dream upstream synchronization
+# Legacy code assessment
 
-## Routine
+The current embedded code-workspace components are transitional assets, not an upstream dependency. Before retaining, adapting, or replacing a legacy component, record:
 
-1. Fetch `upstream` and review commits since the last recorded sync.
-2. Create `chore/RID-<issue>-sync-dream-upstream` from `main`.
-3. Merge or rebase the selected upstream range; do not mix product features with the sync.
-4. Resolve conflicts by preserving isolated research modules and adapting only their documented registration seams.
-5. Run lint, typecheck, build, test suite, packaged-app smoke test, and a manual review of preload, process sessions, API guard, Git/worktree, persistence, and packaging changes.
-6. Record upstream revision, conflicts, and follow-ups in the linked Linear issue and release notes.
+1. the research workflow it enables;
+2. the stable Cly core interface it consumes;
+3. whether an external IDE, notebook, CLI, or browser client could provide the same capability; and
+4. migration and security risks.
 
-## Release cadence
-
-Use semantic versions through internal development, alpha, private beta, public beta, and stable. Maintain changelog, migration notes, known issues, rollback instructions, signed/tagged GitHub releases, and package-installer validation.
+Do not merge code from former upstream projects into Cly as routine maintenance. Preserve third-party notices and selectively port only independently justified capabilities.
