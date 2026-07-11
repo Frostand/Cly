@@ -1,72 +1,42 @@
-# Cly Roadmap
+# Cly roadmap
 
-## Phase 0 — Foundation and assessment ✅
+## Phase 1 — Research core and local service
 
-- Independent Cly identity and release path
-- CI, tests, repository governance, and security policy
-- Dream architecture, licensing, packaging, and upgrade assessment
-- Reuse / extend / replace decision map
-- UI shell prototype with full fixture-backed navigation
+- Typed research objects, relationships, and provenance
+- Project-scoped storage and migration strategy
+- Local-service contracts, permissions, and repository observation
+- Focused CI, security review, and governance
 
-Exit criterion: Cly builds independently, changes are protected by automated checks, and upstream merges have a documented process.
+**Exit:** Core data and service boundaries are independently testable and do not depend on an IDE.
 
-## Phase 1 — Research core with real persistence
+## Phase 2 — Research graph, evidence, and planning
 
-- Project-scoped relational persistence replacing mock services
-- Source import (file, URL, BibTeX) with hashing and metadata
-- Claim/evidence graph with supporting and contradicting relationships
-- Experiment and run manifests
-- Artifact provenance (hash, regeneration state, staleness detection)
-- Context composer backed by real research objects
-- Research graph with neighborhood queries
+- Sources, objectives, hypotheses, claims, and decisions
+- Evidence relationships and literature matrix
+- Research graph navigation and explainable next steps
 
-Exit criterion: a user can add a source, record a claim, connect them to an experiment and artifact, restart Cly, and recover the full relationship chain with provenance.
+**Exit:** A researcher can maintain an evidence-backed research plan and understand gaps.
 
-## Phase 2 — Literature and code intelligence
+## Phase 3 — Experiments, provenance, and reproducibility
 
-- Metadata import and normalization
-- Semantic paper search (OpenAlex or arXiv)
-- Reading lists and literature matrix with persistence
-- Static notebook scanner (`.ipynb` parsing, cell extraction)
-- Code-symbol indexing and objective/method linking
+- Run manifests, environment/configuration capture, and artifacts
+- Figure/table lineage, staleness, and reproducibility audits
+- External repository and notebook links
 
-Exit criterion: a user can import papers, scan notebooks, and link code to research objects with the results persisting across restart.
+**Exit:** A result can be traced from claim to source, external work, run, and artifact.
 
-## Phase 3 — External integrations
+## Phase 4 — Companion integrations
 
-- VS Code / Cursor extension (send code to Cly, view active tasks, annotate claims)
-- GitHub integration (commit tracking, branch-to-experiment linking)
-- Jupyter extension (notebook metadata sync, experiment registration)
-- CLI and Python SDK (`from cly import experiment`)
-- MCP server for agent tool access
+- VS Code-compatible extension
+- Jupyter integration and experiment SDK
+- GitHub, CLI, MCP, and Python SDK integrations
 
-Exit criterion: a researcher can work in VS Code or Jupyter and have Cly track their experiments, claims, and provenance automatically.
+**Exit:** Researchers can work in existing tools while Cly receives permissioned, provenance-rich context.
 
-## Phase 4 — Reproducibility and audits
+## Phase 5 — Approval-gated agents
 
-- Deterministic reproducibility checks (environment, seed, data, git, command)
-- Claim audit board with automated validation
-- Figure/table lineage and staleness detection
-- Decision log with supersession tracking
-- Report and manuscript audit generation
+- Context packs, budgets, and provider routing
+- Reviewable research-agent tasks and approval checkpoints
+- Planner, critic, and audit workflows
 
-Exit criterion: clicking a claim shows the full provenance chain and any broken or stale links are flagged automatically.
-
-## Phase 5 — Agent orchestration
-
-- Local signed-in agent routing (Codex, Claude, local tools)
-- Context packs with token budgets and compression
-- Agent task execution with approval workflows
-- Multi-agent patterns (review, debate, hierarchical)
-- Planner: rule-based next steps with agent suggestions
-
-Exit criterion: an agent can execute a research task, record provenance of its changes, and the user can audit the result.
-
-## Later phases
-
-- Team collaboration
-- Remote compute and cluster job tracking
-- Institution-level research compliance
-- Advanced multi-agent research orchestration
-
-The complete scope and acceptance scenarios live in [product-plan.md](product-plan.md).
+**Exit:** Agents can assist research without hiding inputs, effects, or scientific uncertainty.

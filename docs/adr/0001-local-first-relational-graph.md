@@ -5,7 +5,7 @@
 
 ## Context
 
-Cly must connect sources, claims, code, experiments, runs, and artifacts while remaining usable offline and preserving a simple desktop installation. Dream already uses local SQLite and Drizzle.
+Cly must connect sources, claims, external code, experiments, runs, and artifacts while remaining usable offline. The persistence choice must remain independent of any editor or client implementation.
 
 ## Decision
 
@@ -14,4 +14,3 @@ Store research objects, directed relationships, and provenance events in normali
 ## Consequences
 
 The MVP needs no graph database or hosted service. Traversal queries may require recursive SQL or application-level composition. If scale later justifies a graph engine, the typed repository boundary provides a migration seam without changing UI contracts.
-
