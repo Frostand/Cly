@@ -12,8 +12,8 @@ importers:
         specifier: ^2.0.5
         version: 2.0.5(hono@4.12.29)
       '@opencode-ai/sdk':
-        specifier: 1.17.11
-        version: 1.17.11
+        specifier: 1.17.18
+        version: 1.17.18
       '@pierre/diffs':
         specifier: ^1.2.10
         version: 1.2.10(@shikijs/themes@4.2.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -1500,8 +1500,8 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
-  '@opencode-ai/sdk@1.17.11':
-    resolution: {integrity: sha512-UdSwnNM4/cD5rHnI8O7VaHuiwYnsEOglpRPVeeYE2S5Nm1K34ijCyZGDvBecb0ShdBQgn49XvyQWJH6cREsIPw==}
+  '@opencode-ai/sdk@1.17.18':
+    resolution: {integrity: sha512-c/C9PhY8PrbcxDY+JIYtOZsrmMD0KzoVvxq+RGUrZ6LQp57SuVBbT4lfwA2G8Se5RNC1N5JtYjiuaXeECnF2SQ==}
 
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
@@ -2619,8 +2619,8 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
-  baseline-browser-mapping@2.10.42:
-    resolution: {integrity: sha512-c/jurFrDLyui7o1J86yLkRu4LMsTYcBohveus7/I2Hzdn9KIP2bdJPTue/lR1KH46enoPbD77GKeSYNdyPoD3Q==}
+  baseline-browser-mapping@2.10.43:
+    resolution: {integrity: sha512-AjYpR78kDWAY3Efj+cDTFH9t9SCoL7OoTp1BOb0mQV7S+6CiLwnWM3FyxhJtdPufDFKzmCSFoUncKjWgJEZTCQ==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -7201,7 +7201,7 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
 
-  '@opencode-ai/sdk@1.17.11':
+  '@opencode-ai/sdk@1.17.18':
     dependencies:
       cross-spawn: 7.0.6
 
@@ -8262,7 +8262,7 @@ snapshots:
 
   baseline-browser-mapping@2.10.21: {}
 
-  baseline-browser-mapping@2.10.42: {}
+  baseline-browser-mapping@2.10.43: {}
 
   bcrypt-pbkdf@1.0.2:
     dependencies:
@@ -10708,7 +10708,7 @@ snapshots:
     dependencies:
       '@next/env': 16.2.9
       '@swc/helpers': 0.5.15
-      baseline-browser-mapping: 2.10.42
+      baseline-browser-mapping: 2.10.43
       caniuse-lite: 1.0.30001803
       postcss: 8.4.31
       react: 19.2.5
