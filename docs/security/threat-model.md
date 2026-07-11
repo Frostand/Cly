@@ -2,7 +2,7 @@
 
 ## Assets and trust boundaries
 
-Assets include private repositories, local files, terminal access, datasets, source content, credentials, research graph data, experiment artifacts, and model-provider prompts. Trust boundaries are renderer ↔ preload ↔ Electron main, local API, external providers, external literature sources, GitHub/Linear, and any execution environment.
+Assets include private repositories, local files, datasets, source content, credentials, research graph data, experiment artifacts, and model-provider prompts. Trust boundaries are the local Cly service, its permission-gated integration clients, external providers, external literature sources, GitHub/Linear, and any execution environment.
 
 ## Primary threats and baseline controls
 

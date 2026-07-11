@@ -2,15 +2,14 @@
 
 ## Direction
 
-Cly extends Dream rather than rewriting it. Dream's Electron shell, React renderer, project workspace, agent adapters, Git service, terminal sessions, and local SQLite persistence remain the platform layer. Cly-owned research capabilities live in focused feature modules and communicate through typed API boundaries.
+Cly is a standalone research platform. Its durable core is independent of any editor implementation; the future desktop application, IDE extensions, notebooks, CLI, and GitHub integration are clients of that core.
 
 ## Layers
 
-1. **Desktop shell:** Electron main process, secure preload bridge, windows, menus, updater, and packaging.
-2. **Workspace platform:** projects, files, Git, terminals, browser sessions, and agent conversations inherited from Dream.
-3. **Research domain:** typed research objects, directed relationships, provenance events, and validation rules.
-4. **Research services:** project-scoped persistence and narrow HTTP/IPC operations. Services never accept arbitrary SQL or arbitrary filesystem paths.
-5. **Research experience:** source, claim, experiment, provenance, and audit views embedded additively in the workspace.
+1. **Research core:** typed research objects, relationships, provenance events, policies, and validation rules.
+2. **Local Cly service:** project-scoped storage, file and Git observation, experiment/run capture, artifact indexing, context retrieval, and permission-gated agent execution.
+3. **Clients:** desktop research application, VS Code-compatible extension, Jupyter integration, CLI, and GitHub adapter.
+4. **Research experience:** sources, graph, objectives, decisions, experiments, claims, provenance, audits, and agent control.
 
 ## Local-first storage
 
@@ -18,20 +17,18 @@ SQLite and Drizzle remain the source of truth for application metadata. The rese
 
 Provider credentials belong in the operating-system credential store. They must not be written to SQLite, project files, logs, Git history, or agent context.
 
-## Extension boundary
+## Integration boundary
 
-Cly changes Dream core only when product identity, security, or a missing extension seam requires it. Research modules should depend on small adapters for persistence, project identity, Git state, and agent execution. This keeps upstream merges reviewable and allows inherited services to be replaced independently if needed.
+The research core must depend only on small adapters for persistence, project identity, Git state, execution, and external tools. No product capability may require a specific IDE, editor fork, or upstream synchronization.
 
 ## Data flow
 
 ```text
-Research panel
-  -> typed research client
-  -> project-scoped API route
-  -> research repository
-  -> SQLite / Drizzle
+Desktop app / IDE extension / Jupyter / CLI
+  -> local Cly service
+  -> research repository and adapters
+  -> SQLite / Drizzle + project artifacts
   -> provenance event
 ```
 
 Every mutation must carry a project identifier, validate its payload, create or update a research object, and record sufficient provenance to explain the change.
-

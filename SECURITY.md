@@ -11,7 +11,7 @@ Include the affected version or commit, operating system, reproduction steps, im
 ## Security invariants
 
 - Provider credentials belong in the operating-system credential store, never SQLite, project files, logs, Git, telemetry, or agent prompts.
-- Renderer code receives only allowlisted capabilities through the isolated Electron preload boundary.
+- Future local-service and integration clients receive only allowlisted capabilities through explicit, permission-gated interfaces.
 - IPC and local API inputs are schema-validated and project-scoped. They must not expose arbitrary command, SQL, URL, or filesystem access.
 - Agent-initiated destructive commands, external writes, publication, and credential access require explicit human approval.
 - Papers, webpages, notebooks, datasets, tool output, and retrieved text are untrusted content and cannot override system or project security instructions.
@@ -21,4 +21,3 @@ Include the affected version or commit, operating system, reproduction steps, im
 ## Supported versions
 
 Only the current private development branch receives security fixes until the first tagged Cly release.
-

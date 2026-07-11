@@ -15,17 +15,6 @@
 /playwright-report/
 /test-results/
 
-# vite
-/dist/
-
-# production
-/build/*
-!/build/
-!/build/entitlements.mac.plist
-!/build/icon.ico
-/release
-/.electron-home
-
 # misc
 .DS_Store
 *.pem
@@ -42,16 +31,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
-# editor
-.vscode/*
-!.vscode/settings.json
-node_modules
-
 # other
 nul
 .codex
 .claude
-.next
 .worktrees/
 
 # local research data and generated artifacts
