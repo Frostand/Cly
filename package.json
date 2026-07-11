@@ -31,9 +31,9 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@hono/node-server": "^2.0.5",
-    "@opencode-ai/sdk": "1.17.11",
-    "@pierre/diffs": "^1.2.10",
+    "@hono/node-server": "^2.0.8",
+    "@opencode-ai/sdk": "1.17.18",
+    "@pierre/diffs": "^1.2.12",
     "ai": "^6.0.206",
     "ai-sdk-provider-claude-code": "^3.5.0",
     "ccount": "2.0.1",
