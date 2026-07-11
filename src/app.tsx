@@ -1,28 +1,23 @@
-import { NextIntlClientProvider } from "next-intl";
-import { useEffect } from "react";
-import { IdeShell } from "@/components/ide/ide-shell";
 import { ThemeProvider } from "@/components/theme-provider";
-import { messages } from "@/i18n/messages";
-import { useIdeStore } from "./components/ide/ide-store";
+import { ClyAppShell } from "@/features/cly/components/app-shell";
+import "@/features/cly/cly.css";
 
 export const App = () => {
-  const locale = useIdeStore((s) => s.settings.locale);
-
   useEffect(() => {
-    document.documentElement.lang = locale;
-  }, [locale]);
+    document.querySelector(".boot-loading")?.remove();
+  }, []);
 
   return (
-    <NextIntlClientProvider locale={locale} messages={messages[locale]}>
-      <ThemeProvider
-        attribute="class"
-        defaultTheme="dark"
-        disableTransitionOnChange
-        enableSystem
-        storageKey="dream-theme"
-      >
-        <IdeShell />
-      </ThemeProvider>
-    </NextIntlClientProvider>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="dark"
+      disableTransitionOnChange
+      enableSystem
+      storageKey="cly-theme"
+    >
+      <ClyAppShell />
+    </ThemeProvider>
   );
 };
+
+import { useEffect } from "react";

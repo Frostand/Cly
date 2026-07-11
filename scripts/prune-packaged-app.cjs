@@ -47,15 +47,24 @@ function getUpdateFeedUrl() {
     return rawUrl.replace(/\/+$/, "");
   }
 
-  throw new Error(
-    "Missing CLY_UPDATE_FEED_URL. Set it to the public R2 releases URL, for example https://downloads.example.com/releases.",
-  );
+  if (process.env.CI === "true") {
+    throw new Error(
+      "Missing CLY_UPDATE_FEED_URL. Set it to the public R2 releases URL, for example https://downloads.example.com/releases.",
+    );
+  }
+
+  return null;
 }
 
 function getAppUpdateYml() {
+  const updateFeedUrl = getUpdateFeedUrl();
+  if (!updateFeedUrl) {
+    return null;
+  }
+
   return `provider: generic
-url: ${getUpdateFeedUrl()}
-updaterCacheDirName: dream-updater
+url: ${updateFeedUrl}
+updaterCacheDirName: cly-updater
 `;
 }
 
@@ -153,7 +162,16 @@ async function pruneSharpOptionalDependencies(parentPath, platform, arch) {
 
 async function ensureAppUpdateConfig(resourcesDir) {
   const updateConfigPath = path.join(resourcesDir, "app-update.yml");
-  await fs.writeFile(updateConfigPath, getAppUpdateYml(), "utf8");
+  const appUpdateYml = getAppUpdateYml();
+  if (!appUpdateYml) {
+    await removeIfExists(updateConfigPath);
+    console.log(
+      "Skipped app-update.yml for a local development package without CLY_UPDATE_FEED_URL.",
+    );
+    return;
+  }
+
+  await fs.writeFile(updateConfigPath, appUpdateYml, "utf8");
 }
 
 function getResourcesDirectory(context) {

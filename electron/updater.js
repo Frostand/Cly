@@ -253,7 +253,7 @@ export function initializeAutoUpdater({
     : null;
   const updateFeedUrl = getBaseUpdateFeedUrl();
   const updatesEnabled =
-    (app.isPackaged && !isDevelopment) ||
+    (app.isPackaged && !isDevelopment && Boolean(updateFeedUrl)) ||
     (devUpdatesEnabled && Boolean(updateFeedUrl));
   let checkInFlight = null;
   let initialUpdateCheckTimer = null;

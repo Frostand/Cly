@@ -178,4 +178,5 @@ contextBridge.exposeInMainWorld("dream", {
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   onUpdateStatus: (listener) => subscribe("updates:status", listener),
+  onClyCommand: (listener) => subscribe("cly:menu-command", listener),
 });

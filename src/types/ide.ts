@@ -538,6 +538,7 @@ export interface DesktopApi {
   checkForUpdates: () => Promise<UpdateStatusEvent>;
   installUpdate: () => Promise<boolean>;
   onUpdateStatus: (listener: (event: UpdateStatusEvent) => void) => () => void;
+  onClyCommand: (listener: (command: string) => void) => () => void;
 }
 
 export interface DetectedEditor {
