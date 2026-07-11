@@ -8,7 +8,7 @@ import type {
 import { useClyStore } from "../store/cly-store";
 import type { ClyServices } from "./interfaces";
 
-const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}`;
+const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const isoNow = () => new Date().toISOString();
 
 export const mockServices: ClyServices = {
