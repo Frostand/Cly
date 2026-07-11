@@ -31,7 +31,15 @@ The coding workspace is currently powered by Dream IDE as an implementation comp
 
 ## Status
 
-The UI prototype is complete with fixture-backed research screens, mock services, and full navigation. Real persistence, scanners, model execution, and external integrations are Phase 2 work.
+Cly now includes a complete UI/UX research-cockpit shell with shared fixtures,
+mock service boundaries, all primary research and integrity workspaces, desktop
+menus, keyboard navigation, automated workflows, and responsive visual
+fixtures. Agent Sessions includes a complete two-mode Overview and Orchestrator
+Chat workspace with full delegated-agent fixtures and a Browser, Terminal,
+Code Diff, Agents, and Live Files workbench. Real research persistence,
+scanners, model execution, external
+integrations, and orchestration remain Phase 2 work. Do not use the current
+fixture-backed build as a source of truth for production research data.
 
 ## Development
 
@@ -74,6 +82,8 @@ pnpm vite:build
 - [Keyboard shortcuts](docs/KEYBOARD_SHORTCUTS.md)
 - [Fixture states](docs/FIXTURE_STATES.md)
 - [UI testing](docs/UI_TESTING.md)
+- [Agent Sessions redesign](docs/AGENT_SESSIONS_REDESIGN.md)
+- [Agent Sessions completion report](docs/AGENT_SESSIONS_COMPLETION_REPORT.md)
 
 ### Planning
 - [Phase 2 backend plan](docs/PHASE_2_BACKEND_PLAN.md)

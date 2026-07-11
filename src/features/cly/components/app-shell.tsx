@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { AgentSessionsScreen } from "../agent-sessions";
 import type { ScreenId } from "../domain/types";
 import { ContextScreen } from "../screens/context";
 import { ExperimentsScreen, GraphScreen } from "../screens/experiments-graph";
@@ -17,7 +18,6 @@ import {
   SourcesScreen,
 } from "../screens/research-workspaces";
 import {
-  AgentSessionsScreen,
   IntegrationsScreen,
   ModelsAgentsScreen,
   SettingsScreen,
@@ -73,9 +73,30 @@ function runMenuCommand(command: string) {
     "generate-next-steps": "next-steps",
     "manage-integrations": "integrations",
     "notebooklm-bundle": "literature",
+    "new-agent-session": "agents",
     settings: "settings",
   };
   if (screenCommands[command]) store.setScreen(screenCommands[command]);
+  if (command === "new-agent-session") store.setNewAgentSessionOpen(true);
+  if (command === "agent-sessions-overview")
+    store.setAgentSessionsMode("overview");
+  if (command === "agent-sessions-chat") store.setAgentSessionsMode("chat");
+  if (command === "agent-approvals") {
+    store.setAgentSessionFilter("approvals");
+    store.setAgentSessionsMode("overview");
+  }
+  if (command.startsWith("agent-tab-") && store.selectedAgentSessionId) {
+    const type = command.slice("agent-tab-".length) as
+      | "browser"
+      | "terminal"
+      | "diff"
+      | "agents"
+      | "live-files";
+    store.openWorkbenchTab(store.selectedAgentSessionId, type);
+    store.setAgentSessionsMode("chat", store.selectedAgentSessionId);
+  }
+  if (command === "agent-toggle-workbench" && store.selectedAgentSessionId)
+    store.toggleWorkbench(store.selectedAgentSessionId);
   if (command === "toggle-sidebar") store.toggleSidebar();
   if (command === "toggle-inspector") store.toggleInspector();
   if (command === "toggle-activity") store.toggleActivity();
@@ -105,6 +126,7 @@ export function ClyAppShell() {
   const activeScreen = useClyStore((s) => s.activeScreen);
   const sidebarCollapsed = useClyStore((s) => s.sidebarCollapsed);
   const inspectorOpen = useClyStore((s) => s.inspectorOpen);
+  const agentSessionsMode = useClyStore((s) => s.agentSessionsMode);
   const fixtureMode = useClyStore((s) => s.fixtureMode);
   const setScreen = useClyStore((s) => s.setScreen);
   const ActiveScreen = screens[activeScreen];
@@ -119,7 +141,12 @@ export function ClyAppShell() {
       }
       if (meta && event.shiftKey && event.key.toLowerCase() === "o") {
         event.preventDefault();
-        useClyStore.getState().setProjectSwitcherOpen(true);
+        useClyStore.getState().setAgentSessionsMode("overview");
+        return;
+      }
+      if (meta && event.shiftKey && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        useClyStore.getState().setAgentSessionsMode("chat");
         return;
       }
       if (meta && event.altKey && event.key.toLowerCase() === "i") {
@@ -186,7 +213,12 @@ export function ClyAppShell() {
       <div
         className="cly-shell"
         data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
-        data-inspector={inspectorOpen ? "open" : "closed"}
+        data-inspector={
+          inspectorOpen && activeScreen !== "agents" ? "open" : "closed"
+        }
+        data-agent-mode={
+          activeScreen === "agents" ? agentSessionsMode : undefined
+        }
       >
         <Sidebar />
         <section className="cly-workspace">
@@ -203,7 +235,7 @@ export function ClyAppShell() {
           </div>
           <ActivityDrawer />
         </section>
-        <Inspector />
+        {activeScreen !== "agents" ? <Inspector /> : null}
       </div>
       <CommandPalette />
       <Toasts />

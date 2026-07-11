@@ -8,6 +8,12 @@
 | Cmd/Ctrl N | New claim from native menu |
 | Cmd/Ctrl 1 | Overview |
 | Cmd/Ctrl 2 | Agent Sessions |
+| Cmd/Ctrl Shift O | Agent Sessions Overview |
+| Cmd/Ctrl Shift C | Agent Sessions Chat |
+| Cmd/Ctrl Enter | Send Orchestrator message |
+| Cmd/Ctrl Shift T | New workbench tab |
+| Cmd/Ctrl Option B/T/D/A/F | Browser / Terminal / Diff / Agents / Live Files |
+| Cmd/Ctrl Option W | Toggle Agent workbench |
 | Cmd/Ctrl 3 | Context |
 | Cmd/Ctrl 4 | Research Graph |
 | Cmd/Ctrl 5 | Experiments |

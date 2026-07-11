@@ -80,7 +80,7 @@ export function Titlebar() {
   const notify = useClyStore((s) => s.notify);
   const activeSessions = useClyStore(
     (s) =>
-      s.data.agentSessions.filter((item) => item.status === "Running").length,
+      s.data.agentSessions.filter((item) => item.status === "running").length,
   );
 
   const createObject = async () => {
@@ -319,6 +319,125 @@ export function CommandPalette() {
     }));
     return [
       ...navigation,
+      {
+        id: "agent-overview",
+        label: "Show Agent Sessions Overview",
+        group: "Navigate",
+        icon: Command,
+        shortcut: "⌘⇧O",
+        run: () => useClyStore.getState().setAgentSessionsMode("overview"),
+      },
+      {
+        id: "agent-chat",
+        label: "Show Agent Sessions Chat",
+        group: "Navigate",
+        icon: Command,
+        shortcut: "⌘⇧C",
+        run: () => useClyStore.getState().setAgentSessionsMode("chat"),
+      },
+      {
+        id: "open-current-agent-session",
+        label: "Open Current Session Chat",
+        group: "Navigate",
+        icon: Command,
+        run: () => {
+          const state = useClyStore.getState();
+          const sessionId =
+            state.selectedAgentSessionId ??
+            state.selectedOverviewSessionId ??
+            state.data.agentSessions[0]?.id;
+          if (sessionId) state.openAgentSession(sessionId);
+          else state.setAgentSessionsMode("chat");
+        },
+      },
+      {
+        id: "new-agent-session",
+        label: "New Agent Session",
+        group: "Create",
+        icon: FilePlus2,
+        shortcut: "⌘N",
+        run: () => {
+          useClyStore.getState().setScreen("agents");
+          useClyStore.getState().setNewAgentSessionOpen(true);
+        },
+      },
+      {
+        id: "configure-agent-team",
+        label: "Configure Agent Team",
+        group: "Research",
+        icon: Sparkles,
+        run: () => {
+          const state = useClyStore.getState();
+          const session = state.data.agentSessions.find(
+            (item) => item.id === state.selectedAgentSessionId,
+          );
+          if (session) state.setAgentConfigurationId(session.orchestrator.id);
+          else
+            state.notify(
+              "Select a session",
+              "Open a session before configuring its agent team.",
+            );
+        },
+      },
+      ...(
+        [
+          ["terminal", "Open Terminal Tab"],
+          ["browser", "Open Browser Tab"],
+          ["diff", "Open Code Diff Tab"],
+          ["agents", "Open Agents Tab"],
+          ["live-files", "Open Live Files Tab"],
+        ] as const
+      ).map(([type, label]) => ({
+        id: `agent-tab-${type}`,
+        label,
+        group: "View" as const,
+        icon: Command,
+        run: () => {
+          const state = useClyStore.getState();
+          if (state.selectedAgentSessionId) {
+            state.openWorkbenchTab(state.selectedAgentSessionId, type);
+            state.setAgentSessionsMode("chat", state.selectedAgentSessionId);
+          } else {
+            state.notify(
+              "Select a session",
+              "Open an agent session before adding workbench tabs.",
+            );
+          }
+        },
+      })),
+      {
+        id: "view-agent-approvals",
+        label: "View Agent Approvals",
+        group: "Research",
+        icon: Sparkles,
+        run: () => {
+          const state = useClyStore.getState();
+          state.setAgentSessionFilter("approvals");
+          state.setAgentSessionsMode("overview");
+        },
+      },
+      {
+        id: "pause-current-agent-session",
+        label: "Pause Current Agent Session",
+        group: "Research",
+        icon: Command,
+        run: () => {
+          const state = useClyStore.getState();
+          if (state.selectedAgentSessionId)
+            state.pauseAgentSession(state.selectedAgentSessionId);
+        },
+      },
+      {
+        id: "stop-current-agent-session",
+        label: "Stop Current Agent Session",
+        group: "Research",
+        icon: Command,
+        run: () => {
+          const state = useClyStore.getState();
+          if (state.selectedAgentSessionId)
+            state.stopAgentSession(state.selectedAgentSessionId);
+        },
+      },
       {
         id: "new-claim",
         label: "New Claim",

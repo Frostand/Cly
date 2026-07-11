@@ -46,7 +46,7 @@ const groups: { label: string; items: NavigationItem[] }[] = [
         icon: Bot,
         count: (s) =>
           s.data.agentSessions.filter(
-            (x) => x.status === "Running" || x.status === "Waiting",
+            (x) => x.status === "running" || x.status === "waiting_approval",
           ).length,
       },
       {

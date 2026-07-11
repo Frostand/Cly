@@ -1,3 +1,4 @@
+import { createAgentSessionFixtures } from "../agent-sessions/fixtures";
 import type {
   AgentNode,
   ClyRepositoryData,
@@ -1331,38 +1332,7 @@ const coreData: ClyRepositoryData = {
       ],
     },
   ],
-  agentSessions: [
-    {
-      id: "session-01",
-      title: "Audit primary claim evidence",
-      preset: "Claim Audit",
-      status: "Running",
-      progress: 64,
-      startedAt: "08:12",
-      currentTask: "Reviewer is testing alternative explanations",
-      outputs: ["Evidence map", "3 reviewer risks", "Suggested baseline"],
-    },
-    {
-      id: "session-02",
-      title: "Plan compute-matched baseline",
-      preset: "Experiment Planning",
-      status: "Waiting",
-      progress: 38,
-      startedAt: "Yesterday",
-      currentTask: "Waiting for human approval of compute budget",
-      outputs: ["Draft configuration", "Budget estimate"],
-    },
-    {
-      id: "session-03",
-      title: "Review OOD notebook",
-      preset: "Notebook Cleanup",
-      status: "Complete",
-      progress: 100,
-      startedAt: "Jul 10",
-      currentTask: "Complete",
-      outputs: ["4 findings", "Cleanup plan", "Context pack"],
-    },
-  ],
+  agentSessions: createAgentSessionFixtures(),
   graphNodes: [
     {
       id: "question-01",
@@ -1811,6 +1781,28 @@ export const createFixtureRepository = (
         "The selected state simulates partial data and integration failures.",
       status: "warning",
     });
+    const session = data.agentSessions[0];
+    const failedAgent = session?.delegatedAgents[0];
+    if (session && failedAgent) {
+      failedAgent.status = "failed";
+      failedAgent.lastAction = "Process exited before returning a result";
+      failedAgent.currentResource = "Fixture runtime log · exit code 1";
+      failedAgent.transcript.push(
+        "The partial implementation result remains available for reassignment.",
+      );
+      session.risk =
+        "High · Worker Agent failed; partial output can be retried or reassigned";
+      session.messages.push({
+        id: "message-agent-failure",
+        type: "error",
+        author: failedAgent.name,
+        title: "Delegated Agent failed",
+        body: "The fixture process exited before handoff. Inspect logs, retry, or reassign the task; completed evidence remains attached.",
+        timestamp: "Just now",
+        agentId: failedAgent.id,
+        actions: ["Inspect logs", "Retry", "Reassign"],
+      });
+    }
   }
 
   return data;

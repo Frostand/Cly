@@ -1,9 +1,7 @@
 import {
   ArrowDown,
   ArrowUp,
-  Bot,
   Check,
-  ChevronRight,
   CircleDollarSign,
   Cloud,
   Code2,
@@ -18,14 +16,12 @@ import {
   Save,
   Shield,
   Trash2,
-  UserCheck,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useState } from "react";
 import {
   Badge,
   Button,
-  EmptyState,
   Metric,
   PageHeader,
   Panel,
@@ -37,161 +33,6 @@ import {
 import type { AgentNode, AgentPreset } from "../domain/types";
 import { mockServices } from "../services/mock-services";
 import { useClyStore } from "../store/cly-store";
-
-export function AgentSessionsScreen() {
-  const sessions = useClyStore((s) => s.data.agentSessions);
-  const presets = useClyStore((s) => s.data.agentPresets);
-  const selectedId = useClyStore((s) => s.selectedId);
-  const setSelected = useClyStore((s) => s.setSelected);
-  const setScreen = useClyStore((s) => s.setScreen);
-  const notify = useClyStore((s) => s.notify);
-  const [view, setView] = useState<"Active" | "History" | "Approvals">(
-    "Active",
-  );
-  const visible = sessions.filter(
-    (session) =>
-      view === "History" ||
-      (view === "Active"
-        ? session.status === "Running" || session.status === "Waiting"
-        : session.status === "Waiting"),
-  );
-  return (
-    <div className="cly-page">
-      <PageHeader
-        kicker="Workspace"
-        title="Agent Sessions"
-        description="Coordinate research tasks with explicit context, roles, progress, evidence outputs, and human approval gates."
-        actions={
-          <>
-            <Segmented
-              value={view}
-              options={["Active", "History", "Approvals"] as const}
-              onChange={setView}
-              label="Agent sessions view"
-            />
-            <Button onClick={() => setScreen("context")}>
-              Open Context Composer
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() =>
-                notify(
-                  "New session preview",
-                  "Choose a preset, context pack, and approval policy in Models & Agents.",
-                )
-              }
-            >
-              <Plus size={13} /> New session
-            </Button>
-          </>
-        }
-      />
-      <div className="cly-metric-row">
-        <Metric
-          label="Running"
-          value={sessions.filter((item) => item.status === "Running").length}
-        />
-        <Metric
-          label="Waiting approval"
-          value={sessions.filter((item) => item.status === "Waiting").length}
-        />
-        <Metric
-          label="Completed"
-          value={sessions.filter((item) => item.status === "Complete").length}
-        />
-        <Metric label="Saved presets" value={presets.length} />
-      </div>
-      <Section
-        title={
-          view === "History"
-            ? "Session history"
-            : view === "Approvals"
-              ? "Human approvals"
-              : "Active research work"
-        }
-        subtitle="Mock execution previews only · no external model calls"
-      >
-        {visible.length === 0 ? (
-          <EmptyState
-            title="No sessions in this view"
-            description="Start a fixture-backed agent session from a task preset or convert a Next Step into a session."
-          />
-        ) : (
-          <div className="cly-stack">
-            {visible.map((session) => (
-              <Panel
-                key={session.id}
-                data-selected={selectedId === session.id}
-                onClick={() => setSelected(session.id)}
-                style={{ cursor: "pointer" }}
-              >
-                <div className="cly-panel-body">
-                  <div className="cly-row-between">
-                    <div className="cly-row">
-                      <Bot size={15} />
-                      <strong>{session.title}</strong>
-                      <Badge tone={toneForStatus(session.status)}>
-                        {session.status}
-                      </Badge>
-                    </div>
-                    <span className="cly-faint cly-small">
-                      Started {session.startedAt}
-                    </span>
-                  </div>
-                  <div className="cly-row-between" style={{ marginTop: 9 }}>
-                    <span className="cly-muted cly-small">
-                      {session.currentTask}
-                    </span>
-                    <strong>{session.progress}%</strong>
-                  </div>
-                  <div className="cly-progress" style={{ marginTop: 7 }}>
-                    <span style={{ width: `${session.progress}%` }} />
-                  </div>
-                  <div className="cly-row-between" style={{ marginTop: 11 }}>
-                    <div className="cly-row">
-                      <Badge>{session.preset}</Badge>
-                      {session.outputs.map((output) => (
-                        <span className="cly-faint cly-small" key={output}>
-                          · {output}
-                        </span>
-                      ))}
-                    </div>
-                    {session.status === "Waiting" ? (
-                      <Button
-                        variant="primary"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          notify(
-                            "Approval recorded",
-                            "The simulated session may proceed with the approved compute budget.",
-                          );
-                        }}
-                      >
-                        <UserCheck size={13} /> Review approval
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          notify(
-                            "Session details opened",
-                            "Task plan, context manifest, event log, and evidence outputs are visible in the inspector.",
-                          );
-                        }}
-                      >
-                        Open session <ChevronRight size={13} />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </Panel>
-            ))}
-          </div>
-        )}
-      </Section>
-    </div>
-  );
-}
 
 const providerIcon = (name: string) =>
   name.includes("Git")
