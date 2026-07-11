@@ -1,3 +1,5 @@
+import type { AgentSession } from "../agent-sessions/types";
+
 export type ScreenId =
   | "overview"
   | "agents"
@@ -330,17 +332,6 @@ export interface AgentPreset {
   description: string;
   usage: "Low" | "Medium" | "High" | "Very High";
   nodes: AgentNode[];
-}
-
-export interface AgentSession {
-  id: string;
-  title: string;
-  preset: string;
-  status: "Running" | "Waiting" | "Complete" | "Failed";
-  progress: number;
-  startedAt: string;
-  currentTask: string;
-  outputs: string[];
 }
 
 export interface GraphNode {

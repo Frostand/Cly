@@ -72,7 +72,7 @@ export function configureApplicationMenu(app, appName) {
         },
         {
           label: "Switch Project…",
-          accelerator: "CommandOrControl+Shift+O",
+          accelerator: "CommandOrControl+Alt+O",
           click: command("project-switcher"),
         },
         { type: "separator" },
@@ -124,8 +124,51 @@ export function configureApplicationMenu(app, appName) {
       label: "Agents",
       submenu: [
         { label: "New Agent Session", click: command("new-agent-session") },
+        {
+          label: "Show Agent Sessions Overview",
+          accelerator: "CommandOrControl+Shift+O",
+          click: command("agent-sessions-overview"),
+        },
+        {
+          label: "Show Agent Sessions Chat",
+          accelerator: "CommandOrControl+Shift+C",
+          click: command("agent-sessions-chat"),
+        },
+        { label: "View Approvals", click: command("agent-approvals") },
+        { type: "separator" },
         { label: "Open Context Composer", click: command("context-composer") },
         { label: "Configure Agent Plan", click: command("configure-agents") },
+        { type: "separator" },
+        {
+          label: "Open Browser Tab",
+          accelerator: "CommandOrControl+Alt+B",
+          click: command("agent-tab-browser"),
+        },
+        {
+          label: "Open Terminal Tab",
+          accelerator: "CommandOrControl+Alt+T",
+          click: command("agent-tab-terminal"),
+        },
+        {
+          label: "Open Diff Tab",
+          accelerator: "CommandOrControl+Alt+D",
+          click: command("agent-tab-diff"),
+        },
+        {
+          label: "Open Agents Tab",
+          accelerator: "CommandOrControl+Alt+A",
+          click: command("agent-tab-agents"),
+        },
+        {
+          label: "Open Live Files Tab",
+          accelerator: "CommandOrControl+Alt+F",
+          click: command("agent-tab-live-files"),
+        },
+        {
+          label: "Toggle Workbench",
+          accelerator: "CommandOrControl+Alt+W",
+          click: command("agent-toggle-workbench"),
+        },
         { type: "separator" },
         { label: "Run Claim Audit", click: command("claim-audit") },
         { label: "Run Code Review", click: command("code-review") },

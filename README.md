@@ -9,7 +9,10 @@ Cly is built on the open-source [Dream IDE](https://github.com/dreamide/dream). 
 Cly now includes a complete UI/UX research-cockpit shell with shared fixtures,
 mock service boundaries, all primary research and integrity workspaces, desktop
 menus, keyboard navigation, automated workflows, and responsive visual
-fixtures. Real research persistence, scanners, model execution, external
+fixtures. Agent Sessions includes a complete two-mode Overview and Orchestrator
+Chat workspace with full delegated-agent fixtures and a Browser, Terminal,
+Code Diff, Agents, and Live Files workbench. Real research persistence,
+scanners, model execution, external
 integrations, and orchestration remain Phase 2 work. Do not use the current
 fixture-backed build as a source of truth for production research data.
 
@@ -41,6 +44,8 @@ pnpm vite:build
 - [UI map](docs/UI_MAP.md)
 - [Feature matrix](docs/FEATURE_MATRIX.md)
 - [UI testing](docs/UI_TESTING.md)
+- [Agent Sessions redesign](docs/AGENT_SESSIONS_REDESIGN.md)
+- [Agent Sessions completion report](docs/AGENT_SESSIONS_COMPLETION_REPORT.md)
 - [Phase 2 backend plan](docs/PHASE_2_BACKEND_PLAN.md)
 - [Roadmap](docs/roadmap.md)
 - [Upstream synchronization](docs/upstream-sync.md)
