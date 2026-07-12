@@ -25,7 +25,9 @@
 - [ ] Manual verification completed
 - [ ] `pnpm lint` passes
 - [ ] `pnpm typecheck` passes
-- [ ] `pnpm test --run` passes
+- [ ] `pnpm test:research` passes for research-domain changes
+- [ ] `pnpm test --run` passes when broader application behavior changes
+- [ ] `pnpm licenses:check` passes when dependencies change
 - [ ] `pnpm vite:build` passes
 
 ## Screenshots or recording

@@ -105,6 +105,7 @@ pnpm vite:build
 ### Infrastructure
 - [Dream UI audit](docs/DREAM_UI_AUDIT.md) (current implementation component)
 - [Phase 0 assessment](docs/phase-0/)
+- [Delivery workflow](docs/DELIVERY_WORKFLOW.md)
 
 ## License
 

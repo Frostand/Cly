@@ -26,11 +26,13 @@
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
+    "test:research": "vitest run src/lib/cly",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "licenses:check": "node scripts/check-production-licenses.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
