@@ -12,6 +12,7 @@
  */
 
 import type { SourcePayload } from "../../research/domain/research-types";
+import type { LiteratureSearchResult } from "../domain/literature-search";
 import type { Source } from "../domain/types";
 import type { SourceService } from "./interfaces";
 
@@ -56,9 +57,24 @@ interface ResearchRepo {
     title: string;
     description?: string;
     payload?: Record<string, unknown>;
-  }): { id: string; title: string; description: string; payload: Record<string, unknown>; createdAt: string; updatedAt: string };
+  }): {
+    id: string;
+    title: string;
+    description: string;
+    payload: Record<string, unknown>;
+    createdAt: string;
+    updatedAt: string;
+  };
   listProject(projectId: string): {
-    objects: Array<{ id: string; type: string; title: string; description: string; payload: Record<string, unknown>; createdAt: string; updatedAt: string }>;
+    objects: Array<{
+      id: string;
+      type: string;
+      title: string;
+      description: string;
+      payload: Record<string, unknown>;
+      createdAt: string;
+      updatedAt: string;
+    }>;
   };
 }
 
@@ -73,6 +89,30 @@ export function createRealSourceService(
         type: "source",
         title: input.title,
         payload: { kind: "source" } satisfies SourcePayload,
+      });
+      return toClySource(obj);
+    },
+
+    async createFromSearch(result: LiteratureSearchResult) {
+      const obj = repository.createObject({
+        projectId,
+        type: "source",
+        title: result.source.title,
+        description: result.source.summary,
+        payload: {
+          kind: "source",
+          authors: result.source.authors
+            .split(",")
+            .map((author) => author.trim())
+            .filter(Boolean),
+          year: result.source.year,
+          provider: result.source.provider ?? "local-fixture",
+          query: result.query,
+          rankingScore: result.score,
+          rankingMethod: result.method,
+          rankingExplanation: result.explanation,
+          retrievedAt: result.retrievedAt,
+        } satisfies SourcePayload,
       });
       return toClySource(obj);
     },

@@ -14,6 +14,7 @@ import type {
   WorkbenchTab,
   WorkbenchTabType,
 } from "../agent-sessions/types";
+import { findDuplicateSource } from "../domain/literature-search";
 import type {
   Relationship,
   ResearchObject,
@@ -247,12 +248,16 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
     title: object.title,
     authors:
       payload.authors?.join(", ") || payload.citation || "Unknown authors",
-    year: new Date(object.createdAt).getFullYear(),
+    year: payload.year ?? new Date(object.createdAt).getFullYear(),
     type: "Paper",
     status: "Needs metadata",
     relevance: "Medium",
     confidence: 0,
     summary: object.description || "Awaiting extraction.",
+    url: payload.url,
+    doi: payload.doi,
+    providerId: payload.providerId,
+    provider: payload.provider,
     methods: [],
     findings: [],
     limitations: [],
@@ -262,6 +267,17 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
     inNotebookBundle: false,
     path: `sources/${object.id}`,
     updatedAt: object.updatedAt,
+    provenance:
+      payload.provider && payload.query && payload.rankingExplanation
+        ? {
+            provider: payload.provider,
+            query: payload.query,
+            score: payload.rankingScore ?? 0,
+            method: payload.rankingMethod ?? "unknown",
+            explanation: payload.rankingExplanation,
+            retrievedAt: payload.retrievedAt ?? object.createdAt,
+          }
+        : undefined,
   };
 };
 
@@ -522,6 +538,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
       data: { ...state.data, claims: [claim, ...state.data.claims] },
     })),
   addSource: async (source) => {
+    const duplicate = findDuplicateSource(source, get().data.sources);
+    if (duplicate) return duplicate;
     try {
       const object = await apiClient.createObject(get().activeProjectId, {
         type: "source",
@@ -533,6 +551,17 @@ export const useClyStore = create<ClyState>((set, get) => ({
             .split(",")
             .map((author) => author.trim())
             .filter(Boolean),
+          year: source.year,
+          url: source.url,
+          doi: source.doi,
+          providerId: source.providerId,
+          abstract: source.summary,
+          provider: source.provenance?.provider,
+          query: source.provenance?.query,
+          rankingScore: source.provenance?.score,
+          rankingMethod: source.provenance?.method,
+          rankingExplanation: source.provenance?.explanation,
+          retrievedAt: source.provenance?.retrievedAt,
         },
       });
       const persistedSource = sourceFromResearchObject(object);

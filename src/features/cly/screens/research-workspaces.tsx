@@ -43,8 +43,14 @@ import {
   ExecutionStrip,
   RelationshipChain,
 } from "../components/visuals";
+import {
+  type LiteratureSearchResult,
+  rankLiterature,
+  sourceFromLiteraturePaper,
+} from "../domain/literature-search";
 import { filterAndSortClaims } from "../domain/logic";
 import type { ClaimStatus, Source } from "../domain/types";
+import { apiClient } from "../services/api-client";
 import { mockServices } from "../services/mock-services";
 import { claimStatusTone, useClyStore } from "../store/cly-store";
 
@@ -377,6 +383,7 @@ const literatureViews = [
 ] as const;
 
 export function LiteratureScreen() {
+  const activeProjectId = useClyStore((s) => s.activeProjectId);
   const sources = useClyStore((s) => s.data.sources);
   const claims = useClyStore((s) => s.data.claims);
   const setSelected = useClyStore((s) => s.setSelected);
@@ -387,6 +394,12 @@ export function LiteratureScreen() {
   const [importedAnswers, setImportedAnswers] = useState<string[]>([
     "The cited literature supports regime-stratified coverage reporting but does not establish compound-shift reliability.",
   ]);
+  const [searchResults, setSearchResults] = useState<LiteratureSearchResult[]>(
+    [],
+  );
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [savedResultIds, setSavedResultIds] = useState<string[]>([]);
   const visible = sources.filter(
     (source) =>
       !query ||
@@ -419,6 +432,39 @@ export function LiteratureScreen() {
               placeholder="Search literature matrix…"
             />
             <Button
+              variant="primary"
+              disabled={searching || !query.trim()}
+              onClick={async () => {
+                setSearching(true);
+                setSearchError(null);
+                try {
+                  const response = await apiClient.searchLiterature(
+                    activeProjectId,
+                    query,
+                  );
+                  setSearchResults(
+                    rankLiterature(
+                      query,
+                      response.papers.map(sourceFromLiteraturePaper),
+                    ),
+                  );
+                } catch (error) {
+                  setSearchError(
+                    error instanceof Error
+                      ? error.message
+                      : "Literature retrieval failed. No records were changed.",
+                  );
+                  setSearching(false);
+                  setSearchResults([]);
+                  return;
+                }
+                setSearching(false);
+              }}
+            >
+              <ScanSearch size={13} />{" "}
+              {searching ? "Searching…" : "Search papers"}
+            </Button>
+            <Button
               onClick={() =>
                 notify(
                   "Column chooser",
@@ -449,6 +495,73 @@ export function LiteratureScreen() {
               <Sparkles size={13} /> Related-work outline
             </Button>
           </div>
+          {searchError ? (
+            <div
+              className="cly-callout"
+              role="alert"
+              style={{ marginBottom: 12 }}
+            >
+              <strong>Search unavailable.</strong> {searchError}
+            </div>
+          ) : null}
+          {!searching &&
+          query.trim() &&
+          !searchError &&
+          searchResults.length === 0 ? (
+            <EmptyState
+              title="No matching papers"
+              description="Try a broader topic or inspect the provider status."
+            />
+          ) : null}
+          {searchResults.length > 0 ? (
+            <Panel className="cly-panel-body" style={{ marginBottom: 12 }}>
+              <div className="cly-panel-header">
+                <strong>Ranked literature results</strong>
+                <Badge>{searchResults.length} matches · local fixture</Badge>
+              </div>
+              <div className="cly-stack">
+                {searchResults.slice(0, 8).map((result) => {
+                  const saved = savedResultIds.includes(result.source.id);
+                  return (
+                    <div
+                      className="cly-row-between"
+                      key={result.source.id}
+                      style={{ gap: 12 }}
+                    >
+                      <div>
+                        <strong>{result.source.title}</strong>
+                        <div className="cly-muted cly-small">
+                          Score {(result.score * 100).toFixed(0)}% ·{" "}
+                          {result.method} · {result.explanation}
+                        </div>
+                      </div>
+                      <Button
+                        disabled={saved}
+                        onClick={() =>
+                          void mockServices.sources
+                            .createFromSearch(result)
+                            .then((source) => {
+                              setSavedResultIds((ids) => [
+                                ...ids,
+                                result.source.id,
+                              ]);
+                              setSelected(source.id);
+                              notify(
+                                "Paper saved",
+                                "Source record and literature matrix row created with ranking provenance.",
+                              );
+                            })
+                        }
+                      >
+                        {saved ? <Check size={13} /> : <Plus size={13} />}{" "}
+                        {saved ? "Saved" : "Save to project"}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </Panel>
+          ) : null}
           <div className="cly-table-wrap">
             <table className="cly-table" style={{ minWidth: 1500 }}>
               <thead>

@@ -1,3 +1,4 @@
+import type { LiteratureSearchResult } from "../domain/literature-search";
 import type {
   AgentPreset,
   Claim,
@@ -38,6 +39,7 @@ export interface ExperimentService {
 
 export interface SourceService {
   create(input: Pick<Source, "title" | "type">): Promise<Source>;
+  createFromSearch(result: LiteratureSearchResult): Promise<Source>;
   addToNotebookBundle(id: string): Promise<void>;
 }
 

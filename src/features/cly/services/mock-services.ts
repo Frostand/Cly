@@ -1,3 +1,4 @@
+import type { LiteratureSearchResult } from "../domain/literature-search";
 import type {
   Claim,
   Experiment,
@@ -117,6 +118,29 @@ export const mockServices: ClyServices = {
       };
       const persistedSource = await useClyStore.getState().addSource(source);
       return persistedSource ?? source;
+    },
+    async createFromSearch(result: LiteratureSearchResult) {
+      const source = await mockServices.sources.create({
+        title: result.source.title,
+        type: result.source.type,
+      });
+      useClyStore.getState().updateSource(source.id, {
+        ...result.source,
+        id: source.id,
+        provenance: {
+          provider: result.source.provider ?? "local-fixture",
+          query: result.query,
+          score: result.score,
+          method: result.method,
+          explanation: result.explanation,
+          retrievedAt: result.retrievedAt,
+        },
+      });
+      return (
+        useClyStore
+          .getState()
+          .data.sources.find((item) => item.id === source.id) ?? source
+      );
     },
     async addToNotebookBundle(sourceId) {
       useClyStore.getState().updateSource(sourceId, { inNotebookBundle: true });

@@ -12,6 +12,7 @@ import { randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { registerChatRoutes } from "./chat-routes.js";
+import { registerLiteratureRoutes } from "./literature/routes.js";
 import { registerProjectGitRoutes } from "./project-git-routes.js";
 import { registerProviderRoutes } from "./provider-routes.js";
 import { registerResearchRoutes } from "./research/routes.js";
@@ -49,6 +50,7 @@ function createApiApp(apiToken) {
   registerToolApprovalRoutes(guardedApp);
   registerProviderRoutes(guardedApp);
   registerChatRoutes(guardedApp);
+  registerLiteratureRoutes(guardedApp);
   registerProjectGitRoutes(guardedApp);
   registerResearchRoutes(guardedApp);
 

@@ -34,6 +34,35 @@ describe("research domain", () => {
     ).toThrow("A source requires a URL or citation");
   });
 
+  it("preserves validated literature ranking provenance", () => {
+    const source = createResearchObject(
+      {
+        id: "source-ranked",
+        projectId: "project-1",
+        title: "Ranked paper",
+        payload: {
+          kind: "source",
+          url: "https://example.com/ranked",
+          provider: "semantic-scholar",
+          providerId: "paper-123",
+          query: "robust calibration",
+          rankingScore: 0.91,
+          rankingMethod: "keyword_overlap_v1",
+          rankingExplanation: "Matched title and abstract signals.",
+          retrievedAt: "2026-07-12T12:00:00.000Z",
+        },
+      },
+      now,
+    );
+
+    expect(source.payload).toMatchObject({
+      providerId: "paper-123",
+      rankingScore: 0.91,
+      rankingMethod: "keyword_overlap_v1",
+      query: "robust calibration",
+    });
+  });
+
   it("keeps evidence relationships directed", () => {
     const relationship = createRelationship(
       {

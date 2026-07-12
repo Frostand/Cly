@@ -98,7 +98,17 @@ describe("Cly UI store", () => {
                 type: "source",
                 title: "Persisted source",
                 description: "Stored in SQLite",
-                payload: { kind: "source", authors: [] },
+                payload: {
+                  kind: "source",
+                  authors: [],
+                  url: "https://example.test/persisted",
+                  providerId: "paper-123",
+                  provider: "semantic-scholar",
+                  query: "robust calibration",
+                  rankingScore: 0.91,
+                  rankingExplanation: "Matched title and abstract signals.",
+                  retrievedAt: "2026-07-11T00:00:00.000Z",
+                },
                 createdAt: "2026-07-11T00:00:00.000Z",
                 updatedAt: "2026-07-11T00:00:00.000Z",
               },
@@ -146,7 +156,17 @@ describe("Cly UI store", () => {
 
     const data = useClyStore.getState().data;
     expect(data.sources).toMatchObject([
-      { id: "sqlite-source", authors: "Unknown authors" },
+      {
+        id: "sqlite-source",
+        authors: "Unknown authors",
+        providerId: "paper-123",
+        url: "https://example.test/persisted",
+        provenance: {
+          provider: "semantic-scholar",
+          query: "robust calibration",
+          score: 0.91,
+        },
+      },
     ]);
     expect(data.claims).toMatchObject([
       {
@@ -204,6 +224,13 @@ describe("Cly UI store", () => {
       "/api/projects/project-cly/research/objects",
       expect.objectContaining({ method: "POST" }),
     );
+    const persistedBody = JSON.parse(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
+    );
+    expect(persistedBody.payload).toMatchObject({
+      abstract: source.summary,
+      year: source.year,
+    });
 
     await expect(useClyStore.getState().addSource(source)).resolves.toBeNull();
 

@@ -102,4 +102,35 @@ describe("research repository", () => {
       }),
     ).toThrow("Both research objects must belong to the project");
   });
+
+  it("records literature retrieval and ranking metadata in provenance", () => {
+    const repository = createResearchRepository(database);
+    repository.createObject({
+      id: "source-ranked",
+      projectId: "project-1",
+      type: "source",
+      title: "Ranked paper",
+      payload: {
+        kind: "source",
+        url: "https://example.test/ranked",
+        provider: "semantic-scholar",
+        providerId: "paper-123",
+        query: "robust calibration",
+        rankingMethod: "keyword_overlap_v1",
+        rankingScore: 0.91,
+        retrievedAt: "2026-07-12T12:00:00.000Z",
+      },
+    });
+
+    const row = database
+      .prepare("SELECT metadata FROM provenance_events WHERE object_id = ?")
+      .get("source-ranked") as { metadata: string };
+    expect(JSON.parse(row.metadata)).toMatchObject({
+      provider: "semantic-scholar",
+      providerId: "paper-123",
+      query: "robust calibration",
+      rankingMethod: "keyword_overlap_v1",
+      rankingScore: 0.91,
+    });
+  });
 });

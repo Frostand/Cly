@@ -1,3 +1,4 @@
+import type { LiteraturePaper } from "../domain/literature-search";
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
 
 export interface ResearchData {
@@ -57,5 +58,15 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify(input),
     });
+  },
+
+  searchLiterature(projectId: string, query: string, limit = 25) {
+    return request<{ papers: LiteraturePaper[]; provider: string }>(
+      `/api/projects/${encodeURIComponent(projectId)}/literature/search`,
+      {
+        method: "POST",
+        body: JSON.stringify({ query, limit }),
+      },
+    );
   },
 };

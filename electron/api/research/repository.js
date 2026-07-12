@@ -73,14 +73,24 @@ export function createResearchRepository(database) {
     }
   };
 
-  const appendProvenance = ({ action, objectId, projectId }, now) => {
+  const appendProvenance = (
+    { action, metadata = {}, objectId, projectId },
+    now,
+  ) => {
     database
       .prepare(
         `INSERT INTO provenance_events
           (id, project_id, object_id, action, actor_type, actor_id, metadata, created_at)
-         VALUES (?, ?, ?, ?, 'human', 'local-user', '{}', ?)`,
+         VALUES (?, ?, ?, ?, 'human', 'local-user', ?, ?)`,
       )
-      .run(randomUUID(), projectId, objectId ?? null, action, now);
+      .run(
+        randomUUID(),
+        projectId,
+        objectId ?? null,
+        action,
+        JSON.stringify(metadata),
+        now,
+      );
   };
 
   return {
@@ -112,6 +122,17 @@ export function createResearchRepository(database) {
             action: `${parsed.type}.created`,
             objectId: id,
             projectId: parsed.projectId,
+            metadata:
+              parsed.type === "source"
+                ? {
+                    provider: parsed.payload.provider,
+                    providerId: parsed.payload.providerId,
+                    query: parsed.payload.query,
+                    rankingMethod: parsed.payload.rankingMethod,
+                    rankingScore: parsed.payload.rankingScore,
+                    retrievedAt: parsed.payload.retrievedAt,
+                  }
+                : {},
           },
           now,
         );

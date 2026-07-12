@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f8f5;
+  --foreground: #20251f;
+  --muted: #667064;
+  --line: #dce1d8;
+  --panel: #ffffff;
+  --panel-strong: #eef4ed;
+  --accent: #0f7b6c;
+  --accent-strong: #095c51;
+  --warning: #a65f00;
+  --danger: #b42318;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(15, 123, 108, 0.28);
+  outline-offset: 2px;
+}
+
+.paper-detail-backdrop {
+  animation: paper-detail-backdrop-in 160ms ease-out;
+}
+
+.paper-detail-panel {
+  animation: paper-detail-slide-in 180ms ease-out;
+}
+
+@keyframes paper-detail-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes paper-detail-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paper-detail-backdrop,
+  .paper-detail-panel {
+    animation: none;
+  }
+}
+
+.paper-table-sort-indicator {
+  color: var(--accent);
+  font-size: 0.75rem;
+  line-height: 1;
+}

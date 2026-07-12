@@ -19,5 +19,5 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "**/*.mts", "src/vite-env.d.ts"],
-  "exclude": ["node_modules", "dist", "electron"]
+  "exclude": ["node_modules", "dist", "electron", "docs/migrations/knowit"]
 }

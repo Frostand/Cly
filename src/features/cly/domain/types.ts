@@ -77,6 +77,10 @@ export interface Source {
   relevance: "Core" | "High" | "Medium" | "Low";
   confidence: number;
   summary: string;
+  url?: string;
+  doi?: string;
+  providerId?: string;
+  provider?: string;
   methods: string[];
   findings: string[];
   limitations: string[];
@@ -86,6 +90,14 @@ export interface Source {
   inNotebookBundle: boolean;
   path: string;
   updatedAt: string;
+  provenance?: {
+    provider: string;
+    query: string;
+    score: number;
+    method: string;
+    explanation: string;
+    retrievedAt: string;
+  };
 }
 
 export type ClaimStatus =

@@ -21,6 +21,15 @@ export interface SourcePayload {
   citation?: string;
   doi?: string;
   url?: string;
+  providerId?: string;
+  abstract?: string;
+  year?: number;
+  provider?: string;
+  query?: string;
+  rankingScore?: number;
+  rankingMethod?: string;
+  rankingExplanation?: string;
+  retrievedAt?: string;
 }
 
 export interface ClaimPayload {
