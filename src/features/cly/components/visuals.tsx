@@ -1,5 +1,10 @@
 import { ArrowRight, Check, CircleAlert } from "lucide-react";
-import { MotionConfig, motion, useReducedMotion } from "motion/react";
+import {
+  AnimatePresence,
+  MotionConfig,
+  motion,
+  useReducedMotion,
+} from "motion/react";
 import { type ReactNode, useId } from "react";
 import { clyMotion, reducedFade } from "../design-system/motion";
 
@@ -32,15 +37,18 @@ export function RouteTransition({
     return <div className="cly-route-transition">{children}</div>;
   }
   return (
-    <motion.div
-      className="cly-route-transition"
-      key={route}
-      initial={states.initial}
-      animate={states.animate}
-      transition={reduced ? clyMotion.immediate : clyMotion.small}
-    >
-      {children}
-    </motion.div>
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        className="cly-route-transition"
+        key={route}
+        initial={states.initial}
+        animate={states.animate}
+        exit={states.exit}
+        transition={reduced ? clyMotion.immediate : clyMotion.panel}
+      >
+        {children}
+      </motion.div>
+    </AnimatePresence>
   );
 }
 

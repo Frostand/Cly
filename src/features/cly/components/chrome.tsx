@@ -9,7 +9,6 @@ import {
   FilePlus2,
   HardDrive,
   Info,
-  MoreHorizontal,
   PanelRight,
   Plus,
   Search,
@@ -73,7 +72,6 @@ const fixtureModes: { id: FixtureMode; label: string; description: string }[] =
   ];
 
 export function Titlebar() {
-  const overflowRef = useRef<HTMLDetailsElement>(null);
   const project = useClyStore(
     (s) =>
       s.data.projects.find((item) => item.id === s.activeProjectId) ??
@@ -90,30 +88,6 @@ export function Titlebar() {
     (s) =>
       s.data.agentSessions.filter((item) => item.status === "running").length,
   );
-
-  useEffect(() => {
-    const closeOverflow = (event: KeyboardEvent | PointerEvent) => {
-      const details = overflowRef.current;
-      if (!details?.open) return;
-      if (event instanceof KeyboardEvent && event.key === "Escape") {
-        details.open = false;
-        return;
-      }
-      if (
-        event instanceof PointerEvent &&
-        event.target instanceof Node &&
-        !details.contains(event.target)
-      ) {
-        details.open = false;
-      }
-    };
-    window.addEventListener("keydown", closeOverflow);
-    window.addEventListener("pointerdown", closeOverflow);
-    return () => {
-      window.removeEventListener("keydown", closeOverflow);
-      window.removeEventListener("pointerdown", closeOverflow);
-    };
-  }, []);
 
   const createObject = async () => {
     const screen = useClyStore.getState().activeScreen;
@@ -178,7 +152,9 @@ export function Titlebar() {
       </button>
       <div className="cly-title-actions cly-no-drag">
         {project ? (
-          <span className="cly-topbar-context">{project.phase}</span>
+          <Badge tone="info" square>
+            {project.phase}
+          </Badge>
         ) : null}
         <ClyTooltip label="Agent activity">
           <Button
@@ -191,6 +167,36 @@ export function Titlebar() {
             {activeSessions ? (
               <span className="cly-sr-only">{activeSessions} active</span>
             ) : null}
+          </Button>
+        </ClyTooltip>
+        <ClyTooltip label="Local-first status">
+          <Button
+            variant="ghost"
+            iconOnly
+            aria-label="Local and cloud status"
+            onClick={() =>
+              notify(
+                "Local-first status",
+                "Research metadata and fixtures remain on this device. No external requests are made in UI prototype mode.",
+              )
+            }
+          >
+            <HardDrive size={14} />
+          </Button>
+        </ClyTooltip>
+        <ClyTooltip label="Notifications">
+          <Button
+            variant="ghost"
+            iconOnly
+            aria-label="Notification center"
+            onClick={() =>
+              notify(
+                "No unread notifications",
+                "Agent and audit events remain available in the activity drawer.",
+              )
+            }
+          >
+            <Bell size={14} />
           </Button>
         </ClyTooltip>
         <Button
@@ -211,65 +217,33 @@ export function Titlebar() {
         >
           <Plus size={14} /> New
         </Button>
-        <Button
-          variant="ghost"
-          iconOnly
-          title="Toggle inspector"
-          aria-label="Toggle inspector"
-          onClick={() => {
-            if (selectedId) toggleInspector();
-            else
-              notify(
-                "Nothing selected",
-                "Select a source, claim, run, notebook, finding, or other research object to open its inspector.",
-              );
-          }}
-        >
-          <PanelRight size={14} />
-        </Button>
-        <details className="cly-title-overflow" ref={overflowRef}>
-          <summary aria-label="More application actions" aria-haspopup="menu">
-            <MoreHorizontal size={14} />
-          </summary>
-          <div
-            role="menu"
-            onClickCapture={() => {
-              if (overflowRef.current) overflowRef.current.open = false;
+        <ClyTooltip label="Toggle inspector">
+          <Button
+            variant="ghost"
+            iconOnly
+            aria-label="Toggle inspector"
+            onClick={() => {
+              if (selectedId) toggleInspector();
+              else
+                notify(
+                  "Nothing selected",
+                  "Select a source, claim, run, notebook, finding, or other research object to open its inspector.",
+                );
             }}
           >
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() =>
-                notify(
-                  "Local-first status",
-                  "Research metadata and fixtures remain on this device. No external requests are made in UI prototype mode.",
-                )
-              }
-            >
-              <HardDrive size={13} /> Local status
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() =>
-                notify(
-                  "No unread notifications",
-                  "Agent and audit events remain available in the activity drawer.",
-                )
-              }
-            >
-              <Bell size={13} /> Notifications
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => setScreen("settings")}
-            >
-              <Settings size={13} /> Settings
-            </button>
-          </div>
-        </details>
+            <PanelRight size={14} />
+          </Button>
+        </ClyTooltip>
+        <ClyTooltip label="Settings">
+          <Button
+            variant="ghost"
+            iconOnly
+            aria-label="Settings"
+            onClick={() => setScreen("settings")}
+          >
+            <Settings size={14} />
+          </Button>
+        </ClyTooltip>
       </div>
       <ProjectSwitcherPopover />
       <FixtureSwitcherPopover />
