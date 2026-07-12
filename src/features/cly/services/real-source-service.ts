@@ -88,7 +88,10 @@ export function createRealSourceService(
         projectId,
         type: "source",
         title: input.title,
-        payload: { kind: "source" } satisfies SourcePayload,
+        payload: {
+          kind: "source",
+          status: "placeholder",
+        } satisfies SourcePayload,
       });
       return toClySource(obj);
     },
@@ -101,11 +104,15 @@ export function createRealSourceService(
         description: result.source.summary,
         payload: {
           kind: "source",
+          status: "resolved",
           authors: result.source.authors
             .split(",")
             .map((author) => author.trim())
             .filter(Boolean),
           year: result.source.year,
+          url: result.source.url,
+          doi: result.source.doi,
+          providerId: result.source.providerId,
           provider: result.source.provider ?? "local-fixture",
           query: result.query,
           rankingScore: result.score,

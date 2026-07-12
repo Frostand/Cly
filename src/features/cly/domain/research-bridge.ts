@@ -23,10 +23,15 @@ export {
   relationshipInputSchema,
 } from "../../research/domain/relationship";
 export {
+  type Artifact,
+  type Claim,
   createResearchObject,
+  type Experiment,
   type ResearchObject,
   type ResearchObjectInput,
+  type Run,
   researchObjectInputSchema,
+  type Source,
 } from "../../research/domain/research-object";
 export {
   type ArtifactPayload,
