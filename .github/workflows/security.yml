@@ -20,10 +20,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: pnpm/action-setup@v4
         with:
-          fail-on-severity: moderate
-          deny-licenses: AGPL-1.0, AGPL-3.0, GPL-2.0, GPL-3.0
+          version: 11.12.0
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=moderate
 
   production-licenses:
     name: production-licenses
