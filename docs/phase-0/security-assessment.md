@@ -19,10 +19,12 @@
 
 ## Required pre-beta gates
 
-- Threat model the main/preload/API/agent boundaries.
+- Threat model the Electron main/preload/IPC and embedded-terminal boundaries;
+  these are outside the local-service security model.
+- Implement and verify the applicable P0 findings in the
+  [local service security model](../LOCAL_SERVICE_SECURITY_MODEL.md).
 - Add tests for IPC/API schema rejection and project isolation.
 - Add command approval and immutable provenance events.
 - Add dependency, secret, and release-artifact scanning.
 - Sign and notarize distributed binaries.
 - Document data deletion, export, backup, and credential revocation.
-

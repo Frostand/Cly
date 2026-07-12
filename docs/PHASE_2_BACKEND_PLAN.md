@@ -2,6 +2,12 @@
 
 ## Recommended order
 
+The authentication, credential, context-approval, repository-permission,
+execution, imported-content, and provenance gates in
+[Local service security model](LOCAL_SERVICE_SECURITY_MODEL.md) apply to every
+slice below. An external research execution adapter cannot ship until its
+applicable P0 gates pass.
+
 1. **Project-scoped repository and migration**: persist the UI domain model in normalized SQLite tables with provenance events.
 2. **Source import**: safe file/URL/BibTeX ingestion, hashes, metadata edits, duplicate detection, and extraction jobs.
 3. **Claim/evidence graph**: source, experiment, run, notebook, code, artifact, decision, and contradiction relationships.
