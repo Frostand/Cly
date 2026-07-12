@@ -1,36 +1,22 @@
-# KnowIT literature migration source
+# KnowIT → Cly migration archive
 
-This directory is a temporary, isolated source snapshot from `/Users/al1234/Documents/KnowIT!` for CLY-40.
+KnowIT's useful literature workflow has been rewritten into Cly's native Electron, React, and SQLite architecture on `codex/cly-40-knowit`.
 
-It is kept under the Cly literature feature so the migration can happen incrementally:
+This directory now retains product requirements and design references only. The copied FastAPI and Next.js runtimes were removed after parity review because Cly must not ship or maintain a second application runtime.
 
-- `backend/` contains the original FastAPI models, paper sources, ranking, extraction, and pipeline code.
-- `frontend/` contains the original Next.js literature UI.
-- `docs/` contains the original product and feature specifications.
+Implemented in Cly:
 
-The snapshot intentionally excludes Git metadata, virtual environments, dependency folders, generated Next.js/Python caches, and local database data. The Python and Next.js code is reference material during the migration; runtime ownership remains with Cly's Electron/React research architecture.
+- project-scoped arXiv and Semantic Scholar discovery;
+- normalized paper metadata, provider error mapping, fallback, and deduplication;
+- keyword ranking, replaceable semantic-ranker contract, and Reciprocal Rank Fusion;
+- native Literature Workspace results, status states, and save actions;
+- Source, Literature Matrix, Claim, and Research Graph integration;
+- retrieval, ranking, relationship, and enrichment provenance;
+- explicit deterministic structured-note enrichment and non-mutating theme previews.
 
-Migration order:
+Retained references:
 
-1. Port paper/source contracts into `src/features/research/domain/`.
-2. Port ranking and provider boundaries into Cly services with deterministic fixtures.
-3. Port the useful literature UI into `src/features/cly/`.
-4. Remove this snapshot once the migrated implementation has parity and tests.
-
-## CLY-40 migration status
-
-Implemented on `codex/cly-40-knowit`:
-
-- Native Electron arXiv and Semantic Scholar search routes scoped to the active Cly project.
-- Graceful multi-provider fallback and DOI/title deduplication.
-- Normalized provider-paper contracts and deterministic local ranking explanations.
-- Stable provider/DOI/URL duplicate detection.
-- Project-scoped Source persistence with literature metadata and ranking provenance.
-- Native Literature Workspace search, status, ranked-result, save, and matrix flow.
-- Deterministic provider, route, domain, store, and repository tests.
-
-Remaining follow-up slices from `tickets.md`:
-
-- an actual configurable local cross-encoder implementation;
-- optional structured extraction and reviewable synthesis;
-- removal of this migration snapshot after parity review.
+- `tickets.md` — CLY-40 requirements and acceptance criteria;
+- `BUILD_PLAN.md` — original KnowIT product direction;
+- `docs/` — feature and architecture research from KnowIT;
+- `PARITY.md` — migration verification and intentionally deferred capabilities.
