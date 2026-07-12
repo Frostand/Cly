@@ -571,6 +571,21 @@ export const useClyStore = create<ClyState>((set, get) => ({
         data: {
           ...state.data,
           sources: [persistedSource, ...state.data.sources],
+          graphNodes: state.data.graphNodes.some(
+            (node) => node.id === persistedSource.id,
+          )
+            ? state.data.graphNodes
+            : [
+                {
+                  id: persistedSource.id,
+                  type: "source",
+                  label: persistedSource.title,
+                  status: "Confirmed",
+                  x: 80,
+                  y: 80,
+                },
+                ...state.data.graphNodes,
+              ],
         },
       }));
       return persistedSource;

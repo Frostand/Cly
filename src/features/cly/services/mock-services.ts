@@ -11,6 +11,7 @@ import type {
   Source,
 } from "../domain/types";
 import { useClyStore } from "../store/cly-store";
+import { apiClient } from "./api-client";
 import type { ClyServices } from "./interfaces";
 
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
@@ -158,6 +159,38 @@ export const mockServices: ClyServices = {
     },
     async addToNotebookBundle(sourceId) {
       useClyStore.getState().updateSource(sourceId, { inNotebookBundle: true });
+    },
+    async linkClaim(sourceId, claimId) {
+      const state = useClyStore.getState();
+      await apiClient.createRelationship(state.activeProjectId, {
+        fromObjectId: sourceId,
+        toObjectId: claimId,
+        type: "supports",
+      });
+      const source = state.data.sources.find((item) => item.id === sourceId);
+      const claim = state.data.claims.find((item) => item.id === claimId);
+      if (source) {
+        state.updateSource(sourceId, {
+          linkedClaimIds: Array.from(
+            new Set([...source.linkedClaimIds, claimId]),
+          ),
+        });
+      }
+      if (claim) {
+        state.updateClaim(claimId, {
+          supportingSourceIds: Array.from(
+            new Set([...claim.supportingSourceIds, sourceId]),
+          ),
+        });
+      }
+      state.addGraphEdge({
+        id: `edge-${crypto.randomUUID().slice(0, 8)}`,
+        source: sourceId,
+        target: claimId,
+        relation: "supports",
+        confidence: 1,
+        approved: true,
+      });
     },
   },
   notebooks: {

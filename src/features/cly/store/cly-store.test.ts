@@ -220,6 +220,14 @@ describe("Cly UI store", () => {
       useClyStore.getState().addSource(source),
     ).resolves.toMatchObject({ id: "sqlite-created-source" });
     expect(useClyStore.getState().data.sources).toHaveLength(sourceCount + 1);
+    expect(useClyStore.getState().data.graphNodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "sqlite-created-source",
+          type: "source",
+        }),
+      ]),
+    );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/projects/project-cly/research/objects",
       expect.objectContaining({ method: "POST" }),
@@ -256,6 +264,41 @@ describe("Cly UI store", () => {
     expect(useClyStore.getState().toasts.at(-1)).toMatchObject({
       title: "Source was not saved",
       detail: "API unavailable",
+    });
+  });
+
+  it("persists and reflects a source-to-claim evidence relationship", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            id: "relationship-literature",
+            projectId: "project-cly",
+            fromObjectId: "src-01",
+            toObjectId: "claim-01",
+            type: "supports",
+            createdAt: "2026-07-12T00:00:00.000Z",
+          }),
+          { status: 201 },
+        ),
+      ),
+    );
+
+    await mockServices.sources.linkClaim("src-01", "claim-01");
+
+    expect(
+      useClyStore.getState().data.sources.find((item) => item.id === "src-01")
+        ?.linkedClaimIds,
+    ).toContain("claim-01");
+    expect(
+      useClyStore.getState().data.claims.find((item) => item.id === "claim-01")
+        ?.supportingSourceIds,
+    ).toContain("src-01");
+    expect(useClyStore.getState().data.graphEdges.at(-1)).toMatchObject({
+      source: "src-01",
+      target: "claim-01",
+      relation: "supports",
     });
   });
 });

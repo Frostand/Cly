@@ -52,6 +52,7 @@ import { claimStatusTone, useClyStore } from "../store/cly-store";
 
 export function SourcesScreen() {
   const sources = useClyStore((s) => s.data.sources);
+  const claims = useClyStore((s) => s.data.claims);
   const selectedId = useClyStore((s) => s.selectedId);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
@@ -282,13 +283,27 @@ export function SourcesScreen() {
             <BookOpen size={13} /> Add to NotebookLM bundle
           </Button>
           <Button
-            disabled={!selectedId}
-            onClick={() =>
-              notify(
-                "Claim linker opened",
-                "Select a claim in the inspector to create an evidence relationship.",
-              )
-            }
+            disabled={!selectedId || claims.length === 0}
+            onClick={() => {
+              const claim = claims[0];
+              if (!selectedId || !claim) return;
+              void mockServices.sources
+                .linkClaim(selectedId, claim.id)
+                .then(() =>
+                  notify(
+                    "Evidence linked",
+                    `The source now supports “${claim.text.slice(0, 70)}”.`,
+                  ),
+                )
+                .catch((error) =>
+                  notify(
+                    "Evidence link failed",
+                    error instanceof Error
+                      ? error.message
+                      : "Unable to link claim.",
+                  ),
+                );
+            }}
           >
             <Link2 size={13} /> Link to claim
           </Button>

@@ -122,5 +122,11 @@ export function createRealSourceService(
       // Notebook bundling is a future feature.
       // For now this is tracked in-memory via the Cly store.
     },
+
+    async linkClaim(_sourceId: string, _claimId: string) {
+      throw new Error(
+        "Claim linking requires the project relationship service boundary.",
+      );
+    },
   };
 }
