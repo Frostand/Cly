@@ -86,18 +86,18 @@ Use the existing Cly surfaces rather than recreating KnowIT’s website UI:
 
 ### Acceptance criteria
 
-- [ ] A user can start a literature search from the active Cly project.
-- [ ] Paper responses are normalized behind a Cly service contract.
-- [ ] Ranked results show score/method explanations that a researcher can inspect.
-- [ ] Loading, empty, failure, timeout, and provider-rate-limit states are visible and recoverable.
-- [ ] Ranking has deterministic fixture coverage and does not require paid APIs in CI.
-- [ ] Saving a result creates one project-scoped Cly `source` object.
-- [ ] Saved source metadata includes provider ID/URL and retrieval/ranking provenance.
-- [ ] Saved papers appear in Sources and the Literature Matrix without duplicate records.
-- [ ] Sources can link to claims and other research objects through existing validated relationships.
-- [ ] Mutations persist across restart and create provenance events.
-- [ ] The feature runs in the Cly Electron/React application without KnowIT’s FastAPI or Next.js runtimes.
-- [ ] Typecheck, unit tests, repository tests, and deterministic integration tests pass.
+- [x] A user can start a literature search from the active Cly project.
+- [x] Paper responses are normalized behind a Cly service contract.
+- [x] Ranked results show score/method explanations that a researcher can inspect.
+- [x] Loading, empty, failure, timeout, and provider-rate-limit states are visible and recoverable.
+- [x] Ranking has deterministic fixture coverage and does not require paid APIs in CI.
+- [x] Saving a result creates one project-scoped Cly `source` object.
+- [x] Saved source metadata includes provider ID/URL and retrieval/ranking provenance.
+- [x] Saved papers appear in Sources and the Literature Matrix without duplicate records.
+- [x] Sources can link to claims and other research objects through existing validated relationships.
+- [x] Mutations persist across restart and create provenance events.
+- [x] The feature runs in the Cly Electron/React application without KnowIT’s FastAPI or Next.js runtimes.
+- [x] Typecheck, unit tests, repository tests, and deterministic integration tests pass.
 
 ### Implementation tickets
 
