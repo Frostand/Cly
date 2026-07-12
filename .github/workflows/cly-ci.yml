@@ -25,7 +25,7 @@ jobs:
           - name: typecheck
             command: pnpm typecheck
           - name: unit-tests
-            command: pnpm test --run
+            command: pnpm test
           - name: web-build
             command: pnpm vite:build
     steps:
