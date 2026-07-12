@@ -46,12 +46,16 @@ export function createRendererServerManager({
   const apiSessionToken = createApiSessionToken();
 
   let rendererUrl = developmentRendererUrl;
+  let apiServer = null;
   let viteDevProcess = null;
   let productionHttpServer = null;
 
   async function start() {
     // Always start the API server (Hono) on the API port.
-    await startApiServer({ port: apiServerPort, apiToken: apiSessionToken });
+    apiServer = await startApiServer({
+      port: apiServerPort,
+      apiToken: apiSessionToken,
+    });
 
     if (isDevelopment) {
       rendererUrl = developmentRendererUrl;
@@ -189,6 +193,11 @@ export function createRendererServerManager({
         productionHttpServer.close(() => resolve(undefined));
       });
       productionHttpServer = null;
+    }
+
+    if (apiServer) {
+      await apiServer.close();
+      apiServer = null;
     }
   }
 
