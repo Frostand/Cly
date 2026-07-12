@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
+  checks:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
@@ -44,3 +44,14 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
+
+  quality:
+    name: quality
+    if: ${{ always() }}
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all quality checks passed
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+        run: test "$CHECKS_RESULT" = "success"
