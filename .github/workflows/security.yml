@@ -60,3 +60,13 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: /language:javascript-typescript
+          output: ../results
+          upload: never
+          upload-database: false
+      - name: Upload CodeQL SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: ../results/*.sarif
+          if-no-files-found: error
+          retention-days: 14

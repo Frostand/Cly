@@ -71,7 +71,7 @@ addresses those risks as follows:
 | --- | --- |
 | The production dependency audit blocks a pull request when the lockfile contains moderate-or-higher advisories; the adjacent license gate rejects denied copyleft licenses. | Compromised or legally incompatible supply-chain changes. |
 | The production-license script allowlists permissive licenses and narrow, documented package exceptions. | Unreviewed runtime license obligations or missing license metadata. |
-| CodeQL runs extended JavaScript/TypeScript queries on pull requests, `main`, and weekly. | Injection, unsafe data flow, and other code-level vulnerabilities. |
+| CodeQL runs extended JavaScript/TypeScript queries on pull requests, `main`, and weekly, retaining SARIF artifacts without requiring GitHub Advanced Security. | Injection, unsafe data flow, and other code-level vulnerabilities. |
 | GitHub secret scanning and push protection must be enabled in repository settings. | Credentials entering history through source, fixtures, logs, or configuration. |
 | GitHub Actions receive job-specific minimum permissions; dependency updates are grouped and reviewed like other changes. | Workflow-token abuse and unreviewed supply-chain drift. |
 | The pull request security checklist requires scoped interfaces, validated untrusted input, and human approval for destructive or external actions. | Local API, IPC, agent, command, URL, and filesystem capability escalation. |
