@@ -20,7 +20,19 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Check dependency review support
+        id: dependency-review-support
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "/repos/${{ github.repository }}/dependency-graph/compare/${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" >/dev/null 2>&1; then
+            echo "supported=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping dependency review because GitHub dependency graph or Advanced Security is not enabled for this repository."
+            echo "supported=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/dependency-review-action@v4
+        if: steps.dependency-review-support.outputs.supported == 'true'
         with:
           fail-on-severity: moderate
           deny-licenses: AGPL-1.0, AGPL-3.0, GPL-2.0, GPL-3.0
