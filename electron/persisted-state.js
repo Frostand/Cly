@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -35,7 +35,7 @@ const DEFAULT_PERSISTED_STATE = {
   },
   chatSort: "recent",
 };
-const RELATIONAL_SCHEMA_VERSION = 2;
+const RELATIONAL_SCHEMA_VERSION = 3;
 const STATE_DB_FILENAME = "dream.db";
 const STATE_DB_PATH_ENV_VAR = "DREAM_DB_PATH";
 const DRIZZLE_MIGRATIONS_FOLDER = path.join(__dirname, "drizzle");
@@ -1203,6 +1203,38 @@ function stripMigrationDirectives(statement) {
     .trim();
 }
 
+function getPendingDrizzleMigrations(database, migrations) {
+  const lastMigration = database
+    .prepare(
+      `
+        SELECT created_at
+        FROM __drizzle_migrations
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+    )
+    .get();
+  const lastMigrationTimestamp = Number(lastMigration?.created_at ?? 0);
+
+  return migrations.filter(
+    (migration) => lastMigrationTimestamp < migration.folderMillis,
+  );
+}
+
+function quoteSqlString(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function createPreMigrationBackup(database, databasePath) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = `${databasePath}.pre-migration-${timestamp}.sqlite`;
+
+  // VACUUM INTO asks SQLite to make a consistent, standalone copy. Copying the
+  // database file directly would omit committed pages that are still in WAL.
+  database.exec(`VACUUM INTO ${quoteSqlString(backupPath)}`);
+  return backupPath;
+}
+
 function runDrizzleMigrations(database) {
   const migrations = readMigrationFiles({
     migrationsFolder: DRIZZLE_MIGRATIONS_FOLDER,
@@ -1216,26 +1248,12 @@ function runDrizzleMigrations(database) {
     );
   `);
 
-  const lastMigration = database
-    .prepare(
-      `
-        SELECT id, hash, created_at
-        FROM __drizzle_migrations
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-    )
-    .get();
-  const lastMigrationTimestamp = Number(lastMigration?.created_at ?? 0);
+  const pendingMigrations = getPendingDrizzleMigrations(database, migrations);
 
   database.exec("BEGIN");
 
   try {
-    for (const migration of migrations) {
-      if (lastMigrationTimestamp >= migration.folderMillis) {
-        continue;
-      }
-
+    for (const migration of pendingMigrations) {
       for (const rawStatement of migration.sql) {
         const statement = rawStatement.trim();
         if (!statement) {
@@ -1286,6 +1304,8 @@ export function getStateDatabase(databasePath = resolveStateDatabasePath()) {
 
   closePersistedStateDatabase();
 
+  const hadExistingDatabase =
+    existsSync(resolvedDatabasePath) && statSync(resolvedDatabasePath).size > 0;
   mkdirSync(path.dirname(resolvedDatabasePath), { recursive: true });
   const database = new DatabaseSync(resolvedDatabasePath);
   const legacyState = loadLegacyAppState(database);
@@ -1294,6 +1314,22 @@ export function getStateDatabase(databasePath = resolveStateDatabasePath()) {
     PRAGMA journal_mode = WAL;
   `);
   const hadRelationalState = hasRelationalState(database);
+  const migrations = readMigrationFiles({
+    migrationsFolder: DRIZZLE_MIGRATIONS_FOLDER,
+  });
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS __drizzle_migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      hash TEXT NOT NULL,
+      created_at NUMERIC
+    );
+  `);
+  if (
+    hadExistingDatabase &&
+    getPendingDrizzleMigrations(database, migrations).length > 0
+  ) {
+    createPreMigrationBackup(database, resolvedDatabasePath);
+  }
   runDrizzleMigrations(database);
 
   if (shouldImportLegacyState(database, legacyState, hadRelationalState)) {

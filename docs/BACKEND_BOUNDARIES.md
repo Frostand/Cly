@@ -30,6 +30,14 @@ Components depend on `ClyServices` contracts and the normalized UI store. They d
 - Secrets use the operating-system credential store and never enter project files, SQLite research records, logs, or agent context.
 - NotebookLM remains manual export/import unless an official supported API exists.
 
+## Storage lifecycle
+
+The local SQLite lifecycle, migration recovery policy, project isolation rules,
+and backup/export/delete acceptance checks are defined in
+[Local research storage](LOCAL_RESEARCH_STORAGE.md). Research persistence is
+owned by the standalone local service and must not depend on the embedded
+coding workspace.
+
 ## Available infrastructure
 
 The current implementation uses SQLite/Drizzle, token-protected loopback Hono API, preload IPC, terminal/process sessions, Git routes, editor detection, browser sessions, theme persistence, and packaging from the coding workspace layer. These remain available for service implementations but research services do not depend on them directly — only through typed adapters.
