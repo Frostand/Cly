@@ -246,7 +246,7 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
     id: object.id,
     title: object.title,
     authors:
-      payload.authors?.join(", ") ?? payload.citation ?? "Unknown authors",
+      payload.authors?.join(", ") || payload.citation || "Unknown authors",
     year: new Date(object.createdAt).getFullYear(),
     type: "Paper",
     status: "Needs metadata",

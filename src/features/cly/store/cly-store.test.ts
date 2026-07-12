@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureRepository } from "../fixtures/repository";
+import { mockServices } from "../services/mock-services";
 import { useClyStore } from "./cly-store";
 
 describe("Cly UI store", () => {
@@ -97,7 +98,7 @@ describe("Cly UI store", () => {
                 type: "source",
                 title: "Persisted source",
                 description: "Stored in SQLite",
-                payload: { kind: "source", authors: ["A. Researcher"] },
+                payload: { kind: "source", authors: [] },
                 createdAt: "2026-07-11T00:00:00.000Z",
                 updatedAt: "2026-07-11T00:00:00.000Z",
               },
@@ -145,7 +146,7 @@ describe("Cly UI store", () => {
 
     const data = useClyStore.getState().data;
     expect(data.sources).toMatchObject([
-      { id: "sqlite-source", authors: "A. Researcher" },
+      { id: "sqlite-source", authors: "Unknown authors" },
     ]);
     expect(data.claims).toMatchObject([
       {
@@ -207,6 +208,24 @@ describe("Cly UI store", () => {
     await expect(useClyStore.getState().addSource(source)).resolves.toBeNull();
 
     expect(useClyStore.getState().data.sources).toHaveLength(sourceCount + 1);
+    expect(useClyStore.getState().toasts.at(-1)).toMatchObject({
+      title: "Source was not saved",
+      detail: "API unavailable",
+    });
+  });
+
+  it("keeps source creation non-throwing when persistence is unavailable", async () => {
+    const sourceCount = useClyStore.getState().data.sources.length;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("API unavailable")),
+    );
+
+    await expect(
+      mockServices.sources.create({ title: "Offline source", type: "Paper" }),
+    ).resolves.toMatchObject({ title: "Offline source" });
+
+    expect(useClyStore.getState().data.sources).toHaveLength(sourceCount);
     expect(useClyStore.getState().toasts.at(-1)).toMatchObject({
       title: "Source was not saved",
       detail: "API unavailable",

@@ -116,10 +116,7 @@ export const mockServices: ClyServices = {
         updatedAt: isoNow(),
       };
       const persistedSource = await useClyStore.getState().addSource(source);
-      if (!persistedSource) {
-        throw new Error("The source could not be saved.");
-      }
-      return persistedSource;
+      return persistedSource ?? source;
     },
     async addToNotebookBundle(sourceId) {
       useClyStore.getState().updateSource(sourceId, { inNotebookBundle: true });
