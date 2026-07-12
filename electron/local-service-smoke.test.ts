@@ -1,8 +1,10 @@
 // @vitest-environment node
-import { mkdtemp, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // The local service is also used by Electron, but this smoke suite exercises
@@ -18,6 +20,7 @@ import {
 } from "./persisted-state.js";
 
 const apiToken = "local-service-smoke-token";
+const execFileAsync = promisify(execFile);
 let temporaryDirectory: string | undefined;
 let previousDatabasePath: string | undefined;
 
@@ -50,6 +53,33 @@ describe("local service smoke suite", () => {
   it("migrates local storage and preserves a research provenance flow across a restart", async () => {
     temporaryDirectory = await mkdtemp(path.join(tmpdir(), "cly-smoke-"));
     const databasePath = path.join(temporaryDirectory, "cly.db");
+    const researchRootPath = path.join(temporaryDirectory, "research-project");
+    await mkdir(researchRootPath);
+    const researchRoot = await realpath(researchRootPath);
+    await execFileAsync("git", ["init", "--quiet", researchRoot]);
+    await writeFile(
+      path.join(researchRoot, "analysis.py"),
+      "print('initial')\n",
+    );
+    await execFileAsync("git", ["add", "analysis.py"], { cwd: researchRoot });
+    await execFileAsync(
+      "git",
+      [
+        "-c",
+        "user.name=Cly Test",
+        "-c",
+        "user.email=cly@example.test",
+        "commit",
+        "--quiet",
+        "-m",
+        "initial",
+      ],
+      { cwd: researchRoot },
+    );
+    await writeFile(
+      path.join(researchRoot, "analysis.py"),
+      "print('changed')\n",
+    );
     previousDatabasePath = process.env.DREAM_DB_PATH;
     process.env.DREAM_DB_PATH = databasePath;
 
@@ -75,7 +105,7 @@ describe("local service smoke suite", () => {
             {
               id: "research-project",
               name: "research-project",
-              path: "/tmp/research-project",
+              path: researchRoot,
             },
           ],
         }),
@@ -140,6 +170,33 @@ describe("local service smoke suite", () => {
       },
     );
     expect(relationship.status).toBe(201);
+
+    const observation = await request(
+      service.port,
+      "/api/projects/research-project/repository-observations",
+      { method: "POST" },
+    );
+    expect(observation.status).toBe(201);
+    await expect(observation.json()).resolves.toMatchObject({
+      changes: [
+        expect.objectContaining({ path: "analysis.py", worktreeStatus: "M" }),
+      ],
+      projectId: "research-project",
+    });
+
+    const provenance = await request(
+      service.port,
+      "/api/projects/research-project/provenance?limit=10",
+    );
+    expect(provenance.status).toBe(200);
+    await expect(provenance.json()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "repository.change.observed",
+          projectId: "research-project",
+        }),
+      ]),
+    );
     await service.close();
 
     const restartedService = await startApiServer({ apiToken, port: 0 });
@@ -163,7 +220,7 @@ describe("local service smoke suite", () => {
     });
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM provenance_events").get(),
-    ).toEqual({ count: 3 });
+    ).toEqual({ count: 5 });
     await restartedService.close();
   });
 });

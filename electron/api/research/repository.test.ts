@@ -41,6 +41,52 @@ beforeEach(() => {
 });
 
 describe("research repository", () => {
+  it("gets registered projects and records reviewable system provenance", () => {
+    const repository = createResearchRepository(database);
+
+    expect(repository.getProject("project-1")).toMatchObject({
+      id: "project-1",
+      name: "Project 1",
+      path: "/tmp/project-1",
+    });
+
+    const first = repository.appendProvenance({
+      action: "repository.scan.completed",
+      actorId: "repository-observer",
+      actorType: "system",
+      metadata: { changeCount: 2 },
+      projectId: "project-1",
+    });
+    const second = repository.appendProvenance({
+      action: "repository.change.observed",
+      actorId: "repository-observer",
+      actorType: "system",
+      metadata: { path: "src/index.ts", worktreeStatus: "M" },
+      projectId: "project-1",
+    });
+
+    expect(repository.listProvenance("project-1", { limit: 1 })).toEqual([
+      expect.objectContaining({
+        id: second.id,
+        action: "repository.change.observed",
+        actorType: "system",
+        metadata: { path: "src/index.ts", worktreeStatus: "M" },
+        projectId: "project-1",
+      }),
+    ]);
+    expect(first.projectId).toBe("project-1");
+    expect(() => repository.getProject("missing-project")).toThrow(
+      "Research project does not exist.",
+    );
+    expect(() =>
+      repository.appendProvenance({
+        action: "repository.scan.completed",
+        actorType: "system",
+        projectId: "missing-project",
+      }),
+    ).toThrow("Research project does not exist.");
+  });
+
   it("upserts a renderer project before project-scoped research operations", () => {
     database.prepare("DELETE FROM projects WHERE id = ?").run("project-1");
     const repository = createResearchRepository(database);

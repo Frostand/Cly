@@ -8,6 +8,11 @@ transmission, repository observation, execution adapters, imported content,
 and provenance integrity. Electron IPC and embedded-terminal security are out
 of scope.
 
+The normative capability ownership, API allowlist, and local-data lifecycle
+are defined in [Local Cly service boundary](LOCAL_SERVICE_BOUNDARY.md). This
+document supplies the threat model and security requirements for that
+boundary.
+
 This document turns the security invariants in `SECURITY.md` and the provider
 boundary in ADR 0002 into requirements that can be implemented and tested. A
 feature described here is not considered safe merely because it is local.
@@ -219,6 +224,14 @@ applied to relative file paths, but canonical symlink containment and binding
 to a registered project ID are not universal. These routes are coding-
 workspace compatibility APIs, not acceptable research-service authorization
 boundaries.
+
+The research service now implements a narrow observation slice separately:
+`POST /api/projects/:projectId/repository-observations` accepts no path or
+command, revalidates the registered canonical Git top level, runs a fixed
+bounded status operation, and records only project-relative metadata through
+project-scoped provenance. Trusted project provisioning, watchers, content
+scanners, and execution capabilities must retain the stronger requirements
+above as they are implemented.
 
 ## Approved execution adapters
 

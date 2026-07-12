@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
 import { createResearchRepository } from "./repository.js";
+import { createRepositoryObserver } from "./repository-observer.js";
 
 const objectBodySchema = z.object({
   type: z.enum(["source", "claim"]),
@@ -26,6 +27,10 @@ const projectBodySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
+const provenanceQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+});
+
 async function readJson(c) {
   try {
     return { data: await c.req.json() };
@@ -36,7 +41,11 @@ async function readJson(c) {
 
 export function registerResearchRoutes(
   app,
-  { getRepository = () => createResearchRepository(getStateDatabase()) } = {},
+  {
+    getRepository = () => createResearchRepository(getStateDatabase()),
+    getRepositoryObserver = () =>
+      createRepositoryObserver(createResearchRepository(getStateDatabase())),
+  } = {},
 ) {
   app.put("/api/projects/:projectId/research", async (c) => {
     const body = await readJson(c);
@@ -64,6 +73,49 @@ export function registerResearchRoutes(
     } catch (error) {
       return c.text(
         error instanceof Error ? error.message : "Research query failed.",
+        400,
+      );
+    }
+  });
+
+  app.get("/api/projects/:projectId/provenance", (c) => {
+    const parsed = provenanceQuerySchema.safeParse({
+      limit: c.req.query("limit") ?? undefined,
+    });
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        getRepository().listProvenance(c.req.param("projectId"), parsed.data),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Provenance query failed.",
+        400,
+      );
+    }
+  });
+
+  app.post("/api/projects/:projectId/repository-observations", async (c) => {
+    if (
+      (c.req.header("content-length") &&
+        c.req.header("content-length") !== "0") ||
+      c.req.header("transfer-encoding")
+    ) {
+      return c.text(
+        "Repository observation requests do not accept a body.",
+        400,
+      );
+    }
+    try {
+      const observation = await getRepositoryObserver().scan(
+        c.req.param("projectId"),
+      );
+      return c.json(observation, 201);
+    } catch (error) {
+      return c.text(
+        error instanceof Error
+          ? error.message
+          : "Repository observation failed.",
         400,
       );
     }
