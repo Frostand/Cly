@@ -14,7 +14,7 @@ Install the matching Playwright browser once with `pnpm exec playwright install 
 
 ## Coverage
 
-Unit tests cover context budget/category totals, filtering/sorting, next-step prioritization, store navigation/selection/shell state, fixture switching, cross-feature mutation, graph relationships, decision supersession, and acceptance-size fixture generation.
+Unit tests cover context budget/category totals, filtering/sorting, next-step prioritization, store navigation/selection/shell state, fixture switching, cross-feature mutation, graph relationships, decision supersession, acceptance-size fixture generation, and the local-service smoke path (legacy storage migration, research/provenance persistence, and restart).
 
 Component tests render the real shell and verify every major destination plus command palette, context controls, source table, literature matrix, notebook list, claim board, experiment list, provenance gallery, audit findings, integration cards, and decision timeline.
 
