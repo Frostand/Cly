@@ -43,6 +43,7 @@ import {
   ExecutionStrip,
   RelationshipChain,
 } from "../components/visuals";
+import { previewLiteratureThemes } from "../domain/literature-enrichment";
 import type { LiteratureSearchResult } from "../domain/literature-search";
 import { filterAndSortClaims } from "../domain/logic";
 import type { ClaimStatus, Source } from "../domain/types";
@@ -309,14 +310,27 @@ export function SourcesScreen() {
           </Button>
           <Button
             disabled={!selectedId}
-            onClick={() =>
-              notify(
-                "Metadata edit enabled",
-                "Edits are retained for this mock session.",
-              )
-            }
+            onClick={() => {
+              if (!selectedId) return;
+              void mockServices.sources
+                .enrich(selectedId)
+                .then(() =>
+                  notify(
+                    "Structured notes saved",
+                    "Deterministic metadata enrichment was persisted with provenance. Review the fields before citing them.",
+                  ),
+                )
+                .catch((error) =>
+                  notify(
+                    "Enrichment failed",
+                    error instanceof Error
+                      ? error.message
+                      : "Unable to enrich source.",
+                  ),
+                );
+            }}
           >
-            <FileText size={13} /> Edit metadata
+            <FileText size={13} /> Extract structured notes
           </Button>
           <Button
             disabled={!selectedId}
@@ -492,12 +506,20 @@ export function LiteratureScreen() {
               <Plus size={13} /> Custom column
             </Button>
             <Button
-              onClick={() =>
+              onClick={() => {
+                const themes = previewLiteratureThemes(sources);
                 notify(
-                  "Related-work outline generated",
-                  "Four themes and two unresolved literature gaps were identified.",
-                )
-              }
+                  "Theme preview ready",
+                  themes.length
+                    ? themes
+                        .map(
+                          (theme) =>
+                            `${theme.label} (${theme.sourceCount} source${theme.sourceCount === 1 ? "" : "s"})`,
+                        )
+                        .join(" · ")
+                    : "Add tags or structured methods before generating a theme preview.",
+                );
+              }}
             >
               <Sparkles size={13} /> Related-work outline
             </Button>

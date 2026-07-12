@@ -63,6 +63,20 @@ export const apiClient = {
     });
   },
 
+  updateSource(
+    projectId: string,
+    sourceId: string,
+    input: { description: string; payload: Record<string, unknown> },
+  ) {
+    return request<ResearchObject>(
+      `${projectPath(projectId)}/objects/${encodeURIComponent(sourceId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      },
+    );
+  },
+
   createRelationship(projectId: string, input: CreateRelationshipInput) {
     return request<Relationship>(`${projectPath(projectId)}/relationships`, {
       method: "POST",

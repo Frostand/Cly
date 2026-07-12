@@ -1,3 +1,4 @@
+import { extractLiteratureMetadata } from "../domain/literature-enrichment";
 import {
   deterministicSemanticRanker,
   type LiteratureSearchResult,
@@ -191,6 +192,39 @@ export const mockServices: ClyServices = {
         confidence: 1,
         approved: true,
       });
+    },
+    async enrich(sourceId) {
+      const state = useClyStore.getState();
+      const source = state.data.sources.find((item) => item.id === sourceId);
+      if (!source) throw new Error("Source not found.");
+      const enrichment = extractLiteratureMetadata(source);
+      await apiClient.updateSource(state.activeProjectId, sourceId, {
+        description: enrichment.researchProblem,
+        payload: {
+          kind: "source",
+          authors: source.authors.split(",").map((author) => author.trim()),
+          citation: source.url ? undefined : source.title,
+          url: source.url,
+          doi: source.doi,
+          provider: source.provider,
+          providerId: source.providerId,
+          methods: enrichment.methods,
+          findings: enrichment.findings,
+          limitations: enrichment.limitations,
+          enrichmentMethod: enrichment.method,
+          enrichedAt: enrichment.enrichedAt,
+        },
+      });
+      const updated = {
+        ...source,
+        summary: enrichment.researchProblem,
+        methods: enrichment.methods,
+        findings: enrichment.findings,
+        limitations: enrichment.limitations,
+        updatedAt: enrichment.enrichedAt,
+      };
+      state.updateSource(sourceId, updated);
+      return updated;
     },
   },
   notebooks: {

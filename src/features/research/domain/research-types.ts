@@ -31,6 +31,12 @@ export interface SourcePayload {
   rankingComponents?: Record<string, number>;
   rankingExplanation?: string;
   retrievedAt?: string;
+  researchProblem?: string;
+  methods?: string[];
+  findings?: string[];
+  limitations?: string[];
+  enrichmentMethod?: string;
+  enrichedAt?: string;
 }
 
 export interface ClaimPayload {

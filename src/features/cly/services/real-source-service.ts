@@ -128,5 +128,9 @@ export function createRealSourceService(
         "Claim linking requires the project relationship service boundary.",
       );
     },
+
+    async enrich(_sourceId: string) {
+      throw new Error("Enrichment requires the project research API boundary.");
+    },
   };
 }

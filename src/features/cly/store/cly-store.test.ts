@@ -301,4 +301,24 @@ describe("Cly UI store", () => {
       relation: "supports",
     });
   });
+
+  it("persists explicit structured-note enrichment", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ id: "src-01" }), { status: 200 }),
+        ),
+    );
+
+    await expect(mockServices.sources.enrich("src-01")).resolves.toMatchObject({
+      methods: expect.arrayContaining(["Deep ensembles"]),
+      limitations: expect.arrayContaining(["Only low-dimensional PDE systems"]),
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/projects/project-cly/research/objects/src-01",
+      expect.objectContaining({ method: "PATCH" }),
+    );
+  });
 });

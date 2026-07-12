@@ -133,4 +133,37 @@ describe("research repository", () => {
       rankingScore: 0.91,
     });
   });
+
+  it("persists structured source enrichment with provenance", () => {
+    const repository = createResearchRepository(database);
+    repository.createObject({
+      id: "source-enriched",
+      projectId: "project-1",
+      type: "source",
+      title: "Paper",
+      payload: { kind: "source", url: "https://example.test/paper" },
+    });
+    const updated = repository.updateSource({
+      id: "source-enriched",
+      projectId: "project-1",
+      description: "Research problem",
+      payload: {
+        methods: ["Benchmark"],
+        findings: ["Coverage improved."],
+        limitations: ["Small sample."],
+        enrichmentMethod: "deterministic_metadata_fixture_v1",
+        enrichedAt: "2026-07-12T12:00:00.000Z",
+      },
+    });
+    expect(updated).toMatchObject({
+      description: "Research problem",
+      payload: { findings: ["Coverage improved."] },
+    });
+    const events = database
+      .prepare(
+        "SELECT action FROM provenance_events WHERE object_id = ? ORDER BY created_at",
+      )
+      .all("source-enriched") as Array<{ action: string }>;
+    expect(events.map((event) => event.action)).toContain("source.enriched");
+  });
 });

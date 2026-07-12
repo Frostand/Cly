@@ -42,6 +42,7 @@ export interface SourceService {
   createFromSearch(result: LiteratureSearchResult): Promise<Source>;
   addToNotebookBundle(id: string): Promise<void>;
   linkClaim(sourceId: string, claimId: string): Promise<void>;
+  enrich(sourceId: string): Promise<Source>;
 }
 
 export interface LiteratureService {

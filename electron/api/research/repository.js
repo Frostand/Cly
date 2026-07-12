@@ -147,6 +147,53 @@ export function createResearchRepository(database) {
       );
     },
 
+    updateSource(input) {
+      ensureProject(input.projectId);
+      const existing = database
+        .prepare(
+          "SELECT * FROM research_objects WHERE id = ? AND project_id = ? AND type = 'source'",
+        )
+        .get(input.id, input.projectId);
+      if (!existing) throw new Error("Source does not belong to the project.");
+      const now = new Date().toISOString();
+      const payload = { ...parseJson(existing.payload), ...input.payload };
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database
+          .prepare(
+            "UPDATE research_objects SET description = ?, payload = ?, updated_at = ? WHERE id = ? AND project_id = ?",
+          )
+          .run(
+            input.description,
+            JSON.stringify(payload),
+            now,
+            input.id,
+            input.projectId,
+          );
+        appendProvenance(
+          {
+            action: "source.enriched",
+            objectId: input.id,
+            projectId: input.projectId,
+            metadata: {
+              enrichmentMethod: payload.enrichmentMethod,
+              enrichedAt: payload.enrichedAt,
+            },
+          },
+          now,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      return mapObject(
+        database
+          .prepare("SELECT * FROM research_objects WHERE id = ?")
+          .get(input.id),
+      );
+    },
+
     createRelationship(input) {
       const parsed = relationshipInputSchema.parse(input);
       if (parsed.fromObjectId === parsed.toObjectId) {
