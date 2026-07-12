@@ -28,6 +28,7 @@ export interface SourcePayload {
   query?: string;
   rankingScore?: number;
   rankingMethod?: string;
+  rankingComponents?: Record<string, number>;
   rankingExplanation?: string;
   retrievedAt?: string;
 }

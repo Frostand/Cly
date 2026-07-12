@@ -17,10 +17,21 @@ export interface LiteratureSearchResult {
   source: Source;
   score: number;
   explanation: string;
-  method: "keyword_overlap_v1";
-  components: { titleMatchRatio: number; bodyMatchRatio: number };
+  method: string;
+  components: Record<string, number>;
   query: string;
   retrievedAt: string;
+}
+
+export interface SemanticRankingSignal {
+  sourceId: string;
+  score: number;
+  explanation: string;
+}
+
+export interface LiteratureSemanticRanker {
+  method: string;
+  rank(query: string, sources: Source[]): Promise<SemanticRankingSignal[]>;
 }
 
 export function sourceFromLiteraturePaper(paper: LiteraturePaper): Source {
@@ -95,7 +106,7 @@ export function rankLiterature(
         (titleMatches.length / queryTerms.length) * 0.65 +
           (bodyMatches.length / queryTerms.length) * 0.35,
       );
-      return {
+      const result: LiteratureSearchResult = {
         source,
         score,
         query,
@@ -110,6 +121,7 @@ export function rankLiterature(
             ? `Matched ${titleMatches.length} title term(s) and ${bodyMatches.length} abstract/method term(s).`
             : "No lexical match; retained for transparent empty-signal review.",
       };
+      return result;
     })
     .filter((result) => result.score > 0)
     .sort(
@@ -118,6 +130,82 @@ export function rankLiterature(
         left.source.title.localeCompare(right.source.title),
     );
 }
+
+const RRF_K = 60;
+
+export async function rankLiteratureWithRrf(
+  query: string,
+  sources: Source[],
+  semanticRanker: LiteratureSemanticRanker,
+  retrievedAt = new Date().toISOString(),
+): Promise<LiteratureSearchResult[]> {
+  const keyword = rankLiterature(query, sources, retrievedAt);
+  if (keyword.length === 0) return [];
+  const semantic = await semanticRanker.rank(query, sources);
+  const keywordRanks = new Map(
+    keyword.map((result, index) => [result.source.id, index + 1]),
+  );
+  const semanticRanks = new Map(
+    [...semantic]
+      .sort((left, right) => right.score - left.score)
+      .map((result, index) => [result.sourceId, index + 1]),
+  );
+  const semanticById = new Map(
+    semantic.map((result) => [result.sourceId, result]),
+  );
+  const maxRrfScore = 2 / (RRF_K + 1);
+
+  return sources
+    .map((source) => {
+      const keywordRank = keywordRanks.get(source.id);
+      const semanticRank = semanticRanks.get(source.id);
+      if (!keywordRank && !semanticRank) return null;
+      const rawScore =
+        (keywordRank ? 1 / (RRF_K + keywordRank) : 0) +
+        (semanticRank ? 1 / (RRF_K + semanticRank) : 0);
+      const result: LiteratureSearchResult = {
+        source,
+        score: rawScore / maxRrfScore,
+        query,
+        retrievedAt,
+        method: `rrf:${semanticRanker.method}`,
+        components: {
+          keywordRank: keywordRank ?? 0,
+          semanticRank: semanticRank ?? 0,
+          rrfScore: rawScore,
+        },
+        explanation:
+          `Combined keyword rank ${keywordRank ?? "not ranked"} and semantic rank ${semanticRank ?? "not ranked"} with Reciprocal Rank Fusion. ${semanticById.get(source.id)?.explanation ?? ""}`.trim(),
+      };
+      return result;
+    })
+    .filter((result): result is NonNullable<typeof result> => result !== null)
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.source.title.localeCompare(right.source.title),
+    );
+}
+
+export const deterministicSemanticRanker: LiteratureSemanticRanker = {
+  method: "metadata_similarity_fixture_v1",
+  async rank(query, sources) {
+    const queryTerms = new Set(terms(query));
+    return sources.map((source) => {
+      const documentTerms = new Set(terms(`${source.title} ${source.summary}`));
+      const intersection = [...queryTerms].filter((term) =>
+        documentTerms.has(term),
+      ).length;
+      const union = new Set([...queryTerms, ...documentTerms]).size || 1;
+      return {
+        sourceId: source.id,
+        score: intersection / union,
+        explanation:
+          "Deterministic metadata similarity fixture; no cross-encoder model was used.",
+      };
+    });
+  },
+};
 
 export function findDuplicateSource(
   candidate: Source,

@@ -274,6 +274,7 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
             query: payload.query,
             score: payload.rankingScore ?? 0,
             method: payload.rankingMethod ?? "unknown",
+            components: payload.rankingComponents,
             explanation: payload.rankingExplanation,
             retrievedAt: payload.retrievedAt ?? object.createdAt,
           }
@@ -560,6 +561,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
           query: source.provenance?.query,
           rankingScore: source.provenance?.score,
           rankingMethod: source.provenance?.method,
+          rankingComponents: source.provenance?.components,
           rankingExplanation: source.provenance?.explanation,
           retrievedAt: source.provenance?.retrievedAt,
         },

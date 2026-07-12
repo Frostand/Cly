@@ -25,6 +25,7 @@ const payloadSchema = z.discriminatedUnion("kind", [
     query: z.string().trim().min(1).max(2_000).optional(),
     rankingScore: z.number().finite().min(0).max(1).optional(),
     rankingMethod: z.string().trim().min(1).max(200).optional(),
+    rankingComponents: z.record(z.string(), z.number().finite()).optional(),
     rankingExplanation: z.string().trim().min(1).max(2_000).optional(),
     retrievedAt: z.iso.datetime().optional(),
   }),

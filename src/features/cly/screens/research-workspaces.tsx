@@ -44,8 +44,9 @@ import {
   RelationshipChain,
 } from "../components/visuals";
 import {
+  deterministicSemanticRanker,
   type LiteratureSearchResult,
-  rankLiterature,
+  rankLiteratureWithRrf,
   sourceFromLiteraturePaper,
 } from "../domain/literature-search";
 import { filterAndSortClaims } from "../domain/logic";
@@ -443,9 +444,10 @@ export function LiteratureScreen() {
                     query,
                   );
                   setSearchResults(
-                    rankLiterature(
+                    await rankLiteratureWithRrf(
                       query,
                       response.papers.map(sourceFromLiteraturePaper),
+                      deterministicSemanticRanker,
                     ),
                   );
                 } catch (error) {

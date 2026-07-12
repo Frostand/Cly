@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   findDuplicateSource,
   rankLiterature,
+  rankLiteratureWithRrf,
   sourceFromLiteraturePaper,
 } from "./literature-search";
 import type { Source } from "./types";
@@ -93,5 +94,49 @@ describe("literature ranking", () => {
         [existing],
       ),
     ).toBe(existing);
+  });
+
+  it("fuses keyword and replaceable semantic rankings with RRF", async () => {
+    const keywordFirst = source(
+      "keyword",
+      "Robust calibration",
+      "Exact terminology.",
+    );
+    const semanticFirst = source(
+      "semantic",
+      "Uncertainty under shift",
+      "Calibration behavior.",
+    );
+    const results = await rankLiteratureWithRrf(
+      "robust calibration",
+      [keywordFirst, semanticFirst],
+      {
+        method: "stub_cross_encoder_v1",
+        async rank() {
+          return [
+            {
+              sourceId: "semantic",
+              score: 0.99,
+              explanation: "Stub semantic preference.",
+            },
+            {
+              sourceId: "keyword",
+              score: 0.5,
+              explanation: "Stub semantic preference.",
+            },
+          ];
+        },
+      },
+      "2026-07-12T00:00:00Z",
+    );
+
+    expect(results).toHaveLength(2);
+    expect(results[0].method).toBe("rrf:stub_cross_encoder_v1");
+    expect(results[0].components).toMatchObject({
+      keywordRank: expect.any(Number),
+      semanticRank: expect.any(Number),
+      rrfScore: expect.any(Number),
+    });
+    expect(results[0].explanation).toContain("Reciprocal Rank Fusion");
   });
 });

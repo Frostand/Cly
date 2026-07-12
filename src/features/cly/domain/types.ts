@@ -95,6 +95,7 @@ export interface Source {
     query: string;
     score: number;
     method: string;
+    components?: Record<string, number>;
     explanation: string;
     retrievedAt: string;
   };
