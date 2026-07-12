@@ -1,0 +1,44 @@
+name: Implementation issue
+description: Create a reviewable engineering issue that is ready to synchronize with Linear.
+title: "[RID-123] "
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "Use Linear as the system of record. This GitHub issue is only for repositories that require a linked engineering artifact."
+  - type: input
+    id: linear
+    attributes:
+      label: Linear issue
+      description: Use the configured team key, for example RID-123.
+      placeholder: RID-123
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and user value
+      description: State the problem and why it matters to a researcher.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: Separate what this issue includes from what it deliberately excludes.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior and acceptance criteria
+      description: Write observable, testable criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: engineering
+    attributes:
+      label: Technical notes, dependencies, risks, and testing
+      description: Include schema/API constraints, security/privacy concerns, dependencies, risks, tests, documentation, and observability.
+    validations:
+      required: true

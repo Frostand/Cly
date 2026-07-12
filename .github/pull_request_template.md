@@ -1,23 +1,49 @@
 ## Summary
 
-Describe the user-visible or architectural outcome.
+<!-- What changed? Keep this to the coherent change in this pull request. -->
 
-## Research and product impact
+## Motivation
 
-- Research objects or provenance affected:
-- Data migration required:
-- Upstream Dream surface changed:
+<!-- Why is this necessary now? -->
 
-## Security review
+## Linear issue
+
+<!-- Closes or advances RID-123. Replace RID with the configured Linear team key. -->
+
+## Product and research impact
+
+<!-- Describe user-visible behavior and any effect on methods, experiments, outputs, claims, ranking, extraction, or reproducibility. Write "None" when not applicable. -->
+
+## Architecture and data impact
+
+<!-- Include affected modules, APIs, schemas, migrations, or dependencies. State "None" when not applicable. -->
+
+## Testing
+
+- [ ] Unit tests added or updated
+- [ ] Integration tests added or updated where applicable
+- [ ] Manual verification completed
+- [ ] `pnpm lint` passes
+- [ ] `pnpm typecheck` passes
+- [ ] `pnpm test --run` passes
+- [ ] `pnpm vite:build` passes
+
+## Screenshots or recording
+
+<!-- Required for UI changes. -->
+
+## Security and privacy
 
 - [ ] No credentials, private datasets, or research artifacts are committed.
 - [ ] New IPC/API/file/command access is narrowly scoped and validated.
 - [ ] Imported or external content is treated as untrusted.
 
-## Validation
+<!-- Address secrets, local files, commands, repository access, model-provider transmission, and user data. -->
 
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm test --run`
-- [ ] `pnpm vite:build`
+## Risks and rollback
 
+<!-- What could break, and how can this change be safely reverted? -->
+
+## Follow-up work
+
+<!-- Link intentionally deferred issues, or state "None". -->

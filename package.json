@@ -204,5 +204,15 @@
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     }
   },
-  "type": "module"
+  "type": "module",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "node-pty",
+      "esbuild",
+      "@parcel/watcher",
+      "@swc/core",
+      "sharp"
+    ]
+  }
 }

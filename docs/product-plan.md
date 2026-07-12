@@ -1,10 +1,10 @@
-# Descriptive Product Plan: AI-Native Research Operating System Built on Dream IDE
+# Product Plan: Cly — System of Record for Computational Research
 
 ## 1. Product vision
 
-Build an **AI-native research operating system** on top of the open-source Dream IDE that allows researchers to discover literature, organize scientific knowledge, write and review code, run experiments, coordinate AI agents, and audit every result from one workspace.
+Cly is a **standalone research platform** that connects literature, code, experiments, outputs, decisions, and claims in one auditable workspace. It is not an IDE — it is the system of record for the entire research project, with an integrated coding workspace for computational work.
 
-The system should connect the complete computational research lifecycle:
+The system connects the complete computational research lifecycle:
 
 ```text
 Research question
@@ -17,7 +17,6 @@ Research question
 → Figures and tables
 → Scientific claims
 → Review and reproducibility audit
-→ Pull request and merge
 → Final report or publication
 ```
 
@@ -25,9 +24,7 @@ The core promise is:
 
 > **Every source, decision, code change, experiment, output, and claim remains connected and traceable.**
 
-This is not simply an IDE with a research chatbot added to it. Dream IDE would provide the editing, terminal, file, extension, and project foundation. The new product would add a structured scientific layer around the development environment.
-
-I could not reliably identify the exact Dream IDE repository from public search results, so the technical plan below treats it as an extensible open-source IDE. Before implementation, the team should verify its license, architecture, extension APIs, desktop framework, editor engine, Git support, and maintenance status.
+Cly is not an IDE with research features bolted on. The research core — graph, sources, claims, provenance, and agent orchestration — is independent of any code editor. Cly includes a coding workspace (currently implemented with Dream IDE) and integrates with external editors (VS Code, Cursor, Jupyter) through extensions and APIs.
 
 ---
 
@@ -35,22 +32,21 @@ I could not reliably identify the exact Dream IDE repository from public search 
 
 ## Product category
 
-**AI Research Development Environment**, or **Research IDE**.
+**Research operating system**, or **system of record for computational research**.
 
-The product combines elements of:
+Cly combines elements of:
 
-* an IDE;
-* an AI research assistant;
 * a literature-review system;
 * an electronic research notebook;
 * an experiment manager;
 * a research knowledge graph;
-* a Git collaboration platform;
-* and a reproducibility auditor.
+* an agent orchestration platform;
+* a reproducibility auditor;
+* a coding workspace (integrated, not primary identity).
 
 ## Suggested positioning statement
 
-> **A Git-native research IDE that connects papers, code, experiments, outputs, and scientific claims.**
+> **The system of record for computational research — connecting papers, code, experiments, and claims with full provenance.**
 
 ## Suggested tagline
 
@@ -58,9 +54,11 @@ The product combines elements of:
 
 Other strong taglines include:
 
-> **Every paper, commit, experiment, and claim—connected.**
+> **Every paper, commit, experiment, and claim — connected.**
 
 > **Build research you can explain, audit, and reproduce.**
+
+> **Cly is not where you type every line. It's where you understand, coordinate, and verify the entire project.**
 
 ---
 
@@ -222,7 +220,7 @@ This allows the product to answer questions such as:
 
 # 6. Product workspace layout
 
-The application should retain Dream IDE’s core editor experience while adding research-specific navigation.
+The application should provide an integrated coding workspace alongside research-specific navigation. The coding workspace (editor, terminal, git, notebooks) is a module within Cly, not its identity.
 
 ## Left sidebar
 
@@ -1350,24 +1348,22 @@ Zotero paper → Evidence → Claim
 
 # 9. Technical architecture
 
-Because the exact Dream IDE architecture still needs verification, the safest strategy is to keep research services modular.
+Research services are modular and independent of the coding workspace. This allows the editor to be replaced or supplemented with external IDE integrations.
 
 ## Architectural layers
 
 ```text
-Dream IDE shell
+Cly Application (dashboard, literature, experiments, claims, audits)
 │
-├── Research UI extensions
-├── Editor and notebook integrations
-├── Git workflow integration
+├── Cly Core (research objects, relationships, provenance, services)
+├── Coding Workspace (editor, terminal, git, notebooks)
 ├── Agent orchestration layer
-├── Research graph service
 ├── Literature pipeline
 ├── Experiment tracking service
 ├── Provenance service
 ├── Reproducibility service
 ├── Provider gateway
-└── Integration adapters
+└── Integration adapters (VS Code, Jupyter, GitHub, CLI)
 ```
 
 ## Frontend
@@ -1574,48 +1570,24 @@ The app should:
 
 # 12. Development roadmap
 
-## Phase 0: Dream IDE technical assessment
+## Phase 0: Foundation and assessment ✅
 
-Before implementing product features, inspect the Dream IDE codebase.
-
-### Required investigation
-
-* license and commercial-use rights;
-* active maintainers;
-* release history;
-* desktop and browser support;
-* extension architecture;
-* editor engine;
-* Git APIs;
-* terminal APIs;
-* notebook support;
-* authentication;
-* storage model;
-* update system;
-* test coverage;
-* and packaging process.
+Cly identity, CI, tests, repository governance, and security policy established. Dream IDE assessed as coding workspace component. UI shell prototype complete with fixture-backed screens.
 
 ### Deliverables
 
-```text
-Dream IDE architecture report
-Forking strategy
-License review
-Extension points map
-Upgrade strategy
-Security assessment
-Build and packaging guide
-```
-
-Do not deeply modify the core until the team understands how upstream changes will be incorporated.
+- Independent Cly identity and release path
+- CI, tests, and security policy
+- Dream architecture and licensing assessment
+- UI shell with full research navigation (complete)
 
 ---
 
-## Phase 1: Research-aware IDE foundation
+## Phase 1: Research core with real persistence
 
 ### Goal
 
-Turn Dream IDE into a recognizable research workspace.
+Replace fixture-backed mock services with real project-scoped persistence. Make the research graph, claims, sources, and experiments survive restart.
 
 ### Features
 
@@ -1893,7 +1865,7 @@ The system should capture provenance automatically during normal work. Researche
 
 # 16. Final product definition
 
-> **The product is an AI-native research IDE built on Dream IDE that unifies literature discovery, source management, computational notebooks, code development, Git collaboration, experiment tracking, scientific claims, provenance, and reproducibility. It structures research as a connected object graph so every conclusion can be traced from the original question through the supporting papers, decisions, code, experiments, and outputs.**
+> **Cly is a standalone research platform — the system of record for computational research. It unifies literature discovery, source management, computational notebooks, code development, experiment tracking, scientific claims, provenance, and reproducibility. It structures research as a connected object graph so every conclusion can be traced from the original question through the supporting papers, decisions, code, experiments, and outputs. It includes an integrated coding workspace and connects with external editors through extensions and APIs.**
 
 The strategic focus should not be “another AI coding editor.”
 

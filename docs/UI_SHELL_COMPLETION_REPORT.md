@@ -4,18 +4,7 @@ Completion date: 2026-07-11.
 
 ## Outcome
 
-The default Dream IDE renderer has been extended into a coherent, fixture-backed Cly research cockpit. Electron/React/TypeScript, windowing, preload IPC, process, Git, persistence, component, test, and packaging infrastructure remain in the repository. The main bundle no longer imports the heavy IDE composition.
-
-## Dream components retained
-
-- Electron lifecycle, macOS hidden-inset window, renderer server, updater boundary, secure external navigation, theme IPC, preload bridge, and packaging.
-- Zustand, SQLite/Drizzle, Hono API, terminal/process sessions, Git routes, browser sessions, editor detection, chat/provider adapters, diff/file components, shadcn-style primitives, Tailwind, lucide-react, Vitest, RTL, and Playwright.
-
-## Dream components replaced or hidden
-
-- Replaced: main renderer composition, title/project-tab header, application menus, workspace navigation, settings presentation.
-- Hidden from default shell: chat columns/history, file explorer, changes, browser, raw terminal, project status bar.
-- Retained behind the UI for Phase 2 adapters rather than deleted.
+The Cly research cockpit is a complete, fixture-backed UI shell with all primary research and integrity workspaces, desktop menus, keyboard navigation, and responsive visual fixtures. The coding workspace is provided by Dream IDE as an implementation component. The research core — types, services, store, and screens — is in `src/features/cly/` and is independent of editor internals.
 
 ## Architecture
 
@@ -43,6 +32,16 @@ The active fixture links claims, sources, experiments, runs, notebooks, code, ar
 
 Services: Project, Context, Agent, Experiment, Source, Notebook, Claim, Research Graph, Reproducibility, Integration, Planner, and Decision.
 
+## Infrastructure
+
+The coding workspace (editor, terminal, git, notebooks) uses Dream IDE infrastructure:
+
+- Electron lifecycle, macOS hidden-inset window, renderer server, updater, theme IPC, preload bridge, and packaging.
+- Zustand, SQLite/Drizzle, Hono API, terminal/process sessions, Git routes, browser sessions, editor detection, chat/provider adapters.
+- shadcn-style primitives, Tailwind, lucide-react, Vitest, RTL, and Playwright.
+
+The research core does not depend on Dream internals. It communicates through typed service interfaces (`src/features/cly/services/interfaces.ts`).
+
 ## Tests and commands run
 
 ```bash
@@ -58,21 +57,16 @@ codesign --verify --deep --strict --verbose=2 release/mac-arm64/Cly.app
 
 Results: 6 Vitest files / 22 tests passed; 4 Playwright suites passed; renderer production build passed; headed Chrome visual QA reported zero console errors/warnings; packaged app passed strict code-signature verification.
 
-## Packaged app
-
-`release/mac-arm64/Cly.app` is an arm64 development app, version 0.5.0, bundle ID `ai.cly.cly`. It is 805 MB because Dream's future backend/provider dependencies remain packaged. The local build is signed with the available Apple Development identity and is not notarized. Local development packages omit updater configuration unless `CLY_UPDATE_FEED_URL` is explicitly supplied; CI fails closed without that variable.
-
-## Known limitations and uncertainty
+## Known limitations
 
 - Research domain data is fixture-backed and resets on reload; only selected UI preferences use browser storage.
 - No real source/code/notebook scanners, notebook or experiment execution, agent calls, OAuth, sync, or secret storage are active.
-- Graph layout is a deterministic prototype with bounded rendering and zoom; it is not a production force-directed/canvas renderer and does not yet implement full pointer panning.
-- Large tables use bounded rendering windows plus search rather than a production virtualized grid with arbitrary row scrolling.
+- Graph layout is a deterministic prototype with bounded rendering and zoom.
+- Large tables use bounded rendering windows plus search rather than a production virtualized grid.
 - Literature cells demonstrate editing visually but do not persist across reload.
-- Existing Dream localization is retained but the new Cly shell is currently English-only.
-- The package emitted a non-blocking `author is missed` warning from electron-builder.
-- Only arm64 macOS packaging was performed locally; DMG/ZIP notarization, Windows, and Linux installers were not produced in this run.
+- The prototype is currently English-only.
+- Only arm64 macOS packaging was performed locally.
 
 ## Phase 2 recommendation
 
-Implement project-scoped relational persistence first, then source import, claim/evidence relationships, static notebook/code scanners, experiment/run manifests, artifact provenance, deterministic reproducibility rules, graph-backed Context Composer, local signed-in CLI agent routing, planning/orchestration, and finally official external integrations.
+Implement project-scoped relational persistence first, then source import, claim/evidence relationships, static notebook/code scanners, experiment/run manifests, artifact provenance, deterministic reproducibility rules, graph-backed Context Composer, local signed-in CLI agent routing, planning/orchestration, VS Code extension, and finally official external integrations.

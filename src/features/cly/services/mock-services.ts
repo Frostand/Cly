@@ -8,7 +8,7 @@ import type {
 import { useClyStore } from "../store/cly-store";
 import type { ClyServices } from "./interfaces";
 
-const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}`;
+const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const isoNow = () => new Date().toISOString();
 
 export const mockServices: ClyServices = {
@@ -115,8 +115,8 @@ export const mockServices: ClyServices = {
         path: "sources/imported",
         updatedAt: isoNow(),
       };
-      useClyStore.getState().addSource(source);
-      return source;
+      const persistedSource = await useClyStore.getState().addSource(source);
+      return persistedSource ?? source;
     },
     async addToNotebookBundle(sourceId) {
       useClyStore.getState().updateSource(sourceId, { inNotebookBundle: true });

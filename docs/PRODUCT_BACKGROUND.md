@@ -1,6 +1,6 @@
 # Cly Product Background
 
-Cly is a local-first research cockpit for computational and code-assisted research. It connects the full evidence trail:
+Cly is a local-first research platform for computational and code-assisted research. It is the system of record that connects the full evidence trail:
 
 ```text
 question → sources → methods → code → notebooks → experiments
@@ -25,6 +25,8 @@ Cly is designed for researchers, students, research engineers, independent scien
 
 ## Product boundaries
 
-Cly is not a VS Code clone, a notebook editor, an admin dashboard, or a chat wrapper. Dream supplies desktop and execution infrastructure; Cly supplies the research-object model, evidence navigation, context control, integrity workflows, and decision memory.
+Cly is a standalone research platform, not an IDE. It includes an integrated coding workspace for computational work, but its primary value is the research-object model, evidence navigation, context control, integrity workflows, and decision memory — all of which are independent of any code editor.
 
-The current phase is UI-first. All external integrations, model calls, authentication, execution, and synchronization are simulated behind typed service interfaces.
+Cly integrates with external editors (VS Code, Cursor, Jupyter) through extensions and APIs. Users can keep their preferred coding environment while Cly tracks their research state.
+
+The current phase is UI-first with fixture-backed screens. All external integrations, model calls, authentication, execution, and synchronization are simulated behind typed service interfaces and will be implemented in Phase 2–3.

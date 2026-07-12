@@ -30,7 +30,7 @@ const coreData: ClyRepositoryData = {
     {
       id: "project-cly",
       name: "Neural surrogate reliability",
-      path: "/Users/manu/Research/surrogate-reliability",
+      path: "~/Research/surrogate-reliability",
       question:
         "When can neural surrogate models replace expensive physical simulations without hiding failure modes?",
       hypothesis:
@@ -44,7 +44,7 @@ const coreData: ClyRepositoryData = {
     {
       id: "project-cells",
       name: "Cell morphology atlas",
-      path: "/Users/manu/Research/cell-atlas",
+      path: "~/Research/cell-atlas",
       question:
         "Which morphological features best predict perturbation response?",
       hypothesis:
@@ -57,7 +57,7 @@ const coreData: ClyRepositoryData = {
     {
       id: "project-robot",
       name: "Adaptive grasp planning",
-      path: "/Users/manu/Research/grasp-planning",
+      path: "~/Research/grasp-planning",
       question:
         "Can uncertainty-guided policies improve unseen-object grasping?",
       hypothesis:

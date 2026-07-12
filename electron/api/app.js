@@ -59,7 +59,7 @@ export function startApiServer({ port, apiToken }) {
   const guardedApp = createApiApp(apiToken);
 
   return new Promise((resolve) => {
-    serve(
+    const server = serve(
       {
         fetch: guardedApp.fetch,
         hostname: "127.0.0.1",
@@ -67,7 +67,19 @@ export function startApiServer({ port, apiToken }) {
       },
       (info) => {
         console.log(`API server listening on http://127.0.0.1:${info.port}`);
-        resolve(info.port);
+        resolve({
+          close: () =>
+            new Promise((resolveClose, rejectClose) => {
+              server.close((error) => {
+                if (error) {
+                  rejectClose(error);
+                  return;
+                }
+                resolveClose();
+              });
+            }),
+          port: info.port,
+        });
       },
     );
   });

@@ -43,16 +43,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
-# editor
-.vscode/*
-!.vscode/settings.json
-node_modules
-
 # other
 nul
 .codex
 .claude
-.next
 .worktrees/
 
 # local research data and generated artifacts
