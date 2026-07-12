@@ -154,17 +154,24 @@ describe("Cly application shell", () => {
     );
   });
 
-  it("closes open overflow menus with Escape", async () => {
-    const user = userEvent.setup();
+  it("renders all titlebar action buttons directly", () => {
     render(<ClyAppShell />);
 
-    const trigger = document.querySelector(
-      ".cly-title-overflow summary",
-    ) as HTMLElement;
-    await user.click(trigger);
-    const overflow = document.querySelector(".cly-title-overflow");
-    expect(overflow).toHaveAttribute("open");
-    await user.keyboard("{Escape}");
-    expect(overflow).not.toHaveAttribute("open");
+    const titlebar = document.querySelector(".cly-titlebar") as HTMLElement;
+    expect(
+      within(titlebar).getByLabelText(/active agent sessions/),
+    ).toBeVisible();
+    expect(
+      within(titlebar).getByLabelText(/Local and cloud status/),
+    ).toBeVisible();
+    expect(
+      within(titlebar).getByLabelText("Notification center"),
+    ).toBeVisible();
+    expect(
+      within(titlebar).getByLabelText("Settings"),
+    ).toBeVisible();
+    expect(
+      within(titlebar).getByLabelText("Toggle inspector"),
+    ).toBeVisible();
   });
 });

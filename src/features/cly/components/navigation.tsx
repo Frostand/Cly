@@ -25,6 +25,7 @@ import {
 import type { ComponentType } from "react";
 import type { ScreenId } from "../domain/types";
 import { useClyStore } from "../store/cly-store";
+import { ClyLogo, ThemeSwitcher } from "./brand";
 
 interface NavigationItem {
   id: ScreenId;
@@ -135,6 +136,9 @@ export function Sidebar() {
 
   return (
     <aside className="cly-sidebar" aria-label="Main navigation">
+      <div className="cly-sidebar-brand">
+        <ClyLogo compact={sidebarCollapsed} />
+      </div>
       <div className="cly-sidebar-scroll">
         {groups.map((group) => (
           <nav
@@ -171,6 +175,7 @@ export function Sidebar() {
         ))}
       </div>
       <div className="cly-sidebar-footer">
+        <ThemeSwitcher compact={sidebarCollapsed} />
         <button
           className="cly-sidebar-item"
           type="button"
@@ -209,7 +214,9 @@ export function ProjectSwitcherButton() {
       aria-label="Switch project"
       data-testid="project-switcher"
     >
-      <span className="cly-project-mark">C</span>
+      <span className="cly-project-mark">
+        <ClyLogo compact />
+      </span>
       <span className="cly-project-meta">
         <span className="cly-project-name">{project.name}</span>
         <span className="cly-project-path">{project.path}</span>

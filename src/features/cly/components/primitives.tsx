@@ -341,6 +341,7 @@ export function Panel({
 
 export function toneForStatus(status: string): StatusTone {
   const value = status.toLowerCase();
+  if (value === "blocking" || value === "high") return "danger";
   if (
     [
       "connected",
