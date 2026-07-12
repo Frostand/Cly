@@ -46,6 +46,7 @@ jobs:
     name: codeql
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       security-events: write
       packages: read
       contents: read
