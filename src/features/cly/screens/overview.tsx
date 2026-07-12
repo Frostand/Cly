@@ -13,12 +13,12 @@ import {
   Badge,
   Button,
   EmptyState,
-  Metric,
   PageHeader,
   Panel,
   Section,
   toneForStatus,
 } from "../components/primitives";
+import { ResearchLifecycle, VisualMetric } from "../components/visuals";
 import { useClyStore } from "../store/cly-store";
 
 export function OverviewScreen() {
@@ -50,7 +50,7 @@ export function OverviewScreen() {
     );
 
   return (
-    <div className="cly-page">
+    <div className="cly-page cly-route-overview">
       <PageHeader
         kicker="Project overview"
         title={project.name}
@@ -68,31 +68,61 @@ export function OverviewScreen() {
       />
       <LocalStatusBanner />
 
-      <section className="cly-metric-row" aria-label="Project summary">
-        <Metric
+      <ResearchLifecycle
+        steps={[
+          "Question",
+          "Sources",
+          "Method",
+          "Experiment",
+          "Evidence",
+          "Claim",
+        ]}
+        current={4}
+      />
+
+      <section className="cly-visual-metrics" aria-label="Project summary">
+        <VisualMetric
           label="Research phase"
           value={project.phase}
           detail="Updated today"
         />
-        <Metric
+        <VisualMetric
           label="Active claims"
           value={data.claims.length}
           detail={`${data.claims.filter((item) => item.status === "Weak" || item.status === "Needs review").length} need attention`}
+          values={data.claims.map((item) => item.confidence)}
+          tone="warning"
         />
-        <Metric
+        <VisualMetric
           label="Experiments"
           value={data.experiments.length}
           detail={`${data.experiments.filter((item) => item.status === "Running").length} running`}
+          values={data.experiments.map((item) => item.runIds.length)}
         />
-        <Metric
+        <VisualMetric
           label="Reproducibility"
           value={audit ? `${audit.score}%` : "—"}
           detail={audit?.status ?? "Not audited"}
+          values={
+            audit
+              ? [
+                  Math.max(0, audit.score - 8),
+                  Math.max(0, audit.score - 3),
+                  audit.score,
+                ]
+              : undefined
+          }
+          tone={audit && audit.score >= 80 ? "success" : "warning"}
         />
-        <Metric
+        <VisualMetric
           label="Evidence graph"
           value={data.graphNodes.length}
           detail={`${data.graphEdges.length} relationships`}
+          values={[
+            data.sources.length,
+            data.claims.length,
+            data.graphNodes.length,
+          ]}
         />
       </section>
 
@@ -100,7 +130,7 @@ export function OverviewScreen() {
         title="Research direction"
         subtitle="The question and hypothesis currently organizing this project"
       >
-        <div className="cly-grid-2">
+        <div className="cly-project-brief">
           <Panel className="cly-panel-body">
             <div className="cly-page-kicker">Research question</div>
             <div style={{ fontSize: 17, lineHeight: 1.45, fontWeight: 590 }}>

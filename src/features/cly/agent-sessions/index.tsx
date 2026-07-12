@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { RouteTransition } from "../components/visuals";
 import { useClyStore } from "../store/cly-store";
 import { AgentSessionsChat } from "./chat";
 import { AgentSessionsOverview } from "./overview";
@@ -86,7 +87,13 @@ export function AgentSessionsScreen() {
 
   return (
     <div className="agent-sessions-root" data-mode={mode}>
-      {mode === "overview" ? <AgentSessionsOverview /> : <AgentSessionsChat />}
+      <RouteTransition route={`agent-${mode}`}>
+        {mode === "overview" ? (
+          <AgentSessionsOverview />
+        ) : (
+          <AgentSessionsChat />
+        )}
+      </RouteTransition>
       <NewSessionFlow />
       <AgentConfigurationSheet />
     </div>

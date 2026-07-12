@@ -27,6 +27,7 @@ import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
 import { Inspector } from "./inspector";
 import { Sidebar } from "./navigation";
 import { LoadingState } from "./primitives";
+import { ClyMotionProvider, RouteTransition } from "./visuals";
 
 const screens: Record<ScreenId, () => React.JSX.Element> = {
   overview: OverviewScreen,
@@ -126,6 +127,7 @@ export function ClyAppShell() {
   const activeScreen = useClyStore((s) => s.activeScreen);
   const sidebarCollapsed = useClyStore((s) => s.sidebarCollapsed);
   const inspectorOpen = useClyStore((s) => s.inspectorOpen);
+  const selectedId = useClyStore((s) => s.selectedId);
   const agentSessionsMode = useClyStore((s) => s.agentSessionsMode);
   const fixtureMode = useClyStore((s) => s.fixtureMode);
   const setScreen = useClyStore((s) => s.setScreen);
@@ -185,6 +187,12 @@ export function ClyAppShell() {
         return;
       }
       if (event.key === "Escape") {
+        const openDetails =
+          document.querySelector<HTMLDetailsElement>("details[open]");
+        if (openDetails) {
+          openDetails.open = false;
+          return;
+        }
         const state = useClyStore.getState();
         if (state.commandPaletteOpen) state.setCommandPaletteOpen(false);
         else if (state.projectSwitcherOpen) state.setProjectSwitcherOpen(false);
@@ -208,37 +216,43 @@ export function ClyAppShell() {
   }, []);
 
   return (
-    <main className="cly-app">
-      <Titlebar />
-      <div
-        className="cly-shell"
-        data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
-        data-inspector={
-          inspectorOpen && activeScreen !== "agents" ? "open" : "closed"
-        }
-        data-agent-mode={
-          activeScreen === "agents" ? agentSessionsMode : undefined
-        }
-      >
-        <Sidebar />
-        <section className="cly-workspace">
-          <div className="cly-screen" id="main-workspace" tabIndex={-1}>
-            {fixtureMode === "loading" ? (
-              <div className="cly-page">
-                <LoadingState
-                  label={`Loading ${activeScreen.replace("-", " ")}`}
-                />
-              </div>
-            ) : (
-              <ActiveScreen />
-            )}
-          </div>
-          <ActivityDrawer />
-        </section>
-        {activeScreen !== "agents" ? <Inspector /> : null}
-      </div>
-      <CommandPalette />
-      <Toasts />
-    </main>
+    <ClyMotionProvider>
+      <main className="cly-app">
+        <Titlebar />
+        <div
+          className="cly-shell"
+          data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
+          data-inspector={
+            inspectorOpen && selectedId && activeScreen !== "agents"
+              ? "open"
+              : "closed"
+          }
+          data-agent-mode={
+            activeScreen === "agents" ? agentSessionsMode : undefined
+          }
+        >
+          <Sidebar />
+          <section className="cly-workspace">
+            <div className="cly-screen" id="main-workspace" tabIndex={-1}>
+              {fixtureMode === "loading" ? (
+                <div className="cly-page">
+                  <LoadingState
+                    label={`Loading ${activeScreen.replace("-", " ")}`}
+                  />
+                </div>
+              ) : (
+                <RouteTransition route={activeScreen}>
+                  <ActiveScreen />
+                </RouteTransition>
+              )}
+            </div>
+            <ActivityDrawer />
+          </section>
+          {activeScreen !== "agents" && selectedId ? <Inspector /> : null}
+        </div>
+        <CommandPalette />
+        <Toasts />
+      </main>
+    </ClyMotionProvider>
   );
 }

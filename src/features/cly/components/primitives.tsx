@@ -1,6 +1,13 @@
+import * as RadixDialog from "@radix-ui/react-dialog";
+import * as RadixToggleGroup from "@radix-ui/react-toggle-group";
 import { AlertTriangle, Inbox, LoaderCircle, Search, X } from "lucide-react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import type { StatusTone } from "../domain/types";
+import {
+  SkeletonRows,
+  StatusIndicator,
+  WorkspaceHeader,
+} from "./design-system";
 
 export function Button({
   children,
@@ -35,12 +42,13 @@ export function Badge({
   className?: string;
 }) {
   return (
-    <span
+    <StatusIndicator
       className={`cly-badge${square ? " cly-badge-square" : ""} ${className}`}
-      data-tone={tone}
+      tone={tone}
+      emphasis={tone === "warning" || tone === "danger"}
     >
       {children}
-    </span>
+    </StatusIndicator>
   );
 }
 
@@ -56,14 +64,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="cly-page-header">
-      <div>
-        {kicker ? <div className="cly-page-kicker">{kicker}</div> : null}
-        <h1 className="cly-page-title">{title}</h1>
-        <p className="cly-page-description">{description}</p>
-      </div>
-      {actions ? <div className="cly-page-actions">{actions}</div> : null}
-    </header>
+    <WorkspaceHeader
+      title={title}
+      eyebrow={kicker}
+      description={description}
+      actions={actions}
+    />
   );
 }
 
@@ -124,18 +130,21 @@ export function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <fieldset className="cly-segmented" aria-label={label}>
+    <RadixToggleGroup.Root
+      type="single"
+      value={value}
+      onValueChange={(next) => {
+        if (next) onChange(next as T);
+      }}
+      className="cly-segmented"
+      aria-label={label}
+    >
       {options.map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={value === option}
-          onClick={() => onChange(option)}
-        >
+        <RadixToggleGroup.Item key={option} value={option}>
           {option}
-        </button>
+        </RadixToggleGroup.Item>
       ))}
-    </fieldset>
+    </RadixToggleGroup.Root>
   );
 }
 
@@ -193,14 +202,12 @@ export function LoadingState({
   label?: string;
 }) {
   return (
-    <div className="cly-empty" role="status" aria-label={label}>
-      <div>
-        <div className="cly-empty-icon">
-          <LoaderCircle className="animate-spin" size={18} />
-        </div>
-        <h3>{label}</h3>
-        <p>Preparing linked fixture data and project state.</p>
+    <div className="cly-loading-state" role="status" aria-label={label}>
+      <div className="cly-loading-label">
+        <LoaderCircle className="animate-spin" size={13} />
+        <span>{label}</span>
       </div>
+      <SkeletonRows count={7} />
     </div>
   );
 }
@@ -266,47 +273,67 @@ export function Dialog({
   onClose: () => void;
   wide?: boolean;
 }) {
-  if (!open) return null;
   return (
-    <div className="cly-overlay" role="presentation">
-      <div
-        className={`cly-dialog${wide ? " cly-dialog-wide" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="cly-dialog-title"
-      >
-        <div className="cly-dialog-header">
-          <div>
-            <h2 className="cly-dialog-title" id="cly-dialog-title">
-              {title}
-            </h2>
-            {description ? (
-              <p className="cly-dialog-description">{description}</p>
-            ) : null}
+    <RadixDialog.Root
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <RadixDialog.Portal>
+        <RadixDialog.Overlay className="cly-overlay" />
+        <RadixDialog.Content
+          className={`cly-dialog${wide ? " cly-dialog-wide" : ""}`}
+          onOpenAutoFocus={(event) => {
+            const content = event.currentTarget as HTMLElement | null;
+            const target = content?.querySelector<HTMLElement>(
+              "[autofocus], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+            );
+            if (target) {
+              event.preventDefault();
+              target.focus();
+            }
+          }}
+        >
+          <div className="cly-dialog-header">
+            <div>
+              <RadixDialog.Title className="cly-dialog-title">
+                {title}
+              </RadixDialog.Title>
+              {description ? (
+                <RadixDialog.Description className="cly-dialog-description">
+                  {description}
+                </RadixDialog.Description>
+              ) : (
+                <RadixDialog.Description className="cly-sr-only">
+                  {title} dialog
+                </RadixDialog.Description>
+              )}
+            </div>
+            <RadixDialog.Close asChild>
+              <Button variant="ghost" iconOnly aria-label="Close dialog">
+                <X size={14} />
+              </Button>
+            </RadixDialog.Close>
           </div>
-          <Button
-            variant="ghost"
-            iconOnly
-            aria-label="Close dialog"
-            onClick={onClose}
-          >
-            <X size={14} />
-          </Button>
-        </div>
-        <div className="cly-dialog-body">{children}</div>
-        {footer ? <div className="cly-dialog-footer">{footer}</div> : null}
-      </div>
-    </div>
+          <div className="cly-dialog-body">{children}</div>
+          {footer ? <div className="cly-dialog-footer">{footer}</div> : null}
+        </RadixDialog.Content>
+      </RadixDialog.Portal>
+    </RadixDialog.Root>
   );
 }
 
 export function Panel({
   children,
   className = "",
+  variant = "group",
   ...props
-}: HTMLAttributes<HTMLDivElement>) {
+}: HTMLAttributes<HTMLDivElement> & {
+  variant?: "group" | "workspace" | "raised" | "selected";
+}) {
   return (
-    <div className={`cly-panel ${className}`} {...props}>
+    <div className={`cly-panel ${className}`} data-variant={variant} {...props}>
       {children}
     </div>
   );

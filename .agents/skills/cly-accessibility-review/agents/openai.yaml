@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cly Accessibility Review"
+  short_description: "Audit Cly keyboard and screen reader behavior"
+  default_prompt: "Use $cly-accessibility-review to audit this Cly workflow and fix accessibility issues."

@@ -1,10 +1,33 @@
 allowBuilds:
-  '@parcel/watcher': set this to true or false
-  '@swc/core': set this to true or false
-  core-js: set this to true or false
-  electron: set this to true or false
-  electron-winstaller: set this to true or false
-  esbuild: set this to true or false
-  node-pty: set this to true or false
-  sharp: set this to true or false
-onlyBuiltDependencies: '[]'
+  '@parcel/watcher': false
+  '@swc/core': false
+  core-js: false
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  msw: true
+  node-pty: true
+  sharp: false
+
+supportedArchitectures:
+  os:
+    - current
+    - darwin
+  cpu:
+    - x64
+    - arm64
+
+overrides:
+  js-yaml: 4.3.0
+  postcss: 8.5.10
+
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+
+onlyBuiltDependencies:
+  - electron
+  - electron-winstaller
+  - esbuild
+  - msw
+  - node-pty

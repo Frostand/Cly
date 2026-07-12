@@ -1,3 +1,14 @@
+import type { ColumnDef } from "@tanstack/react-table";
+import {
+  Background,
+  Controls,
+  Handle,
+  MiniMap,
+  type Node,
+  type NodeProps,
+  Position,
+  ReactFlow,
+} from "@xyflow/react";
 import {
   ArrowRight,
   Beaker,
@@ -6,8 +17,7 @@ import {
   Filter,
   GitBranch,
   Link2,
-  Maximize2,
-  Minus,
+  MoreHorizontal,
   Plus,
   Sparkles,
   X,
@@ -18,14 +28,19 @@ import {
   Button,
   Dialog,
   EmptyState,
-  Metric,
   PageHeader,
   Panel,
   SearchInput,
   Segmented,
   toneForStatus,
 } from "../components/primitives";
-import type { ExperimentType } from "../domain/types";
+import { ClyDataTable, ClyMenu } from "../components/toolkit";
+import { VisualMetric } from "../components/visuals";
+import type {
+  Experiment,
+  ExperimentRun,
+  ExperimentType,
+} from "../domain/types";
 import { mockServices } from "../services/mock-services";
 import { useClyStore } from "../store/cly-store";
 
@@ -42,6 +57,33 @@ const experimentViews = [
   "Timeline",
   "Outputs",
 ] as const;
+
+type ClyFlowNode = Node<
+  { label: string; type: string; status: string },
+  "clyResearch"
+>;
+
+function ClyResearchNode({ data, selected }: NodeProps<ClyFlowNode>) {
+  return (
+    <div
+      className="cly-flow-node"
+      data-selected={selected}
+      data-status={data.status}
+    >
+      <Handle type="target" position={Position.Left} />
+      <GitBranch size={13} aria-hidden="true" />
+      <span>
+        <small>
+          {data.type} · {data.status}
+        </small>
+        <strong>{data.label}</strong>
+      </span>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
+
+const clyNodeTypes = { clyResearch: ClyResearchNode };
 
 export function ExperimentsScreen() {
   const data = useClyStore((s) => s.data);
@@ -67,6 +109,69 @@ export function ExperimentsScreen() {
   const compareRuns = compareIds
     .map((id) => data.runs.find((item) => item.id === id))
     .filter(Boolean);
+  const experimentColumns = useMemo<ColumnDef<Experiment, unknown>[]>(
+    () => [
+      { accessorKey: "name", header: "Experiment" },
+      { accessorKey: "type", header: "Type" },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <Badge tone={toneForStatus(row.original.status)}>
+            {row.original.status}
+          </Badge>
+        ),
+      },
+      { accessorKey: "goal", header: "Research goal" },
+      { id: "runs", header: "Runs", accessorFn: (row) => row.runIds.length },
+      {
+        accessorKey: "updatedAt",
+        header: "Updated",
+        cell: ({ row }) =>
+          new Date(row.original.updatedAt).toLocaleDateString(),
+      },
+    ],
+    [],
+  );
+  const runColumns = useMemo<ColumnDef<ExperimentRun, unknown>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Run",
+        cell: ({ row }) =>
+          `${row.original.name}${row.original.canonical ? " · canonical" : ""}`,
+      },
+      {
+        id: "experiment",
+        header: "Experiment",
+        accessorFn: (run) =>
+          data.experiments.find((item) => item.id === run.experimentId)?.name ??
+          run.experimentId,
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <Badge tone={toneForStatus(row.original.status)}>
+            {row.original.status}
+          </Badge>
+        ),
+      },
+      { accessorKey: "duration", header: "Duration" },
+      { accessorKey: "codeVersion", header: "Code" },
+      { accessorKey: "environment", header: "Environment" },
+      {
+        accessorKey: "reproducibility",
+        header: "Reproducibility",
+        cell: ({ row }) => (
+          <Badge tone={toneForStatus(row.original.reproducibility)}>
+            {row.original.reproducibility}
+          </Badge>
+        ),
+      },
+    ],
+    [data.experiments],
+  );
 
   const create = async () => {
     if (!name.trim()) return;
@@ -86,11 +191,11 @@ export function ExperimentsScreen() {
   };
 
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-experiments">
       <PageHeader
         kicker="Research"
         title="Experiment Manager"
-        description="Plan, compare, and trace computational research across simulations, analyses, benchmarks, data pipelines, and model runs."
+        description="Compare experiments, runs, evidence, and reproducibility."
         actions={
           <>
             <Segmented
@@ -105,26 +210,48 @@ export function ExperimentsScreen() {
           </>
         }
       />
-      <div className="cly-metric-row">
-        <Metric
+      <div className="cly-visual-metrics">
+        <VisualMetric
           label="Experiments"
           value={data.experiments.length}
           detail="Across 10 research types"
+          values={data.experiments.map((item) => item.runIds.length)}
         />
-        <Metric
+        <VisualMetric
           label="Runs"
           value={data.runs.length}
           detail={`${data.runs.filter((item) => item.status === "Running").length} currently running`}
+          values={data.runs.map((item) =>
+            item.status === "Complete"
+              ? 100
+              : item.status === "Running"
+                ? 68
+                : item.status === "Queued"
+                  ? 18
+                  : 0,
+          )}
         />
-        <Metric
-          label="Canonical"
-          value={data.runs.filter((item) => item.canonical).length}
-          detail="Pinned to evidence chains"
+        <VisualMetric
+          label="Coverage trend"
+          value={`${Math.round(
+            (data.runs
+              .map((item) => item.metrics.coverage)
+              .filter((value): value is number => typeof value === "number")
+              .at(-1) ?? 0) * 100,
+          )}%`}
+          detail="Across comparable runs"
+          values={data.runs
+            .map((item) => item.metrics.coverage)
+            .filter((value): value is number => typeof value === "number")
+            .map((value) => value * 100)}
+          tone="success"
         />
-        <Metric
+        <VisualMetric
           label="Failed"
           value={data.runs.filter((item) => item.status === "Failed").length}
           detail="Require follow-up"
+          values={data.runs.map((item) => (item.status === "Failed" ? 1 : 0))}
+          tone="danger"
         />
       </div>
 
@@ -165,7 +292,7 @@ export function ExperimentsScreen() {
         {data.experiments.length === 0 ? (
           <EmptyState
             title="No experiments yet"
-            description="Create a simulation, analysis, benchmark, reproduction attempt, notebook analysis, or custom computational workflow."
+            description="Create a simulation, benchmark, analysis, or reproduction attempt."
             action={
               <Button variant="primary" onClick={() => setCreateOpen(true)}>
                 New experiment
@@ -175,97 +302,25 @@ export function ExperimentsScreen() {
         ) : null}
 
         {view === "Experiments" && data.experiments.length ? (
-          <div className="cly-table-wrap">
-            <table className="cly-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "26%" }}>Experiment</th>
-                  <th style={{ width: "14%" }}>Type</th>
-                  <th style={{ width: "11%" }}>Status</th>
-                  <th>Research goal</th>
-                  <th style={{ width: "11%" }}>Runs</th>
-                  <th style={{ width: "14%" }}>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {experiments.slice(0, 200).map((item) => (
-                  <tr
-                    key={item.id}
-                    data-selected={selectedId === item.id}
-                    onClick={() => setSelected(item.id)}
-                  >
-                    <td>{item.name}</td>
-                    <td>{item.type}</td>
-                    <td>
-                      <Badge tone={toneForStatus(item.status)}>
-                        {item.status}
-                      </Badge>
-                    </td>
-                    <td>{item.goal}</td>
-                    <td>{item.runIds.length}</td>
-                    <td>{new Date(item.updatedAt).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {experiments.length > 200 ? (
-              <div className="cly-callout" style={{ margin: 10 }}>
-                Showing the first 200 rows of{" "}
-                {experiments.length.toLocaleString()}. The large fixture uses a
-                bounded rendering window.
-              </div>
-            ) : null}
-          </div>
+          <ClyDataTable
+            id="experiments"
+            data={experiments}
+            columns={experimentColumns}
+            getRowId={(row) => row.id}
+            selectedId={selectedId}
+            onSelect={(row) => setSelected(row.id)}
+          />
         ) : null}
 
         {view === "Runs" ? (
-          <div className="cly-table-wrap">
-            <table className="cly-table">
-              <thead>
-                <tr>
-                  <th>Run</th>
-                  <th>Experiment</th>
-                  <th>Status</th>
-                  <th>Duration</th>
-                  <th>Code</th>
-                  <th>Environment</th>
-                  <th>Reproducibility</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.runs.slice(0, 250).map((run) => (
-                  <tr
-                    key={run.id}
-                    data-selected={selectedId === run.id}
-                    onClick={() => setSelected(run.id)}
-                  >
-                    <td>
-                      {run.name}
-                      {run.canonical ? " · canonical" : ""}
-                    </td>
-                    <td>
-                      {data.experiments.find(
-                        (item) => item.id === run.experimentId,
-                      )?.name ?? run.experimentId}
-                    </td>
-                    <td>
-                      <Badge tone={toneForStatus(run.status)}>
-                        {run.status}
-                      </Badge>
-                    </td>
-                    <td>{run.duration}</td>
-                    <td className="cly-mono">{run.codeVersion}</td>
-                    <td>{run.environment}</td>
-                    <td>
-                      <Badge tone={toneForStatus(run.reproducibility)}>
-                        {run.reproducibility}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ClyDataTable
+            id="experiment-runs"
+            data={data.runs}
+            columns={runColumns}
+            getRowId={(row) => row.id}
+            selectedId={selectedId}
+            onSelect={(row) => setSelected(row.id)}
+          />
         ) : null}
 
         {view === "Compare" ? (
@@ -509,7 +564,6 @@ export function GraphScreen() {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [hideLow, setHideLow] = useState(true);
-  const [zoom, setZoom] = useState(0.72);
   const visibleNodes = useMemo(
     () =>
       nodes
@@ -532,6 +586,32 @@ export function GraphScreen() {
     )
     .slice(0, 120);
   const selectedNode = nodes.find((node) => node.id === selectedId);
+  const flowNodes = useMemo<ClyFlowNode[]>(
+    () =>
+      visibleNodes.map((node, index) => ({
+        id: node.id,
+        type: "clyResearch",
+        position: {
+          x: nodes.length > 100 ? 30 + (index % 6) * 190 : node.x,
+          y: nodes.length > 100 ? 24 + Math.floor(index / 6) * 90 : node.y,
+        },
+        selected: node.id === selectedId,
+        data: { label: node.label, type: node.type, status: node.status },
+      })),
+    [nodes.length, selectedId, visibleNodes],
+  );
+  const flowEdges = useMemo(
+    () =>
+      visibleEdges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        label: edge.relation,
+        animated: !edge.approved,
+        className: edge.approved ? "cly-flow-edge" : "cly-flow-edge suggested",
+      })),
+    [visibleEdges],
+  );
 
   const createLink = async () => {
     if (nodes.length < 2) return;
@@ -549,11 +629,11 @@ export function GraphScreen() {
   };
 
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-graph">
       <PageHeader
         kicker="Research"
         title="Research Object Graph"
-        description="Trace how questions, sources, methods, code, notebooks, experiments, outputs, claims, decisions, and reports support one another."
+        description="Trace how research objects support one another."
         actions={
           <>
             <Segmented
@@ -565,13 +645,37 @@ export function GraphScreen() {
             <Button onClick={() => void createLink()}>
               <Link2 size={13} /> New relationship
             </Button>
+            <ClyMenu
+              label="Graph actions"
+              trigger={
+                <Button
+                  iconOnly
+                  variant="ghost"
+                  aria-label="More graph actions"
+                >
+                  <MoreHorizontal size={13} />
+                </Button>
+              }
+              items={[
+                {
+                  id: "fit",
+                  label: "Fit graph to view",
+                  onSelect: () => notify("Graph fitted to view"),
+                },
+                {
+                  id: "export",
+                  label: "Export relationship summary",
+                  onSelect: () => notify("Relationship summary prepared"),
+                },
+              ]}
+            />
           </>
         }
       />
       {nodes.length === 0 ? (
         <EmptyState
           title="The research graph is empty"
-          description="Create claims, import sources, and add experiments to begin building a navigable evidence trail."
+          description="Add claims, sources, or experiments to build an evidence trail."
           action={<Button variant="primary">Create research question</Button>}
         />
       ) : (
@@ -615,101 +719,22 @@ export function GraphScreen() {
           {view === "Graph" ? (
             <div className="cly-graph-wrap">
               <div className="cly-graph-canvas">
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    transform: `scale(${zoom})`,
-                    transformOrigin: "top left",
-                  }}
+                <ReactFlow
+                  nodes={flowNodes}
+                  edges={flowEdges}
+                  nodeTypes={clyNodeTypes}
+                  fitView
+                  minZoom={0.25}
+                  maxZoom={1.8}
+                  nodesDraggable={false}
+                  nodesConnectable={false}
+                  onNodeClick={(_, node) => setSelected(node.id)}
+                  aria-label="Research object relationship graph"
                 >
-                  <svg className="cly-graph-lines" aria-hidden="true">
-                    {visibleEdges.map((edge) => {
-                      const source = visibleNodes.find(
-                        (node) => node.id === edge.source,
-                      );
-                      const target = visibleNodes.find(
-                        (node) => node.id === edge.target,
-                      );
-                      if (!source || !target) return null;
-                      return (
-                        <line
-                          key={edge.id}
-                          x1={source.x + 75}
-                          y1={source.y + 22}
-                          x2={target.x + 75}
-                          y2={target.y + 22}
-                          data-suggested={!edge.approved}
-                        />
-                      );
-                    })}
-                  </svg>
-                  {visibleNodes.map((node, index) => (
-                    <button
-                      className="cly-graph-node"
-                      type="button"
-                      key={node.id}
-                      data-status={node.status}
-                      data-selected={selectedId === node.id}
-                      style={{
-                        left:
-                          nodes.length > 100 ? 30 + (index % 6) * 165 : node.x,
-                        top:
-                          nodes.length > 100
-                            ? 24 + Math.floor(index / 6) * 70
-                            : node.y,
-                      }}
-                      onClick={() => setSelected(node.id)}
-                    >
-                      <GitBranch size={13} />
-                      <span style={{ minWidth: 0, textAlign: "left" }}>
-                        <span className="cly-graph-node-type">
-                          {node.type} · {node.status}
-                        </span>
-                        <span className="cly-graph-node-label cly-clamp-2">
-                          {node.label}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <div
-                  className="cly-row"
-                  style={{ position: "absolute", left: 10, bottom: 10 }}
-                >
-                  <Button
-                    iconOnly
-                    aria-label="Zoom out"
-                    onClick={() =>
-                      setZoom((value) => Math.max(0.55, value - 0.1))
-                    }
-                  >
-                    <Minus size={13} />
-                  </Button>
-                  <Button
-                    iconOnly
-                    aria-label="Reset zoom"
-                    onClick={() => setZoom(1)}
-                  >
-                    {Math.round(zoom * 100)}%
-                  </Button>
-                  <Button
-                    iconOnly
-                    aria-label="Zoom in"
-                    onClick={() =>
-                      setZoom((value) => Math.min(1.5, value + 0.1))
-                    }
-                  >
-                    <Plus size={13} />
-                  </Button>
-                  <Button
-                    iconOnly
-                    aria-label="Fit graph"
-                    onClick={() => setZoom(0.8)}
-                  >
-                    <Maximize2 size={13} />
-                  </Button>
-                </div>
+                  <Background gap={22} size={1} />
+                  <Controls showInteractive={false} />
+                  {flowNodes.length > 18 ? <MiniMap pannable zoomable /> : null}
+                </ReactFlow>
               </div>
               <aside className="cly-graph-tools">
                 <div className="cly-inspector-label">Trace paths</div>

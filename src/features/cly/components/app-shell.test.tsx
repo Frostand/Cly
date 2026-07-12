@@ -63,7 +63,7 @@ describe("Cly application shell", () => {
     await user.keyboard("{Meta>}k{/Meta}");
     const palette = screen.getByTestId("command-palette");
     expect(palette).toBeVisible();
-    await user.type(within(palette).getByRole("textbox"), "Go to Context");
+    await user.type(within(palette).getByRole("combobox"), "Go to Context");
     await user.keyboard("{Enter}");
 
     expect(
@@ -129,5 +129,42 @@ describe("Cly application shell", () => {
     );
 
     expect(screen.getByText("No claims yet")).toBeVisible();
+  });
+
+  it("does not mount a blank inspector and opens it for a real selection", async () => {
+    const user = userEvent.setup();
+    useClyStore.setState({ activeScreen: "claims" });
+    render(<ClyAppShell />);
+
+    expect(document.querySelector(".cly-inspector")).not.toBeInTheDocument();
+    expect(document.querySelector(".cly-shell")).toHaveAttribute(
+      "data-inspector",
+      "closed",
+    );
+
+    await user.click(
+      screen
+        .getAllByText(/Calibration-aware ensembles reduce simulation cost/)
+        .at(0) as HTMLElement,
+    );
+    expect(document.querySelector(".cly-inspector")).toBeInTheDocument();
+    expect(document.querySelector(".cly-shell")).toHaveAttribute(
+      "data-inspector",
+      "open",
+    );
+  });
+
+  it("closes open overflow menus with Escape", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    const trigger = document.querySelector(
+      ".cly-title-overflow summary",
+    ) as HTMLElement;
+    await user.click(trigger);
+    const overflow = document.querySelector(".cly-title-overflow");
+    expect(overflow).toHaveAttribute("open");
+    await user.keyboard("{Escape}");
+    expect(overflow).not.toHaveAttribute("open");
   });
 });

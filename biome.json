@@ -13,6 +13,7 @@
       "!dist",
       "!dist",
       "!build",
+      "!storybook-static",
       "!src/components/ai-elements"
     ]
   },

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cly Route Review"
+  short_description: "Choose the right layout for every Cly route"
+  default_prompt: "Use $cly-route-review to review this Cly route structure and interaction pattern."

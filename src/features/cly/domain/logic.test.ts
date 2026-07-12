@@ -44,5 +44,6 @@ describe("Cly research UI logic", () => {
     expect(data.graphEdges).toHaveLength(5_000);
     expect(data.artifacts).toHaveLength(500);
     expect(data.decisions).toHaveLength(500);
+    expect(data.nextSteps).toHaveLength(500);
   });
 });

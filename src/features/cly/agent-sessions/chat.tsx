@@ -29,13 +29,9 @@ import {
   Users,
   X,
 } from "lucide-react";
-import {
-  type PointerEvent as ReactPointerEvent,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useMemo, useRef, useState } from "react";
 import { Badge, Button } from "../components/primitives";
+import { ClySplitPane } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
 import { mockAgentSessionServices } from "./services";
 import { AgentSessionsModeSwitcher } from "./shared";
@@ -129,65 +125,38 @@ function EmptyChatMode({ sessions }: { sessions: AgentSession[] }) {
 }
 
 function ActiveChatMode({ session }: { session: AgentSession }) {
-  const setWidth = useClyStore((state) => state.setWorkbenchWidth);
-  const splitRef = useRef<HTMLDivElement | null>(null);
-  const beginResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (session.workbenchCollapsed || session.workbenchMaximized) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-  const resize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-    const rect = splitRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const width = ((rect.right - event.clientX) / rect.width) * 100;
-    setWidth(session.id, width);
-  };
+  const chat = (
+    <section className="agent-chat-pane" aria-label="Orchestrator conversation">
+      <Conversation session={session} />
+      <ChatComposer session={session} />
+    </section>
+  );
+  const workbench = <AgentWorkbench session={session} />;
   return (
     <div className="agent-chat-mode" data-testid="agent-sessions-chat">
       <SessionHeader session={session} />
-      <div
-        ref={splitRef}
-        className="agent-chat-split"
-        data-collapsed={session.workbenchCollapsed}
-        data-maximized={session.workbenchMaximized}
-        style={
-          {
-            "--agent-workbench-width": `${session.workbenchWidth}%`,
-          } as React.CSSProperties
-        }
-      >
-        <section
-          className="agent-chat-pane"
-          aria-label="Orchestrator conversation"
-        >
-          <Conversation session={session} />
-          <ChatComposer session={session} />
-        </section>
-        {!session.workbenchCollapsed ? (
-          <>
-            <hr
-              className="agent-split-handle"
-              aria-label="Resize chat and workbench"
-              aria-orientation="vertical"
-              aria-valuemin={30}
-              aria-valuemax={58}
-              aria-valuenow={session.workbenchWidth}
-              tabIndex={0}
-              onPointerDown={beginResize}
-              onPointerMove={resize}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft")
-                  setWidth(session.id, session.workbenchWidth + 2);
-                if (event.key === "ArrowRight")
-                  setWidth(session.id, session.workbenchWidth - 2);
-              }}
-            />
-            <AgentWorkbench session={session} />
-          </>
-        ) : (
+      {session.workbenchMaximized ? (
+        <div className="agent-chat-split" data-maximized="true">
+          {workbench}
+        </div>
+      ) : session.workbenchCollapsed ? (
+        <div className="agent-chat-split" data-collapsed="true">
+          {chat}
           <CollapsedWorkbench session={session} />
-        )}
-      </div>
+        </div>
+      ) : (
+        <ClySplitPane
+          id={`agent-chat-${session.id}`}
+          className="agent-chat-split"
+          primary={chat}
+          secondary={workbench}
+          secondarySize={session.workbenchWidth}
+          primaryMin="330px"
+          secondaryMin="300px"
+          secondaryMax="58%"
+          label="Resize chat and workbench"
+        />
+      )}
     </div>
   );
 }
@@ -299,22 +268,40 @@ export function SessionHeader({ session }: { session: AgentSession }) {
           )}
         </Button>
         <details className="agent-session-menu">
-          <summary aria-label="Session menu">
+          <summary aria-label="Session menu" aria-haspopup="menu">
             <MoreHorizontal size={14} />
           </summary>
           <div role="menu">
+            <div className="agent-session-menu-meta">
+              <span>
+                <GitBranch size={11} /> {session.branch}
+              </span>
+              <span>
+                <Clock3 size={11} /> {session.elapsed}
+              </span>
+              <span>{session.usageEstimate}</span>
+            </div>
             <button
               type="button"
+              role="menuitem"
               onClick={() =>
                 notify("Rename session", "Fixture rename control opened.")
               }
             >
               <MessageSquareText size={12} /> Rename
             </button>
-            <button type="button" onClick={() => stop(session.id)}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => stop(session.id)}
+            >
               <StopCircle size={12} /> Stop session
             </button>
-            <button type="button" onClick={() => archive(session.id)}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => archive(session.id)}
+            >
               <Archive size={12} /> Archive
             </button>
           </div>
@@ -789,37 +776,41 @@ export function ChatComposer({ session }: { session: AgentSession }) {
             >
               <Code2 size={14} />
             </Button>
-            <button
-              type="button"
-              className="agent-composer-select"
-              onClick={() =>
-                notify("Model selector", session.orchestrator.model)
-              }
-            >
-              {session.orchestrator.model}
-              <ChevronDown size={10} />
-            </button>
-            <button
-              type="button"
-              className="agent-composer-select"
-              onClick={() =>
-                notify(
-                  "Reasoning selector",
-                  session.orchestrator.reasoningLevel,
-                )
-              }
-            >
-              {session.orchestrator.reasoningLevel}
-              <ChevronDown size={10} />
-            </button>
-            <button
-              type="button"
-              className="agent-composer-select"
-              onClick={() => notify("Agent plan", session.preset)}
-            >
-              {session.preset}
-              <ChevronDown size={10} />
-            </button>
+            <details className="agent-composer-options">
+              <summary aria-label="Composer options" aria-haspopup="menu">
+                <MoreHorizontal size={14} />
+              </summary>
+              <div role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() =>
+                    notify("Model selector", session.orchestrator.model)
+                  }
+                >
+                  Model <span>{session.orchestrator.model}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() =>
+                    notify(
+                      "Reasoning selector",
+                      session.orchestrator.reasoningLevel,
+                    )
+                  }
+                >
+                  Reasoning <span>{session.orchestrator.reasoningLevel}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => notify("Agent plan", session.preset)}
+                >
+                  Plan <span>{session.preset}</span>
+                </button>
+              </div>
+            </details>
           </div>
           <div>
             <label className="agent-enter-setting">

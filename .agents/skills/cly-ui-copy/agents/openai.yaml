@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cly UI Copy"
+  short_description: "Write concise research-cockpit interface copy"
+  default_prompt: "Use $cly-ui-copy to tighten this Cly screen copy without losing nuance."
