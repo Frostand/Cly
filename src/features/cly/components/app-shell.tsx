@@ -49,6 +49,20 @@ const screens: Record<ScreenId, () => React.JSX.Element> = {
   settings: SettingsScreen,
 };
 
+const inlineInspectorScreens = new Set<ScreenId>([
+  "context",
+  "graph",
+  "experiments",
+  "sources",
+  "literature",
+  "notebooks",
+  "code",
+  "claims",
+  "provenance",
+  "decisions",
+  "next-steps",
+]);
+
 const shortcutScreens: Record<string, ScreenId> = {
   "1": "overview",
   "2": "agents",
@@ -132,6 +146,7 @@ export function ClyAppShell() {
   const fixtureMode = useClyStore((s) => s.fixtureMode);
   const setScreen = useClyStore((s) => s.setScreen);
   const ActiveScreen = screens[activeScreen];
+  const ownsInlineInspector = inlineInspectorScreens.has(activeScreen);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -221,9 +236,13 @@ export function ClyAppShell() {
         <Titlebar />
         <div
           className="cly-shell"
+          data-route={activeScreen}
           data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
           data-inspector={
-            inspectorOpen && selectedId && activeScreen !== "agents"
+            inspectorOpen &&
+            selectedId &&
+            activeScreen !== "agents" &&
+            !ownsInlineInspector
               ? "open"
               : "closed"
           }
@@ -233,7 +252,12 @@ export function ClyAppShell() {
         >
           <Sidebar />
           <section className="cly-workspace">
-            <div className="cly-screen" id="main-workspace" tabIndex={-1}>
+            <div
+              className="cly-screen"
+              id="main-workspace"
+              data-route={activeScreen}
+              tabIndex={-1}
+            >
               {fixtureMode === "loading" ? (
                 <div className="cly-page">
                   <LoadingState
@@ -248,7 +272,9 @@ export function ClyAppShell() {
             </div>
             <ActivityDrawer />
           </section>
-          {activeScreen !== "agents" && selectedId ? <Inspector /> : null}
+          {activeScreen !== "agents" && !ownsInlineInspector && selectedId ? (
+            <Inspector />
+          ) : null}
         </div>
         <CommandPalette />
         <Toasts />

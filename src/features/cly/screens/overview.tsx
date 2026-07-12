@@ -1,12 +1,15 @@
 import {
+  Activity,
   ArrowRight,
-  Beaker,
   Bot,
+  CheckCircle2,
   FileText,
   GitBranch,
   Lightbulb,
+  Network,
   ShieldCheck,
   Sparkles,
+  Target,
 } from "lucide-react";
 import { LocalStatusBanner } from "../components/chrome";
 import {
@@ -14,12 +17,18 @@ import {
   Button,
   EmptyState,
   PageHeader,
-  Panel,
-  Section,
   toneForStatus,
 } from "../components/primitives";
-import { ResearchLifecycle, VisualMetric } from "../components/visuals";
+import { ResearchLifecycle, RiskDistribution } from "../components/visuals";
 import { useClyStore } from "../store/cly-store";
+import "../redesign-core.css";
+
+const activityIcons = {
+  agent: Bot,
+  import: FileText,
+  audit: ShieldCheck,
+  system: Activity,
+} as const;
 
 export function OverviewScreen() {
   const data = useClyStore((s) => s.data);
@@ -29,14 +38,21 @@ export function OverviewScreen() {
   const project =
     data.projects.find((item) => item.id === activeProjectId) ??
     data.projects[0];
-  const strongClaim = [...data.claims].sort(
-    (a, b) => b.confidence - a.confidence,
-  )[0];
-  const weakClaim = [...data.claims].sort(
-    (a, b) => a.confidence - b.confidence,
-  )[0];
   const audit = data.audits[0];
-  const next = data.nextSteps.find((item) => item.status === "Recommended");
+  const attentionClaims = data.claims.filter(
+    (item) =>
+      item.status === "Weak" ||
+      item.status === "Needs review" ||
+      item.status === "Invalidated",
+  );
+  const activeSessions = data.agentSessions.filter(
+    (session) =>
+      session.status === "running" || session.status === "waiting_approval",
+  );
+  const nextSteps = data.nextSteps.filter(
+    (item) => item.status === "Recommended" || item.status === "In progress",
+  );
+  const lifecycleCurrent = lifecycleIndexForPhase(project?.phase ?? "");
 
   if (!project)
     return (
@@ -49,442 +65,413 @@ export function OverviewScreen() {
       </div>
     );
 
+  const claimHealth = [
+    {
+      label: "Paper-ready",
+      value: data.claims.filter((claim) => claim.status === "Paper-ready")
+        .length,
+      tone: "success" as const,
+    },
+    {
+      label: "Strong",
+      value: data.claims.filter((claim) => claim.status === "Strong").length,
+      tone: "success" as const,
+    },
+    {
+      label: "Needs attention",
+      value: attentionClaims.length,
+      tone: "warning" as const,
+    },
+    {
+      label: "Unsupported",
+      value: data.claims.filter((claim) => claim.status === "Unsupported")
+        .length,
+      tone: "danger" as const,
+    },
+  ];
+
   return (
-    <div className="cly-page cly-route-overview">
+    <div className="cly-page cly-page-wide cly-route-overview cly-core-overview">
       <PageHeader
-        kicker="Project overview"
+        kicker={`${project.phase} · Project overview`}
         title={project.name}
         description={project.description}
         actions={
           <>
             <Badge tone={project.localOnly ? "success" : "info"}>
-              {project.localOnly ? "Local only" : "Cloud linked"}
+              {project.localOnly ? "Local workspace" : "Cloud linked"}
             </Badge>
             <Button onClick={() => setScreen("graph")}>
-              <GitBranch size={13} /> Open project graph
+              <GitBranch size={13} /> Open research graph
             </Button>
           </>
         }
       />
+
       <LocalStatusBanner />
 
-      <ResearchLifecycle
-        steps={[
-          "Question",
-          "Sources",
-          "Method",
-          "Experiment",
-          "Evidence",
-          "Claim",
-        ]}
-        current={4}
-      />
-
-      <section className="cly-visual-metrics" aria-label="Project summary">
-        <VisualMetric
-          label="Research phase"
-          value={project.phase}
-          detail="Updated today"
-        />
-        <VisualMetric
-          label="Active claims"
-          value={data.claims.length}
-          detail={`${data.claims.filter((item) => item.status === "Weak" || item.status === "Needs review").length} need attention`}
-          values={data.claims.map((item) => item.confidence)}
-          tone="warning"
-        />
-        <VisualMetric
-          label="Experiments"
-          value={data.experiments.length}
-          detail={`${data.experiments.filter((item) => item.status === "Running").length} running`}
-          values={data.experiments.map((item) => item.runIds.length)}
-        />
-        <VisualMetric
-          label="Reproducibility"
-          value={audit ? `${audit.score}%` : "—"}
-          detail={audit?.status ?? "Not audited"}
-          values={
-            audit
-              ? [
-                  Math.max(0, audit.score - 8),
-                  Math.max(0, audit.score - 3),
-                  audit.score,
-                ]
-              : undefined
-          }
-          tone={audit && audit.score >= 80 ? "success" : "warning"}
-        />
-        <VisualMetric
-          label="Evidence graph"
-          value={data.graphNodes.length}
-          detail={`${data.graphEdges.length} relationships`}
-          values={[
-            data.sources.length,
-            data.claims.length,
-            data.graphNodes.length,
-          ]}
-        />
+      <section
+        className="cly-core-overview-direction"
+        aria-label="Research direction"
+      >
+        <div>
+          <span>Research question</span>
+          <strong>{project.question}</strong>
+        </div>
+        <div>
+          <span>Working hypothesis</span>
+          <strong>{project.hypothesis}</strong>
+        </div>
+        <dl>
+          <div>
+            <dt>Claims</dt>
+            <dd>{data.claims.length}</dd>
+          </div>
+          <div>
+            <dt>Runs</dt>
+            <dd>{data.runs.length}</dd>
+          </div>
+          <div>
+            <dt>Audit</dt>
+            <dd>{audit ? `${audit.score}%` : "—"}</dd>
+          </div>
+        </dl>
       </section>
 
-      <Section
-        title="Research direction"
-        subtitle="The question and hypothesis currently organizing this project"
-      >
-        <div className="cly-project-brief">
-          <Panel className="cly-panel-body">
-            <div className="cly-page-kicker">Research question</div>
-            <div style={{ fontSize: 17, lineHeight: 1.45, fontWeight: 590 }}>
-              {project.question}
-            </div>
-          </Panel>
-          <Panel className="cly-panel-body">
-            <div className="cly-page-kicker">Current hypothesis</div>
-            <div style={{ fontSize: 17, lineHeight: 1.45, fontWeight: 590 }}>
-              {project.hypothesis}
-            </div>
-          </Panel>
-        </div>
-      </Section>
+      <div className="cly-core-overview-lifecycle">
+        <ResearchLifecycle
+          steps={[
+            "Question",
+            "Sources",
+            "Experiments",
+            "Evidence",
+            "Claim",
+            "Paper",
+          ]}
+          current={lifecycleCurrent}
+        />
+      </div>
 
-      {data.claims.length === 0 ? (
-        <Section title="Build the evidence trail">
-          <EmptyState
-            title="No claims yet"
-            description="Start with a precise claim, then link sources, experiments, and outputs as evidence."
-            action={
+      <div className="cly-core-overview-grid">
+        <OverviewPanel
+          title="Recent activity"
+          icon={<Activity size={14} />}
+          footer="Open activity"
+          onFooter={() => setScreen("agents")}
+        >
+          <ol className="cly-core-activity-list">
+            {data.activity.slice(0, 5).map((item) => {
+              const Icon = activityIcons[item.type];
+              return (
+                <li key={item.id} data-status={item.status}>
+                  <span className="cly-core-activity-mark">
+                    <Icon size={11} aria-hidden="true" />
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setScreen(
+                        item.type === "audit" ? "reproducibility" : "agents",
+                      )
+                    }
+                  >
+                    <strong>{item.title}</strong>
+                    <small>{item.detail}</small>
+                  </button>
+                  <time>{item.time}</time>
+                </li>
+              );
+            })}
+          </ol>
+        </OverviewPanel>
+
+        <OverviewPanel
+          title="Active research sessions"
+          icon={<Bot size={14} />}
+          footer="Open Agent Sessions"
+          onFooter={() => setScreen("agents")}
+        >
+          <div className="cly-core-session-list">
+            {(activeSessions.length ? activeSessions : data.agentSessions)
+              .slice(0, 4)
+              .map((session) => (
+                <button
+                  type="button"
+                  key={session.id}
+                  onClick={() => {
+                    setScreen("agents");
+                    setSelected(session.id);
+                  }}
+                >
+                  <span className="cly-core-icon-tile">
+                    <Bot size={12} />
+                  </span>
+                  <span>
+                    <strong>{session.title}</strong>
+                    <small>
+                      {session.preset} · {session.delegatedAgents.length + 1}{" "}
+                      agents
+                    </small>
+                  </span>
+                  <span className="cly-core-session-progress">
+                    <i style={{ width: `${session.progress}%` }} />
+                  </span>
+                  <Badge tone={toneForStatus(session.status)}>
+                    {session.status.replace("_", " ")}
+                  </Badge>
+                </button>
+              ))}
+          </div>
+        </OverviewPanel>
+
+        <OverviewPanel
+          title="Next steps"
+          icon={<Target size={14} />}
+          footer="Review prioritized actions"
+          onFooter={() => setScreen("next-steps")}
+        >
+          {nextSteps.length ? (
+            <ol className="cly-core-next-list">
+              {nextSteps.slice(0, 4).map((item, index) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScreen("next-steps");
+                      setSelected(item.id);
+                    }}
+                  >
+                    <span>{index + 1}</span>
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>
+                        {item.category} · {item.impact} impact · {item.effort}{" "}
+                        effort
+                      </small>
+                    </span>
+                    <Badge tone={toneForStatus(item.urgency)}>
+                      {item.urgency}
+                    </Badge>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="cly-core-panel-empty">
+              <CheckCircle2 size={18} />
+              <strong>No recommendations</strong>
+              <span>Cly will derive actions as evidence changes.</span>
+            </div>
+          )}
+        </OverviewPanel>
+
+        <OverviewPanel
+          title="Claims health"
+          icon={<ShieldCheck size={14} />}
+          footer="Audit all claims"
+          onFooter={() => setScreen("claims")}
+        >
+          {data.claims.length ? (
+            <div className="cly-core-claims-health">
+              <RiskDistribution values={claimHealth} />
+              {claimHealth.map((item) => (
+                <button
+                  type="button"
+                  key={item.label}
+                  onClick={() => setScreen("claims")}
+                >
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                  <i
+                    data-tone={item.tone}
+                    style={{
+                      width: `${Math.max(
+                        4,
+                        (item.value / Math.max(1, data.claims.length)) * 100,
+                      )}%`,
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="cly-core-panel-empty">
+              <ShieldCheck size={18} />
+              <strong>No claims yet</strong>
+              <span>Create a claim to begin an auditable evidence trail.</span>
               <Button variant="primary" onClick={() => setScreen("claims")}>
                 Create first claim
               </Button>
-            }
-          />
-        </Section>
-      ) : (
-        <div className="cly-overview-grid">
-          <div>
-            <Section
-              title="Claims and integrity"
-              subtitle="What is strongest, what is weakest, and what could block publication"
-            >
-              <Panel>
-                {strongClaim ? (
-                  <button
-                    type="button"
-                    className="cly-list-row"
-                    onClick={() => {
-                      setScreen("claims");
-                      setSelected(strongClaim.id);
-                    }}
-                  >
-                    <div>
-                      <div className="cly-row">
-                        <Badge tone={toneForStatus(strongClaim.status)}>
-                          {strongClaim.status}
-                        </Badge>
-                        <span className="cly-faint cly-small">
-                          Strongest active claim
-                        </span>
-                      </div>
-                      <div
-                        className="cly-list-title cly-clamp-2"
-                        style={{ whiteSpace: "normal", marginTop: 7 }}
-                      >
-                        {strongClaim.text}
-                      </div>
-                      <div className="cly-list-detail">
-                        {strongClaim.supportingSourceIds.length} supporting
-                        sources · {strongClaim.experimentIds.length} experiments
-                        · {strongClaim.confidence}% confidence
-                      </div>
-                    </div>
-                    <ArrowRight size={14} />
-                  </button>
-                ) : null}
-                {weakClaim ? (
-                  <button
-                    type="button"
-                    className="cly-list-row"
-                    onClick={() => {
-                      setScreen("claims");
-                      setSelected(weakClaim.id);
-                    }}
-                  >
-                    <div>
-                      <div className="cly-row">
-                        <Badge tone={toneForStatus(weakClaim.status)}>
-                          {weakClaim.status}
-                        </Badge>
-                        <span className="cly-faint cly-small">
-                          Weakest active claim
-                        </span>
-                      </div>
-                      <div
-                        className="cly-list-title cly-clamp-2"
-                        style={{ whiteSpace: "normal", marginTop: 7 }}
-                      >
-                        {weakClaim.text}
-                      </div>
-                      <div className="cly-list-detail">
-                        Next evidence: {weakClaim.nextExperiment}
-                      </div>
-                    </div>
-                    <ArrowRight size={14} />
-                  </button>
-                ) : null}
-                {data.findings
-                  .filter(
-                    (item) =>
-                      item.severity === "Blocking" || item.severity === "High",
-                  )
-                  .slice(0, 3)
-                  .map((finding) => (
-                    <button
-                      type="button"
-                      className="cly-list-row"
-                      key={finding.id}
-                      onClick={() => {
-                        setScreen("reproducibility");
-                        setSelected(finding.id);
-                      }}
-                    >
-                      <div>
-                        <div className="cly-row">
-                          <ShieldCheck size={14} className="cly-faint" />
-                          <Badge tone={toneForStatus(finding.severity)}>
-                            {finding.severity}
-                          </Badge>
-                        </div>
-                        <div
-                          className="cly-list-title"
-                          style={{ marginTop: 6 }}
-                        >
-                          {finding.title}
-                        </div>
-                        <div className="cly-list-detail">
-                          {finding.category} · {finding.status}
-                        </div>
-                      </div>
-                      <ArrowRight size={14} />
-                    </button>
-                  ))}
-              </Panel>
-            </Section>
+            </div>
+          )}
+        </OverviewPanel>
 
-            <Section
-              title="Recent research activity"
-              subtitle="A linked timeline across experiments, notebooks, sources, and decisions"
-            >
-              <div className="cly-timeline">
-                {[
-                  {
-                    id: "exp-02",
-                    icon: Beaker,
-                    title: "OOD coverage stress test is running",
-                    detail: "Compound-shift grid · 68% complete",
-                    time: "Today · 08:36",
-                    screen: "experiments" as const,
-                  },
-                  {
-                    id: "nb-02",
-                    icon: FileText,
-                    title: "Notebook scan found four integrity issues",
-                    detail: "Hidden state, seed, path, and stale outputs",
-                    time: "Today · 08:31",
-                    screen: "notebooks" as const,
-                  },
-                  {
-                    id: "session-01",
-                    icon: Bot,
-                    title: "Claim audit entered adversarial review",
-                    detail: "Baseline fairness is the leading reviewer concern",
-                    time: "Today · 08:12",
-                    screen: "agents" as const,
-                  },
-                  {
-                    id: "decision-04",
-                    icon: Lightbulb,
-                    title: "New baseline decision recorded",
-                    detail: "Compute-matched Gaussian process is proposed",
-                    time: "Yesterday",
-                    screen: "decisions" as const,
-                  },
-                ].map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      type="button"
-                      key={item.id}
-                      className="cly-timeline-item"
-                      style={{
-                        border: 0,
-                        background: "transparent",
-                        color: "inherit",
-                        textAlign: "left",
-                        cursor: "pointer",
-                      }}
-                      onClick={() => {
-                        setScreen(item.screen);
-                        setSelected(item.id);
-                      }}
-                    >
-                      <span className="cly-timeline-dot" />
-                      <span>
-                        <span className="cly-row">
-                          <Icon size={13} />
-                          <strong className="cly-small">{item.title}</strong>
-                        </span>
-                        <span className="cly-muted cly-small">
-                          {item.detail}
-                        </span>
-                        <span
-                          className="cly-faint"
-                          style={{
-                            display: "block",
-                            marginTop: 3,
-                            fontSize: 9,
-                          }}
-                        >
-                          {item.time}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </Section>
-          </div>
+        <OverviewPanel
+          title="Research map"
+          icon={<Network size={14} />}
+          footer="Explore the full graph"
+          onFooter={() => setScreen("graph")}
+        >
+          <section
+            className="cly-core-map-preview"
+            aria-label="Research map preview"
+          >
+            <svg viewBox="0 0 520 210" aria-hidden="true">
+              {data.graphEdges.slice(0, 12).map((edge) => {
+                const sourceIndex = data.graphNodes.findIndex(
+                  (node) => node.id === edge.source,
+                );
+                const targetIndex = data.graphNodes.findIndex(
+                  (node) => node.id === edge.target,
+                );
+                if (sourceIndex < 0 || targetIndex < 0) return null;
+                const sourceX = 45 + (sourceIndex % 5) * 105;
+                const sourceY = 32 + (Math.floor(sourceIndex / 5) % 3) * 70;
+                const targetX = 45 + (targetIndex % 5) * 105;
+                const targetY = 32 + (Math.floor(targetIndex / 5) % 3) * 70;
+                return (
+                  <line
+                    key={edge.id}
+                    x1={sourceX}
+                    y1={sourceY}
+                    x2={targetX}
+                    y2={targetY}
+                    data-suggested={!edge.approved}
+                  />
+                );
+              })}
+            </svg>
+            {data.graphNodes.slice(0, 12).map((node, index) => (
+              <button
+                key={node.id}
+                type="button"
+                title={node.label}
+                aria-label={`${node.type}: ${node.label}`}
+                data-type={node.type}
+                data-status={node.status}
+                style={{
+                  left: `${6 + (index % 5) * 20}%`,
+                  top: `${8 + (Math.floor(index / 5) % 3) * 34}%`,
+                }}
+                onClick={() => {
+                  setScreen("graph");
+                  setSelected(node.id);
+                }}
+              >
+                {node.type.slice(0, 1).toUpperCase()}
+              </button>
+            ))}
+            <div>
+              <span>{data.graphNodes.length} objects</span>
+              <span>{data.graphEdges.length} relationships</span>
+            </div>
+          </section>
+        </OverviewPanel>
 
-          <div>
-            <Section
-              title="Recommended next action"
-              subtitle="Derived from claims, failed runs, sources, and audit findings"
-            >
-              {next ? (
-                <Panel className="cly-panel-body">
-                  <div className="cly-row-between">
-                    <Badge tone="warning">{next.urgency}</Badge>
-                    <span className="cly-faint cly-small">
-                      {next.effort} effort
-                    </span>
-                  </div>
-                  <h3 style={{ margin: "11px 0 7px", fontSize: 15 }}>
-                    {next.title}
-                  </h3>
-                  <p
-                    className="cly-muted cly-small"
-                    style={{ lineHeight: 1.55 }}
-                  >
-                    {next.rationale}
-                  </p>
-                  <div className="cly-row" style={{ marginTop: 12 }}>
-                    <Button
-                      variant="primary"
-                      onClick={() => {
-                        setScreen("next-steps");
-                        setSelected(next.id);
-                      }}
-                    >
-                      Review action <ArrowRight size={13} />
-                    </Button>
-                    <Button onClick={() => setScreen("agents")}>
-                      <Sparkles size={13} /> Agent plan
-                    </Button>
-                  </div>
-                </Panel>
-              ) : (
-                <EmptyState
-                  title="No recommendations"
-                  description="Cly will derive next steps as research objects and risks are added."
-                />
-              )}
-            </Section>
-
-            <Section
-              title="Project graph preview"
-              subtitle={`${data.graphNodes.length} objects · ${data.graphEdges.length} links`}
-              actions={
-                <Button variant="ghost" onClick={() => setScreen("graph")}>
-                  Open graph <ArrowRight size={13} />
-                </Button>
-              }
-            >
-              <Panel className="cly-panel-body">
-                <div
-                  style={{
-                    height: 180,
-                    position: "relative",
-                    overflow: "hidden",
-                    borderRadius: 7,
-                    background:
-                      "radial-gradient(var(--cly-border) 1px, transparent 1px)",
-                    backgroundSize: "16px 16px",
-                  }}
+        <OverviewPanel
+          title="Recent outputs"
+          icon={<FileText size={14} />}
+          footer="View experiment outputs"
+          onFooter={() => setScreen("experiments")}
+        >
+          <div className="cly-core-output-grid">
+            {data.artifacts.slice(0, 4).map((artifact, index) => (
+              <button
+                key={artifact.id}
+                type="button"
+                onClick={() => {
+                  setScreen("provenance");
+                  setSelected(artifact.id);
+                }}
+              >
+                <span
+                  className="cly-core-output-preview"
+                  data-kind={artifact.kind}
                 >
-                  {data.graphNodes.slice(0, 8).map((node, index) => (
-                    <button
-                      key={node.id}
-                      type="button"
-                      aria-label={node.label}
-                      onClick={() => {
-                        setScreen("graph");
-                        setSelected(node.id);
-                      }}
-                      style={{
-                        position: "absolute",
-                        left: `${10 + (index % 3) * 31}%`,
-                        top: `${10 + Math.floor(index / 3) * 31}%`,
-                        width: 78,
-                        height: 27,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        border: "1px solid var(--cly-border)",
-                        borderRadius: 6,
-                        background: "var(--cly-surface)",
-                        color: "var(--cly-text-muted)",
-                        fontSize: 8,
-                        padding: "0 5px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {node.label}
-                    </button>
-                  ))}
-                </div>
-              </Panel>
-            </Section>
-
-            <Section title="Recent reports">
-              <Panel>
-                {data.reports.map((report) => (
-                  <button
-                    type="button"
-                    className="cly-list-row"
-                    key={report.id}
-                    onClick={() =>
-                      useClyStore
-                        .getState()
-                        .notify(
-                          "Report preview",
-                          `${report.title} is available as a fixture-backed ${report.type.toLowerCase()}.`,
-                        )
-                    }
-                  >
-                    <div>
-                      <div className="cly-list-title">{report.title}</div>
-                      <div className="cly-list-detail">
-                        {report.type} · {report.status}
-                      </div>
-                    </div>
-                    <Badge tone={toneForStatus(report.status)}>
-                      {report.status}
-                    </Badge>
-                  </button>
-                ))}
-              </Panel>
-            </Section>
+                  {index % 3 === 0 ? (
+                    <svg viewBox="0 0 80 52" aria-hidden="true">
+                      <polyline points="3,42 17,31 28,34 41,18 55,23 76,8" />
+                    </svg>
+                  ) : index % 3 === 1 ? (
+                    <span
+                      className="cly-core-output-matrix"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <FileText size={23} aria-hidden="true" />
+                  )}
+                </span>
+                <strong>{artifact.name}</strong>
+                <small>
+                  {artifact.kind} · {artifact.regeneration}
+                </small>
+              </button>
+            ))}
           </div>
+        </OverviewPanel>
+      </div>
+
+      <footer className="cly-core-overview-footer">
+        <div>
+          <Lightbulb size={13} />
+          <span>
+            {attentionClaims.length
+              ? `${attentionClaims.length} claims need attention before publication.`
+              : "The evidence system has no open claim-health warnings."}
+          </span>
         </div>
-      )}
+        <Button onClick={() => setScreen("agents")}>
+          <Sparkles size={13} /> Ask Cly to plan the next move
+        </Button>
+      </footer>
     </div>
+  );
+}
+
+function lifecycleIndexForPhase(phase: string) {
+  const value = phase.toLowerCase();
+  if (
+    value.includes("paper") ||
+    value.includes("publish") ||
+    value.includes("writing")
+  )
+    return 5;
+  if (value.includes("claim") || value.includes("synth")) return 4;
+  if (value.includes("evidence") || value.includes("analysis")) return 3;
+  if (value.includes("experiment") || value.includes("run")) return 2;
+  if (value.includes("source") || value.includes("literature")) return 1;
+  return 0;
+}
+
+function OverviewPanel({
+  title,
+  icon,
+  footer,
+  onFooter,
+  children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  footer: string;
+  onFooter: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="cly-core-overview-panel">
+      <header>
+        <div>
+          {icon}
+          <h2>{title}</h2>
+        </div>
+      </header>
+      <div className="cly-core-overview-panel-body">{children}</div>
+      <button
+        type="button"
+        className="cly-core-panel-footer"
+        onClick={onFooter}
+      >
+        {footer} <ArrowRight size={12} />
+      </button>
+    </section>
   );
 }

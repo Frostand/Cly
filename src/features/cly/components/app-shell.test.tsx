@@ -35,15 +35,15 @@ describe("Cly application shell", () => {
       ["context", "Context Composer"],
       ["graph", "Research Object Graph"],
       ["experiments", "Experiment Manager"],
-      ["sources", "Source Manager"],
-      ["literature", "Literature Workspace"],
-      ["notebooks", "Notebook Scanner"],
-      ["code", "Code-to-Research Linker"],
-      ["claims", "Claim Audit Board"],
-      ["provenance", "Figure & Table Provenance"],
+      ["sources", "Sources"],
+      ["literature", "Literature"],
+      ["notebooks", "Notebooks"],
+      ["code", "Code Linker"],
+      ["claims", "Claims"],
+      ["provenance", "Provenance"],
       ["reproducibility", "Reproducibility Auditor"],
-      ["decisions", "Research Decision Log"],
-      ["next-steps", "Next-Step Planner"],
+      ["decisions", "Decisions"],
+      ["next-steps", "Next Steps"],
       ["integrations", "Integrations & Providers"],
       ["models", "Models & Agents"],
     ] as const;
@@ -83,14 +83,14 @@ describe("Cly application shell", () => {
     await user.click(toggle);
 
     expect(toggle).toBeChecked();
-    expect(screen.getByText("28,720 tokens")).toBeVisible();
+    expect(screen.getByText(/28,720 \/ 128,000/)).toBeVisible();
   });
 
   it("renders source, notebook, claim, experiment, provenance, finding, integration, and decision components", () => {
     const { rerender } = render(<ClyAppShell />);
     const expectations: [ScreenId, string][] = [
       ["sources", "Reliable neural surrogates for nonlinear dynamical systems"],
-      ["notebooks", "Ensemble size and calibration"],
+      ["notebooks", "ensemble-analysis.ipynb"],
       ["claims", "Calibration-aware ensembles reduce simulation cost"],
       ["experiments", "Calibrated ensemble sweep"],
       ["provenance", "Figure 2 · Cost vs calibration"],
@@ -131,7 +131,7 @@ describe("Cly application shell", () => {
     expect(screen.getByText("No claims yet")).toBeVisible();
   });
 
-  it("does not mount a blank inspector and opens it for a real selection", async () => {
+  it("uses a route-owned claim inspector without mounting the generic panel", async () => {
     const user = userEvent.setup();
     useClyStore.setState({ activeScreen: "claims" });
     render(<ClyAppShell />);
@@ -141,17 +141,19 @@ describe("Cly application shell", () => {
       "data-inspector",
       "closed",
     );
+    expect(document.querySelector("[data-inline-inspector]")).toBeVisible();
 
     await user.click(
       screen
         .getAllByText(/Calibration-aware ensembles reduce simulation cost/)
         .at(0) as HTMLElement,
     );
-    expect(document.querySelector(".cly-inspector")).toBeInTheDocument();
+    expect(document.querySelector(".cly-inspector")).not.toBeInTheDocument();
     expect(document.querySelector(".cly-shell")).toHaveAttribute(
       "data-inspector",
-      "open",
+      "closed",
     );
+    expect(document.querySelector("[data-inline-inspector]")).toBeVisible();
   });
 
   it("closes open overflow menus with Escape", async () => {

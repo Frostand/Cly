@@ -6,15 +6,15 @@ const destinations = [
   ["context", "Context Composer"],
   ["graph", "Research Object Graph"],
   ["experiments", "Experiment Manager"],
-  ["sources", "Source Manager"],
-  ["literature", "Literature Workspace"],
-  ["notebooks", "Notebook Scanner"],
-  ["code", "Code-to-Research Linker"],
-  ["claims", "Claim Audit Board"],
-  ["provenance", "Figure & Table Provenance"],
+  ["sources", "Sources"],
+  ["literature", "Literature"],
+  ["notebooks", "Notebooks"],
+  ["code", "Code Linker"],
+  ["claims", "Claims"],
+  ["provenance", "Provenance"],
   ["reproducibility", "Reproducibility Auditor"],
-  ["decisions", "Research Decision Log"],
-  ["next-steps", "Next-Step Planner"],
+  ["decisions", "Decisions"],
+  ["next-steps", "Next Steps"],
   ["integrations", "Integrations & Providers"],
   ["models", "Models & Agents"],
   ["settings", "Settings"],
@@ -56,9 +56,7 @@ test("completes the linked research workflow", async ({ page }) => {
     .getByRole("combobox", { name: "Command palette" })
     .fill("New Claim");
   await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("heading", { name: "Claim Audit Board" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Claims" })).toBeVisible();
   await page.getByRole("radio", { name: "Detail" }).click();
   await page.getByRole("button", { name: "Link evidence" }).click();
   await expect(page.getByText("Experiment linked")).toBeVisible();
@@ -66,17 +64,17 @@ test("completes the linked research workflow", async ({ page }) => {
   // Add a source to a NotebookLM bundle.
   await page.getByTestId("nav-sources").click();
   await page.getByRole("row", { name: /Reliable neural surrogates/ }).click();
-  await page.getByText("Source actions", { exact: true }).click();
+  await page.getByText("More source actions", { exact: true }).click();
   await page.getByRole("button", { name: "Add to NotebookLM bundle" }).click();
   await expect(page.getByText("Added to NotebookLM bundle")).toBeVisible();
 
   // Import and inspect a mock notebook.
   await page.getByTestId("nav-notebooks").click();
-  await page.getByRole("button", { name: "Import notebook" }).click();
+  await page.getByRole("button", { name: /Add notebook/ }).click();
   await page.getByLabel("Notebook filename").fill("review-analysis.ipynb");
   await page.getByRole("button", { name: "Import and scan" }).click();
   await expect(
-    page.getByText("review-analysis.ipynb", { exact: true }),
+    page.getByRole("heading", { name: "review-analysis.ipynb" }),
   ).toBeVisible();
   await expect(
     page.locator("#main-workspace").getByText("Mock scan queued"),
@@ -122,10 +120,10 @@ test("completes the linked research workflow", async ({ page }) => {
     .getByRole("combobox", { name: "Command palette" })
     .fill("New Decision");
   await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Decisions" })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Research Decision Log" }),
+    page.getByRole("heading", { name: "Untitled decision", level: 2 }),
   ).toBeVisible();
-  await expect(page.getByText("Untitled decision")).toBeVisible();
 });
 
 test("supports shell controls, shortcuts, command execution, and inspector selection", async ({
@@ -147,9 +145,7 @@ test("supports shell controls, shortcuts, command execution, and inspector selec
     "true",
   );
   await page.keyboard.press("Meta+6");
-  await expect(
-    page.getByRole("heading", { name: "Claim Audit Board" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Claims" })).toBeVisible();
   await page
     .getByText("Calibration-aware ensembles reduce simulation cost", {
       exact: false,
@@ -158,8 +154,9 @@ test("supports shell controls, shortcuts, command execution, and inspector selec
     .click();
   await expect(page.locator(".cly-shell")).toHaveAttribute(
     "data-inspector",
-    "open",
+    "closed",
   );
+  await expect(page.locator("[data-inline-inspector]")).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: /Calibration-aware ensembles reduce simulation cost/,
@@ -171,9 +168,7 @@ test("supports shell controls, shortcuts, command execution, and inspector selec
     .getByRole("combobox", { name: "Command palette" })
     .fill("Go to Sources");
   await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("heading", { name: "Source Manager" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sources" })).toBeVisible();
 });
 
 test("captures responsive visual fixtures", async ({ page }) => {

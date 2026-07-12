@@ -6,15 +6,15 @@ const routes = [
   ["context", "Context Composer"],
   ["graph", "Research Object Graph"],
   ["experiments", "Experiment Manager"],
-  ["sources", "Source Manager"],
-  ["literature", "Literature Workspace"],
-  ["notebooks", "Notebook Scanner"],
-  ["code", "Code-to-Research Linker"],
-  ["claims", "Claim Audit Board"],
-  ["provenance", "Figure & Table Provenance"],
+  ["sources", "Sources"],
+  ["literature", "Literature"],
+  ["notebooks", "Notebooks"],
+  ["code", "Code Linker"],
+  ["claims", "Claims"],
+  ["provenance", "Provenance"],
   ["reproducibility", "Reproducibility Auditor"],
-  ["decisions", "Research Decision Log"],
-  ["next-steps", "Next-Step Planner"],
+  ["decisions", "Decisions"],
+  ["next-steps", "Next Steps"],
   ["integrations", "Integrations & Providers"],
   ["models", "Models & Agents"],
   ["settings", "Settings"],
@@ -90,15 +90,16 @@ test("captures empty and relevant error states without overflow", async ({
   }
 });
 
-test("captures contextual inspector closed and open", async ({ page }) => {
+test("captures the route-owned claims inspector", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openRoute(page, "claims", "Claim Audit Board");
+  await openRoute(page, "claims", "Claims");
   await expect(page.locator(".cly-shell")).toHaveAttribute(
     "data-inspector",
     "closed",
   );
+  await expect(page.locator("[data-inline-inspector]")).toBeVisible();
   await page.screenshot({
-    path: "output/playwright/visual-v2/claims-inspector-closed.png",
+    path: "output/playwright/visual-v2/claims-inline-inspector.png",
     animations: "disabled",
   });
 
@@ -110,10 +111,11 @@ test("captures contextual inspector closed and open", async ({ page }) => {
     .click();
   await expect(page.locator(".cly-shell")).toHaveAttribute(
     "data-inspector",
-    "open",
+    "closed",
   );
+  await expect(page.locator("[data-inline-inspector]")).toBeVisible();
   await page.screenshot({
-    path: "output/playwright/visual-v2/claims-inspector-open.png",
+    path: "output/playwright/visual-v2/claims-inline-selection.png",
     animations: "disabled",
   });
 });
@@ -122,7 +124,7 @@ test("keeps the 500-recommendation fixture responsive and virtualized", async ({
   page,
 }) => {
   await chooseFixture(page, /^Large Project/);
-  await openRoute(page, "next-steps", "Next-Step Planner");
+  await openRoute(page, "next-steps", "Next Steps");
   await expect(
     page.getByRole("list", { name: "Prioritized next-step recommendations" }),
   ).toBeVisible();
