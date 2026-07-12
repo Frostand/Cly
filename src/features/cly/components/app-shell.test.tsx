@@ -130,4 +130,27 @@ describe("Cly application shell", () => {
 
     expect(screen.getByText("No claims yet")).toBeVisible();
   });
+
+  it("does not mount a blank inspector and opens it for a real selection", async () => {
+    const user = userEvent.setup();
+    useClyStore.setState({ activeScreen: "claims" });
+    render(<ClyAppShell />);
+
+    expect(document.querySelector(".cly-inspector")).not.toBeInTheDocument();
+    expect(document.querySelector(".cly-shell")).toHaveAttribute(
+      "data-inspector",
+      "closed",
+    );
+
+    await user.click(
+      screen
+        .getAllByText(/Calibration-aware ensembles reduce simulation cost/)
+        .at(0) as HTMLElement,
+    );
+    expect(document.querySelector(".cly-inspector")).toBeInTheDocument();
+    expect(document.querySelector(".cly-shell")).toHaveAttribute(
+      "data-inspector",
+      "open",
+    );
+  });
 });

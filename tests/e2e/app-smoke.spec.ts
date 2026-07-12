@@ -200,3 +200,33 @@ test("captures responsive visual fixtures", async ({ page }) => {
     path: "output/playwright/collapsed-sidebar-activity.png",
   });
 });
+
+test("filters and sorts data, configures providers, and persists preferences", async ({
+  page,
+}) => {
+  await page.getByTestId("nav-sources").click();
+  await page.getByLabel("Filter source type").selectOption("Paper");
+  await page.getByLabel("Sort sources").selectOption("Newest");
+  await expect(page.getByLabel("Filter source type")).toHaveValue("Paper");
+  await expect(page.getByLabel("Sort sources")).toHaveValue("Newest");
+
+  await page.getByTestId("nav-integrations").click();
+  const github = page.locator(".cly-integration-catalog .cly-panel", {
+    hasText: "GitHub",
+  });
+  await github.getByRole("button", { name: "Setup" }).click();
+  await expect(page.getByText("GitHub setup")).toBeVisible();
+
+  await page.getByTestId("nav-models").click();
+  const firstModel = page.locator(".cly-agent-model").first();
+  await firstModel.selectOption({ label: "Claude Sonnet" });
+  await expect(firstModel).toHaveValue("Claude Sonnet");
+  await page.getByRole("button", { name: "Save preset" }).click();
+  await expect(page.getByText("Agent preset saved")).toBeVisible();
+
+  await page.getByTestId("nav-settings").click();
+  await page.getByRole("button", { name: "light" }).click();
+  await expect(page.locator("html")).toHaveClass(/light/);
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/light/);
+});

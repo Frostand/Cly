@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { VirtualizedList } from "../components/design-system";
 import {
   Badge,
   Button,
@@ -29,6 +30,7 @@ import {
   toneForStatus,
 } from "../components/primitives";
 import { prioritizeNextSteps } from "../domain/logic";
+import type { NextStep } from "../domain/types";
 import { mockServices } from "../services/mock-services";
 import { useClyStore } from "../store/cly-store";
 
@@ -45,7 +47,7 @@ export function ProvenanceScreen() {
   const data = useClyStore((s) => s.data);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
-  const [view, setView] = useState<ProvenanceView>("Gallery");
+  const [view, setView] = useState<ProvenanceView>("Lineage");
   const [query, setQuery] = useState("");
   const visible = artifacts.filter(
     (item) =>
@@ -60,7 +62,7 @@ export function ProvenanceScreen() {
       (view !== "Unlinked" || item.claimIds.length === 0),
   );
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-provenance">
       <PageHeader
         kicker="Integrity"
         title="Figure & Table Provenance"
@@ -316,7 +318,7 @@ export function ReproducibilityScreen() {
       filter === "All" || item.severity === filter || item.status === filter,
   );
   return (
-    <div className="cly-page">
+    <div className="cly-page cly-route-reproducibility">
       <PageHeader
         kicker="Integrity"
         title="Reproducibility Auditor"
@@ -542,6 +544,85 @@ type PlannerView =
   | "By risk"
   | "By effort";
 
+function NextStepRow({
+  step,
+  index,
+  onSelect,
+  onAccept,
+  onDefer,
+  onCreateSession,
+  onDismiss,
+}: {
+  step: NextStep;
+  index: number;
+  onSelect: () => void;
+  onAccept: () => void;
+  onDefer: () => void;
+  onCreateSession: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="cly-next-step-row" data-status={step.status}>
+      <div className="cly-next-step-rank">{index + 1}</div>
+      <button type="button" className="cly-next-step-main" onClick={onSelect}>
+        <div className="cly-row">
+          <Badge tone={toneForStatus(step.status)}>{step.status}</Badge>
+          <span className="cly-faint cly-small">{step.category}</span>
+        </div>
+        <strong>{step.title}</strong>
+        <span>{step.rationale}</span>
+      </button>
+      <div className="cly-next-step-attributes">
+        <span>
+          <small>Impact</small>
+          <strong>{step.impact}</strong>
+        </span>
+        <span>
+          <small>Effort</small>
+          <strong>{step.effort}</strong>
+        </span>
+        <span>
+          <small>When</small>
+          <strong>{step.urgency}</strong>
+        </span>
+      </div>
+      <div className="cly-next-step-routing">
+        <span>{step.agentPreset}</span>
+        <small>{step.contextPack}</small>
+      </div>
+      <div className="cly-next-step-actions">
+        <Button onClick={onAccept}>
+          <Check size={12} /> Accept
+        </Button>
+        <Button
+          variant="ghost"
+          iconOnly
+          aria-label={`Defer ${step.title}`}
+          onClick={onDefer}
+        >
+          <Clock size={12} />
+        </Button>
+        <Button
+          variant="ghost"
+          iconOnly
+          aria-label={`Create agent session for ${step.title}`}
+          onClick={onCreateSession}
+        >
+          <Sparkles size={12} />
+        </Button>
+        <Button
+          variant="ghost"
+          iconOnly
+          aria-label={`Dismiss ${step.title}`}
+          onClick={onDismiss}
+        >
+          <X size={12} />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function NextStepsScreen() {
   const rawSteps = useClyStore((s) => s.data.nextSteps);
   const steps = prioritizeNextSteps(rawSteps);
@@ -557,8 +638,30 @@ export function NextStepsScreen() {
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
+  const renderStep = (step: NextStep, index: number) => (
+    <NextStepRow
+      step={step}
+      index={index}
+      onSelect={() => setSelected(step.id)}
+      onAccept={() => {
+        void mockServices.planner.setStatus(step.id, "Accepted");
+        notify("Recommendation accepted", step.title);
+      }}
+      onDefer={() => void mockServices.planner.setStatus(step.id, "Deferred")}
+      onCreateSession={() => {
+        setScreen("agents");
+        notify(
+          "Converted to agent session",
+          `${step.agentPreset} with ${step.contextPack}.`,
+        );
+      }}
+      onDismiss={() =>
+        void mockServices.planner.setStatus(step.id, "Dismissed")
+      }
+    />
+  );
   return (
-    <div className="cly-page">
+    <div className="cly-page cly-route-next-steps">
       <PageHeader
         kicker="Integrity"
         title="Next-Step Planner"
@@ -646,108 +749,22 @@ export function NextStepsScreen() {
             </Panel>
           ))}
         </div>
+      ) : visible.length > 100 ? (
+        <VirtualizedList
+          items={visible}
+          height={620}
+          rowHeight={82}
+          renderItem={renderStep}
+          getKey={(step) => step.id}
+          label="Prioritized next-step recommendations"
+          className="cly-next-step-list"
+        />
       ) : (
-        <div className="cly-stack">
+        <ol className="cly-next-step-list">
           {visible.map((step, index) => (
-            <Panel
-              key={step.id}
-              onClick={() => setSelected(step.id)}
-              style={{ cursor: "pointer" }}
-            >
-              <div className="cly-panel-body">
-                <div className="cly-row-between">
-                  <div className="cly-row">
-                    <span className="cly-kbd">{index + 1}</span>
-                    <Badge>{step.category}</Badge>
-                    <Badge tone={toneForStatus(step.status)}>
-                      {step.status}
-                    </Badge>
-                  </div>
-                  <div className="cly-row">
-                    <Badge
-                      tone={step.impact === "High" ? "warning" : "neutral"}
-                    >
-                      {step.impact} impact
-                    </Badge>
-                    <span className="cly-faint cly-small">
-                      {step.effort} effort · {step.urgency}
-                    </span>
-                  </div>
-                </div>
-                <h3 style={{ margin: "10px 0 5px", fontSize: 15 }}>
-                  {step.title}
-                </h3>
-                <p
-                  className="cly-muted cly-small"
-                  style={{ margin: 0, lineHeight: 1.55 }}
-                >
-                  {step.rationale}
-                </p>
-                <div className="cly-row-between" style={{ marginTop: 12 }}>
-                  <div className="cly-row">
-                    <span className="cly-faint cly-small">
-                      Agent: {step.agentPreset}
-                    </span>
-                    <span className="cly-faint cly-small">
-                      Context: {step.contextPack}
-                    </span>
-                  </div>
-                  <div className="cly-row">
-                    <Button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void mockServices.planner.setStatus(
-                          step.id,
-                          "Accepted",
-                        );
-                        notify("Recommendation accepted", step.title);
-                      }}
-                    >
-                      <Check size={12} /> Accept
-                    </Button>
-                    <Button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void mockServices.planner.setStatus(
-                          step.id,
-                          "Deferred",
-                        );
-                      }}
-                    >
-                      <Clock size={12} /> Defer
-                    </Button>
-                    <Button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setScreen("agents");
-                        notify(
-                          "Converted to agent session",
-                          `${step.agentPreset} with ${step.contextPack}.`,
-                        );
-                      }}
-                    >
-                      <Sparkles size={12} /> Agent session
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      iconOnly
-                      aria-label={`Dismiss ${step.title}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void mockServices.planner.setStatus(
-                          step.id,
-                          "Dismissed",
-                        );
-                      }}
-                    >
-                      <X size={12} />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </Panel>
+            <li key={step.id}>{renderStep(step, index)}</li>
           ))}
-        </div>
+        </ol>
       )}
     </div>
   );
@@ -792,7 +809,7 @@ export function DecisionsScreen() {
     notify("Research decision recorded");
   };
   return (
-    <div className="cly-page">
+    <div className="cly-page cly-route-decisions">
       <PageHeader
         kicker="Integrity"
         title="Research Decision Log"

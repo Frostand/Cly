@@ -50,7 +50,7 @@ export function OverviewScreen() {
     );
 
   return (
-    <div className="cly-page">
+    <div className="cly-page cly-route-overview">
       <PageHeader
         kicker="Project overview"
         title={project.name}
@@ -100,7 +100,7 @@ export function OverviewScreen() {
         title="Research direction"
         subtitle="The question and hypothesis currently organizing this project"
       >
-        <div className="cly-grid-2">
+        <div className="cly-project-brief">
           <Panel className="cly-panel-body">
             <div className="cly-page-kicker">Research question</div>
             <div style={{ fontSize: 17, lineHeight: 1.45, fontWeight: 590 }}>

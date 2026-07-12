@@ -83,7 +83,7 @@ export function ContextScreen() {
     updateItem(item.id, { priority: Math.max(1, item.priority + direction) });
 
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-context">
       <PageHeader
         kicker="Workspace"
         title="Context Composer"
@@ -260,7 +260,7 @@ export function ContextScreen() {
               title="Context packs"
               subtitle="Task-focused selections with a transparent, editable manifest"
             >
-              <div className="cly-grid-3">
+              <div className="cly-context-pack-list">
                 {packs.map((pack) => (
                   <Panel className="cly-panel-body" key={pack.id}>
                     <div className="cly-row">

@@ -47,16 +47,26 @@ export function SourcesScreen() {
   const notify = useClyStore((s) => s.notify);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("All");
+  const [sort, setSort] = useState<"Relevance" | "Newest" | "Title">(
+    "Relevance",
+  );
   const [importOpen, setImportOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const filtered = sources.filter(
-    (source) =>
-      (!query ||
-        `${source.title} ${source.authors} ${source.tags.join(" ")}`
-          .toLowerCase()
-          .includes(query.toLowerCase())) &&
-      (type === "All" || source.type === type),
-  );
+  const relevanceRank = { Core: 0, High: 1, Medium: 2, Low: 3 };
+  const filtered = sources
+    .filter(
+      (source) =>
+        (!query ||
+          `${source.title} ${source.authors} ${source.tags.join(" ")}`
+            .toLowerCase()
+            .includes(query.toLowerCase())) &&
+        (type === "All" || source.type === type),
+    )
+    .sort((a, b) => {
+      if (sort === "Newest") return b.year - a.year;
+      if (sort === "Title") return a.title.localeCompare(b.title);
+      return relevanceRank[a.relevance] - relevanceRank[b.relevance];
+    });
 
   const importSource = async () => {
     const source = await mockServices.sources.create({
@@ -73,7 +83,7 @@ export function SourcesScreen() {
   };
 
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-sources">
       <PageHeader
         kicker="Research"
         title="Source Manager"
@@ -140,6 +150,19 @@ export function SourcesScreen() {
                 <option key={item}>{item}</option>
               ),
             )}
+          </select>
+          <select
+            className="cly-select"
+            style={{ width: 130 }}
+            value={sort}
+            onChange={(event) =>
+              setSort(event.target.value as "Relevance" | "Newest" | "Title")
+            }
+            aria-label="Sort sources"
+          >
+            <option>Relevance</option>
+            <option>Newest</option>
+            <option>Title</option>
           </select>
           <Button
             onClick={() =>
@@ -358,7 +381,7 @@ export function LiteratureScreen() {
   );
 
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-literature">
       <PageHeader
         kicker="Research"
         title="Literature Workspace"
@@ -821,7 +844,7 @@ export function NotebooksScreen() {
     );
   };
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-notebooks">
       <PageHeader
         kicker="Research"
         title="Notebook Scanner"
@@ -1028,7 +1051,7 @@ export function CodeLinkerScreen() {
       (view !== "Risks" || item.risks.length),
   );
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-code">
       <PageHeader
         kicker="Research"
         title="Code-to-Research Linker"
@@ -1225,7 +1248,7 @@ export function ClaimsScreen() {
     );
   };
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-claims">
       <PageHeader
         kicker="Research"
         title="Claim Audit Board"
