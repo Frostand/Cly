@@ -19,6 +19,15 @@ export interface CreateRelationshipInput {
   type: "supports" | "contradicts";
 }
 
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -29,8 +38,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(
+    throw new ApiRequestError(
       (await response.text()).trim() || `Request failed (${response.status}).`,
+      response.status,
     );
   }
 

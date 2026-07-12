@@ -43,6 +43,10 @@ export interface SourceService {
   addToNotebookBundle(id: string): Promise<void>;
 }
 
+export interface LiteratureService {
+  search(projectId: string, query: string): Promise<LiteratureSearchResult[]>;
+}
+
 export interface NotebookService {
   importMock(name: string): Promise<NotebookArtifact>;
 }
@@ -87,6 +91,7 @@ export interface ClyServices {
   agents: AgentService;
   experiments: ExperimentService;
   sources: SourceService;
+  literature: LiteratureService;
   notebooks: NotebookService;
   claims: ClaimService;
   graph: ResearchGraphService;

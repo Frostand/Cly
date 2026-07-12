@@ -43,15 +43,10 @@ import {
   ExecutionStrip,
   RelationshipChain,
 } from "../components/visuals";
-import {
-  deterministicSemanticRanker,
-  type LiteratureSearchResult,
-  rankLiteratureWithRrf,
-  sourceFromLiteraturePaper,
-} from "../domain/literature-search";
+import type { LiteratureSearchResult } from "../domain/literature-search";
 import { filterAndSortClaims } from "../domain/logic";
 import type { ClaimStatus, Source } from "../domain/types";
-import { apiClient } from "../services/api-client";
+import { desktopLiteratureService } from "../services/literature-service";
 import { mockServices } from "../services/mock-services";
 import { claimStatusTone, useClyStore } from "../store/cly-store";
 
@@ -439,15 +434,10 @@ export function LiteratureScreen() {
                 setSearching(true);
                 setSearchError(null);
                 try {
-                  const response = await apiClient.searchLiterature(
-                    activeProjectId,
-                    query,
-                  );
                   setSearchResults(
-                    await rankLiteratureWithRrf(
+                    await desktopLiteratureService.search(
+                      activeProjectId,
                       query,
-                      response.papers.map(sourceFromLiteraturePaper),
-                      deterministicSemanticRanker,
                     ),
                   );
                 } catch (error) {

@@ -1,4 +1,8 @@
-import type { LiteratureSearchResult } from "../domain/literature-search";
+import {
+  deterministicSemanticRanker,
+  type LiteratureSearchResult,
+  rankLiteratureWithRrf,
+} from "../domain/literature-search";
 import type {
   Claim,
   Experiment,
@@ -92,6 +96,15 @@ export const mockServices: ClyServices = {
       };
       useClyStore.getState().addExperiment(duplicate);
       return duplicate;
+    },
+  },
+  literature: {
+    async search(_projectId, query) {
+      return rankLiteratureWithRrf(
+        query,
+        useClyStore.getState().data.sources,
+        deterministicSemanticRanker,
+      );
     },
   },
   sources: {
