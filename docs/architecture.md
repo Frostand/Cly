@@ -97,6 +97,10 @@ Cly code lives under `src/features/cly/`. The coding workspace infrastructure li
 
 This boundary ensures the coding workspace can be replaced or multiple editors can be supported without rewriting the research platform.
 
+External and embedded clients depend on the transport-neutral contracts in
+`src/features/research/contracts`. See [Research core and client contract](research-client-contract.md)
+for attachment, authorization, provenance, and failure semantics.
+
 ## Data flow
 
 ```text
