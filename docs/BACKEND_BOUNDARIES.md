@@ -4,6 +4,11 @@
 
 Components depend on `ClyServices` contracts and the normalized UI store. They do not import fixture JSON directly. `mockServices` is the only current implementation.
 
+The normative local process, data, permission, and API boundary is
+[Local Cly service boundary](LOCAL_SERVICE_BOUNDARY.md). Research-service
+clients use project IDs and typed capabilities; legacy coding-workspace path,
+terminal, runner, and Git routes are not research authorization primitives.
+
 ## Services
 
 | Interface | Future implementation |
@@ -41,6 +46,12 @@ coding workspace.
 ## Available infrastructure
 
 The current implementation uses SQLite/Drizzle, token-protected loopback Hono API, preload IPC, terminal/process sessions, Git routes, editor detection, browser sessions, theme persistence, and packaging from the coding workspace layer. These remain available for service implementations but research services do not depend on them directly — only through typed adapters.
+
+The first policy-enforcing adapter is now available for repository
+observation: it resolves a registered project, requires a canonical Git root,
+runs a fixed bounded metadata-only status scan, and appends reviewable
+project-scoped provenance. It does not authorize experiment execution,
+artifact content reads, context transmission, or agent effects.
 
 ## External integration contracts
 

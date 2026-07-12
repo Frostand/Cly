@@ -42,6 +42,26 @@ const projectInputSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
+const provenanceInputSchema = z.object({
+  projectId: z.string().trim().min(1),
+  objectId: z.string().trim().min(1).nullable().optional(),
+  action: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/),
+  actorType: z.enum(["human", "system", "agent", "integration"]),
+  actorId: z.string().trim().min(1).max(200).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
+const provenanceListSchema = z
+  .object({
+    limit: z.number().int().min(1).max(500).default(100),
+  })
+  .default({});
+
 const parseJson = (value) => {
   try {
     return JSON.parse(value);
@@ -79,6 +99,24 @@ const mapRelationship = (row) => ({
   createdAt: row.created_at,
 });
 
+const mapProject = (row) => ({
+  id: row.id,
+  name: row.name,
+  path: row.path,
+  metadata: parseJson(row.metadata),
+});
+
+const mapProvenance = (row) => ({
+  id: row.id,
+  projectId: row.project_id,
+  objectId: row.object_id,
+  action: row.action,
+  actorType: row.actor_type,
+  actorId: row.actor_id,
+  metadata: parseJson(row.metadata),
+  createdAt: row.created_at,
+});
+
 export function createResearchRepository(database) {
   const ensureProject = (projectId) => {
     const project = database
@@ -89,24 +127,37 @@ export function createResearchRepository(database) {
     }
   };
 
-  const appendProvenance = (
-    { action, metadata = {}, objectId, projectId },
+  const insertProvenance = (
+    {
+      action,
+      actorId = "local-user",
+      actorType = "human",
+      metadata = {},
+      objectId,
+      projectId,
+    },
     now,
   ) => {
+    const id = randomUUID();
     database
       .prepare(
         `INSERT INTO provenance_events
           (id, project_id, object_id, action, actor_type, actor_id, metadata, created_at)
-         VALUES (?, ?, ?, ?, 'human', 'local-user', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        randomUUID(),
+        id,
         projectId,
         objectId ?? null,
         action,
+        actorType,
+        actorId ?? null,
         JSON.stringify(metadata),
         now,
       );
+    return mapProvenance(
+      database.prepare("SELECT * FROM provenance_events WHERE id = ?").get(id),
+    );
   };
 
   return {
@@ -181,7 +232,7 @@ export function createResearchRepository(database) {
             now,
             now,
           );
-        appendProvenance(
+        insertProvenance(
           {
             action: `${parsed.type}.created`,
             objectId: id,
@@ -235,7 +286,7 @@ export function createResearchRepository(database) {
             input.id,
             input.projectId,
           );
-        appendProvenance(
+        insertProvenance(
           {
             action: "source.enriched",
             objectId: input.id,
@@ -291,7 +342,7 @@ export function createResearchRepository(database) {
             parsed.type,
             now,
           );
-        appendProvenance(
+        insertProvenance(
           {
             action: `relationship.${parsed.type}.created`,
             objectId: parsed.toObjectId,
@@ -326,6 +377,43 @@ export function createResearchRepository(database) {
         .all(projectId)
         .map(mapRelationship);
       return { objects, relationships };
+    },
+
+    getProject(projectId) {
+      ensureProject(projectId);
+      return mapProject(
+        database.prepare("SELECT * FROM projects WHERE id = ?").get(projectId),
+      );
+    },
+
+    appendProvenance(input) {
+      const parsed = provenanceInputSchema.parse(input);
+      ensureProject(parsed.projectId);
+      if (parsed.objectId) {
+        const object = database
+          .prepare(
+            "SELECT id FROM research_objects WHERE id = ? AND project_id = ?",
+          )
+          .get(parsed.objectId, parsed.projectId);
+        if (!object) {
+          throw new Error("Research object does not belong to the project.");
+        }
+      }
+      return insertProvenance(parsed, new Date().toISOString());
+    },
+
+    listProvenance(projectId, options = {}) {
+      ensureProject(projectId);
+      const { limit } = provenanceListSchema.parse(options);
+      return database
+        .prepare(
+          `SELECT * FROM provenance_events
+           WHERE project_id = ?
+           ORDER BY created_at DESC, rowid DESC
+           LIMIT ?`,
+        )
+        .all(projectId, limit)
+        .map(mapProvenance);
     },
   };
 }
