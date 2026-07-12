@@ -11,33 +11,30 @@
  */
 
 export {
-  RESEARCH_OBJECT_TYPES,
-  type ResearchObjectType,
-  type ResearchObjectPayload,
-  type ArtifactPayload,
-  type SourcePayload,
-  type ClaimPayload,
-  type ExperimentPayload,
-  type RunPayload,
-} from "../../research/domain/research-types";
-
-export {
-  researchObjectInputSchema,
-  createResearchObject,
-  type ResearchObject,
-  type ResearchObjectInput,
-} from "../../research/domain/research-object";
-
-export {
-  relationshipInputSchema,
-  createRelationship,
-  type Relationship,
-  type RelationshipInput,
-} from "../../research/domain/relationship";
-
-export {
-  provenanceEventInputSchema,
   createProvenanceEvent,
   type ProvenanceEvent,
   type ProvenanceEventInput,
+  provenanceEventInputSchema,
 } from "../../research/domain/provenance-event";
+export {
+  createRelationship,
+  type Relationship,
+  type RelationshipInput,
+  relationshipInputSchema,
+} from "../../research/domain/relationship";
+export {
+  createResearchObject,
+  type ResearchObject,
+  type ResearchObjectInput,
+  researchObjectInputSchema,
+} from "../../research/domain/research-object";
+export {
+  type ArtifactPayload,
+  type ClaimPayload,
+  type ExperimentPayload,
+  RESEARCH_OBJECT_TYPES,
+  type ResearchObjectPayload,
+  type ResearchObjectType,
+  type RunPayload,
+  type SourcePayload,
+} from "../../research/domain/research-types";
