@@ -549,6 +549,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
         description: source.summary,
         payload: {
           kind: "source",
+          status: source.url ? "resolved" : "placeholder",
           authors: source.authors
             .split(",")
             .map((author) => author.trim())
