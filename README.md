@@ -71,6 +71,7 @@ pnpm vite:build
 - [Architecture](docs/architecture.md)
 - [Domain model](docs/DOMAIN_MODEL.md)
 - [Backend boundaries](docs/BACKEND_BOUNDARIES.md)
+- [Local service security model](docs/LOCAL_SERVICE_SECURITY_MODEL.md)
 - [Design system](docs/DESIGN_SYSTEM.md)
 
 ### UI
