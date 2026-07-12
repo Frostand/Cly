@@ -75,7 +75,7 @@ Per `AGENTS.md`: cloud providers send data off the user's machine. The UI and co
 6. **Provider selector with warnings** (builds on #6 if done):
    - Cloud providers show ⚠️ icon and "Sends data to OpenAI/Anthropic" note
    - Selecting a cloud provider shows a one-time confirmation dialog:
-     > "ChatGPT/Claude will receive your research topic and paper abstracts. 
+     > "ChatGPT/Claude will receive your research topic and paper abstracts.
      > Are you sure you want to use a cloud provider?"
    - Show estimated cost for the run (tokens × pricing)
    - Remember preference in `localStorage` ("I understand") to skip dialog next time

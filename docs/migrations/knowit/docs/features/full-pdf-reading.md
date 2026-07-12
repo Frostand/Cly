@@ -37,22 +37,22 @@ Parse the full text of PDFs and feed structured sections (Introduction, Methods,
    ```
    Title: {title}
    Authors: {authors}
-   
+
    Abstract:
    {abstract}
-   
+
    Introduction:
    {intro_chunk}
-   
+
    Methods:
    {methods_chunk}
-   
+
    Results:
    {results_chunk}
-   
+
    Conclusion:
    {conclusion_chunk}
-   
+
    Extract structured research notes from the above paper sections.
    Include specific methods, datasets, metrics, and limitations mentioned.
    ```
