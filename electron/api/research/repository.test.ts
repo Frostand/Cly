@@ -163,6 +163,130 @@ describe("research repository", () => {
     ).toEqual({ count: 3 });
   });
 
+  it("validates typed payloads before writing objects or provenance", () => {
+    const repository = createResearchRepository(database);
+
+    expect(() =>
+      repository.createObject({
+        projectId: "project-1",
+        type: "source",
+        title: "Untraceable source",
+        payload: { kind: "source" },
+      }),
+    ).toThrow("A source requires a URL or citation");
+    expect(() =>
+      repository.createObject({
+        projectId: "project-1",
+        type: "claim",
+        title: "Invalid claim",
+        payload: { kind: "claim", status: "accepted" },
+      }),
+    ).toThrow();
+    expect(() =>
+      repository.createObject({
+        projectId: "project-1",
+        type: "run",
+        title: "Invalid run",
+        payload: { kind: "run", status: "unknown" },
+      }),
+    ).toThrow();
+
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM research_objects").get(),
+    ).toEqual({ count: 0 });
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM provenance_events").get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("persists an explicitly marked source placeholder without evidence coordinates", () => {
+    const repository = createResearchRepository(database);
+
+    expect(
+      repository.createObject({
+        id: "source-placeholder",
+        projectId: "project-1",
+        type: "source",
+        title: "Untitled source",
+        payload: { kind: "source", status: "placeholder" },
+      }),
+    ).toMatchObject({
+      id: "source-placeholder",
+      payload: { kind: "source", status: "placeholder" },
+    });
+  });
+
+  it("persists experiment and run primitives", () => {
+    const repository = createResearchRepository(database);
+    const experiment = repository.createObject({
+      id: "experiment-1",
+      projectId: "project-1",
+      type: "experiment",
+      title: "Recall benchmark",
+      payload: { kind: "experiment", hypothesis: "Recall improves." },
+    });
+    const run = repository.createObject({
+      id: "run-1",
+      projectId: "project-1",
+      type: "run",
+      title: "Benchmark run",
+      payload: { kind: "run", status: "completed", commitSha: "abc1234" },
+    });
+    repository.createRelationship({
+      projectId: "project-1",
+      fromObjectId: run.id,
+      toObjectId: experiment.id,
+      type: "generated-by",
+    });
+
+    expect(repository.listProject("project-1")).toMatchObject({
+      objects: expect.arrayContaining([
+        expect.objectContaining({ id: "experiment-1", type: "experiment" }),
+        expect.objectContaining({ id: "run-1", type: "run" }),
+      ]),
+      relationships: [expect.objectContaining({ type: "generated-by" })],
+    });
+  });
+
+  it("creates and lists attributable project-scoped provenance", () => {
+    const repository = createResearchRepository(database);
+    repository.createObject({
+      id: "claim-1",
+      projectId: "project-1",
+      type: "claim",
+      title: "Claim",
+      payload: { kind: "claim", status: "draft" },
+    });
+
+    const event = repository.createProvenanceEvent({
+      id: "event-1",
+      projectId: "project-1",
+      objectId: "claim-1",
+      action: "claim.reviewed",
+      actorType: "agent",
+      actorId: "review-agent",
+      metadata: { model: "local" },
+    });
+
+    expect(event).toMatchObject({
+      id: "event-1",
+      objectId: "claim-1",
+      actorType: "agent",
+      metadata: { model: "local" },
+    });
+    expect(repository.listProvenance("project-1")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "event-1" })]),
+    );
+    expect(() =>
+      repository.createProvenanceEvent({
+        projectId: "project-2",
+        objectId: "claim-1",
+        action: "claim.reviewed",
+        actorType: "human",
+      }),
+    ).toThrow("Provenance object does not belong to the project");
+  });
+
   it("rejects relationships across projects", () => {
     const repository = createResearchRepository(database);
     repository.createObject({

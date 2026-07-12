@@ -14,28 +14,17 @@ concurrency:
 jobs:
   dependency-review:
     name: dependency-review
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.repository.private == false
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Check dependency review support
-        id: dependency-review-support
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh api "/repos/${{ github.repository }}/dependency-graph/compare/${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" >/dev/null 2>&1; then
-            echo "supported=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Skipping dependency review because GitHub dependency graph or Advanced Security is not enabled for this repository."
-            echo "supported=false" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/dependency-review-action@v4
-        if: steps.dependency-review-support.outputs.supported == 'true'
+      - uses: pnpm/action-setup@v4
         with:
-          fail-on-severity: moderate
-          deny-licenses: AGPL-1.0, AGPL-3.0, GPL-2.0, GPL-3.0
+          version: 11.12.0
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=moderate
 
   production-licenses:
     name: production-licenses
@@ -56,6 +45,7 @@ jobs:
 
   codeql:
     name: codeql
+    if: github.event.repository.private == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -71,3 +61,13 @@ jobs:
       - uses: github/codeql-action/analyze@v3
         with:
           category: /language:javascript-typescript
+          output: codeql-results
+          upload: never
+          upload-database: false
+      - name: Upload CodeQL SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: codeql-results/*.sarif
+          if-no-files-found: error
+          retention-days: 14

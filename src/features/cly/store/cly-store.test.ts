@@ -267,6 +267,40 @@ describe("Cly UI store", () => {
     });
   });
 
+  it("marks quick-created sources as placeholders before persistence", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "sqlite-placeholder-source",
+          projectId: "project-cly",
+          type: "source",
+          title: "Untitled source",
+          description: "Imported source awaiting extraction.",
+          payload: { kind: "source", status: "placeholder" },
+          createdAt: "2026-07-12T00:00:00.000Z",
+          updatedAt: "2026-07-12T00:00:00.000Z",
+        }),
+        { status: 201 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      mockServices.sources.create({
+        title: "Untitled source",
+        type: "Paper",
+      }),
+    ).resolves.toMatchObject({ id: "sqlite-placeholder-source" });
+
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
+    );
+    expect(body.payload).toMatchObject({
+      kind: "source",
+      status: "placeholder",
+    });
+  });
+
   it("persists the complete literature result and ranking provenance in one write", async () => {
     const candidate = createFixtureRepository("active").sources[0];
     const result = {
