@@ -1,7 +1,7 @@
 import * as RadixDropdown from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronDown, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 
 export const clyPalettes = [
   "purple",
@@ -42,24 +42,10 @@ export function useClyPalette() {
 }
 
 export function ClyLogo({ compact = false }: { compact?: boolean }) {
-  const gradientId = useId().replaceAll(":", "");
   return (
     <span className="cly-brand-lockup" data-compact={compact}>
       <span className="cly-sr-only">Cly</span>
-      <svg className="cly-brand-mark" viewBox="0 0 80 80" aria-hidden="true">
-        <defs>
-          <linearGradient id={gradientId} x1="22" y1="7" x2="58" y2="73">
-            <stop stopColor="var(--cly-brand-start)" />
-            <stop offset="1" stopColor="var(--cly-brand-end)" />
-          </linearGradient>
-        </defs>
-        <path stroke={`url(#${gradientId})`} d="M35 23a22 22 0 1 0 3 42" />
-        <path stroke={`url(#${gradientId})`} d="M40 7v35l14 14" />
-        <path
-          stroke={`url(#${gradientId})`}
-          d="M54 56 70 33M54 56c-6 12-12 17-24 17"
-        />
-      </svg>
+      <span className="cly-brand-mark" aria-hidden="true" />
     </span>
   );
 }

@@ -172,26 +172,26 @@
     color: var(--cly-text);
   }
   .cly-brand-mark {
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
     flex: none;
-    overflow: visible;
-    fill: none;
-    stroke-width: 7;
-    stroke-linecap: square;
-    stroke-linejoin: bevel;
+    background: linear-gradient(
+      145deg,
+      var(--cly-brand-start),
+      var(--cly-brand-end)
+    );
     filter: drop-shadow(
       0 2px 4px color-mix(in srgb, var(--cly-accent) 22%, transparent)
     );
+    mask: url("../../assets/cly-mark.svg") center / contain no-repeat;
   }
   [data-sidebar="collapsed"] .cly-sidebar-brand {
     justify-content: center;
     padding: 0;
   }
   .cly-project-mark .cly-brand-mark {
-    width: 17px;
-    height: 17px;
-    stroke-width: 7;
+    width: 19px;
+    height: 19px;
   }
   .cly-project-mark .cly-brand-lockup {
     display: flex;
