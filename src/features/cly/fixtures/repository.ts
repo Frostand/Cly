@@ -1674,6 +1674,11 @@ const withLargeData = (data: ClyRepositoryData): ClyRepositoryData => {
     id: `large-next-step-${i}`,
     title: `${data.nextSteps[i % data.nextSteps.length].title} · ${i + 1}`,
   }));
+  data.agentSessions = Array.from({ length: 100 }, (_, i) => ({
+    ...data.agentSessions[i % data.agentSessions.length],
+    id: `large-agent-session-${i}`,
+    title: `${data.agentSessions[i % data.agentSessions.length].title} · session ${i + 1}`,
+  }));
   data.graphNodes = graph.nodes;
   data.graphEdges = graph.edges;
   return data;

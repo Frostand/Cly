@@ -51,21 +51,22 @@ test("launches Cly and navigates every major destination", async ({ page }) => {
 
 test("completes the linked research workflow", async ({ page }) => {
   // Create a claim from the command palette.
-  await page.keyboard.press("Meta+K");
+  await page.getByTestId("global-search").click();
   await page
-    .getByRole("textbox", { name: "Search commands" })
+    .getByRole("combobox", { name: "Command palette" })
     .fill("New Claim");
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("heading", { name: "Claim Audit Board" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Detail" }).click();
+  await page.getByRole("radio", { name: "Detail" }).click();
   await page.getByRole("button", { name: "Link evidence" }).click();
   await expect(page.getByText("Experiment linked")).toBeVisible();
 
   // Add a source to a NotebookLM bundle.
   await page.getByTestId("nav-sources").click();
   await page.getByRole("row", { name: /Reliable neural surrogates/ }).click();
+  await page.getByText("Source actions", { exact: true }).click();
   await page.getByRole("button", { name: "Add to NotebookLM bundle" }).click();
   await expect(page.getByText("Added to NotebookLM bundle")).toBeVisible();
 
@@ -83,12 +84,10 @@ test("completes the linked research workflow", async ({ page }) => {
 
   // Compare experiments and focus an evidence path.
   await page.getByTestId("nav-experiments").click();
-  await page.getByRole("button", { name: "Compare" }).click();
+  await page.getByRole("radio", { name: "Compare" }).click();
   await expect(page.getByText("Comparison selection")).toBeVisible();
   await page.getByTestId("nav-graph").click();
-  await page
-    .getByRole("button", { name: /20× speedup with decision accuracy/ })
-    .click();
+  await page.getByText(/20× speedup with decision accuracy/).click();
   await page.getByRole("button", { name: "Evidence", exact: true }).click();
   await expect(page.getByText("Evidence path traced")).toBeVisible();
 
@@ -118,9 +117,9 @@ test("completes the linked research workflow", async ({ page }) => {
   await expect(page.getByText("Recommendation accepted")).toBeVisible();
 
   // Create a decision from the command palette.
-  await page.keyboard.press("Meta+K");
+  await page.getByTestId("global-search").click();
   await page
-    .getByRole("textbox", { name: "Search commands" })
+    .getByRole("combobox", { name: "Command palette" })
     .fill("New Decision");
   await page.keyboard.press("Enter");
   await expect(
@@ -167,9 +166,9 @@ test("supports shell controls, shortcuts, command execution, and inspector selec
       level: 2,
     }),
   ).toBeVisible();
-  await page.keyboard.press("Meta+K");
+  await page.getByTestId("global-search").click();
   await page
-    .getByRole("textbox", { name: "Search commands" })
+    .getByRole("combobox", { name: "Command palette" })
     .fill("Go to Sources");
   await page.keyboard.press("Enter");
   await expect(
@@ -225,7 +224,7 @@ test("filters and sorts data, configures providers, and persists preferences", a
   await expect(page.getByText("Agent preset saved")).toBeVisible();
 
   await page.getByTestId("nav-settings").click();
-  await page.getByRole("button", { name: "light" }).click();
+  await page.getByRole("radio", { name: "light" }).click();
   await expect(page.locator("html")).toHaveClass(/light/);
   await page.reload();
   await expect(page.locator("html")).toHaveClass(/light/);

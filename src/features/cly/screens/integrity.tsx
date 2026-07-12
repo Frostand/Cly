@@ -15,7 +15,6 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
-import { VirtualizedList } from "../components/design-system";
 import {
   Badge,
   Button,
@@ -29,6 +28,12 @@ import {
   Segmented,
   toneForStatus,
 } from "../components/primitives";
+import { ClyVirtualList } from "../components/toolkit";
+import {
+  ImpactEffortMap,
+  RelationshipChain,
+  RiskDistribution,
+} from "../components/visuals";
 import { prioritizeNextSteps } from "../domain/logic";
 import type { NextStep } from "../domain/types";
 import { mockServices } from "../services/mock-services";
@@ -66,7 +71,7 @@ export function ProvenanceScreen() {
       <PageHeader
         kicker="Integrity"
         title="Figure & Table Provenance"
-        description="Trace every result from source data through code, notebooks, commands, environments, runs, commits, and the claims it supports."
+        description="Trace results back to data, code, runs, and claims."
         actions={
           <>
             <Segmented
@@ -128,7 +133,7 @@ export function ProvenanceScreen() {
       {artifacts.length === 0 ? (
         <EmptyState
           title="No output artifacts indexed"
-          description="Figures, tables, output files, and reports will appear once they are attached to experiments or imported from the project."
+          description="Attach or import a figure, table, output, or report."
         />
       ) : (
         <>
@@ -238,45 +243,38 @@ export function ProvenanceScreen() {
                       {artifact.regeneration}
                     </Badge>
                   </div>
-                  <div className="cly-evidence-chain">
-                    {[
-                      artifact.sourceData,
-                      data.experiments.find(
-                        (item) => item.id === artifact.experimentId,
-                      )?.name ?? artifact.experimentId,
-                      data.runs.find((item) => item.id === artifact.runId)
-                        ?.name ?? artifact.runId,
-                      artifact.generator,
-                      artifact.name,
-                      `${artifact.claimIds.length} linked claim(s)`,
-                    ].map((item, index, all) => (
-                      <span style={{ display: "contents" }} key={item}>
-                        <button
-                          className="cly-chain-node"
-                          type="button"
-                          onClick={() =>
-                            notify("Lineage object selected", item)
-                          }
-                        >
-                          <strong className="cly-clamp-2">{item}</strong>
-                          <div className="cly-muted">
-                            {
-                              [
-                                "Input",
-                                "Experiment",
-                                "Run",
-                                "Generator",
-                                "Artifact",
-                                "Evidence",
-                              ][index]
-                            }
-                          </div>
-                        </button>
-                        {index < all.length - 1 ? (
-                          <ArrowRight size={13} className="cly-chain-arrow" />
-                        ) : null}
-                      </span>
-                    ))}
+                  <div style={{ marginTop: 12 }}>
+                    <RelationshipChain
+                      label={`Lineage for ${artifact.name}`}
+                      alertAt={
+                        artifact.regeneration === "Manual" ||
+                        artifact.regeneration === "Broken"
+                          ? 3
+                          : undefined
+                      }
+                      steps={[
+                        { label: "Input", detail: artifact.sourceData },
+                        {
+                          label: "Experiment",
+                          detail:
+                            data.experiments.find(
+                              (item) => item.id === artifact.experimentId,
+                            )?.name ?? artifact.experimentId,
+                        },
+                        {
+                          label: "Run",
+                          detail:
+                            data.runs.find((item) => item.id === artifact.runId)
+                              ?.name ?? artifact.runId,
+                        },
+                        { label: "Generator", detail: artifact.generator },
+                        { label: "Artifact", detail: artifact.name },
+                        {
+                          label: "Evidence",
+                          detail: `${artifact.claimIds.length} linked claim(s)`,
+                        },
+                      ]}
+                    />
                   </div>
                 </section>
               ))}
@@ -322,7 +320,7 @@ export function ReproducibilityScreen() {
       <PageHeader
         kicker="Integrity"
         title="Reproducibility Auditor"
-        description="Audit dependencies, environments, data, seeds, commands, notebooks, outputs, provenance, consistency, portability, Git state, and documentation."
+        description="Find and fix publication blockers."
         actions={
           <>
             <Button
@@ -347,7 +345,7 @@ export function ReproducibilityScreen() {
       {!audit ? (
         <EmptyState
           title="No reproducibility audit"
-          description="Run a simulated audit to inspect 16 integrity categories and create actionable findings."
+          description="Run an audit to check 16 integrity categories."
           action={
             <Button
               variant="primary"
@@ -388,6 +386,42 @@ export function ReproducibilityScreen() {
             </Panel>
             <Panel className="cly-panel-body">
               <div className="cly-inspector-label">Finding summary</div>
+              <RiskDistribution
+                values={[
+                  {
+                    label: "Blocking",
+                    value: findings.filter(
+                      (item) =>
+                        item.severity === "Blocking" &&
+                        item.status !== "Resolved",
+                    ).length,
+                    tone: "danger",
+                  },
+                  {
+                    label: "High",
+                    value: findings.filter(
+                      (item) =>
+                        item.severity === "High" && item.status !== "Resolved",
+                    ).length,
+                    tone: "warning",
+                  },
+                  {
+                    label: "Warnings",
+                    value: findings.filter(
+                      (item) =>
+                        item.severity === "Warning" &&
+                        item.status !== "Resolved",
+                    ).length,
+                    tone: "neutral",
+                  },
+                  {
+                    label: "Passed",
+                    value: findings.filter((item) => item.severity === "Passed")
+                      .length,
+                    tone: "success",
+                  },
+                ]}
+              />
               <div className="cly-metric-row">
                 <Metric
                   label="Blocking"
@@ -665,7 +699,7 @@ export function NextStepsScreen() {
       <PageHeader
         kicker="Integrity"
         title="Next-Step Planner"
-        description="Turn weak claims, failed experiments, source gaps, notebook issues, missing baselines, stale artifacts, code risks, and reviewer concerns into prioritized work."
+        description="Prioritize evidence gaps, failures, and research risks."
         actions={
           <>
             <Segmented
@@ -696,6 +730,24 @@ export function NextStepsScreen() {
           </>
         }
       />
+      {view === "Prioritized" && steps.length ? (
+        <section
+          className="cly-next-step-visual"
+          aria-label="Recommendation overview"
+        >
+          <div>
+            <span className="cly-page-kicker">Priority field</span>
+            <strong>High-impact work is concentrated at medium effort</strong>
+            <small>
+              Position reflects the current fixture ranking; the list remains
+              the actionable source of truth.
+            </small>
+          </div>
+          <ImpactEffortMap
+            items={steps.map((step) => ({ ...step, label: step.title }))}
+          />
+        </section>
+      ) : null}
       <div className="cly-filterbar">
         <SearchInput
           value={query}
@@ -717,7 +769,7 @@ export function NextStepsScreen() {
       {steps.length === 0 ? (
         <EmptyState
           title="No next steps yet"
-          description="Cly derives recommendations from linked risks, failures, evidence gaps, and open decisions."
+          description="Recommendations appear when risks or evidence gaps are linked."
         />
       ) : view === "Roadmap" ? (
         <div className="cly-grid-3">
@@ -750,10 +802,10 @@ export function NextStepsScreen() {
           ))}
         </div>
       ) : visible.length > 100 ? (
-        <VirtualizedList
+        <ClyVirtualList
           items={visible}
           height={620}
-          rowHeight={82}
+          estimateSize={82}
           renderItem={renderStep}
           getKey={(step) => step.id}
           label="Prioritized next-step recommendations"
@@ -813,7 +865,7 @@ export function DecisionsScreen() {
       <PageHeader
         kicker="Integrity"
         title="Research Decision Log"
-        description="Retain methodological choices, alternatives, evidence, affected objects, outcomes, and supersession so project direction stays explainable."
+        description="Record what changed, why, and what it affected."
         actions={
           <>
             <Segmented
@@ -840,7 +892,7 @@ export function DecisionsScreen() {
       {decisions.length === 0 ? (
         <EmptyState
           title="No research decisions recorded"
-          description="Capture why the project chose one method, dataset, baseline, or interpretation over alternatives."
+          description="Record the choice and its rationale."
           action={
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               Record first decision

@@ -196,4 +196,23 @@ describe("Agent Sessions workspace", () => {
         ?.approvals[0]?.state,
     ).toBe("approved");
   });
+
+  it("keeps secondary session metadata in the session menu", async () => {
+    const user = userEvent.setup();
+    useClyStore.setState({
+      agentSessionsMode: "chat",
+      selectedAgentSessionId: "session-01",
+    });
+    render(<AgentSessionsScreen />);
+
+    const trigger = document.querySelector(
+      ".agent-session-menu summary",
+    ) as HTMLElement;
+    await user.click(trigger);
+    const menu = within(trigger.closest("details") as HTMLElement).getByRole(
+      "menu",
+    );
+    expect(within(menu).getByText("agent/calibration-audit")).toBeVisible();
+    expect(within(menu).getByText("$2.84 · 58.2k tokens")).toBeVisible();
+  });
 });

@@ -1,9 +1,11 @@
+import * as RadixDialog from "@radix-ui/react-dialog";
+import { Command as CommandPrimitive } from "cmdk";
 import {
   Activity,
   Bell,
   Check,
   CircleDot,
-  Command,
+  Command as CommandIcon,
   FilePlus2,
   HardDrive,
   Info,
@@ -16,7 +18,9 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { clyFadeSlide, clyMotion } from "../design-system/motion";
 import type { FixtureMode, ScreenId } from "../domain/types";
 import { mockServices } from "../services/mock-services";
 import { useClyStore } from "../store/cly-store";
@@ -26,6 +30,7 @@ import {
   screenLabels,
 } from "./navigation";
 import { Badge, Button, toneForStatus } from "./primitives";
+import { ClyTooltip } from "./toolkit";
 
 const fixtureModes: { id: FixtureMode; label: string; description: string }[] =
   [
@@ -68,6 +73,7 @@ const fixtureModes: { id: FixtureMode; label: string; description: string }[] =
   ];
 
 export function Titlebar() {
+  const overflowRef = useRef<HTMLDetailsElement>(null);
   const project = useClyStore(
     (s) =>
       s.data.projects.find((item) => item.id === s.activeProjectId) ??
@@ -84,6 +90,30 @@ export function Titlebar() {
     (s) =>
       s.data.agentSessions.filter((item) => item.status === "running").length,
   );
+
+  useEffect(() => {
+    const closeOverflow = (event: KeyboardEvent | PointerEvent) => {
+      const details = overflowRef.current;
+      if (!details?.open) return;
+      if (event instanceof KeyboardEvent && event.key === "Escape") {
+        details.open = false;
+        return;
+      }
+      if (
+        event instanceof PointerEvent &&
+        event.target instanceof Node &&
+        !details.contains(event.target)
+      ) {
+        details.open = false;
+      }
+    };
+    window.addEventListener("keydown", closeOverflow);
+    window.addEventListener("pointerdown", closeOverflow);
+    return () => {
+      window.removeEventListener("keydown", closeOverflow);
+      window.removeEventListener("pointerdown", closeOverflow);
+    };
+  }, []);
 
   const createObject = async () => {
     const screen = useClyStore.getState().activeScreen;
@@ -150,18 +180,19 @@ export function Titlebar() {
         {project ? (
           <span className="cly-topbar-context">{project.phase}</span>
         ) : null}
-        <Button
-          variant="ghost"
-          iconOnly
-          title="Agent activity"
-          aria-label={`${activeSessions} active agent sessions`}
-          onClick={() => setScreen("agents")}
-        >
-          <Activity size={14} />
-          {activeSessions ? (
-            <span className="cly-sr-only">{activeSessions} active</span>
-          ) : null}
-        </Button>
+        <ClyTooltip label="Agent activity">
+          <Button
+            variant="ghost"
+            iconOnly
+            aria-label={`${activeSessions} active agent sessions`}
+            onClick={() => setScreen("agents")}
+          >
+            <Activity size={14} />
+            {activeSessions ? (
+              <span className="cly-sr-only">{activeSessions} active</span>
+            ) : null}
+          </Button>
+        </ClyTooltip>
         <Button
           variant="ghost"
           iconOnly
@@ -196,11 +227,16 @@ export function Titlebar() {
         >
           <PanelRight size={14} />
         </Button>
-        <details className="cly-title-overflow">
-          <summary aria-label="More application actions">
+        <details className="cly-title-overflow" ref={overflowRef}>
+          <summary aria-label="More application actions" aria-haspopup="menu">
             <MoreHorizontal size={14} />
           </summary>
-          <div role="menu">
+          <div
+            role="menu"
+            onClickCapture={() => {
+              if (overflowRef.current) overflowRef.current.open = false;
+            }}
+          >
             <button
               type="button"
               role="menuitem"
@@ -298,7 +334,7 @@ interface CommandAction {
   id: string;
   label: string;
   group: "Navigate" | "Create" | "View" | "Research";
-  icon: typeof Command;
+  icon: typeof CommandIcon;
   shortcut?: string;
   run: () => void | Promise<void>;
 }
@@ -312,8 +348,6 @@ export function CommandPalette() {
   const toggleSidebar = useClyStore((s) => s.toggleSidebar);
   const notify = useClyStore((s) => s.notify);
   const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const actions = useMemo<CommandAction[]>(() => {
     const navigation: CommandAction[] = (
@@ -322,7 +356,7 @@ export function CommandPalette() {
       id: `nav-${id}`,
       label: `Go to ${label}`,
       group: "Navigate",
-      icon: Command,
+      icon: CommandIcon,
       run: () => setScreen(id),
     }));
     return [
@@ -331,7 +365,7 @@ export function CommandPalette() {
         id: "agent-overview",
         label: "Show Agent Sessions Overview",
         group: "Navigate",
-        icon: Command,
+        icon: CommandIcon,
         shortcut: "⌘⇧O",
         run: () => useClyStore.getState().setAgentSessionsMode("overview"),
       },
@@ -339,7 +373,7 @@ export function CommandPalette() {
         id: "agent-chat",
         label: "Show Agent Sessions Chat",
         group: "Navigate",
-        icon: Command,
+        icon: CommandIcon,
         shortcut: "⌘⇧C",
         run: () => useClyStore.getState().setAgentSessionsMode("chat"),
       },
@@ -347,7 +381,7 @@ export function CommandPalette() {
         id: "open-current-agent-session",
         label: "Open Current Session Chat",
         group: "Navigate",
-        icon: Command,
+        icon: CommandIcon,
         run: () => {
           const state = useClyStore.getState();
           const sessionId =
@@ -399,7 +433,7 @@ export function CommandPalette() {
         id: `agent-tab-${type}`,
         label,
         group: "View" as const,
-        icon: Command,
+        icon: CommandIcon,
         run: () => {
           const state = useClyStore.getState();
           if (state.selectedAgentSessionId) {
@@ -428,7 +462,7 @@ export function CommandPalette() {
         id: "pause-current-agent-session",
         label: "Pause Current Agent Session",
         group: "Research",
-        icon: Command,
+        icon: CommandIcon,
         run: () => {
           const state = useClyStore.getState();
           if (state.selectedAgentSessionId)
@@ -439,7 +473,7 @@ export function CommandPalette() {
         id: "stop-current-agent-session",
         label: "Stop Current Agent Session",
         group: "Research",
-        icon: Command,
+        icon: CommandIcon,
         run: () => {
           const state = useClyStore.getState();
           if (state.selectedAgentSessionId)
@@ -546,7 +580,7 @@ export function CommandPalette() {
         id: "toggle-sidebar",
         label: "Toggle Sidebar",
         group: "View",
-        icon: Command,
+        icon: CommandIcon,
         shortcut: "⌘\\",
         run: toggleSidebar,
       },
@@ -554,7 +588,7 @@ export function CommandPalette() {
         id: "toggle-inspector",
         label: "Toggle Inspector",
         group: "View",
-        icon: Command,
+        icon: CommandIcon,
         shortcut: "⌘⌥I",
         run: toggleInspector,
       },
@@ -562,7 +596,7 @@ export function CommandPalette() {
         id: "toggle-activity",
         label: "Toggle Activity Drawer",
         group: "View",
-        icon: Command,
+        icon: CommandIcon,
         shortcut: "⌘J",
         run: toggleActivity,
       },
@@ -570,7 +604,7 @@ export function CommandPalette() {
         id: "reset-layout",
         label: "Reset Layout",
         group: "View",
-        icon: Command,
+        icon: CommandIcon,
         run: () => {
           useClyStore.setState({
             sidebarCollapsed: false,
@@ -583,107 +617,74 @@ export function CommandPalette() {
     ];
   }, [notify, setScreen, toggleActivity, toggleInspector, toggleSidebar]);
 
-  const filtered = actions.filter((action) =>
-    action.label.toLowerCase().includes(query.toLowerCase()),
-  );
-
   useEffect(() => {
-    if (open) {
-      setQuery("");
-      setActiveIndex(0);
-      window.setTimeout(() => inputRef.current?.focus(), 0);
-    }
+    if (open) setQuery("");
   }, [open]);
 
-  if (!open) return null;
   const run = async (action?: CommandAction) => {
     if (!action) return;
     setOpen(false);
     await action.run();
   };
   return (
-    <div className="cly-overlay" role="presentation">
-      <div
-        className="cly-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Command palette"
-        data-testid="command-palette"
+    <CommandPrimitive.Dialog
+      open={open}
+      onOpenChange={setOpen}
+      className="cly-dialog cly-command-dialog"
+      label="Command palette"
+      loop
+      data-testid="command-palette"
+    >
+      <RadixDialog.Title className="cly-sr-only">
+        Command palette
+      </RadixDialog.Title>
+      <RadixDialog.Description className="cly-sr-only">
+        Search routes, research objects, and application actions.
+      </RadixDialog.Description>
+      <CommandPrimitive.Input
+        className="cly-input cly-command-input"
+        value={query}
+        onValueChange={setQuery}
+        placeholder="Search Cly or run a command…"
+        aria-label="Search commands"
+      />
+      <CommandPrimitive.List
+        className="cly-dialog-body cly-command-list"
+        aria-label="Cly commands"
       >
-        <input
-          ref={inputRef}
-          className="cly-input cly-command-input"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActiveIndex(0);
-          }}
-          placeholder="Search Cly or run a command…"
-          aria-label="Search commands"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setActiveIndex((value) =>
-                Math.min(filtered.length - 1, value + 1),
-              );
-            }
-            if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setActiveIndex((value) => Math.max(0, value - 1));
-            }
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void run(filtered[activeIndex]);
-            }
-            if (event.key === "Escape") setOpen(false);
-          }}
-        />
-        <div className="cly-dialog-body" style={{ padding: 6 }}>
-          {filtered.length ? (
-            (["Navigate", "Create", "Research", "View"] as const).map(
-              (group) => {
-                const items = filtered.filter(
-                  (action) => action.group === group,
-                );
-                if (!items.length) return null;
+        <CommandPrimitive.Empty className="cly-command-empty">
+          <Info size={18} /> No commands match “{query}”.
+        </CommandPrimitive.Empty>
+        {(["Navigate", "Create", "Research", "View"] as const).map((group) => (
+          <CommandPrimitive.Group
+            className="cly-command-group"
+            heading={group}
+            key={group}
+          >
+            {actions
+              .filter((action) => action.group === group)
+              .map((action) => {
+                const Icon = action.icon;
                 return (
-                  <div className="cly-command-group" key={group}>
-                    <div className="cly-command-group-label">{group}</div>
-                    {items.map((action) => {
-                      const index = filtered.indexOf(action);
-                      const Icon = action.icon;
-                      return (
-                        <button
-                          type="button"
-                          className="cly-command-item"
-                          data-active={index === activeIndex}
-                          key={action.id}
-                          onMouseEnter={() => setActiveIndex(index)}
-                          onClick={() => void run(action)}
-                        >
-                          <Icon size={14} />
-                          <span>{action.label}</span>
-                          {action.shortcut ? (
-                            <kbd className="cly-kbd">{action.shortcut}</kbd>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <CommandPrimitive.Item
+                    className="cly-command-item"
+                    value={action.label}
+                    keywords={[action.group, action.id]}
+                    key={action.id}
+                    onSelect={() => void run(action)}
+                  >
+                    <Icon size={14} />
+                    <span>{action.label}</span>
+                    {action.shortcut ? (
+                      <kbd className="cly-kbd">{action.shortcut}</kbd>
+                    ) : null}
+                  </CommandPrimitive.Item>
                 );
-              },
-            )
-          ) : (
-            <div className="cly-empty" style={{ minHeight: 140 }}>
-              <div>
-                <Info size={18} />
-                <p>No commands match “{query}”.</p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+              })}
+          </CommandPrimitive.Group>
+        ))}
+      </CommandPrimitive.List>
+    </CommandPrimitive.Dialog>
   );
 }
 
@@ -751,29 +752,38 @@ export function ActivityDrawer() {
 export function Toasts() {
   const toasts = useClyStore((s) => s.toasts);
   const dismiss = useClyStore((s) => s.dismissToast);
+  const reducedMotion = useReducedMotion();
   return (
     <div className="cly-toast-stack" aria-live="polite">
-      {toasts.map((toast) => (
-        <div className="cly-toast" role="status" key={toast.id}>
-          <Check size={15} />
-          <div>
-            <strong className="cly-small">{toast.title}</strong>
-            {toast.detail ? (
-              <div className="cly-muted cly-small" style={{ marginTop: 2 }}>
-                {toast.detail}
-              </div>
-            ) : null}
-          </div>
-          <Button
-            variant="ghost"
-            iconOnly
-            aria-label="Dismiss notification"
-            onClick={() => dismiss(toast.id)}
+      <AnimatePresence initial={false}>
+        {toasts.map((toast) => (
+          <motion.div
+            className="cly-toast"
+            role="status"
+            key={toast.id}
+            {...(reducedMotion ? {} : clyFadeSlide)}
+            transition={clyMotion.fast}
           >
-            <X size={13} />
-          </Button>
-        </div>
-      ))}
+            <Check size={15} />
+            <div>
+              <strong className="cly-small">{toast.title}</strong>
+              {toast.detail ? (
+                <div className="cly-muted cly-small" style={{ marginTop: 2 }}>
+                  {toast.detail}
+                </div>
+              ) : null}
+            </div>
+            <Button
+              variant="ghost"
+              iconOnly
+              aria-label="Dismiss notification"
+              onClick={() => dismiss(toast.id)}
+            >
+              <X size={13} />
+            </Button>
+          </motion.div>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }

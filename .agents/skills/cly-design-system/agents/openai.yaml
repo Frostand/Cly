@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cly Design System"
+  short_description: "Apply Cly visual and layout conventions"
+  default_prompt: "Use $cly-design-system to implement this Cly interface consistently."

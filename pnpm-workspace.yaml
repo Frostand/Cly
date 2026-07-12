@@ -17,6 +17,10 @@ supportedArchitectures:
     - x64
     - arm64
 
+overrides:
+  js-yaml: 4.3.0
+  postcss: 8.5.10
+
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver

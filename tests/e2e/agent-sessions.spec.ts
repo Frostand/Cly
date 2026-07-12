@@ -57,6 +57,9 @@ test("runs the complete fixture-backed Agent Sessions workflow", async ({
     .getByRole("button", { name: "Send steer to Codex Implementation Agent" })
     .click();
   await expect(page.getByText("Steer message sent")).toBeVisible();
+  await page.getByRole("radio", { name: "topology" }).click();
+  await expect(page.getByLabel("Agent delegation graph")).toBeVisible();
+  await page.getByRole("radio", { name: "tiled" }).click();
 
   await page.getByRole("tab", { name: "Tests" }).click();
   await expect(page.getByLabel("Fixture terminal output")).toBeVisible();
@@ -94,7 +97,7 @@ test("runs the complete fixture-backed Agent Sessions workflow", async ({
 
   await page
     .getByTestId("agent-sessions-chat")
-    .getByRole("button", { name: "overview" })
+    .getByRole("radio", { name: "overview" })
     .click();
   await expect(page.getByTestId("agent-sessions-overview")).toBeVisible();
   const createdRow = page.getByRole("article", {
@@ -176,6 +179,14 @@ test("captures Agent Sessions visual regression fixtures", async ({ page }) => {
     path: "output/playwright/agent-multi-agent.png",
     fullPage: true,
   });
+  await page.getByRole("radio", { name: "topology" }).click();
+  await expect(page.getByLabel("Agent delegation graph")).toBeVisible();
+  await page.waitForTimeout(600);
+  await page.screenshot({
+    path: "output/playwright/agent-topology.png",
+    fullPage: true,
+  });
+  await page.getByRole("radio", { name: "tiled" }).click();
   await page.getByRole("button", { name: "Collapse workbench" }).click();
   await page.screenshot({
     path: "output/playwright/agent-workbench-collapsed.png",
@@ -218,7 +229,7 @@ test("captures Agent Sessions visual regression fixtures", async ({ page }) => {
     path: "output/playwright/agent-overview-empty.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "chat" }).click();
+  await page.getByRole("radio", { name: "chat" }).click();
   await page.screenshot({
     path: "output/playwright/agent-chat-empty.png",
     fullPage: true,

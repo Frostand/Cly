@@ -10,6 +10,7 @@ import {
   VirtualizedList,
   WorkspaceHeader,
 } from "./design-system";
+import { Dialog } from "./primitives";
 
 describe("Cly design system V2", () => {
   it("renders a compact workspace header and non-color status text", () => {
@@ -97,5 +98,24 @@ describe("Cly design system V2", () => {
     fireEvent.scroll(list, { target: { scrollTop: 400 } });
     expect(screen.getByText("Recommendation 11")).toBeVisible();
     expect(screen.queryByText("Recommendation 1")).not.toBeInTheDocument();
+  });
+
+  it("traps dialog focus and closes with Escape", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(
+      <Dialog
+        open
+        title="Import source"
+        onClose={onClose}
+        footer={<button type="button">Import</button>}
+      >
+        <input aria-label="Source title" />
+      </Dialog>,
+    );
+
+    expect(screen.getByLabelText("Source title")).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useState } from "react";
+import { DisclosureRow } from "../components/design-system";
 import {
   Badge,
   Button,
@@ -56,7 +57,7 @@ export function IntegrationsScreen() {
       <PageHeader
         kicker="System"
         title="Integrations & Providers"
-        description="Understand what each connection can access, why it is useful, and whether it is local, manual, permissioned, unavailable, or planned."
+        description="Manage local and permissioned research tools."
         actions={
           <Segmented
             value={category}
@@ -78,7 +79,7 @@ export function IntegrationsScreen() {
       />
       <Section
         title="Integration catalog"
-        subtitle="All states are fixture-driven; no OAuth, synchronization, or secret storage is active"
+        subtitle="Fixture data · no connections are active"
       >
         <div className="cly-integration-catalog">
           {visible.map((integration) => {
@@ -152,9 +153,9 @@ export function IntegrationsScreen() {
           })}
         </div>
       </Section>
-      <Section
+      <DisclosureRow
         title="Connection modes"
-        subtitle="Subscription-based local tools, optional provider keys, and future managed credits remain visibly separate"
+        detail="Local subscriptions, provider keys, and managed credits"
       >
         <div className="cly-grid-3">
           <Panel>
@@ -257,8 +258,11 @@ export function IntegrationsScreen() {
             </div>
           </Panel>
         </div>
-      </Section>
-      <Section title="Routing preferences">
+      </DisclosureRow>
+      <DisclosureRow
+        title="Routing preferences"
+        detail="Defaults, fallbacks, privacy, and usage"
+      >
         <Panel className="cly-panel-body">
           <div className="cly-grid-3">
             {[
@@ -289,7 +293,7 @@ export function IntegrationsScreen() {
             Prefer local subscription routes when available
           </label>
         </Panel>
-      </Section>
+      </DisclosureRow>
     </div>
   );
 }
@@ -304,6 +308,7 @@ export function ModelsAgentsScreen() {
     presets.find((item) => item.id === selectedPresetId) ?? presets[0];
   const [nodes, setNodes] = useState<AgentNode[]>(original?.nodes ?? []);
   const [advanced, setAdvanced] = useState(false);
+  const [showAllPresets, setShowAllPresets] = useState(false);
   const [runtime, setRuntime] = useState("45 min");
   const [loops, setLoops] = useState(2);
   const [budget, setBudget] = useState("High");
@@ -341,7 +346,7 @@ export function ModelsAgentsScreen() {
       <PageHeader
         kicker="System"
         title="Models & Agents"
-        description="Start from a task preset, inspect the agent plan, then adjust constrained roles, order, review, context, permissions, runtime, and usage."
+        description="Choose a preset, then adjust roles, models, and limits."
         actions={
           <>
             <Button
@@ -360,10 +365,18 @@ export function ModelsAgentsScreen() {
       />
       <Section
         title="Task presets"
-        subtitle="Recommended plans hide complexity until it is useful"
+        subtitle="Start from a recommended plan"
+        actions={
+          <Button
+            variant="ghost"
+            onClick={() => setShowAllPresets((value) => !value)}
+          >
+            {showAllPresets ? "Show fewer" : `Show all ${presets.length}`}
+          </Button>
+        }
       >
         <div className="cly-preset-list">
-          {presets.map((preset) => (
+          {(showAllPresets ? presets : presets.slice(0, 6)).map((preset) => (
             <button
               type="button"
               className="cly-preset-row"
@@ -620,7 +633,7 @@ export function SettingsScreen() {
       <PageHeader
         kicker="System"
         title="Settings"
-        description="Configure appearance, behavior, privacy, research defaults, keyboard shortcuts, and prototype fixture states."
+        description="Appearance, behavior, privacy, and defaults."
       />
       <div className="cly-settings-layout">
         <nav className="cly-settings-nav" aria-label="Settings sections">

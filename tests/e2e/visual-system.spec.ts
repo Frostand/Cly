@@ -132,3 +132,22 @@ test("keeps the 500-recommendation fixture responsive and virtualized", async ({
     animations: "disabled",
   });
 });
+
+test("uses opacity-only route feedback when reduced motion is requested", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openRoute(page, "overview", "Neural surrogate reliability");
+  await page.getByTestId("nav-context").click();
+  await expect(
+    page.getByRole("heading", { name: "Context Composer", level: 1 }),
+  ).toBeVisible();
+  const inlineTransform = await page
+    .locator(".cly-route-transition")
+    .evaluate((element) => (element as HTMLElement).style.transform);
+  expect(inlineTransform).not.toContain("translate");
+  await page.screenshot({
+    path: "output/playwright/visual-v2/context-reduced-motion.png",
+    animations: "disabled",
+  });
+});

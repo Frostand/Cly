@@ -24,6 +24,7 @@
 !/build/entitlements.mac.plist
 !/build/icon.ico
 /release
+/storybook-static/
 /.electron-home
 
 # misc

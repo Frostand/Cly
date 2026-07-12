@@ -7,6 +7,7 @@ import {
   Clipboard,
   Code2,
   Columns3,
+  Database,
   Download,
   ExternalLink,
   FileInput,
@@ -21,7 +22,8 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { DisclosureRow } from "../components/design-system";
 import {
   Badge,
   Button,
@@ -35,6 +37,12 @@ import {
   Segmented,
   toneForStatus,
 } from "../components/primitives";
+import { ClyDataTable } from "../components/toolkit";
+import {
+  EvidenceStrength,
+  ExecutionStrip,
+  RelationshipChain,
+} from "../components/visuals";
 import { filterAndSortClaims } from "../domain/logic";
 import type { ClaimStatus, Source } from "../domain/types";
 import { mockServices } from "../services/mock-services";
@@ -67,6 +75,51 @@ export function SourcesScreen() {
       if (sort === "Title") return a.title.localeCompare(b.title);
       return relevanceRank[a.relevance] - relevanceRank[b.relevance];
     });
+  const sourceColumns = useMemo<ColumnDef<Source, unknown>[]>(
+    () => [
+      {
+        accessorKey: "title",
+        header: "Source",
+        cell: ({ row }) => (
+          <div className="cly-source-cell">
+            <span className="cly-source-mark" data-type={row.original.type}>
+              {row.original.type === "Dataset" ? (
+                <Database size={12} />
+              ) : (
+                <BookOpen size={12} />
+              )}
+            </span>
+            <div>
+              <div>{row.original.title}</div>
+              <div className="cly-faint" style={{ fontSize: 9 }}>
+                {row.original.tags.join(" · ")}
+              </div>
+            </div>
+          </div>
+        ),
+      },
+      { accessorKey: "authors", header: "Authors" },
+      { accessorKey: "year", header: "Year" },
+      { accessorKey: "type", header: "Type" },
+      {
+        accessorKey: "status",
+        header: "Review",
+        cell: ({ row }) => (
+          <Badge tone={toneForStatus(row.original.status)}>
+            {row.original.status}
+          </Badge>
+        ),
+      },
+      { accessorKey: "relevance", header: "Relevance" },
+      {
+        id: "links",
+        header: "Links",
+        accessorFn: (row) =>
+          `${row.linkedClaimIds.length} claims · ${row.linkedExperimentIds.length} exp.`,
+      },
+    ],
+    [],
+  );
 
   const importSource = async () => {
     const source = await mockServices.sources.create({
@@ -87,7 +140,7 @@ export function SourcesScreen() {
       <PageHeader
         kicker="Research"
         title="Source Manager"
-        description="Organize papers, datasets, documentation, notes, webpages, and imported research material with explicit links to claims and experiments."
+        description="Organize and connect research sources."
         actions={
           <>
             <Button
@@ -188,7 +241,7 @@ export function SourcesScreen() {
         {sources.length === 0 ? (
           <EmptyState
             title="No sources in this project"
-            description="Import papers, documentation, datasets, notes, BibTeX records, or add a source manually."
+            description="Import a paper, note, dataset, or URL."
             action={
               <Button variant="primary" onClick={() => setImportOpen(true)}>
                 Import source
@@ -196,61 +249,23 @@ export function SourcesScreen() {
             }
           />
         ) : (
-          <div className="cly-table-wrap">
-            <table className="cly-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "34%" }}>Source</th>
-                  <th style={{ width: "15%" }}>Authors</th>
-                  <th style={{ width: 8 }}>Year</th>
-                  <th style={{ width: "12%" }}>Type</th>
-                  <th style={{ width: "11%" }}>Review</th>
-                  <th style={{ width: "10%" }}>Relevance</th>
-                  <th>Links</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.slice(0, 250).map((source) => (
-                  <tr
-                    key={source.id}
-                    data-selected={selectedId === source.id}
-                    onClick={() => setSelected(source.id)}
-                  >
-                    <td>
-                      <div>{source.title}</div>
-                      <div className="cly-faint" style={{ fontSize: 9 }}>
-                        {source.tags.join(" · ")}
-                      </div>
-                    </td>
-                    <td>{source.authors}</td>
-                    <td>{source.year}</td>
-                    <td>{source.type}</td>
-                    <td>
-                      <Badge tone={toneForStatus(source.status)}>
-                        {source.status}
-                      </Badge>
-                    </td>
-                    <td>{source.relevance}</td>
-                    <td>
-                      {source.linkedClaimIds.length} claims ·{" "}
-                      {source.linkedExperimentIds.length} exp.
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {filtered.length > 250 ? (
-              <div className="cly-callout" style={{ margin: 10 }}>
-                Showing a 250-row rendering window of{" "}
-                {filtered.length.toLocaleString()} sources.
-              </div>
-            ) : null}
-          </div>
+          <ClyDataTable
+            id="sources"
+            data={filtered}
+            columns={sourceColumns}
+            getRowId={(row) => row.id}
+            selectedId={selectedId}
+            onSelect={(row) => setSelected(row.id)}
+          />
         )}
       </div>
-      <Section
+      <DisclosureRow
         title="Source actions"
-        subtitle="All prototype actions update mock state or explain their future service boundary"
+        detail={
+          selectedId
+            ? "Actions for the selected source"
+            : "Select a source first"
+        }
       >
         <div className="cly-row">
           <Button
@@ -310,7 +325,7 @@ export function SourcesScreen() {
             <Archive size={13} /> Archive
           </Button>
         </div>
-      </Section>
+      </DisclosureRow>
       <Dialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
@@ -385,7 +400,7 @@ export function LiteratureScreen() {
       <PageHeader
         kicker="Research"
         title="Literature Workspace"
-        description="Compare sources across problems, methods, results, limitations, claims, novelty, and review confidence—plus a safe NotebookLM companion workflow."
+        description="Compare methods, results, limitations, and claims."
         actions={
           <Segmented
             value={view}
@@ -848,7 +863,7 @@ export function NotebooksScreen() {
       <PageHeader
         kicker="Research"
         title="Notebook Scanner"
-        description="Treat .ipynb files as evidence-bearing research artifacts without turning Cly into a notebook editor."
+        description="Find execution, output, and reproducibility issues."
         actions={
           <Button variant="primary" onClick={() => setImportOpen(true)}>
             <Upload size={13} /> Import notebook
@@ -858,7 +873,7 @@ export function NotebooksScreen() {
       {notebooks.length === 0 ? (
         <EmptyState
           title="No notebooks discovered"
-          description="Import a .ipynb file to inspect execution order, inputs, outputs, generated figures, environment assumptions, and linked research objects."
+          description="Import a notebook to inspect its execution and outputs."
           action={
             <Button variant="primary" onClick={() => setImportOpen(true)}>
               Import notebook
@@ -923,6 +938,24 @@ export function NotebooksScreen() {
                   </Badge>
                 </div>
                 <div className="cly-panel-body">
+                  <Section title="Execution shape">
+                    <ExecutionStrip
+                      cells={Array.from(
+                        {
+                          length: Math.min(24, Math.max(4, selected.codeCells)),
+                        },
+                        (_, index) =>
+                          index === 0 || index % 8 === 0
+                            ? "markdown"
+                            : selected.issues.length && index === 11
+                              ? "error"
+                              : index % 4 === 0
+                                ? "output"
+                                : "code",
+                      )}
+                      label={`${selected.title} cell sequence`}
+                    />
+                  </Section>
                   <div className="cly-metric-row">
                     <Metric
                       label="Consistency"
@@ -1055,7 +1088,7 @@ export function CodeLinkerScreen() {
       <PageHeader
         kicker="Research"
         title="Code-to-Research Linker"
-        description="Connect files and modules to research objectives, methods, claims, experiments, notebooks, outputs, and risks."
+        description="Connect code to research purpose, evidence, and risk."
         actions={
           <Segmented
             value={view}
@@ -1070,7 +1103,7 @@ export function CodeLinkerScreen() {
       {code.length === 0 ? (
         <EmptyState
           title="No code artifacts indexed"
-          description="Cly will connect project files to research meaning once code discovery is available through the Phase 2 scanner service."
+          description="Scan project files to begin linking research meaning."
           action={<Button>Simulate scan</Button>}
         />
       ) : (
@@ -1123,9 +1156,30 @@ export function CodeLinkerScreen() {
                 </Badge>
               </div>
               <div className="cly-panel-body">
-                <h3 style={{ marginTop: 0 }}>{selected.purpose}</h3>
+                <h2 style={{ marginTop: 0, fontSize: 15 }}>
+                  {selected.purpose}
+                </h2>
                 <p className="cly-muted">Objective: {selected.objective}</p>
-                <div className="cly-detail-grid">
+                <Section title="Research relationship">
+                  <RelationshipChain
+                    label={`Research relationship for ${selected.path}`}
+                    alertAt={selected.risks.length ? 2 : undefined}
+                    steps={[
+                      { label: "Objective", detail: selected.objective },
+                      { label: "Method", detail: selected.method },
+                      { label: "Code", detail: selected.path },
+                      {
+                        label: "Runs",
+                        detail: `${selected.experimentIds.length} experiments`,
+                      },
+                      {
+                        label: "Claims",
+                        detail: `${selected.claimIds.length} linked`,
+                      },
+                    ]}
+                  />
+                </Section>
+                <dl className="cly-detail-grid">
                   <dt>Method</dt>
                   <dd>{selected.method}</dd>
                   <dt>Tests</dt>
@@ -1136,7 +1190,7 @@ export function CodeLinkerScreen() {
                   <dd>{selected.experimentIds.join(", ") || "None"}</dd>
                   <dt>Notebooks</dt>
                   <dd>{selected.notebookIds.join(", ") || "None"}</dd>
-                </div>
+                </dl>
                 <Section title="Risk and issues">
                   {selected.risks.length ? (
                     selected.risks.map((risk) => (
@@ -1252,7 +1306,7 @@ export function ClaimsScreen() {
       <PageHeader
         kicker="Research"
         title="Claim Audit Board"
-        description="Make claims first-class research objects with supporting evidence, contradictions, assumptions, weaknesses, reviewer risks, and required experiments."
+        description="Assess evidence, contradictions, and paper readiness."
         actions={
           <>
             <Segmented
@@ -1270,7 +1324,7 @@ export function ClaimsScreen() {
       {claims.length === 0 ? (
         <EmptyState
           title="No claims to audit"
-          description="Create a precise research claim. It begins unsupported and becomes stronger only through linked evidence."
+          description="Create a precise claim, then link evidence."
           action={
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               Create first claim
@@ -1342,21 +1396,15 @@ export function ClaimsScreen() {
                           >
                             {claim.text}
                           </div>
-                          <div
-                            className="cly-row-between"
-                            style={{ marginTop: 10 }}
-                          >
-                            <span className="cly-faint cly-small">
-                              {claim.supportingSourceIds.length} supports ·{" "}
-                              {claim.contradictingSourceIds.length} conflicts
-                            </span>
-                            <strong>{claim.confidence}%</strong>
-                          </div>
-                          <div
-                            className="cly-progress"
-                            style={{ marginTop: 6 }}
-                          >
-                            <span style={{ width: `${claim.confidence}%` }} />
+                          <div style={{ marginTop: 10 }}>
+                            <EvidenceStrength
+                              confidence={claim.confidence}
+                              support={claim.supportingSourceIds.length}
+                              contradictions={
+                                claim.contradictingSourceIds.length
+                              }
+                              label="Evidence"
+                            />
                           </div>
                         </button>
                       ))}
@@ -1635,3 +1683,5 @@ function ClaimDetail({
 function BeakerIcon() {
   return <ScanSearch size={13} />;
 }
+
+import type { ColumnDef } from "@tanstack/react-table";

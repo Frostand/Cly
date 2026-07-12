@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cly Visual Polish"
+  short_description: "Iterate Cly UI through Electron screenshots"
+  default_prompt: "Use $cly-visual-polish to review and improve this Cly route visually."

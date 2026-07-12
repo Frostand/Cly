@@ -1,4 +1,13 @@
 import {
+  Background,
+  Controls,
+  Handle,
+  type Node,
+  type NodeProps,
+  Position,
+  ReactFlow,
+} from "@xyflow/react";
+import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
@@ -32,6 +41,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Badge, Button, Segmented, Toggle } from "../components/primitives";
+import { ClyTerminal } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
 import type {
   AgentIdentity,
@@ -215,7 +225,7 @@ function WorkbenchTabMenu({
   const close = useClyStore((state) => state.closeWorkbenchTab);
   return (
     <details className="agent-tab-menu">
-      <summary aria-label={`${tab.title} tab menu`}>
+      <summary aria-label={`${tab.title} tab menu`} aria-haspopup="menu">
         <MoreHorizontal size={11} />
       </summary>
       <div role="menu">
@@ -444,24 +454,10 @@ export function TerminalTab({
           <RotateCcw size={13} />
         </Button>
       </div>
-      <div className="agent-terminal-surface" role="log" aria-live="polite">
-        <div className="agent-terminal-session-label">
-          Fixture PTY · Codex Implementation Agent · read-only stream
-        </div>
-        {terminal.lines.map((line, index) => (
-          <div
-            key={line}
-            data-kind={line.startsWith("✓") ? "success" : undefined}
-          >
-            <span>{String(index + 1).padStart(2, "0")}</span>
-            {line}
-          </div>
-        ))}
-        <div className="agent-terminal-cursor">
-          <span>›</span>
-          <i />
-        </div>
-      </div>
+      <ClyTerminal
+        lines={terminal.lines}
+        label={`${terminal.process} console`}
+      />
     </section>
   );
 }
@@ -803,33 +799,65 @@ function AgentPane({
 }
 
 function AgentTopology({ session }: { session: AgentSession }) {
+  const nodes: AgentFlowNode[] = [
+    {
+      id: session.orchestrator.id,
+      type: "clyAgent",
+      position: { x: 250, y: 20 },
+      data: {
+        name: session.orchestrator.name,
+        detail: "Orchestrator · coordinating",
+        primary: true,
+      },
+    },
+    ...session.delegatedAgents.map((agent, index) => ({
+      id: agent.id,
+      type: "clyAgent" as const,
+      position: { x: 30 + index * 300, y: 210 },
+      data: {
+        name: agent.name,
+        detail: `${agent.roleLabel} · ${agentStatusLabel[agent.status]}`,
+        primary: false,
+      },
+    })),
+  ];
+  const edges = session.delegatedAgents.map((agent, index) => ({
+    id: `${session.orchestrator.id}-${agent.id}`,
+    source: session.orchestrator.id,
+    target: agent.id,
+    type: "smoothstep",
+    label: index === 0 ? "active delegation" : "review loop",
+    animated: false,
+    style: {
+      stroke:
+        agent.status === "working"
+          ? "var(--cly-accent)"
+          : "var(--cly-border-strong)",
+    },
+    labelStyle: { fill: "var(--cly-text-muted)", fontSize: 9 },
+    labelBgStyle: {
+      fill: "var(--cly-surface-raised)",
+      fillOpacity: 0.98,
+    },
+  }));
+
   return (
     <section className="agent-topology" aria-label="Agent delegation topology">
-      <div className="agent-topology-node primary">
-        <Bot size={17} />
-        <span>
-          <strong>{session.orchestrator.name}</strong>
-          <small>Orchestrator · coordinating</small>
-        </span>
-      </div>
-      <div className="agent-topology-line" />
-      <div className="agent-topology-children">
-        {session.delegatedAgents.map((agent, index) => (
-          <div className="agent-topology-branch" key={agent.id}>
-            <div className="agent-topology-node">
-              <span className="agent-avatar">{agent.name.charAt(0)}</span>
-              <span>
-                <strong>{agent.name}</strong>
-                <small>
-                  {agent.roleLabel} · {agentStatusLabel[agent.status]}
-                </small>
-              </span>
-            </div>
-            <span className="agent-topology-edge-label">
-              {index === 0 ? "active delegation" : "review loop"}
-            </span>
-          </div>
-        ))}
+      <div className="agent-topology-flow">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={agentNodeTypes}
+          fitView
+          minZoom={0.5}
+          maxZoom={1.5}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          aria-label="Agent delegation graph"
+        >
+          <Background gap={20} size={1} />
+          <Controls showInteractive={false} />
+        </ReactFlow>
       </div>
       <div className="agent-topology-legend">
         <span>
@@ -845,6 +873,35 @@ function AgentTopology({ session }: { session: AgentSession }) {
     </section>
   );
 }
+
+type AgentFlowNode = Node<
+  { name: string; detail: string; primary: boolean },
+  "clyAgent"
+>;
+
+function AgentFlowNodeView({ data, selected }: NodeProps<AgentFlowNode>) {
+  return (
+    <div
+      className="agent-flow-node"
+      data-primary={data.primary}
+      data-selected={selected}
+    >
+      <Handle type="target" position={Position.Top} />
+      {data.primary ? (
+        <Bot size={17} aria-hidden="true" />
+      ) : (
+        <span className="agent-avatar">{data.name.charAt(0)}</span>
+      )}
+      <span>
+        <strong>{data.name}</strong>
+        <small>{data.detail}</small>
+      </span>
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+const agentNodeTypes = { clyAgent: AgentFlowNodeView };
 
 export function LiveFilesTab({
   session,
