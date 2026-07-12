@@ -86,7 +86,7 @@ export function ExperimentsScreen() {
   };
 
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-experiments">
       <PageHeader
         kicker="Research"
         title="Experiment Manager"
@@ -549,7 +549,7 @@ export function GraphScreen() {
   };
 
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-graph">
       <PageHeader
         kicker="Research"
         title="Research Object Graph"

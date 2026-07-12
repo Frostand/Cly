@@ -52,7 +52,7 @@ export function IntegrationsScreen() {
     (item) => category === "All" || item.category === category,
   );
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-integrations">
       <PageHeader
         kicker="System"
         title="Integrations & Providers"
@@ -80,7 +80,7 @@ export function IntegrationsScreen() {
         title="Integration catalog"
         subtitle="All states are fixture-driven; no OAuth, synchronization, or secret storage is active"
       >
-        <div className="cly-grid-3">
+        <div className="cly-integration-catalog">
           {visible.map((integration) => {
             const Icon = providerIcon(integration.name);
             return (
@@ -114,7 +114,7 @@ export function IntegrationsScreen() {
                   </p>
                   <div className="cly-row" style={{ flexWrap: "wrap" }}>
                     {integration.capabilities.map((capability) => (
-                      <span className="cly-kbd" key={capability}>
+                      <span className="cly-inline-capability" key={capability}>
                         {capability}
                       </span>
                     ))}
@@ -337,7 +337,7 @@ export function ModelsAgentsScreen() {
   };
 
   return (
-    <div className="cly-page cly-page-wide">
+    <div className="cly-page cly-page-wide cly-route-models">
       <PageHeader
         kicker="System"
         title="Models & Agents"
@@ -362,29 +362,15 @@ export function ModelsAgentsScreen() {
         title="Task presets"
         subtitle="Recommended plans hide complexity until it is useful"
       >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(185px, 1fr))",
-            gap: 8,
-          }}
-        >
+        <div className="cly-preset-list">
           {presets.map((preset) => (
             <button
               type="button"
-              className="cly-panel cly-panel-body"
+              className="cly-preset-row"
               key={preset.id}
               onClick={() => choosePreset(preset)}
               data-selected={selectedPresetId === preset.id}
-              style={{
-                textAlign: "left",
-                color: "inherit",
-                cursor: "pointer",
-                borderColor:
-                  selectedPresetId === preset.id
-                    ? "var(--cly-accent)"
-                    : undefined,
-              }}
+              style={{ textAlign: "left", color: "inherit" }}
             >
               <div className="cly-row-between">
                 <strong>{preset.name}</strong>
@@ -630,7 +616,7 @@ export function SettingsScreen() {
   const notify = useClyStore((s) => s.notify);
   const [section, setSection] = useState("Appearance");
   return (
-    <div className="cly-page">
+    <div className="cly-page cly-route-settings">
       <PageHeader
         kicker="System"
         title="Settings"

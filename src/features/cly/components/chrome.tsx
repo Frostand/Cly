@@ -7,6 +7,7 @@ import {
   FilePlus2,
   HardDrive,
   Info,
+  MoreHorizontal,
   PanelRight,
   Plus,
   Search,
@@ -77,6 +78,7 @@ export function Titlebar() {
   const setFixtureOpen = useClyStore((s) => s.setFixtureSwitcherOpen);
   const setScreen = useClyStore((s) => s.setScreen);
   const toggleInspector = useClyStore((s) => s.toggleInspector);
+  const selectedId = useClyStore((s) => s.selectedId);
   const notify = useClyStore((s) => s.notify);
   const activeSessions = useClyStore(
     (s) =>
@@ -146,9 +148,7 @@ export function Titlebar() {
       </button>
       <div className="cly-title-actions cly-no-drag">
         {project ? (
-          <Badge tone="info" square>
-            {project.phase}
-          </Badge>
+          <span className="cly-topbar-context">{project.phase}</span>
         ) : null}
         <Button
           variant="ghost"
@@ -161,34 +161,6 @@ export function Titlebar() {
           {activeSessions ? (
             <span className="cly-sr-only">{activeSessions} active</span>
           ) : null}
-        </Button>
-        <Button
-          variant="ghost"
-          iconOnly
-          title="Local-only project"
-          aria-label="Local and cloud status"
-          onClick={() =>
-            notify(
-              "Local-first status",
-              "Research metadata and fixtures remain on this device. No external requests are made in UI prototype mode.",
-            )
-          }
-        >
-          <HardDrive size={14} />
-        </Button>
-        <Button
-          variant="ghost"
-          iconOnly
-          title="Notifications"
-          aria-label="Notification center"
-          onClick={() =>
-            notify(
-              "No unread notifications",
-              "Agent and audit events remain available in the activity drawer.",
-            )
-          }
-        >
-          <Bell size={14} />
         </Button>
         <Button
           variant="ghost"
@@ -213,19 +185,55 @@ export function Titlebar() {
           iconOnly
           title="Toggle inspector"
           aria-label="Toggle inspector"
-          onClick={toggleInspector}
+          onClick={() => {
+            if (selectedId) toggleInspector();
+            else
+              notify(
+                "Nothing selected",
+                "Select a source, claim, run, notebook, finding, or other research object to open its inspector.",
+              );
+          }}
         >
           <PanelRight size={14} />
         </Button>
-        <Button
-          variant="ghost"
-          iconOnly
-          title="Settings"
-          aria-label="Settings"
-          onClick={() => setScreen("settings")}
-        >
-          <Settings size={14} />
-        </Button>
+        <details className="cly-title-overflow">
+          <summary aria-label="More application actions">
+            <MoreHorizontal size={14} />
+          </summary>
+          <div role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() =>
+                notify(
+                  "Local-first status",
+                  "Research metadata and fixtures remain on this device. No external requests are made in UI prototype mode.",
+                )
+              }
+            >
+              <HardDrive size={13} /> Local status
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() =>
+                notify(
+                  "No unread notifications",
+                  "Agent and audit events remain available in the activity drawer.",
+                )
+              }
+            >
+              <Bell size={13} /> Notifications
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => setScreen("settings")}
+            >
+              <Settings size={13} /> Settings
+            </button>
+          </div>
+        </details>
       </div>
       <ProjectSwitcherPopover />
       <FixtureSwitcherPopover />

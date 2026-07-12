@@ -1,6 +1,11 @@
 import { AlertTriangle, Inbox, LoaderCircle, Search, X } from "lucide-react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import type { StatusTone } from "../domain/types";
+import {
+  SkeletonRows,
+  StatusIndicator,
+  WorkspaceHeader,
+} from "./design-system";
 
 export function Button({
   children,
@@ -35,12 +40,13 @@ export function Badge({
   className?: string;
 }) {
   return (
-    <span
+    <StatusIndicator
       className={`cly-badge${square ? " cly-badge-square" : ""} ${className}`}
-      data-tone={tone}
+      tone={tone}
+      emphasis={tone === "warning" || tone === "danger"}
     >
       {children}
-    </span>
+    </StatusIndicator>
   );
 }
 
@@ -56,14 +62,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="cly-page-header">
-      <div>
-        {kicker ? <div className="cly-page-kicker">{kicker}</div> : null}
-        <h1 className="cly-page-title">{title}</h1>
-        <p className="cly-page-description">{description}</p>
-      </div>
-      {actions ? <div className="cly-page-actions">{actions}</div> : null}
-    </header>
+    <WorkspaceHeader
+      title={title}
+      eyebrow={kicker}
+      description={description}
+      actions={actions}
+    />
   );
 }
 
@@ -193,14 +197,12 @@ export function LoadingState({
   label?: string;
 }) {
   return (
-    <div className="cly-empty" role="status" aria-label={label}>
-      <div>
-        <div className="cly-empty-icon">
-          <LoaderCircle className="animate-spin" size={18} />
-        </div>
-        <h3>{label}</h3>
-        <p>Preparing linked fixture data and project state.</p>
+    <div className="cly-loading-state" role="status" aria-label={label}>
+      <div className="cly-loading-label">
+        <LoaderCircle className="animate-spin" size={13} />
+        <span>{label}</span>
       </div>
+      <SkeletonRows count={7} />
     </div>
   );
 }
@@ -303,10 +305,13 @@ export function Dialog({
 export function Panel({
   children,
   className = "",
+  variant = "group",
   ...props
-}: HTMLAttributes<HTMLDivElement>) {
+}: HTMLAttributes<HTMLDivElement> & {
+  variant?: "group" | "workspace" | "raised" | "selected";
+}) {
   return (
-    <div className={`cly-panel ${className}`} {...props}>
+    <div className={`cly-panel ${className}`} data-variant={variant} {...props}>
       {children}
     </div>
   );

@@ -126,6 +126,7 @@ export function ClyAppShell() {
   const activeScreen = useClyStore((s) => s.activeScreen);
   const sidebarCollapsed = useClyStore((s) => s.sidebarCollapsed);
   const inspectorOpen = useClyStore((s) => s.inspectorOpen);
+  const selectedId = useClyStore((s) => s.selectedId);
   const agentSessionsMode = useClyStore((s) => s.agentSessionsMode);
   const fixtureMode = useClyStore((s) => s.fixtureMode);
   const setScreen = useClyStore((s) => s.setScreen);
@@ -214,7 +215,9 @@ export function ClyAppShell() {
         className="cly-shell"
         data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
         data-inspector={
-          inspectorOpen && activeScreen !== "agents" ? "open" : "closed"
+          inspectorOpen && selectedId && activeScreen !== "agents"
+            ? "open"
+            : "closed"
         }
         data-agent-mode={
           activeScreen === "agents" ? agentSessionsMode : undefined
@@ -235,7 +238,7 @@ export function ClyAppShell() {
           </div>
           <ActivityDrawer />
         </section>
-        {activeScreen !== "agents" ? <Inspector /> : null}
+        {activeScreen !== "agents" && selectedId ? <Inspector /> : null}
       </div>
       <CommandPalette />
       <Toasts />
