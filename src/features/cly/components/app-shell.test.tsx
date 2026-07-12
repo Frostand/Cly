@@ -1,10 +1,18 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScreenId } from "../domain/types";
 import { createFixtureRepository } from "../fixtures/repository";
 import { useClyStore } from "../store/cly-store";
 import { ClyAppShell } from "./app-shell";
+
+const loadFromApi = useClyStore.getState().loadFromApi;
 
 describe("Cly application shell", () => {
   beforeEach(() => {
@@ -23,7 +31,17 @@ describe("Cly application shell", () => {
       fixtureSwitcherOpen: false,
       globalSearch: "",
       toasts: [],
+      loadFromApi,
     });
+  });
+
+  it("hydrates persisted research after the authenticated app shell mounts", async () => {
+    const hydrate = vi.fn().mockResolvedValue(true);
+    useClyStore.setState({ loadFromApi: hydrate });
+
+    render(<ClyAppShell />);
+
+    await waitFor(() => expect(hydrate).toHaveBeenCalledOnce());
   });
 
   it("navigates every major research component from the grouped sidebar", async () => {
@@ -167,11 +185,7 @@ describe("Cly application shell", () => {
     expect(
       within(titlebar).getByLabelText("Notification center"),
     ).toBeVisible();
-    expect(
-      within(titlebar).getByLabelText("Settings"),
-    ).toBeVisible();
-    expect(
-      within(titlebar).getByLabelText("Toggle inspector"),
-    ).toBeVisible();
+    expect(within(titlebar).getByLabelText("Settings")).toBeVisible();
+    expect(within(titlebar).getByLabelText("Toggle inspector")).toBeVisible();
   });
 });

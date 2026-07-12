@@ -7,6 +7,7 @@ import {
   Clipboard,
   Code2,
   Columns3,
+  Copy,
   Database,
   Download,
   ExternalLink,
@@ -23,12 +24,17 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { DisclosureRow } from "../components/design-system";
+import {
+  DisclosureRow,
+  InlineMetadata,
+  PaneHeader,
+} from "../components/design-system";
 import {
   Badge,
   Button,
   Dialog,
   EmptyState,
+  LoadingState,
   Metric,
   PageHeader,
   Panel,
@@ -37,7 +43,7 @@ import {
   Segmented,
   toneForStatus,
 } from "../components/primitives";
-import { ClyDataTable } from "../components/toolkit";
+import { ClyDataTable, ClySplitPane } from "../components/toolkit";
 import {
   EvidenceStrength,
   ExecutionStrip,
@@ -398,6 +404,9 @@ type LiteratureView =
   | "Claims"
   | "Methods"
   | "NotebookLM";
+type LiteratureMatrixMode = "Discover" | "Saved matrix";
+type LiteratureResultFilter = "All results" | "Unsaved" | "Saved";
+type LiteratureResultSort = "Relevance" | "Newest" | "Title";
 const literatureViews = [
   "Matrix",
   "Themes",
@@ -408,13 +417,23 @@ const literatureViews = [
 ] as const;
 
 export function LiteratureScreen() {
-  const activeProjectId = useClyStore((s) => s.activeProjectId);
+  const activeProject = useClyStore((s) =>
+    s.data.projects.find((project) => project.id === s.activeProjectId),
+  );
   const sources = useClyStore((s) => s.data.sources);
   const claims = useClyStore((s) => s.data.claims);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
   const [view, setView] = useState<LiteratureView>("Matrix");
+  const [matrixMode, setMatrixMode] =
+    useState<LiteratureMatrixMode>("Discover");
   const [query, setQuery] = useState("");
+  const [matrixQuery, setMatrixQuery] = useState("");
+  const [matrixStatus, setMatrixStatus] = useState("All review states");
+  const [resultFilter, setResultFilter] =
+    useState<LiteratureResultFilter>("All results");
+  const [resultSort, setResultSort] =
+    useState<LiteratureResultSort>("Relevance");
   const [answer, setAnswer] = useState("");
   const [importedAnswers, setImportedAnswers] = useState<string[]>([
     "The cited literature supports regime-stratified coverage reporting but does not establish compound-shift reliability.",
@@ -424,14 +443,220 @@ export function LiteratureScreen() {
   );
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [savedResultIds, setSavedResultIds] = useState<string[]>([]);
-  const visible = sources.filter(
-    (source) =>
-      !query ||
-      `${source.title} ${source.methods.join(" ")} ${source.findings.join(" ")}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
+  const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
+  const savedSearchResultIds = useMemo(
+    () =>
+      new Set(
+        searchResults
+          .filter((result) =>
+            sources.some(
+              (source) =>
+                (source.provider === result.source.provider &&
+                  source.providerId === result.source.providerId) ||
+                (source.doi && source.doi === result.source.doi) ||
+                (source.url && source.url === result.source.url) ||
+                source.title === result.source.title,
+            ),
+          )
+          .map((result) => result.source.id),
+      ),
+    [searchResults, sources],
   );
+  const filteredResults = useMemo(() => {
+    const filtered = searchResults.filter((result) => {
+      const saved = savedSearchResultIds.has(result.source.id);
+      return (
+        resultFilter === "All results" ||
+        (resultFilter === "Saved" ? saved : !saved)
+      );
+    });
+    return [...filtered].sort((left, right) => {
+      if (resultSort === "Newest") return right.source.year - left.source.year;
+      if (resultSort === "Title")
+        return left.source.title.localeCompare(right.source.title);
+      return right.score - left.score;
+    });
+  }, [resultFilter, resultSort, savedSearchResultIds, searchResults]);
+  const selectedResult =
+    searchResults.find((result) => result.source.id === selectedResultId) ??
+    filteredResults[0] ??
+    null;
+  const resultColumns = useMemo<ColumnDef<LiteratureSearchResult, unknown>[]>(
+    () => [
+      {
+        id: "paper",
+        header: "Paper",
+        accessorFn: (result) => result.source.title,
+        cell: ({ row }) => (
+          <div className="cly-literature-paper-cell">
+            <strong>{row.original.source.title}</strong>
+            <span>
+              {row.original.source.authors || "Unknown authors"} ·{" "}
+              {row.original.source.year}
+            </span>
+          </div>
+        ),
+      },
+      {
+        id: "provider",
+        header: "Source",
+        accessorFn: (result) => result.source.provider ?? "unknown",
+      },
+      {
+        id: "score",
+        header: "Score",
+        accessorFn: (result) => result.score,
+        cell: ({ row }) => `${Math.round(row.original.score * 100)}%`,
+      },
+      {
+        id: "keywordRank",
+        header: "Keyword",
+        accessorFn: (result) => result.components.keywordRank ?? 0,
+        cell: ({ row }) =>
+          row.original.components.keywordRank
+            ? `#${row.original.components.keywordRank}`
+            : "—",
+      },
+      {
+        id: "semanticRank",
+        header: "Semantic",
+        accessorFn: (result) => result.components.semanticRank ?? 0,
+        cell: ({ row }) =>
+          row.original.components.semanticRank
+            ? `#${row.original.components.semanticRank}`
+            : "—",
+      },
+      {
+        id: "saved",
+        header: "Project",
+        accessorFn: (result) =>
+          savedSearchResultIds.has(result.source.id) ? "Saved" : "Unsaved",
+        cell: ({ row }) => (
+          <Badge
+            tone={
+              savedSearchResultIds.has(row.original.source.id)
+                ? "success"
+                : "neutral"
+            }
+          >
+            {savedSearchResultIds.has(row.original.source.id)
+              ? "Saved"
+              : "Unsaved"}
+          </Badge>
+        ),
+      },
+    ],
+    [savedSearchResultIds],
+  );
+  const matrixSources = useMemo(
+    () =>
+      sources.filter(
+        (source) =>
+          (!matrixQuery ||
+            `${source.title} ${source.authors} ${source.methods.join(" ")} ${source.findings.join(" ")}`
+              .toLowerCase()
+              .includes(matrixQuery.toLowerCase())) &&
+          (matrixStatus === "All review states" ||
+            source.status === matrixStatus),
+      ),
+    [matrixQuery, matrixStatus, sources],
+  );
+  const matrixColumns = useMemo<ColumnDef<Source, unknown>[]>(
+    () => [
+      {
+        accessorKey: "title",
+        header: "Source",
+        cell: ({ row }) => (
+          <div className="cly-literature-paper-cell">
+            <strong>{row.original.title}</strong>
+            <span>
+              {row.original.authors} · {row.original.year}
+            </span>
+          </div>
+        ),
+      },
+      { accessorKey: "summary", header: "Research problem" },
+      {
+        id: "methods",
+        header: "Method",
+        accessorFn: (source) => source.methods.join(", ") || "Not extracted",
+      },
+      {
+        id: "finding",
+        header: "Principal result",
+        accessorFn: (source) => source.findings[0] ?? "Extraction pending",
+      },
+      {
+        id: "limitations",
+        header: "Limitations",
+        accessorFn: (source) =>
+          source.limitations.join(", ") || "None recorded",
+      },
+      {
+        id: "claims",
+        header: "Claims",
+        accessorFn: (source) =>
+          source.linkedClaimIds
+            .map((id) => claims.find((claim) => claim.id === id)?.text)
+            .filter(Boolean)
+            .join("; ") || "—",
+      },
+      {
+        accessorKey: "confidence",
+        header: "Confidence",
+        cell: ({ row }) => `${row.original.confidence}%`,
+      },
+      {
+        accessorKey: "status",
+        header: "Review",
+        cell: ({ row }) => (
+          <Badge tone={toneForStatus(row.original.status)}>
+            {row.original.status}
+          </Badge>
+        ),
+      },
+    ],
+    [claims],
+  );
+
+  const runSearch = async () => {
+    setSearching(true);
+    setSearchError(null);
+    try {
+      if (!activeProject) {
+        throw new Error("Select a research project before searching.");
+      }
+      const results = await desktopLiteratureService.search(
+        activeProject,
+        query,
+      );
+      setSearchResults(results);
+      setSelectedResultId(results[0]?.source.id ?? null);
+    } catch (error) {
+      setSearchError(
+        error instanceof Error
+          ? error.message
+          : "Literature retrieval failed. No records were changed.",
+      );
+      setSearchResults([]);
+      setSelectedResultId(null);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const saveResult = async (result: LiteratureSearchResult) => {
+    try {
+      const source = await mockServices.sources.createFromSearch(result);
+      setSelected(source.id);
+      notify(
+        "Paper saved",
+        "Source record and literature matrix row created with ranking provenance.",
+      );
+    } catch {
+      // The store reports persistence failures without marking the result saved.
+    }
+  };
 
   return (
     <div className="cly-page cly-page-wide cly-route-literature">
@@ -449,222 +674,357 @@ export function LiteratureScreen() {
         }
       />
       {view === "Matrix" ? (
-        <>
-          <div className="cly-filterbar">
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Search literature matrix…"
+        <section className="cly-literature-workspace">
+          <div className="cly-literature-modebar">
+            <Segmented
+              value={matrixMode}
+              options={["Discover", "Saved matrix"]}
+              onChange={setMatrixMode}
+              label="Literature workspace mode"
             />
-            <Button
-              variant="primary"
-              disabled={searching || !query.trim()}
-              onClick={async () => {
-                setSearching(true);
-                setSearchError(null);
-                try {
-                  setSearchResults(
-                    await desktopLiteratureService.search(
-                      activeProjectId,
-                      query,
-                    ),
-                  );
-                } catch (error) {
-                  setSearchError(
-                    error instanceof Error
-                      ? error.message
-                      : "Literature retrieval failed. No records were changed.",
-                  );
-                  setSearching(false);
-                  setSearchResults([]);
-                  return;
-                }
-                setSearching(false);
-              }}
-            >
-              <ScanSearch size={13} />{" "}
-              {searching ? "Searching…" : "Search papers"}
-            </Button>
-            <Button
-              onClick={() =>
-                notify(
-                  "Column chooser",
-                  "13 default columns and 2 fixture custom fields are available.",
-                )
-              }
-            >
-              <Columns3 size={13} /> Columns
-            </Button>
-            <Button
-              onClick={() =>
-                notify(
-                  "Custom column added",
-                  "A new editable evidence dimension was added to the matrix.",
-                )
-              }
-            >
-              <Plus size={13} /> Custom column
-            </Button>
-            <Button
-              onClick={() => {
-                const themes = previewLiteratureThemes(sources);
-                notify(
-                  "Theme preview ready",
-                  themes.length
-                    ? themes
-                        .map(
-                          (theme) =>
-                            `${theme.label} (${theme.sourceCount} source${theme.sourceCount === 1 ? "" : "s"})`,
-                        )
-                        .join(" · ")
-                    : "Add tags or structured methods before generating a theme preview.",
-                );
-              }}
-            >
-              <Sparkles size={13} /> Related-work outline
-            </Button>
+            <InlineMetadata>
+              <span>{sources.length} saved sources</span>
+              <span>
+                {sources.filter((source) => source.provenance).length} ranked
+                imports
+              </span>
+            </InlineMetadata>
           </div>
-          {searchError ? (
-            <div
-              className="cly-callout"
-              role="alert"
-              style={{ marginBottom: 12 }}
-            >
-              <strong>Search unavailable.</strong> {searchError}
-            </div>
-          ) : null}
-          {!searching &&
-          query.trim() &&
-          !searchError &&
-          searchResults.length === 0 ? (
-            <EmptyState
-              title="No matching papers"
-              description="Try a broader topic or inspect the provider status."
-            />
-          ) : null}
-          {searchResults.length > 0 ? (
-            <Panel className="cly-panel-body" style={{ marginBottom: 12 }}>
-              <div className="cly-panel-header">
-                <strong>Ranked literature results</strong>
-                <Badge>
-                  {searchResults.length} matches ·{" "}
-                  {searchResults[0]?.method.includes("cross_encoder_tei")
-                    ? "local cross-encoder"
-                    : "deterministic fallback"}
-                </Badge>
-              </div>
-              <div className="cly-stack">
-                {searchResults.slice(0, 8).map((result) => {
-                  const saved = savedResultIds.includes(result.source.id);
-                  return (
-                    <div
-                      className="cly-row-between"
-                      key={result.source.id}
-                      style={{ gap: 12 }}
-                    >
-                      <div>
-                        <strong>{result.source.title}</strong>
-                        <div className="cly-muted cly-small">
-                          Score {(result.score * 100).toFixed(0)}% ·{" "}
-                          {result.method} · {result.explanation}
-                        </div>
-                      </div>
-                      <Button
-                        disabled={saved}
-                        onClick={() =>
-                          void mockServices.sources
-                            .createFromSearch(result)
-                            .then((source) => {
-                              setSavedResultIds((ids) => [
-                                ...ids,
-                                result.source.id,
-                              ]);
-                              setSelected(source.id);
-                              notify(
-                                "Paper saved",
-                                "Source record and literature matrix row created with ranking provenance.",
-                              );
-                            })
-                        }
-                      >
-                        {saved ? <Check size={13} /> : <Plus size={13} />}{" "}
-                        {saved ? "Saved" : "Save to project"}
-                      </Button>
+
+          {matrixMode === "Discover" ? (
+            <>
+              <form
+                className="cly-filterbar cly-literature-searchbar"
+                aria-label="Literature discovery search"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void runSearch();
+                }}
+              >
+                <SearchInput
+                  value={query}
+                  onChange={setQuery}
+                  label="Search literature"
+                  placeholder="Ask a research question or enter keywords…"
+                />
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={searching || !query.trim()}
+                >
+                  <ScanSearch size={13} />
+                  {searching ? "Searching…" : "Search papers"}
+                </Button>
+                <label className="cly-control-label">
+                  <span className="cly-sr-only">Filter search results</span>
+                  <select
+                    className="cly-select"
+                    value={resultFilter}
+                    onChange={(event) =>
+                      setResultFilter(
+                        event.target.value as LiteratureResultFilter,
+                      )
+                    }
+                  >
+                    <option>All results</option>
+                    <option>Unsaved</option>
+                    <option>Saved</option>
+                  </select>
+                </label>
+                <label className="cly-control-label">
+                  <span className="cly-sr-only">Sort search results</span>
+                  <select
+                    className="cly-select"
+                    value={resultSort}
+                    onChange={(event) =>
+                      setResultSort(event.target.value as LiteratureResultSort)
+                    }
+                  >
+                    <option>Relevance</option>
+                    <option>Newest</option>
+                    <option>Title</option>
+                  </select>
+                </label>
+              </form>
+
+              {searchError ? (
+                <div className="cly-callout" role="alert">
+                  <strong>Search unavailable.</strong> {searchError}
+                </div>
+              ) : null}
+              {searching ? (
+                <LoadingState label="Searching literature providers" />
+              ) : null}
+              {!searching &&
+              query.trim() &&
+              !searchError &&
+              searchResults.length === 0 ? (
+                <EmptyState
+                  title="No matching papers"
+                  description="Broaden the question, remove a phrase, or try a method or author name."
+                  icon={<ScanSearch size={20} />}
+                />
+              ) : null}
+              {!searching && searchResults.length > 0 ? (
+                <>
+                  <div
+                    className="cly-literature-result-summary"
+                    aria-live="polite"
+                  >
+                    <div>
+                      <strong>Ranked literature results</strong>
+                      <span>
+                        {filteredResults.length} shown of {searchResults.length}
+                      </span>
                     </div>
-                  );
-                })}
+                    <InlineMetadata>
+                      <span>{savedSearchResultIds.size} saved</span>
+                      <span>
+                        {searchResults[0]?.method.includes("cross_encoder_tei")
+                          ? "Local cross-encoder"
+                          : "Deterministic fallback"}
+                      </span>
+                      <span>Reciprocal Rank Fusion</span>
+                    </InlineMetadata>
+                  </div>
+                  <ClySplitPane
+                    id="literature-discovery"
+                    className="cly-literature-discovery-split"
+                    primary={
+                      <ClyDataTable
+                        id="literature-discovery-results"
+                        data={filteredResults}
+                        columns={resultColumns}
+                        selectedId={selectedResult?.source.id}
+                        getRowId={(result) => result.source.id}
+                        onSelect={(result) =>
+                          setSelectedResultId(result.source.id)
+                        }
+                        emptyMessage="No results match this filter"
+                      />
+                    }
+                    secondary={
+                      selectedResult ? (
+                        <article className="cly-literature-detail">
+                          <PaneHeader
+                            title="Paper detail"
+                            detail={`${selectedResult.source.provider ?? "Source"} · ${selectedResult.source.year}`}
+                            actions={
+                              <Badge
+                                tone={
+                                  savedSearchResultIds.has(
+                                    selectedResult.source.id,
+                                  )
+                                    ? "success"
+                                    : "neutral"
+                                }
+                              >
+                                {savedSearchResultIds.has(
+                                  selectedResult.source.id,
+                                )
+                                  ? "Saved"
+                                  : "Unsaved"}
+                              </Badge>
+                            }
+                          />
+                          <div className="cly-literature-detail-body">
+                            <h2>{selectedResult.source.title}</h2>
+                            <p className="cly-literature-authors">
+                              {selectedResult.source.authors}
+                            </p>
+                            <div className="cly-literature-detail-actions">
+                              <Button
+                                variant="primary"
+                                disabled={savedSearchResultIds.has(
+                                  selectedResult.source.id,
+                                )}
+                                onClick={() => void saveResult(selectedResult)}
+                              >
+                                {savedSearchResultIds.has(
+                                  selectedResult.source.id,
+                                ) ? (
+                                  <Check size={13} />
+                                ) : (
+                                  <Plus size={13} />
+                                )}
+                                {savedSearchResultIds.has(
+                                  selectedResult.source.id,
+                                )
+                                  ? "Saved to project"
+                                  : "Save to project"}
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  void navigator.clipboard.writeText(
+                                    `${selectedResult.source.authors} (${selectedResult.source.year}). ${selectedResult.source.title}. ${selectedResult.source.url ?? ""}`,
+                                  );
+                                  notify(
+                                    "Citation copied",
+                                    "A compact citation was copied to the clipboard.",
+                                  );
+                                }}
+                              >
+                                <Copy size={13} /> Copy citation
+                              </Button>
+                              {selectedResult.source.url ? (
+                                <Button
+                                  variant="ghost"
+                                  onClick={() =>
+                                    window.open(
+                                      selectedResult.source.url,
+                                      "_blank",
+                                      "noopener,noreferrer",
+                                    )
+                                  }
+                                >
+                                  <ExternalLink size={13} /> Open paper
+                                </Button>
+                              ) : null}
+                            </div>
+                            <section>
+                              <h3>Abstract</h3>
+                              <p>{selectedResult.source.summary}</p>
+                            </section>
+                            <section>
+                              <h3>Why this paper ranked here</h3>
+                              <p>{selectedResult.explanation}</p>
+                              <dl className="cly-literature-ranking-grid">
+                                <div>
+                                  <dt>Combined score</dt>
+                                  <dd>
+                                    {Math.round(selectedResult.score * 100)}%
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>Keyword rank</dt>
+                                  <dd>
+                                    {selectedResult.components.keywordRank
+                                      ? `#${selectedResult.components.keywordRank}`
+                                      : "—"}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>Semantic rank</dt>
+                                  <dd>
+                                    {selectedResult.components.semanticRank
+                                      ? `#${selectedResult.components.semanticRank}`
+                                      : "—"}
+                                  </dd>
+                                </div>
+                              </dl>
+                            </section>
+                          </div>
+                        </article>
+                      ) : (
+                        <EmptyState
+                          title="Select a paper"
+                          description="Choose a result to inspect its abstract and ranking evidence."
+                        />
+                      )
+                    }
+                    secondarySize={38}
+                    secondaryMin="300px"
+                    label="Resize literature results and paper detail"
+                  />
+                </>
+              ) : null}
+              {!query.trim() && !searching ? (
+                <EmptyState
+                  title="Search across open literature"
+                  description="Start with a research question. Cly will rank matching papers and keep the ranking rationale attached when you save one."
+                  icon={<ScanSearch size={20} />}
+                />
+              ) : null}
+            </>
+          ) : (
+            <>
+              <div className="cly-filterbar cly-literature-matrix-toolbar">
+                <SearchInput
+                  value={matrixQuery}
+                  onChange={setMatrixQuery}
+                  label="Filter saved literature"
+                  placeholder="Filter titles, authors, methods, or findings…"
+                />
+                <label className="cly-control-label">
+                  <span className="cly-sr-only">Filter by review state</span>
+                  <select
+                    className="cly-select"
+                    value={matrixStatus}
+                    onChange={(event) => setMatrixStatus(event.target.value)}
+                  >
+                    <option>All review states</option>
+                    <option>Needs metadata</option>
+                    <option>Queued</option>
+                    <option>Reading</option>
+                    <option>Reviewed</option>
+                  </select>
+                </label>
+                <Button
+                  onClick={() => {
+                    const themes = previewLiteratureThemes(sources);
+                    notify(
+                      "Theme preview ready",
+                      themes.length
+                        ? themes
+                            .map(
+                              (theme) =>
+                                `${theme.label} (${theme.sourceCount} source${theme.sourceCount === 1 ? "" : "s"})`,
+                            )
+                            .join(" · ")
+                        : "Add tags or structured methods before generating a theme preview.",
+                    );
+                  }}
+                >
+                  <Sparkles size={13} /> Synthesize themes
+                </Button>
+                <Button
+                  onClick={() =>
+                    notify(
+                      "Column settings",
+                      "Column visibility is remembered for this literature matrix.",
+                    )
+                  }
+                >
+                  <Columns3 size={13} /> Columns
+                </Button>
               </div>
-            </Panel>
-          ) : null}
-          <div className="cly-table-wrap">
-            <table className="cly-table" style={{ minWidth: 1500 }}>
-              <thead>
-                <tr>
-                  <th style={{ width: 250 }}>Source</th>
-                  <th>Research problem</th>
-                  <th>Method</th>
-                  <th>Dataset / system</th>
-                  <th>Principal result</th>
-                  <th>Limitations</th>
-                  <th>Supports claim</th>
-                  <th>Contradicts</th>
-                  <th>Confidence</th>
-                  <th>Review</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.slice(0, 200).map((source) => (
-                  <tr key={source.id} onClick={() => setSelected(source.id)}>
-                    <td>{source.title}</td>
-                    <td
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={() =>
-                        notify(
-                          "Matrix cell updated",
-                          "The edited value is retained visually in this prototype session.",
-                        )
-                      }
-                    >
-                      {source.summary}
-                    </td>
-                    <td>{source.methods.join(", ")}</td>
-                    <td>
-                      {source.type === "Dataset"
-                        ? source.title
-                        : source.linkedExperimentIds.length
-                          ? "Cylinder-flow system"
-                          : "—"}
-                    </td>
-                    <td>{source.findings[0] ?? "Extraction pending"}</td>
-                    <td>{source.limitations.join(", ") || "None recorded"}</td>
-                    <td>
-                      {source.linkedClaimIds
-                        .map((id) =>
-                          claims
-                            .find((claim) => claim.id === id)
-                            ?.text.slice(0, 35),
-                        )
-                        .filter(Boolean)
-                        .join("; ") || "—"}
-                    </td>
-                    <td>
-                      {source.id === "src-02" || source.id === "src-04"
-                        ? "Primary claim assumption"
-                        : "—"}
-                    </td>
-                    <td>{source.confidence}%</td>
-                    <td>
-                      <Badge tone={toneForStatus(source.status)}>
-                        {source.status}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+              <div className="cly-literature-result-summary">
+                <div>
+                  <strong>Saved evidence matrix</strong>
+                  <span>{matrixSources.length} sources in this view</span>
+                </div>
+                <InlineMetadata>
+                  <span>
+                    {
+                      sources.filter((source) => source.status === "Reviewed")
+                        .length
+                    }{" "}
+                    reviewed
+                  </span>
+                  <span>
+                    {
+                      sources.filter((source) => source.linkedClaimIds.length)
+                        .length
+                    }{" "}
+                    linked to claims
+                  </span>
+                  <span>
+                    {sources.filter((source) => source.provenance).length} with
+                    search provenance
+                  </span>
+                </InlineMetadata>
+              </div>
+              <ClyDataTable
+                id="literature-saved-matrix"
+                data={matrixSources}
+                columns={matrixColumns}
+                getRowId={(source) => source.id}
+                onSelect={(source) => setSelected(source.id)}
+                emptyMessage="No saved sources match these filters"
+              />
+            </>
+          )}
+        </section>
       ) : null}
       {view === "Themes" ? (
         <div className="cly-grid-3">

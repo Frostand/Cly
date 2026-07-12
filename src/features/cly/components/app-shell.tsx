@@ -134,6 +134,12 @@ export function ClyAppShell() {
   const ActiveScreen = screens[activeScreen];
 
   useEffect(() => {
+    // main.tsx installs authenticated API fetch before React mounts. Hydrating
+    // here avoids firing the request while static imports are still loading.
+    void useClyStore.getState().loadFromApi();
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const meta = event.metaKey || event.ctrlKey;
       if (meta && event.key.toLowerCase() === "k") {

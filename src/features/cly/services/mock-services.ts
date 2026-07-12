@@ -101,7 +101,7 @@ export const mockServices: ClyServices = {
     },
   },
   literature: {
-    async search(_projectId, query) {
+    async search(_project, query) {
       return rankLiteratureWithRrf(
         query,
         useClyStore.getState().data.sources,
@@ -135,13 +135,8 @@ export const mockServices: ClyServices = {
       return persistedSource ?? source;
     },
     async createFromSearch(result: LiteratureSearchResult) {
-      const source = await mockServices.sources.create({
-        title: result.source.title,
-        type: result.source.type,
-      });
-      useClyStore.getState().updateSource(source.id, {
+      const candidate: Source = {
         ...result.source,
-        id: source.id,
         provenance: {
           provider: result.source.provider ?? "local-fixture",
           query: result.query,
@@ -152,12 +147,10 @@ export const mockServices: ClyServices = {
           explanation: result.explanation,
           retrievedAt: result.retrievedAt,
         },
-      });
-      return (
-        useClyStore
-          .getState()
-          .data.sources.find((item) => item.id === source.id) ?? source
-      );
+      };
+      const persisted = await useClyStore.getState().addSource(candidate);
+      if (!persisted) throw new Error("Source was not saved.");
+      return persisted;
     },
     async addToNotebookBundle(sourceId) {
       useClyStore.getState().updateSource(sourceId, { inNotebookBundle: true });

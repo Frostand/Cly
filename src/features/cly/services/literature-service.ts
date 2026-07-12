@@ -24,7 +24,7 @@ export class LiteratureSearchFailure extends Error {
 }
 
 export const desktopLiteratureService: LiteratureService = {
-  async search(projectId, query) {
+  async search(project, query) {
     if (!query.trim()) {
       throw new LiteratureSearchFailure(
         "Enter a research question before searching.",
@@ -32,7 +32,8 @@ export const desktopLiteratureService: LiteratureService = {
       );
     }
     try {
-      const response = await apiClient.searchLiterature(projectId, query);
+      await apiClient.ensureProject(project);
+      const response = await apiClient.searchLiterature(project.id, query);
       const semanticRanker =
         response.reranking.status === "completed" && response.reranking.method
           ? createSignalSemanticRanker(

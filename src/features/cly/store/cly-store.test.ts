@@ -267,6 +267,76 @@ describe("Cly UI store", () => {
     });
   });
 
+  it("persists the complete literature result and ranking provenance in one write", async () => {
+    const candidate = createFixtureRepository("active").sources[0];
+    const result = {
+      source: {
+        ...candidate,
+        id: "semantic-scholar:paper-new",
+        title: "A newly discovered calibration paper",
+        provider: "semantic-scholar",
+        providerId: "paper-new",
+      },
+      query: "robust calibration",
+      score: 0.92,
+      method: "rrf:cross_encoder_tei:BAAI/bge-reranker-base",
+      model: "BAAI/bge-reranker-base",
+      components: { keywordRank: 1, semanticRank: 1 },
+      explanation: "Combined keyword and semantic ranks.",
+      retrievedAt: "2026-07-12T20:00:00.000Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "persisted-literature-source",
+          projectId: "project-cly",
+          type: "source",
+          title: result.source.title,
+          description: result.source.summary,
+          payload: {
+            kind: "source",
+            provider: "semantic-scholar",
+            query: result.query,
+            rankingMethod: result.method,
+            rankingModel: result.model,
+            rankingScore: result.score,
+            rankingExplanation: result.explanation,
+            retrievedAt: result.retrievedAt,
+          },
+          createdAt: result.retrievedAt,
+          updatedAt: result.retrievedAt,
+        }),
+        { status: 201 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      mockServices.sources.createFromSearch(result),
+    ).resolves.toMatchObject({
+      id: "persisted-literature-source",
+      provenance: {
+        method: result.method,
+        model: result.model,
+        provider: "semantic-scholar",
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
+    );
+    expect(body.payload).toMatchObject({
+      provider: "semantic-scholar",
+      providerId: "paper-new",
+      query: result.query,
+      rankingMethod: result.method,
+      rankingModel: result.model,
+      rankingScore: result.score,
+      rankingExplanation: result.explanation,
+      retrievedAt: result.retrievedAt,
+    });
+  });
+
   it("persists and reflects a source-to-claim evidence relationship", async () => {
     vi.stubGlobal(
       "fetch",

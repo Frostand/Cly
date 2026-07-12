@@ -10,7 +10,11 @@ beforeEach(() => {
   database = new DatabaseSync(":memory:");
   database.exec(`
     PRAGMA foreign_keys = ON;
-    CREATE TABLE projects (id TEXT PRIMARY KEY);
+    CREATE TABLE projects (
+      id TEXT PRIMARY KEY, path TEXT NOT NULL, normalized_path TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', sort_order INTEGER NOT NULL DEFAULT 0,
+      metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
     CREATE TABLE research_objects (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, type TEXT NOT NULL,
       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL,
@@ -28,11 +32,48 @@ beforeEach(() => {
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, object_id TEXT, action TEXT NOT NULL,
       actor_type TEXT NOT NULL, actor_id TEXT, metadata TEXT NOT NULL, created_at TEXT NOT NULL
     );
-    INSERT INTO projects (id) VALUES ('project-1'), ('project-2');
+    INSERT INTO projects
+      (id, path, normalized_path, name, metadata, created_at, updated_at)
+    VALUES
+      ('project-1', '/tmp/project-1', '/tmp/project-1', 'Project 1', '{}', '2026-07-11', '2026-07-11'),
+      ('project-2', '/tmp/project-2', '/tmp/project-2', 'Project 2', '{}', '2026-07-11', '2026-07-11');
   `);
 });
 
 describe("research repository", () => {
+  it("upserts a renderer project before project-scoped research operations", () => {
+    database.prepare("DELETE FROM projects WHERE id = ?").run("project-1");
+    const repository = createResearchRepository(database);
+
+    expect(
+      repository.upsertProject({
+        id: "project-1",
+        name: "Neural surrogate reliability",
+        path: "~/Research/surrogate-reliability/",
+        metadata: { phase: "Evidence consolidation" },
+      }),
+    ).toMatchObject({
+      id: "project-1",
+      name: "Neural surrogate reliability",
+      path: "~/Research/surrogate-reliability/",
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT id, normalized_path, metadata FROM projects WHERE id = ?",
+        )
+        .get("project-1"),
+    ).toMatchObject({
+      id: "project-1",
+      normalized_path: "~/Research/surrogate-reliability",
+      metadata: JSON.stringify({ phase: "Evidence consolidation" }),
+    });
+    expect(repository.listProject("project-1")).toEqual({
+      objects: [],
+      relationships: [],
+    });
+  });
+
   it("persists a source, claim, and directed evidence link", () => {
     const repository = createResearchRepository(database);
     const source = repository.createObject({

@@ -9,6 +9,7 @@ import type {
   Integration,
   NotebookArtifact,
   ResearchDecision,
+  ResearchProject,
   Source,
 } from "../domain/types";
 
@@ -46,7 +47,10 @@ export interface SourceService {
 }
 
 export interface LiteratureService {
-  search(projectId: string, query: string): Promise<LiteratureSearchResult[]>;
+  search(
+    project: ResearchProject,
+    query: string,
+  ): Promise<LiteratureSearchResult[]>;
 }
 
 export interface NotebookService {

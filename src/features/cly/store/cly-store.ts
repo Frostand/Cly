@@ -948,10 +948,6 @@ export const useClyStore = create<ClyState>((set, get) => ({
     })),
 }));
 
-// Start from fixtures synchronously so the UI is immediately usable, then
-// replace persisted research records when the Electron API is available.
-void useClyStore.getState().loadFromApi();
-
 export const claimStatusTone = (status: ClaimStatus) =>
   status === "Strong" || status === "Paper-ready"
     ? "success"

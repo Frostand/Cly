@@ -20,6 +20,12 @@ const sourceUpdateBodySchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 });
 
+const projectBodySchema = z.object({
+  name: z.string().trim().min(1).max(500),
+  path: z.string().trim().min(1).max(4_000),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
 async function readJson(c) {
   try {
     return { data: await c.req.json() };
@@ -32,6 +38,26 @@ export function registerResearchRoutes(
   app,
   { getRepository = () => createResearchRepository(getStateDatabase()) } = {},
 ) {
+  app.put("/api/projects/:projectId/research", async (c) => {
+    const body = await readJson(c);
+    if (body.error) return body.error;
+    const parsed = projectBodySchema.safeParse(body.data);
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        getRepository().upsertProject({
+          ...parsed.data,
+          id: c.req.param("projectId"),
+        }),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Project sync failed.",
+        400,
+      );
+    }
+  });
+
   app.get("/api/projects/:projectId/research", (c) => {
     try {
       return c.json(getRepository().listProject(c.req.param("projectId")));

@@ -35,12 +35,28 @@ const relationshipInputSchema = z.object({
   ]),
 });
 
+const projectInputSchema = z.object({
+  id: z.string().trim().min(1),
+  name: z.string().trim().min(1).max(500),
+  path: z.string().trim().min(1).max(4_000),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
 const parseJson = (value) => {
   try {
     return JSON.parse(value);
   } catch {
     return {};
   }
+};
+
+const normalizeProjectPath = (value) => {
+  const trimmed = value.trim();
+  const withoutTrailingSeparators = trimmed.replace(/[\\/]+$/, "") || trimmed;
+  const normalized = withoutTrailingSeparators.replace(/\\/g, "/");
+  const isWindowsPath =
+    /^[a-zA-Z]:\//.test(normalized) || trimmed.includes("\\");
+  return isWindowsPath ? normalized.toLowerCase() : normalized;
 };
 
 const mapObject = (row) => ({
@@ -94,6 +110,54 @@ export function createResearchRepository(database) {
   };
 
   return {
+    upsertProject(input) {
+      const parsed = projectInputSchema.parse(input);
+      const normalizedPath = normalizeProjectPath(parsed.path);
+      const conflictingProject = database
+        .prepare(
+          "SELECT id FROM projects WHERE normalized_path = ? AND id <> ?",
+        )
+        .get(normalizedPath, parsed.id);
+      if (conflictingProject) {
+        throw new Error("Another project already uses this path.");
+      }
+      const existing = database
+        .prepare("SELECT metadata, created_at FROM projects WHERE id = ?")
+        .get(parsed.id);
+      const now = new Date().toISOString();
+      const metadata = JSON.stringify({
+        ...parseJson(existing?.metadata),
+        ...parsed.metadata,
+      });
+      database
+        .prepare(
+          `INSERT INTO projects
+            (id, path, normalized_path, name, status, sort_order, metadata, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'open', 0, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             path = excluded.path,
+             normalized_path = excluded.normalized_path,
+             name = excluded.name,
+             metadata = excluded.metadata,
+             updated_at = excluded.updated_at`,
+        )
+        .run(
+          parsed.id,
+          parsed.path,
+          normalizedPath,
+          parsed.name,
+          metadata,
+          existing?.created_at ?? now,
+          now,
+        );
+      return {
+        id: parsed.id,
+        name: parsed.name,
+        path: parsed.path,
+        metadata: JSON.parse(metadata),
+      };
+    },
+
     createObject(input) {
       const parsed = objectInputSchema.parse(input);
       ensureProject(parsed.projectId);

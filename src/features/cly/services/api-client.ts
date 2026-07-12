@@ -1,5 +1,6 @@
 import type { LiteraturePaper } from "../domain/literature-search";
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
+import type { ResearchProject } from "../domain/types";
 
 export interface ResearchData {
   objects: ResearchObject[];
@@ -61,6 +62,28 @@ const projectPath = (projectId: string) =>
 
 /** Typed client for the SQLite-backed research API. */
 export const apiClient = {
+  ensureProject(project: ResearchProject) {
+    return request<{
+      id: string;
+      name: string;
+      path: string;
+      metadata: Record<string, unknown>;
+    }>(projectPath(project.id), {
+      method: "PUT",
+      body: JSON.stringify({
+        name: project.name,
+        path: project.path,
+        metadata: {
+          description: project.description,
+          hypothesis: project.hypothesis,
+          localOnly: project.localOnly,
+          phase: project.phase,
+          question: project.question,
+        },
+      }),
+    });
+  },
+
   fetchResearchData(projectId: string) {
     return request<ResearchData>(projectPath(projectId));
   },
