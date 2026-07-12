@@ -115,8 +115,8 @@ export const mockServices: ClyServices = {
         path: "sources/imported",
         updatedAt: isoNow(),
       };
-      useClyStore.getState().addSource(source);
-      return source;
+      const persistedSource = await useClyStore.getState().addSource(source);
+      return persistedSource ?? source;
     },
     async addToNotebookBundle(sourceId) {
       useClyStore.getState().updateSource(sourceId, { inNotebookBundle: true });
