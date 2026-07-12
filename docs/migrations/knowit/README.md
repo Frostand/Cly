@@ -21,7 +21,8 @@ Migration order:
 
 Implemented on `codex/cly-40-knowit`:
 
-- Native Electron Semantic Scholar search route scoped to the active Cly project.
+- Native Electron arXiv and Semantic Scholar search routes scoped to the active Cly project.
+- Graceful multi-provider fallback and DOI/title deduplication.
 - Normalized provider-paper contracts and deterministic local ranking explanations.
 - Stable provider/DOI/URL duplicate detection.
 - Project-scoped Source persistence with literature metadata and ranking provenance.
@@ -30,7 +31,6 @@ Implemented on `codex/cly-40-knowit`:
 
 Remaining follow-up slices from `tickets.md`:
 
-- arXiv adapter and cross-provider deduplication;
 - an actual configurable local cross-encoder implementation;
 - optional structured extraction and reviewable synthesis;
 - removal of this migration snapshot after parity review.

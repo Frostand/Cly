@@ -1,20 +1,19 @@
 import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
 import { createResearchRepository } from "../research/repository.js";
-import {
-  LiteratureSearchError,
-  searchSemanticScholar,
-} from "./semantic-scholar.js";
+import { searchLiteratureProviders } from "./search.js";
+import { LiteratureSearchError } from "./semantic-scholar.js";
 
 const requestSchema = z.object({
   query: z.string().trim().min(1).max(2_000),
   limit: z.number().int().min(1).max(100).default(25),
+  provider: z.enum(["arxiv", "semantic-scholar", "both"]).default("both"),
 });
 
 export function registerLiteratureRoutes(
   app,
   {
-    search = searchSemanticScholar,
+    search = searchLiteratureProviders,
     getRepository = () => createResearchRepository(getStateDatabase()),
   } = {},
 ) {
@@ -31,8 +30,9 @@ export function registerLiteratureRoutes(
       getRepository().listProject(c.req.param("projectId"));
       const papers = await search(parsed.data.query, {
         limit: parsed.data.limit,
+        provider: parsed.data.provider,
       });
-      return c.json({ papers, provider: "semantic-scholar" });
+      return c.json({ papers, provider: parsed.data.provider });
     } catch (error) {
       if (error instanceof LiteratureSearchError) {
         const status =

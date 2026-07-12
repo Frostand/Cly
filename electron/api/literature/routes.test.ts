@@ -31,7 +31,10 @@ describe("literature routes", () => {
     );
     expect(response.status).toBe(200);
     expect(listProject).toHaveBeenCalledWith("project-1");
-    expect(search).toHaveBeenCalledWith("robust calibration", { limit: 10 });
+    expect(search).toHaveBeenCalledWith("robust calibration", {
+      limit: 10,
+      provider: "both",
+    });
   });
 
   it("maps provider rate limits to HTTP 429", async () => {
