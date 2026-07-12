@@ -110,6 +110,7 @@ export function createRealSourceService(
           query: result.query,
           rankingScore: result.score,
           rankingMethod: result.method,
+          rankingModel: result.model,
           rankingComponents: result.components,
           rankingExplanation: result.explanation,
           retrievedAt: result.retrievedAt,

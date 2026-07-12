@@ -546,7 +546,12 @@ export function LiteratureScreen() {
             <Panel className="cly-panel-body" style={{ marginBottom: 12 }}>
               <div className="cly-panel-header">
                 <strong>Ranked literature results</strong>
-                <Badge>{searchResults.length} matches · local fixture</Badge>
+                <Badge>
+                  {searchResults.length} matches ·{" "}
+                  {searchResults[0]?.method.includes("cross_encoder_tei")
+                    ? "local cross-encoder"
+                    : "deterministic fallback"}
+                </Badge>
               </div>
               <div className="cly-stack">
                 {searchResults.slice(0, 8).map((result) => {

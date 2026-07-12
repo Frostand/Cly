@@ -1,4 +1,5 @@
 import {
+  createSignalSemanticRanker,
   deterministicSemanticRanker,
   rankLiteratureWithRrf,
   sourceFromLiteraturePaper,
@@ -32,10 +33,18 @@ export const desktopLiteratureService: LiteratureService = {
     }
     try {
       const response = await apiClient.searchLiterature(projectId, query);
+      const semanticRanker =
+        response.reranking.status === "completed" && response.reranking.method
+          ? createSignalSemanticRanker(
+              response.reranking.method,
+              response.reranking.signals,
+              response.reranking.model,
+            )
+          : deterministicSemanticRanker;
       return rankLiteratureWithRrf(
         query,
         response.papers.map(sourceFromLiteraturePaper),
-        deterministicSemanticRanker,
+        semanticRanker,
       );
     } catch (error) {
       if (error instanceof ApiRequestError) {

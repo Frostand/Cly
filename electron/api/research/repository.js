@@ -129,6 +129,7 @@ export function createResearchRepository(database) {
                     providerId: parsed.payload.providerId,
                     query: parsed.payload.query,
                     rankingMethod: parsed.payload.rankingMethod,
+                    rankingModel: parsed.payload.rankingModel,
                     rankingComponents: parsed.payload.rankingComponents,
                     rankingScore: parsed.payload.rankingScore,
                     retrievedAt: parsed.payload.retrievedAt,

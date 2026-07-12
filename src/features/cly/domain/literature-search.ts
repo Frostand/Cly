@@ -18,6 +18,7 @@ export interface LiteratureSearchResult {
   score: number;
   explanation: string;
   method: string;
+  model?: string;
   components: Record<string, number>;
   query: string;
   retrievedAt: string;
@@ -31,7 +32,25 @@ export interface SemanticRankingSignal {
 
 export interface LiteratureSemanticRanker {
   method: string;
+  model?: string;
   rank(query: string, sources: Source[]): Promise<SemanticRankingSignal[]>;
+}
+
+export function createSignalSemanticRanker(
+  method: string,
+  signals: Array<{ sourceId: string; score: number }>,
+  model?: string,
+): LiteratureSemanticRanker {
+  return {
+    method,
+    model,
+    async rank() {
+      return signals.map((signal) => ({
+        ...signal,
+        explanation: `Scored jointly by ${method}.`,
+      }));
+    },
+  };
 }
 
 export function sourceFromLiteraturePaper(paper: LiteraturePaper): Source {
@@ -139,9 +158,10 @@ export async function rankLiteratureWithRrf(
   semanticRanker: LiteratureSemanticRanker,
   retrievedAt = new Date().toISOString(),
 ): Promise<LiteratureSearchResult[]> {
+  if (sources.length === 0) return [];
   const keyword = rankLiterature(query, sources, retrievedAt);
-  if (keyword.length === 0) return [];
   const semantic = await semanticRanker.rank(query, sources);
+  if (keyword.length === 0 && semantic.length === 0) return [];
   const keywordRanks = new Map(
     keyword.map((result, index) => [result.source.id, index + 1]),
   );
@@ -169,6 +189,7 @@ export async function rankLiteratureWithRrf(
         query,
         retrievedAt,
         method: `rrf:${semanticRanker.method}`,
+        model: semanticRanker.model,
         components: {
           keywordRank: keywordRank ?? 0,
           semanticRank: semanticRank ?? 0,

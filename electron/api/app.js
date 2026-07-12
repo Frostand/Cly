@@ -60,7 +60,7 @@ function createApiApp(apiToken) {
 export function startApiServer({ port, apiToken }) {
   const guardedApp = createApiApp(apiToken);
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = serve(
       {
         fetch: guardedApp.fetch,
@@ -68,6 +68,7 @@ export function startApiServer({ port, apiToken }) {
         port,
       },
       (info) => {
+        server.off("error", reject);
         console.log(`API server listening on http://127.0.0.1:${info.port}`);
         resolve({
           close: () =>
@@ -84,5 +85,6 @@ export function startApiServer({ port, apiToken }) {
         });
       },
     );
+    server.once("error", reject);
   });
 }

@@ -19,6 +19,15 @@ export interface CreateRelationshipInput {
   type: "supports" | "contradicts";
 }
 
+export interface CrossEncoderReranking {
+  status: "completed" | "not_configured" | "unavailable" | "empty";
+  method: string | null;
+  model: string;
+  signals: Array<{ sourceId: string; score: number }>;
+  error?: string;
+  errorKind?: string;
+}
+
 export class ApiRequestError extends Error {
   constructor(
     message: string,
@@ -85,12 +94,13 @@ export const apiClient = {
   },
 
   searchLiterature(projectId: string, query: string, limit = 25) {
-    return request<{ papers: LiteraturePaper[]; provider: string }>(
-      `/api/projects/${encodeURIComponent(projectId)}/literature/search`,
-      {
-        method: "POST",
-        body: JSON.stringify({ query, limit }),
-      },
-    );
+    return request<{
+      papers: LiteraturePaper[];
+      provider: string;
+      reranking: CrossEncoderReranking;
+    }>(`/api/projects/${encodeURIComponent(projectId)}/literature/search`, {
+      method: "POST",
+      body: JSON.stringify({ query, limit }),
+    });
   },
 };

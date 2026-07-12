@@ -117,6 +117,7 @@ describe("research repository", () => {
         providerId: "paper-123",
         query: "robust calibration",
         rankingMethod: "keyword_overlap_v1",
+        rankingModel: "BAAI/bge-reranker-base",
         rankingScore: 0.91,
         retrievedAt: "2026-07-12T12:00:00.000Z",
       },
@@ -130,6 +131,7 @@ describe("research repository", () => {
       providerId: "paper-123",
       query: "robust calibration",
       rankingMethod: "keyword_overlap_v1",
+      rankingModel: "BAAI/bge-reranker-base",
       rankingScore: 0.91,
     });
   });

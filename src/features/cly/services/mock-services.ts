@@ -147,6 +147,7 @@ export const mockServices: ClyServices = {
           query: result.query,
           score: result.score,
           method: result.method,
+          model: result.model,
           components: result.components,
           explanation: result.explanation,
           retrievedAt: result.retrievedAt,

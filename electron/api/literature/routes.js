@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
 import { createResearchRepository } from "../research/repository.js";
+import { tryLocalCrossEncoder } from "./cross-encoder.js";
 import { searchLiteratureProviders } from "./search.js";
 import { LiteratureSearchError } from "./semantic-scholar.js";
 
@@ -14,6 +15,7 @@ export function registerLiteratureRoutes(
   app,
   {
     search = searchLiteratureProviders,
+    rerank = tryLocalCrossEncoder,
     getRepository = () => createResearchRepository(getStateDatabase()),
   } = {},
 ) {
@@ -32,7 +34,8 @@ export function registerLiteratureRoutes(
         limit: parsed.data.limit,
         provider: parsed.data.provider,
       });
-      return c.json({ papers, provider: parsed.data.provider });
+      const reranking = await rerank(parsed.data.query, papers);
+      return c.json({ papers, provider: parsed.data.provider, reranking });
     } catch (error) {
       if (error instanceof LiteratureSearchError) {
         const status =

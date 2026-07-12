@@ -139,4 +139,30 @@ describe("literature ranking", () => {
     });
     expect(results[0].explanation).toContain("Reciprocal Rank Fusion");
   });
+
+  it("retains semantic-only papers when keyword ranking has no signal", async () => {
+    const candidate = source(
+      "semantic-only",
+      "Uncertainty estimation",
+      "Distribution behavior.",
+    );
+    const results = await rankLiteratureWithRrf("calibration", [candidate], {
+      method: "cross_encoder_tei:test",
+      async rank() {
+        return [
+          {
+            sourceId: candidate.id,
+            score: 0.88,
+            explanation: "Joint query-document score.",
+          },
+        ];
+      },
+    });
+    expect(results).toMatchObject([
+      {
+        source: { id: "semantic-only" },
+        components: { keywordRank: 0, semanticRank: 1 },
+      },
+    ]);
+  });
 });

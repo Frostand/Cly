@@ -21,6 +21,12 @@ describe("desktop literature service", () => {
         new Response(
           JSON.stringify({
             provider: "semantic-scholar",
+            reranking: {
+              status: "completed",
+              method: "cross_encoder_tei:BAAI/bge-reranker-base",
+              model: "BAAI/bge-reranker-base",
+              signals: [{ sourceId: "semantic-scholar:paper-1", score: 0.97 }],
+            },
             papers: [
               {
                 id: "semantic-scholar:paper-1",
@@ -31,6 +37,45 @@ describe("desktop literature service", () => {
                 abstract: "Calibration under shift.",
                 year: 2024,
                 url: "https://example.test/paper-1",
+                tags: [],
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    await expect(
+      desktopLiteratureService.search("project-1", "robust calibration"),
+    ).resolves.toMatchObject([
+      {
+        method: "rrf:cross_encoder_tei:BAAI/bge-reranker-base",
+        model: "BAAI/bge-reranker-base",
+      },
+    ]);
+  });
+
+  it("uses the labeled deterministic fallback when no model is configured", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            provider: "arxiv",
+            reranking: {
+              status: "not_configured",
+              method: null,
+              model: "BAAI/bge-reranker-base",
+              signals: [],
+            },
+            papers: [
+              {
+                id: "arxiv:paper-1",
+                provider: "arxiv",
+                providerId: "paper-1",
+                title: "Robust calibration",
+                authors: [],
+                abstract: "Calibration under shift.",
+                url: "https://arxiv.org/abs/paper-1",
                 tags: [],
               },
             ],

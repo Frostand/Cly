@@ -14,7 +14,7 @@
 | Evidence relationships | Project-scoped source-to-claim relationships | Migrated |
 | Structured notes | Explicit deterministic enrichment with provenance | Migrated baseline |
 | Theme synthesis | Review-only theme preview | Migrated baseline |
-| Actual local cross-encoder model | Replaceable adapter boundary exists | Deferred; must not be claimed as implemented |
+| Actual local cross-encoder model | Loopback-only Hugging Face TEI `/rerank` adapter | Migrated; opt-in local model |
 | Full-PDF parsing | Existing source import roadmap | Outside CLY-40 |
 | Local folders/download bundles | Cly project/source organization | Outside CLY-40 |
 

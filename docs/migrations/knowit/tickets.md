@@ -43,7 +43,7 @@ Port the useful KnowIT capabilities into Cly’s existing research architecture 
 
 - KnowIT’s keyword ranking concepts.
 - Semantic-ranking boundary and Reciprocal Rank Fusion concepts.
-- A replaceable local cross-encoder adapter boundary; do not label the current deterministic fixture as a cross-encoder.
+- A replaceable local cross-encoder adapter with an explicitly labeled deterministic fallback.
 - Ranked results containing score components, method, and plain-language explanation.
 - Deterministic mock ranking for CI and local development.
 
@@ -91,6 +91,7 @@ Use the existing Cly surfaces rather than recreating KnowIT’s website UI:
 - [x] Ranked results show score/method explanations that a researcher can inspect.
 - [x] Loading, empty, failure, timeout, and provider-rate-limit states are visible and recoverable.
 - [x] Ranking has deterministic fixture coverage and does not require paid APIs in CI.
+- [x] An opt-in loopback-only local cross-encoder can rerank results, with model provenance and graceful fallback.
 - [x] Saving a result creates one project-scoped Cly `source` object.
 - [x] Saved source metadata includes provider ID/URL and retrieval/ranking provenance.
 - [x] Saved papers appear in Sources and the Literature Matrix without duplicate records.

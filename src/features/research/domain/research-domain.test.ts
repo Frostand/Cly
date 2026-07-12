@@ -48,6 +48,7 @@ describe("research domain", () => {
           query: "robust calibration",
           rankingScore: 0.91,
           rankingMethod: "keyword_overlap_v1",
+          rankingModel: "BAAI/bge-reranker-base",
           rankingExplanation: "Matched title and abstract signals.",
           retrievedAt: "2026-07-12T12:00:00.000Z",
         },
@@ -59,6 +60,7 @@ describe("research domain", () => {
       providerId: "paper-123",
       rankingScore: 0.91,
       rankingMethod: "keyword_overlap_v1",
+      rankingModel: "BAAI/bge-reranker-base",
       query: "robust calibration",
     });
   });
