@@ -1,6 +1,59 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
+const objectPayloadSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("artifact"),
+    mediaType: z.string().trim().min(1).optional(),
+    path: z.string().trim().min(1).optional(),
+    sha256: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/i)
+      .optional(),
+  }),
+  z.object({
+    kind: z.literal("source"),
+    status: z.enum(["placeholder", "resolved"]).default("resolved"),
+    authors: z.array(z.string().trim().min(1)).optional(),
+    citation: z.string().trim().min(1).optional(),
+    doi: z.string().trim().min(1).optional(),
+    url: z.url().optional(),
+    providerId: z.string().trim().min(1).optional(),
+    abstract: z.string().trim().min(1).max(20_000).optional(),
+    year: z.number().int().min(1000).max(9999).optional(),
+    provider: z.string().trim().min(1).optional(),
+    query: z.string().trim().min(1).max(2_000).optional(),
+    rankingScore: z.number().finite().min(0).max(1).optional(),
+    rankingMethod: z.string().trim().min(1).max(200).optional(),
+    rankingModel: z.string().trim().min(1).max(500).optional(),
+    rankingComponents: z.record(z.string(), z.number().finite()).optional(),
+    rankingExplanation: z.string().trim().min(1).max(2_000).optional(),
+    retrievedAt: z.iso.datetime().optional(),
+    researchProblem: z.string().trim().min(1).max(10_000).optional(),
+    methods: z.array(z.string().trim().min(1)).optional(),
+    findings: z.array(z.string().trim().min(1)).optional(),
+    limitations: z.array(z.string().trim().min(1)).optional(),
+    enrichmentMethod: z.string().trim().min(1).max(200).optional(),
+    enrichedAt: z.iso.datetime().optional(),
+  }),
+  z.object({
+    kind: z.literal("claim"),
+    status: z.enum(["draft", "supported", "contradicted", "needs-evidence"]),
+  }),
+  z.object({
+    kind: z.literal("experiment"),
+    hypothesis: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    kind: z.literal("run"),
+    commitSha: z
+      .string()
+      .regex(/^[a-f0-9]{7,64}$/i)
+      .optional(),
+    status: z.enum(["planned", "running", "completed", "failed"]),
+  }),
+]);
+
 const objectInputSchema = z
   .object({
     id: z.string().trim().min(1).optional(),
@@ -8,7 +61,7 @@ const objectInputSchema = z
     type: z.enum(["artifact", "source", "claim", "experiment", "run"]),
     title: z.string().trim().min(1).max(500),
     description: z.string().trim().max(10_000).default(""),
-    payload: z.record(z.string(), z.unknown()).default({}),
+    payload: objectPayloadSchema,
   })
   .superRefine((value, context) => {
     if (value.type !== value.payload.kind) {
@@ -16,6 +69,18 @@ const objectInputSchema = z
         code: "custom",
         message: "Object type must match payload kind.",
         path: ["payload", "kind"],
+      });
+    }
+    if (
+      value.payload.kind === "source" &&
+      value.payload.status !== "placeholder" &&
+      !value.payload.url &&
+      !value.payload.citation
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A source requires a URL or citation.",
+        path: ["payload"],
       });
     }
   });
@@ -39,6 +104,16 @@ const projectInputSchema = z.object({
   id: z.string().trim().min(1),
   name: z.string().trim().min(1).max(500),
   path: z.string().trim().min(1).max(4_000),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+});
+
+const provenanceEventInputSchema = z.object({
+  id: z.string().trim().min(1).optional(),
+  projectId: z.string().trim().min(1),
+  objectId: z.string().trim().min(1).optional(),
+  action: z.string().trim().min(1).max(200),
+  actorType: z.enum(["human", "agent", "system"]),
+  actorId: z.string().trim().min(1).optional(),
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
@@ -76,6 +151,17 @@ const mapRelationship = (row) => ({
   fromObjectId: row.from_object_id,
   toObjectId: row.to_object_id,
   type: row.type,
+  createdAt: row.created_at,
+});
+
+const mapProvenanceEvent = (row) => ({
+  id: row.id,
+  projectId: row.project_id,
+  ...(row.object_id ? { objectId: row.object_id } : {}),
+  action: row.action,
+  actorType: row.actor_type,
+  ...(row.actor_id ? { actorId: row.actor_id } : {}),
+  metadata: parseJson(row.metadata),
   createdAt: row.created_at,
 });
 
@@ -221,7 +307,20 @@ export function createResearchRepository(database) {
         .get(input.id, input.projectId);
       if (!existing) throw new Error("Source does not belong to the project.");
       const now = new Date().toISOString();
-      const payload = { ...parseJson(existing.payload), ...input.payload };
+      const payload = objectPayloadSchema.parse({
+        ...parseJson(existing.payload),
+        ...input.payload,
+      });
+      if (payload.kind !== "source") {
+        throw new Error("Source payload kind cannot be changed.");
+      }
+      if (
+        payload.status !== "placeholder" &&
+        !payload.url &&
+        !payload.citation
+      ) {
+        throw new Error("A source requires a URL or citation.");
+      }
       database.exec("BEGIN IMMEDIATE");
       try {
         database
@@ -309,6 +408,54 @@ export function createResearchRepository(database) {
           .prepare("SELECT * FROM research_relationships WHERE id = ?")
           .get(id),
       );
+    },
+
+    createProvenanceEvent(input) {
+      const parsed = provenanceEventInputSchema.parse(input);
+      ensureProject(parsed.projectId);
+      if (parsed.objectId) {
+        const object = database
+          .prepare(
+            "SELECT id FROM research_objects WHERE id = ? AND project_id = ?",
+          )
+          .get(parsed.objectId, parsed.projectId);
+        if (!object) {
+          throw new Error("Provenance object does not belong to the project.");
+        }
+      }
+      const id = parsed.id ?? randomUUID();
+      const now = new Date().toISOString();
+      database
+        .prepare(
+          `INSERT INTO provenance_events
+            (id, project_id, object_id, action, actor_type, actor_id, metadata, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          parsed.projectId,
+          parsed.objectId ?? null,
+          parsed.action,
+          parsed.actorType,
+          parsed.actorId ?? null,
+          JSON.stringify(parsed.metadata),
+          now,
+        );
+      return mapProvenanceEvent(
+        database
+          .prepare("SELECT * FROM provenance_events WHERE id = ?")
+          .get(id),
+      );
+    },
+
+    listProvenance(projectId) {
+      ensureProject(projectId);
+      return database
+        .prepare(
+          "SELECT * FROM provenance_events WHERE project_id = ? ORDER BY created_at, id",
+        )
+        .all(projectId)
+        .map(mapProvenanceEvent);
     },
 
     listProject(projectId) {

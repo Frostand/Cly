@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-import type { ResearchObjectPayload } from "./research-types";
+import type {
+  ArtifactPayload,
+  ClaimPayload,
+  ExperimentPayload,
+  RunPayload,
+  SourcePayload,
+} from "./research-types";
 
 const payloadSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -14,6 +20,7 @@ const payloadSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("source"),
+    status: z.enum(["placeholder", "resolved"]).default("resolved"),
     authors: z.array(z.string().trim().min(1)).optional(),
     citation: z.string().trim().min(1).optional(),
     doi: z.string().trim().min(1).optional(),
@@ -65,6 +72,7 @@ export const researchObjectInputSchema = z
   .superRefine((value, context) => {
     if (
       value.payload.kind === "source" &&
+      value.payload.status !== "placeholder" &&
       !value.payload.url &&
       !value.payload.citation
     ) {
@@ -76,16 +84,41 @@ export const researchObjectInputSchema = z
     }
   });
 
-export interface ResearchObject {
+interface ResearchObjectBase {
   id: string;
   projectId: string;
   title: string;
   description: string;
-  type: ResearchObjectPayload["kind"];
-  payload: ResearchObjectPayload;
   createdAt: string;
   updatedAt: string;
 }
+
+export type Artifact = ResearchObjectBase & {
+  type: "artifact";
+  payload: ArtifactPayload;
+};
+
+export type Source = ResearchObjectBase & {
+  type: "source";
+  payload: SourcePayload;
+};
+
+export type Claim = ResearchObjectBase & {
+  type: "claim";
+  payload: ClaimPayload;
+};
+
+export type Experiment = ResearchObjectBase & {
+  type: "experiment";
+  payload: ExperimentPayload;
+};
+
+export type Run = ResearchObjectBase & {
+  type: "run";
+  payload: RunPayload;
+};
+
+export type ResearchObject = Artifact | Source | Claim | Experiment | Run;
 
 export type ResearchObjectInput = z.input<typeof researchObjectInputSchema>;
 
@@ -101,5 +134,5 @@ export function createResearchObject(
     type: parsed.payload.kind,
     createdAt: timestamp,
     updatedAt: timestamp,
-  };
+  } as ResearchObject;
 }

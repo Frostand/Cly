@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createProvenanceEvent } from "./provenance-event";
 import { createRelationship } from "./relationship";
+import type { Claim, Experiment, Run, Source } from "./research-object";
 import { createResearchObject } from "./research-object";
 
 const now = new Date("2026-07-10T12:00:00.000Z");
@@ -32,6 +33,65 @@ describe("research domain", () => {
         payload: { kind: "source" },
       }),
     ).toThrow("A source requires a URL or citation");
+  });
+
+  it("allows explicitly marked source placeholders", () => {
+    expect(
+      createResearchObject({
+        id: "source-placeholder",
+        projectId: "project-1",
+        title: "Untitled source",
+        payload: { kind: "source", status: "placeholder" },
+      }),
+    ).toMatchObject({
+      type: "source",
+      payload: { kind: "source", status: "placeholder" },
+    });
+  });
+
+  it("exposes correlated source, claim, experiment, and run primitives", () => {
+    const objects = [
+      createResearchObject({
+        id: "source-1",
+        projectId: "project-1",
+        title: "Paper",
+        payload: { kind: "source", citation: "Example et al. (2026)" },
+      }),
+      createResearchObject({
+        id: "claim-1",
+        projectId: "project-1",
+        title: "Claim",
+        payload: { kind: "claim", status: "draft" },
+      }),
+      createResearchObject({
+        id: "experiment-1",
+        projectId: "project-1",
+        title: "Experiment",
+        payload: { kind: "experiment", hypothesis: "Recall improves." },
+      }),
+      createResearchObject({
+        id: "run-1",
+        projectId: "project-1",
+        title: "Run",
+        payload: { kind: "run", status: "planned" },
+      }),
+    ];
+
+    const source = objects.find(
+      (object): object is Source => object.type === "source",
+    );
+    const claim = objects.find(
+      (object): object is Claim => object.type === "claim",
+    );
+    const experiment = objects.find(
+      (object): object is Experiment => object.type === "experiment",
+    );
+    const run = objects.find((object): object is Run => object.type === "run");
+
+    expect(source?.payload.kind).toBe("source");
+    expect(claim?.payload.status).toBe("draft");
+    expect(experiment?.payload.hypothesis).toBe("Recall improves.");
+    expect(run?.payload.status).toBe("planned");
   });
 
   it("preserves validated literature ranking provenance", () => {
