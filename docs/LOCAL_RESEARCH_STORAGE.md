@@ -18,10 +18,12 @@ than copied into SQLite.
 
 Every research object, relationship, and provenance event has a required
 `project_id`. SQLite foreign keys are enabled for every connection. Cascades
-remove dependent graph rows when a project is removed. Relationship insert
-triggers reject a source or target object from another project, including writes
-that bypass the repository. The repository also validates this before writing
-and records provenance for object and relationship creation.
+remove dependent graph rows when a project is removed. Relationship triggers
+reject inserts or updates whose source or target belongs to another project.
+Provenance triggers likewise require every referenced object to belong to the
+event's project. These constraints cover writes that bypass the repository. The
+repository also validates relationships before writing and records provenance
+for object and relationship creation.
 
 No API accepts a filesystem path as research identity. The local service uses a
 registered project ID; filesystem access, when later introduced, must validate
