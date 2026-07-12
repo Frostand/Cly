@@ -25,7 +25,7 @@
     "dist": "pnpm package",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest",
+    "test": "vitest run",
     "test:research": "vitest run src/lib/cly",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
