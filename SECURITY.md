@@ -18,6 +18,19 @@ Include the affected version or commit, operating system, reproduction steps, im
 - Private datasets and generated research artifacts are excluded from Git by default.
 - Release artifacts must be signed before distribution outside the development team.
 
+## Automated controls
+
+Pull requests run dependency review, the production dependency license policy,
+and CodeQL analysis. CodeQL and the license policy also run on `main` and on a
+weekly schedule. Dependabot proposes grouped weekly updates for pnpm and GitHub
+Actions dependencies.
+
+Repository administrators must keep GitHub secret scanning and push protection
+enabled. These settings and the required branch rules are described in the
+[delivery workflow](docs/DELIVERY_WORKFLOW.md). Automated checks supplement,
+but do not replace, a focused threat-model review whenever local-service, IPC,
+filesystem, command, network, provider, or repository capabilities change.
+
 ## Supported versions
 
 Only the current private development branch receives security fixes until the first tagged Cly release.
