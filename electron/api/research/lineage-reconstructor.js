@@ -79,6 +79,8 @@ const fixedGitArguments = (operationArguments) => [
   "-c",
   "core.pager=cat",
   "-c",
+  "core.quotePath=false",
+  "-c",
   "credential.helper=",
   "-c",
   "diff.external=",
@@ -147,7 +149,8 @@ function safeRelative(root, candidate) {
 
 function normalizeReference(value) {
   if (typeof value !== "string") return null;
-  const normalized = value.trim().replaceAll("\\", "/").replace(/^\.\//, "");
+  let normalized = value.trim().normalize("NFC").replaceAll("\\", "/");
+  while (normalized.startsWith("./")) normalized = normalized.slice(2);
   if (
     !normalized ||
     normalized.length > 4_000 ||
@@ -347,14 +350,107 @@ function parseCommits(output) {
   return commits;
 }
 
-function isPathContinuation(character) {
-  return character !== undefined && /[A-Za-z0-9._~%+@=/-]/.test(character);
+function structuredScalar(line) {
+  const separator = line.search(/[:=]/);
+  if (separator === -1) return null;
+  let value = line.slice(separator + 1).trim();
+  let quote = null;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if ((character === '"' || character === "'") && value[index - 1] !== "\\") {
+      quote = quote === character ? null : (quote ?? character);
+    }
+    if (
+      character === "#" &&
+      quote === null &&
+      /\s/.test(value[index - 1] ?? "")
+    ) {
+      value = value.slice(0, index).trimEnd();
+      break;
+    }
+  }
+  if (value.endsWith(",")) value = value.slice(0, -1).trimEnd();
+  const first = value[0];
+  if ((first === '"' || first === "'") && value.at(-1) === first) {
+    if (first === '"') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+    return value.slice(1, -1).replaceAll("''", "'");
+  }
+  return value;
 }
 
-function lineReferencing(
+function jsonContainsReference(value, reference, assertWithinTime) {
+  assertWithinTime?.();
+  if (typeof value === "string") return normalizeReference(value) === reference;
+  if (Array.isArray(value)) {
+    return value.some((item) =>
+      jsonContainsReference(item, reference, assertWithinTime),
+    );
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value).some((item) =>
+      jsonContainsReference(item, reference, assertWithinTime),
+    );
+  }
+  return false;
+}
+
+function structuredValueReferencing(
   text,
   reference,
-  { assertWithinTime, beforeReferenceScan, citation = false } = {},
+  { assertWithinTime, beforeReferenceScan } = {},
+) {
+  const normalizedReference = normalizeReference(reference);
+  if (!normalizedReference) return null;
+  beforeReferenceScan?.();
+  assertWithinTime?.();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // YAML and TOML are parsed as complete scalar values below.
+  }
+  if (
+    json !== null &&
+    jsonContainsReference(json, normalizedReference, assertWithinTime)
+  ) {
+    return { line: 1, text: text.trim().slice(0, 1_000) };
+  }
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    beforeReferenceScan?.();
+    assertWithinTime?.();
+    const line = lines[index];
+    if (normalizeReference(structuredScalar(line)) === normalizedReference) {
+      return { line: index + 1, text: line.trim().slice(0, 1_000) };
+    }
+  }
+  return null;
+}
+
+function reportReferenceTokens(line, assertWithinTime) {
+  const tokens = [];
+  const delimited = /`([^`]+)`|"([^"]+)"|'([^']+)'|<([^>]+)>/gu;
+  for (const match of line.matchAll(delimited)) {
+    assertWithinTime?.();
+    tokens.push(match[1] ?? match[2] ?? match[3] ?? match[4]);
+  }
+  for (const token of line.matchAll(/\S+/gu)) {
+    assertWithinTime?.();
+    tokens.push(token[0]);
+  }
+  return tokens;
+}
+
+function reportTokenReferencing(
+  text,
+  reference,
+  { assertWithinTime, beforeReferenceScan } = {},
 ) {
   const normalizedReference = normalizeReference(reference);
   if (!normalizedReference) return null;
@@ -363,19 +459,14 @@ function lineReferencing(
     beforeReferenceScan?.();
     assertWithinTime?.();
     const line = lines[index];
-    if (citation && !CITATION_PATTERN.test(line)) continue;
-    const normalizedLine = line.replaceAll("\\", "/");
-    let fromIndex = 0;
-    while (fromIndex <= normalizedLine.length - normalizedReference.length) {
-      assertWithinTime?.();
-      const matchIndex = normalizedLine.indexOf(normalizedReference, fromIndex);
-      if (matchIndex === -1) break;
-      const before = normalizedLine[matchIndex - 1];
-      const after = normalizedLine[matchIndex + normalizedReference.length];
-      if (!isPathContinuation(before) && !isPathContinuation(after)) {
-        return { line: index + 1, text: line.trim().slice(0, 1_000) };
-      }
-      fromIndex = matchIndex + 1;
+    if (!CITATION_PATTERN.test(line)) continue;
+    const references = reportReferenceTokens(line, assertWithinTime);
+    if (
+      references.some(
+        (token) => normalizeReference(token) === normalizedReference,
+      )
+    ) {
+      return { line: index + 1, text: line.trim().slice(0, 1_000) };
     }
   }
   return null;
@@ -609,7 +700,7 @@ export function createLineageReconstructor(repository, options = {}) {
         assertWithinTime();
         const experiment = experiments.get(notebook.experimentPath);
         if (!experiment) continue;
-        const notebookConfigLink = lineReferencing(
+        const notebookConfigLink = structuredValueReferencing(
           experiment.text,
           notebook.file.path,
           { assertWithinTime, beforeReferenceScan },
@@ -625,19 +716,23 @@ export function createLineageReconstructor(repository, options = {}) {
         if (!commit) continue;
         for (const artifact of artifacts) {
           assertWithinTime();
-          const artifactLink = lineReferencing(experiment.text, artifact.path, {
-            assertWithinTime,
-            beforeReferenceScan,
-          });
+          const artifactLink = structuredValueReferencing(
+            experiment.text,
+            artifact.path,
+            { assertWithinTime, beforeReferenceScan },
+          );
           if (!artifactLink) continue;
           if (!(await verifyDiscoveredFile(artifact, beforeFileRead))) continue;
           for (const report of reports) {
             assertWithinTime();
-            const claimLink = lineReferencing(report.text, artifact.path, {
-              assertWithinTime,
-              beforeReferenceScan,
-              citation: true,
-            });
+            const claimLink = reportTokenReferencing(
+              report.text,
+              artifact.path,
+              {
+                assertWithinTime,
+                beforeReferenceScan,
+              },
+            );
             if (!claimLink) continue;
             const chain = [
               {
