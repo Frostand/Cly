@@ -1,6 +1,6 @@
 import { getDesktopApi } from "./electron";
 
-export const API_SESSION_TOKEN_HEADER = "x-dream-api-token";
+export const API_SESSION_TOKEN_HEADER = "x-cly-api-token";
 
 export function getApiSessionToken(): string | null {
   return getDesktopApi()?.apiSessionToken ?? null;

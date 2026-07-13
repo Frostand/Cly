@@ -1,0 +1,19 @@
+-- Review and confidence are explicit persisted facts. Existing rows are
+-- deliberately backfilled as unreviewed rather than inferred as approved.
+-- dream:ensure-column research_objects origin TEXT NOT NULL DEFAULT 'human'
+--> statement-breakpoint
+-- dream:ensure-column research_objects review_state TEXT NOT NULL DEFAULT 'unreviewed'
+--> statement-breakpoint
+-- dream:ensure-column research_objects reviewed_by TEXT NULL
+--> statement-breakpoint
+-- dream:ensure-column research_objects reviewed_at TEXT NULL
+--> statement-breakpoint
+-- dream:ensure-column research_relationships origin TEXT NOT NULL DEFAULT 'human'
+--> statement-breakpoint
+-- dream:ensure-column research_relationships review_state TEXT NOT NULL DEFAULT 'unreviewed'
+--> statement-breakpoint
+-- dream:ensure-column research_relationships confidence REAL NULL
+--> statement-breakpoint
+-- dream:ensure-column research_relationships reviewed_by TEXT NULL
+--> statement-breakpoint
+-- dream:ensure-column research_relationships reviewed_at TEXT NULL

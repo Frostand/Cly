@@ -27,7 +27,6 @@ import {
 const CLAUDE_PERMISSION_MODE_MAP = {
   "ask-permissions": "default",
   "accept-edits": "acceptEdits",
-  "bypass-permissions": "bypassPermissions",
 };
 
 const isClaudeImageMediaType = (mediaType) =>
@@ -164,7 +163,10 @@ const getClaudeToolSearchQuery = (input) => {
   return typeof value === "string" ? value.trim() : "";
 };
 
-const createClaudePermissionHandler = (writer, { mode }) => {
+const createClaudePermissionHandler = (
+  writer,
+  { mode, projectId, projectPath, runId },
+) => {
   return async (toolName, input, options) => {
     const normalizedToolName = normalizeClaudeToolName(toolName);
     const toolUseID =
@@ -191,17 +193,6 @@ const createClaudePermissionHandler = (writer, { mode }) => {
       (CLAUDE_ACCEPT_EDITS_ALLOWED_TOOLS.has(normalizedToolName) ||
         CLAUDE_ACCEPT_EDITS_ALLOWED_MCP_TOOLS.has(normalizedToolName))
     ) {
-      return {
-        behavior: "allow",
-        ...(options?.suggestions
-          ? { updatedPermissions: options.suggestions }
-          : {}),
-        ...(toolUseID ? { toolUseID } : {}),
-        updatedInput: input,
-      };
-    }
-
-    if (normalizedToolName !== "askuserquestion" && mode === "bypass") {
       return {
         behavior: "allow",
         ...(options?.suggestions
@@ -273,6 +264,7 @@ const createClaudePermissionHandler = (writer, { mode }) => {
 
     const response = await waitForToolApproval({
       id: approvalId,
+      projectId: projectId ?? projectPath,
       provider: "anthropic",
       request: {
         input,
@@ -286,6 +278,7 @@ const createClaudePermissionHandler = (writer, { mode }) => {
         },
         toolName,
       },
+      runId: runId ?? toolCallId,
       signal: options?.signal,
     });
 
@@ -371,9 +364,11 @@ export const streamClaudeResponse = async ({
   messages,
   model,
   projectReferencesPrompt,
+  projectId,
   projectPath,
   reasoningEffort,
   responseMessageMetadata,
+  runId,
 }) => {
   const usesReasoningModel =
     getModelReasoningEfforts("anthropic", model).length > 0;
@@ -383,9 +378,7 @@ export const streamClaudeResponse = async ({
       ? "ask"
       : claudePermissionMode === "accept-edits"
         ? "accept-edits"
-        : claudePermissionMode === "bypass-permissions"
-          ? "bypass"
-          : "ask";
+        : "ask";
   const claudeExecutablePath = await resolveCliCommandPath("claude");
   const claudeProjectTools = createClaudeProjectTools({
     claudePermissionMode,
@@ -402,6 +395,9 @@ export const streamClaudeResponse = async ({
         : {}),
       canUseTool: createClaudePermissionHandler(writer, {
         mode: claudePermissionHandlerMode,
+        projectId,
+        projectPath,
+        runId,
       }),
       streamingInput: usesClaudeImageInput ? "always" : "auto",
       continue: false,
@@ -436,9 +432,6 @@ export const streamClaudeResponse = async ({
         agentMode === "plan"
           ? "plan"
           : CLAUDE_PERMISSION_MODE_MAP[claudePermissionMode],
-      ...(agentMode !== "plan" && claudePermissionMode === "bypass-permissions"
-        ? { allowDangerouslySkipPermissions: true }
-        : {}),
       ...(usesReasoningModel
         ? { effort: CLAUDE_REASONING_EFFORT_MAP[reasoningEffort ?? "medium"] }
         : {}),

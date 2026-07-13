@@ -29,6 +29,20 @@
       "when": 1783890000000,
       "tag": "0003_research_project_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1783900000000,
+      "tag": "0004_research_review_semantics",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1783910000000,
+      "tag": "0005_provenance_integrity",
+      "breakpoints": true
     }
   ]
 }

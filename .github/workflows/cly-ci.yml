@@ -28,6 +28,9 @@ jobs:
             command: pnpm test
           - name: web-build
             command: pnpm vite:build
+          - name: end-to-end
+            command: xvfb-run --auto-servernum pnpm test:e2e
+            browser: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -42,6 +45,9 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install Playwright browser
+        if: matrix.browser
+        run: pnpm exec playwright install --with-deps chromium
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
 

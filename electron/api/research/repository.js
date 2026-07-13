@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 const objectPayloadSchema = z.discriminatedUnion("kind", [
@@ -50,6 +50,10 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
         "Needs review",
       ])
       .optional(),
+    reproducibilityStatus: z
+      .enum(["not-assessed", "passed", "failed"])
+      .optional(),
+    openRiskCount: z.number().int().min(0).optional(),
   }),
   z.object({
     kind: z.literal("experiment"),
@@ -72,6 +76,9 @@ const objectInputSchema = z
     type: z.enum(["artifact", "source", "claim", "experiment", "run"]),
     title: z.string().trim().min(1).max(500),
     description: z.string().trim().max(10_000).default(""),
+    origin: z
+      .enum(["human", "imported", "inferred", "system"])
+      .default("human"),
     payload: objectPayloadSchema,
   })
   .superRefine((value, context) => {
@@ -109,6 +116,15 @@ const relationshipInputSchema = z.object({
     "tests",
     "implements",
   ]),
+  origin: z.enum(["human", "imported", "inferred", "system"]).default("human"),
+});
+
+const relationshipReviewInputSchema = z.object({
+  id: z.string().trim().min(1),
+  projectId: z.string().trim().min(1),
+  reviewState: z.enum(["approved", "rejected"]),
+  reviewerId: z.string().trim().min(1).max(200),
+  confidence: z.number().finite().min(0).max(1).nullable().default(null),
 });
 
 const claimStatusInputSchema = z.object({
@@ -123,6 +139,7 @@ const claimStatusInputSchema = z.object({
     "Invalidated",
     "Needs review",
   ]),
+  reviewerId: z.string().trim().min(1).max(200).default("local-user"),
 });
 
 const canonicalClaimStatus = (reviewStatus) => {
@@ -201,6 +218,10 @@ const mapObject = (row) => ({
   title: row.title,
   description: row.description,
   payload: parseJson(row.payload),
+  origin: row.origin ?? "human",
+  reviewState: row.review_state ?? "unreviewed",
+  reviewedBy: row.reviewed_by ?? null,
+  reviewedAt: row.reviewed_at ?? null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -211,6 +232,11 @@ const mapRelationship = (row) => ({
   fromObjectId: row.from_object_id,
   toObjectId: row.to_object_id,
   type: row.type,
+  origin: row.origin ?? "human",
+  reviewState: row.review_state ?? "unreviewed",
+  confidence: typeof row.confidence === "number" ? row.confidence : null,
+  reviewedBy: row.reviewed_by ?? null,
+  reviewedAt: row.reviewed_at ?? null,
   createdAt: row.created_at,
 });
 
@@ -230,9 +256,112 @@ const mapProvenanceEvent = (row) => ({
   ...(row.actor_id ? { actorId: row.actor_id } : {}),
   metadata: parseJson(row.metadata),
   createdAt: row.created_at,
+  ...(Number.isInteger(row.sequence) ? { sequence: row.sequence } : {}),
+  ...(row.previous_hash !== undefined
+    ? { previousHash: row.previous_hash }
+    : {}),
+  ...(row.event_hash ? { eventHash: row.event_hash } : {}),
 });
 
+const hashProvenanceRow = (row, sequence, previousHash) =>
+  createHash("sha256")
+    .update(
+      JSON.stringify([
+        row.id,
+        row.project_id,
+        row.object_id ?? null,
+        row.action,
+        row.actor_type,
+        row.actor_id ?? null,
+        row.metadata,
+        row.created_at,
+        sequence,
+        previousHash,
+      ]),
+    )
+    .digest("hex");
+
 export function createResearchRepository(database) {
+  const provenanceColumns = database
+    .prepare("PRAGMA table_info(provenance_events)")
+    .all();
+  const hasProvenanceChain = ["sequence", "previous_hash", "event_hash"].every(
+    (column) => provenanceColumns.some((row) => row.name === column),
+  );
+
+  if (hasProvenanceChain) {
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      const projectRows = database.prepare("SELECT id FROM projects").all();
+      for (const { id: projectId } of projectRows) {
+        const rows = database
+          .prepare(
+            `SELECT * FROM provenance_events
+             WHERE project_id = ? ORDER BY created_at, rowid`,
+          )
+          .all(projectId);
+        const needsBackfill = rows.some(
+          (row) =>
+            !Number.isInteger(row.sequence) ||
+            !row.event_hash ||
+            row.previous_hash === undefined,
+        );
+        let previousHash = null;
+        let sequence = 0;
+        for (const row of rows) {
+          sequence += 1;
+          const eventHash = needsBackfill
+            ? hashProvenanceRow(row, sequence, previousHash)
+            : row.event_hash;
+          if (needsBackfill) {
+            database
+              .prepare(
+                `UPDATE provenance_events
+                 SET sequence = ?, previous_hash = ?, event_hash = ?
+                 WHERE id = ?`,
+              )
+              .run(sequence, previousHash, eventHash, row.id);
+          }
+          previousHash = eventHash;
+        }
+        const existingHead = database
+          .prepare(
+            "SELECT project_id FROM provenance_heads WHERE project_id = ?",
+          )
+          .get(projectId);
+        if (sequence > 0 && (needsBackfill || !existingHead)) {
+          database
+            .prepare(
+              `INSERT INTO provenance_heads
+                 (project_id, event_count, last_sequence, last_hash)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(project_id) DO UPDATE SET
+                 event_count = excluded.event_count,
+                 last_sequence = excluded.last_sequence,
+                 last_hash = excluded.last_hash`,
+            )
+            .run(projectId, sequence, sequence, previousHash);
+        }
+      }
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    database.exec(`
+      CREATE TRIGGER IF NOT EXISTS provenance_events_immutable_update
+      BEFORE UPDATE ON provenance_events
+      BEGIN
+        SELECT RAISE(ABORT, 'Provenance events are immutable');
+      END;
+      CREATE TRIGGER IF NOT EXISTS provenance_events_immutable_delete
+      BEFORE DELETE ON provenance_events
+      BEGIN
+        SELECT RAISE(ABORT, 'Provenance events are immutable');
+      END;
+    `);
+  }
+
   const ensureProject = (projectId) => {
     const project = database
       .prepare("SELECT id FROM projects WHERE id = ?")
@@ -254,22 +383,73 @@ export function createResearchRepository(database) {
     },
     now,
   ) => {
-    database
-      .prepare(
-        `INSERT INTO provenance_events
-          (id, project_id, object_id, action, actor_type, actor_id, metadata, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+    const metadataJson = JSON.stringify(metadata);
+    if (hasProvenanceChain) {
+      const head = database
+        .prepare("SELECT * FROM provenance_heads WHERE project_id = ?")
+        .get(projectId);
+      const sequence = (head?.last_sequence ?? 0) + 1;
+      const previousHash = head?.last_hash ?? null;
+      const row = {
         id,
-        projectId,
-        objectId ?? null,
+        project_id: projectId,
+        object_id: objectId ?? null,
         action,
-        actorType,
-        actorId ?? null,
-        JSON.stringify(metadata),
-        now,
-      );
+        actor_type: actorType,
+        actor_id: actorId ?? null,
+        metadata: metadataJson,
+        created_at: now,
+      };
+      const eventHash = hashProvenanceRow(row, sequence, previousHash);
+      database
+        .prepare(
+          `INSERT INTO provenance_events
+            (id, project_id, object_id, action, actor_type, actor_id, metadata,
+             created_at, sequence, previous_hash, event_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          projectId,
+          objectId ?? null,
+          action,
+          actorType,
+          actorId ?? null,
+          metadataJson,
+          now,
+          sequence,
+          previousHash,
+          eventHash,
+        );
+      database
+        .prepare(
+          `INSERT INTO provenance_heads
+             (project_id, event_count, last_sequence, last_hash)
+           VALUES (?, 1, ?, ?)
+           ON CONFLICT(project_id) DO UPDATE SET
+             event_count = provenance_heads.event_count + 1,
+             last_sequence = excluded.last_sequence,
+             last_hash = excluded.last_hash`,
+        )
+        .run(projectId, sequence, eventHash);
+    } else {
+      database
+        .prepare(
+          `INSERT INTO provenance_events
+            (id, project_id, object_id, action, actor_type, actor_id, metadata, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          projectId,
+          objectId ?? null,
+          action,
+          actorType,
+          actorId ?? null,
+          metadataJson,
+          now,
+        );
+    }
     return mapProvenanceEvent(
       database.prepare("SELECT * FROM provenance_events WHERE id = ?").get(id),
     );
@@ -334,8 +514,9 @@ export function createResearchRepository(database) {
         database
           .prepare(
             `INSERT INTO research_objects
-              (id, project_id, type, title, description, payload, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              (id, project_id, type, title, description, payload, origin, review_state,
+               reviewed_by, reviewed_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'unreviewed', NULL, NULL, ?, ?)`,
           )
           .run(
             id,
@@ -344,6 +525,7 @@ export function createResearchRepository(database) {
             parsed.title,
             parsed.description,
             JSON.stringify(parsed.payload),
+            parsed.origin,
             now,
             now,
           );
@@ -453,6 +635,76 @@ export function createResearchRepository(database) {
       if (previousPayload.kind !== "claim") {
         throw new Error("Claim payload kind cannot be changed.");
       }
+      if (
+        parsed.reviewStatus === "Strong" ||
+        parsed.reviewStatus === "Paper-ready"
+      ) {
+        const reviewedEvidence = database
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM research_relationships
+             WHERE project_id = ? AND to_object_id = ?
+               AND type IN ('supports', 'tests') AND review_state = 'approved'`,
+          )
+          .get(parsed.projectId, parsed.id);
+        if (!reviewedEvidence || reviewedEvidence.count < 1) {
+          throw new Error(
+            "Strong and Paper-ready claims require reviewed supporting evidence.",
+          );
+        }
+        const reviewedContradictions = database
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM research_relationships
+             WHERE project_id = ? AND to_object_id = ?
+               AND type = 'contradicts' AND review_state = 'approved'`,
+          )
+          .get(parsed.projectId, parsed.id);
+        if (reviewedContradictions?.count > 0) {
+          throw new Error(
+            "Strong and Paper-ready claims cannot have unresolved reviewed contradictions.",
+          );
+        }
+      }
+      if (parsed.reviewStatus === "Paper-ready") {
+        if (previousPayload.reproducibilityStatus !== "passed") {
+          throw new Error(
+            "Paper-ready claims require a passed reproducibility assessment.",
+          );
+        }
+        if ((previousPayload.openRiskCount ?? 0) > 0) {
+          throw new Error(
+            "Paper-ready claims cannot have open blocking risks.",
+          );
+        }
+        const completedEvidenceRun = database
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM research_relationships tests
+             JOIN research_objects experiment
+               ON experiment.id = tests.from_object_id
+              AND experiment.project_id = tests.project_id
+              AND experiment.type = 'experiment'
+             JOIN research_relationships generated
+               ON generated.to_object_id = experiment.id
+               AND generated.project_id = experiment.project_id
+               AND generated.type = 'generated-by'
+               AND generated.review_state = 'approved'
+             JOIN research_objects run
+               ON run.id = generated.from_object_id
+              AND run.project_id = generated.project_id
+              AND run.type = 'run'
+             WHERE tests.project_id = ? AND tests.to_object_id = ?
+               AND tests.type = 'tests' AND tests.review_state = 'approved'
+               AND json_extract(run.payload, '$.status') = 'completed'`,
+          )
+          .get(parsed.projectId, parsed.id);
+        if (!completedEvidenceRun || completedEvidenceRun.count < 1) {
+          throw new Error(
+            "Paper-ready claims require a completed reviewed experiment run.",
+          );
+        }
+      }
       const payload = objectPayloadSchema.parse({
         ...previousPayload,
         status: canonicalClaimStatus(parsed.reviewStatus),
@@ -474,6 +726,7 @@ export function createResearchRepository(database) {
             metadata: {
               from: previousPayload.reviewStatus ?? previousPayload.status,
               to: parsed.reviewStatus,
+              reviewerId: parsed.reviewerId,
             },
           },
           now,
@@ -511,8 +764,9 @@ export function createResearchRepository(database) {
         database
           .prepare(
             `INSERT INTO research_relationships
-              (id, project_id, from_object_id, to_object_id, type, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+              (id, project_id, from_object_id, to_object_id, type, origin,
+               review_state, confidence, reviewed_by, reviewed_at, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'unreviewed', NULL, NULL, NULL, ?)`,
           )
           .run(
             id,
@@ -520,6 +774,7 @@ export function createResearchRepository(database) {
             parsed.fromObjectId,
             parsed.toObjectId,
             parsed.type,
+            parsed.origin,
             now,
           );
         insertProvenance(
@@ -539,6 +794,62 @@ export function createResearchRepository(database) {
         database
           .prepare("SELECT * FROM research_relationships WHERE id = ?")
           .get(id),
+      );
+    },
+
+    reviewRelationship(input) {
+      const parsed = relationshipReviewInputSchema.parse(input);
+      ensureProject(parsed.projectId);
+      const existing = database
+        .prepare(
+          "SELECT id FROM research_relationships WHERE id = ? AND project_id = ?",
+        )
+        .get(parsed.id, parsed.projectId);
+      if (!existing) {
+        throw new Error(
+          "Research relationship does not belong to the project.",
+        );
+      }
+      const now = new Date().toISOString();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database
+          .prepare(
+            `UPDATE research_relationships
+             SET review_state = ?, confidence = ?, reviewed_by = ?, reviewed_at = ?
+             WHERE id = ? AND project_id = ?`,
+          )
+          .run(
+            parsed.reviewState,
+            parsed.confidence,
+            parsed.reviewerId,
+            now,
+            parsed.id,
+            parsed.projectId,
+          );
+        insertProvenance(
+          {
+            action: "relationship.reviewed",
+            objectId: null,
+            projectId: parsed.projectId,
+            actorId: parsed.reviewerId,
+            metadata: {
+              relationshipId: parsed.id,
+              reviewState: parsed.reviewState,
+              confidence: parsed.confidence,
+            },
+          },
+          now,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      return mapRelationship(
+        database
+          .prepare("SELECT * FROM research_relationships WHERE id = ?")
+          .get(parsed.id),
       );
     },
 
@@ -618,6 +929,46 @@ export function createResearchRepository(database) {
         )
         .all(projectId, limit)
         .map(mapProvenanceEvent);
+    },
+
+    verifyProvenance(projectId) {
+      ensureProject(projectId);
+      if (!hasProvenanceChain) {
+        return { valid: false, reason: "Provenance chain is unavailable." };
+      }
+      const rows = database
+        .prepare(
+          `SELECT * FROM provenance_events
+           WHERE project_id = ? ORDER BY sequence`,
+        )
+        .all(projectId);
+      const head = database
+        .prepare("SELECT * FROM provenance_heads WHERE project_id = ?")
+        .get(projectId);
+      let previousHash = null;
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const sequence = index + 1;
+        const expectedHash = hashProvenanceRow(row, sequence, previousHash);
+        if (
+          row.sequence !== sequence ||
+          row.previous_hash !== previousHash ||
+          row.event_hash !== expectedHash
+        ) {
+          return {
+            valid: false,
+            reason: `Provenance chain mismatch at sequence ${sequence}.`,
+          };
+        }
+        previousHash = expectedHash;
+      }
+      const valid =
+        (head?.event_count ?? 0) === rows.length &&
+        (head?.last_sequence ?? 0) === rows.length &&
+        (head?.last_hash ?? null) === previousHash;
+      return valid
+        ? { valid: true, eventCount: rows.length, headHash: previousHash }
+        : { valid: false, reason: "Provenance head does not match the chain." };
     },
   };
 }

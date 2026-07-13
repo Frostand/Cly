@@ -173,18 +173,6 @@ describe("local service smoke suite", () => {
     expect(experiment.status).toBe(201);
     const experimentObject = await experiment.json();
 
-    const claimStatus = await request(
-      service.port,
-      `/api/projects/research-project/research/claims/${claimObject.id}`,
-      {
-        body: JSON.stringify({
-          reviewStatus: "Strong",
-        }),
-        method: "PATCH",
-      },
-    );
-    expect(claimStatus.status).toBe(200);
-
     const relationship = await request(
       service.port,
       "/api/projects/research-project/research/relationships",
@@ -198,6 +186,40 @@ describe("local service smoke suite", () => {
       },
     );
     expect(relationship.status).toBe(201);
+    const relationshipObject = await relationship.json();
+
+    const prematureClaimStatus = await request(
+      service.port,
+      `/api/projects/research-project/research/claims/${claimObject.id}`,
+      {
+        body: JSON.stringify({ reviewStatus: "Strong" }),
+        method: "PATCH",
+      },
+    );
+    expect(prematureClaimStatus.status).toBe(400);
+
+    const relationshipReview = await request(
+      service.port,
+      `/api/projects/research-project/research/relationships/${relationshipObject.id}/review`,
+      {
+        body: JSON.stringify({
+          reviewState: "approved",
+          confidence: 0.8,
+        }),
+        method: "PATCH",
+      },
+    );
+    expect(relationshipReview.status).toBe(200);
+
+    const claimStatus = await request(
+      service.port,
+      `/api/projects/research-project/research/claims/${claimObject.id}`,
+      {
+        body: JSON.stringify({ reviewStatus: "Strong" }),
+        method: "PATCH",
+      },
+    );
+    expect(claimStatus.status).toBe(200);
 
     const experimentRelationship = await request(
       service.port,
@@ -266,9 +288,18 @@ describe("local service smoke suite", () => {
         }),
       ]),
     });
+    const integrity = await request(
+      restartedService.port,
+      "/api/projects/research-project/provenance/integrity",
+    );
+    expect(integrity.status).toBe(200);
+    await expect(integrity.json()).resolves.toMatchObject({
+      eventCount: 9,
+      valid: true,
+    });
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM provenance_events").get(),
-    ).toEqual({ count: 8 });
+    ).toEqual({ count: 9 });
     await restartedService.close();
   });
 });

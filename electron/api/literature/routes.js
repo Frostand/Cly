@@ -11,6 +11,12 @@ const requestSchema = z.object({
   provider: z.enum(["arxiv", "semantic-scholar", "both"]).default("both"),
 });
 
+const externalDestinations = {
+  arxiv: ["arxiv"],
+  "semantic-scholar": ["semantic-scholar"],
+  both: ["arxiv", "semantic-scholar"],
+};
+
 export function registerLiteratureRoutes(
   app,
   {
@@ -29,7 +35,24 @@ export function registerLiteratureRoutes(
     const parsed = requestSchema.safeParse(body);
     if (!parsed.success) return c.text("Invalid literature search.", 400);
     try {
-      getRepository().listProject(c.req.param("projectId"));
+      const repository = getRepository();
+      const projectId = c.req.param("projectId");
+      repository.listProject(projectId);
+      const project = repository.getProject(projectId);
+      const approvals = new Set(
+        Array.isArray(project.metadata?.externalTransmissionApprovals)
+          ? project.metadata.externalTransmissionApprovals
+          : [],
+      );
+      const unapprovedDestination = externalDestinations[
+        parsed.data.provider
+      ].find((destination) => !approvals.has(destination));
+      if (project.metadata?.localOnly && unapprovedDestination) {
+        return c.text(
+          `Local-only project blocks external transmission to ${unapprovedDestination}. Approve that destination in project privacy settings first.`,
+          403,
+        );
+      }
       const papers = await search(parsed.data.query, {
         limit: parsed.data.limit,
         provider: parsed.data.provider,

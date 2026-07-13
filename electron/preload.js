@@ -1,9 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-const apiSessionToken = ipcRenderer.sendSync("api:get-session-token");
-if (!apiSessionToken) {
-  throw new Error("Missing API session token from Electron main process.");
-}
+const apiSessionToken =
+  process.env.NODE_ENV === "development"
+    ? ipcRenderer.sendSync("api:get-session-token")
+    : undefined;
 
 const BASE_COLORS = new Set(["neutral", "slate", "gray", "zinc", "stone"]);
 const ACCENT_COLORS = new Set([
@@ -133,7 +133,7 @@ const subscribe = (channel, listener) => {
 
 contextBridge.exposeInMainWorld("dream", {
   isElectron: true,
-  apiSessionToken,
+  ...(apiSessionToken ? { apiSessionToken } : {}),
   initialThemePreferences,
 
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", { url }),

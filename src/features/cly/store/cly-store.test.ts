@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureRepository } from "../fixtures/repository";
 import { mockServices } from "../services/mock-services";
-import { useClyStore } from "./cly-store";
+import { resolveInitialFixtureMode, useClyStore } from "./cly-store";
 
 describe("Cly UI store", () => {
+  it("always starts packaged production with an empty research repository", () => {
+    expect(
+      resolveInitialFixtureMode({ demoFlag: "1", development: false }),
+    ).toBe("empty");
+    expect(
+      resolveInitialFixtureMode({ demoFlag: "1", development: true }),
+    ).toBe("active");
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -219,7 +227,25 @@ describe("Cly UI store", () => {
                   fromObjectId: "sqlite-source",
                   toObjectId: "sqlite-claim",
                   type: "supports",
+                  origin: "imported",
+                  reviewState: "unreviewed",
+                  confidence: null,
+                  reviewedBy: null,
+                  reviewedAt: null,
                   createdAt: "2026-07-11T00:00:00.000Z",
+                },
+                {
+                  id: "sqlite-tests-relationship",
+                  projectId: "project-cly",
+                  fromObjectId: "sqlite-experiment",
+                  toObjectId: "sqlite-claim",
+                  type: "tests",
+                  origin: "human",
+                  reviewState: "unreviewed",
+                  confidence: null,
+                  reviewedBy: null,
+                  reviewedAt: null,
+                  createdAt: "2026-07-11T00:00:01.000Z",
                 },
               ],
             }),
@@ -257,14 +283,111 @@ describe("Cly UI store", () => {
         hypothesis: "Persistence survives reloads.",
       },
     ]);
-    expect(data.graphEdges).toMatchObject([
-      {
-        id: "sqlite-relationship",
-        source: "sqlite-source",
-        target: "sqlite-claim",
-        relation: "supports",
-      },
-    ]);
+    expect(data.graphNodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "sqlite-claim", status: "Suggested" }),
+      ]),
+    );
+    expect(data.graphEdges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "sqlite-relationship",
+          source: "sqlite-source",
+          target: "sqlite-claim",
+          relation: "supports",
+          approved: false,
+          confidence: null,
+        }),
+        expect.objectContaining({
+          id: "sqlite-tests-relationship",
+          relation: "tests",
+          approved: false,
+          confidence: null,
+        }),
+      ]),
+    );
+    expect(data.notebooks).toEqual([]);
+    expect(data.artifacts).toEqual([]);
+    expect(data.audits).toEqual([]);
+    expect(data.decisions).toEqual([]);
+    expect(data.reports).toEqual([]);
+    expect(data.agentSessions).toEqual([]);
+    expect(data.activity).toEqual([]);
+  });
+
+  it("does not apply a completed project A mutation after switching to project B", async () => {
+    let resolveCreate: ((response: Response) => void) | undefined;
+    const createResponse = new Promise<Response>((resolve) => {
+      resolveCreate = resolve;
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "project-cly",
+            name: "A",
+            path: "/a",
+            metadata: {},
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockReturnValueOnce(createResponse)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "project-cells",
+            name: "B",
+            path: "/b",
+            metadata: {},
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ objects: [], relationships: [] }), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = mockServices.claims.create("Project A claim");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    useClyStore.getState().setActiveProject("project-cells");
+    resolveCreate?.(
+      new Response(
+        JSON.stringify({
+          id: "claim-project-a",
+          projectId: "project-cly",
+          type: "claim",
+          title: "Project A claim",
+          description: "",
+          payload: {
+            kind: "claim",
+            status: "draft",
+            reviewStatus: "Unsupported",
+          },
+          origin: "human",
+          reviewState: "unreviewed",
+          reviewedBy: null,
+          reviewedAt: null,
+          createdAt: "2026-07-13T00:00:00.000Z",
+          updatedAt: "2026-07-13T00:00:00.000Z",
+        }),
+        { status: 201 },
+      ),
+    );
+    await pending;
+    await vi.waitFor(() =>
+      expect(useClyStore.getState().activeProjectId).toBe("project-cells"),
+    );
+
+    expect(
+      useClyStore
+        .getState()
+        .data.claims.find((claim) => claim.id === "claim-project-a"),
+    ).toBeUndefined();
   });
 
   it("persists a source before updating local state and leaves state unchanged on failure", async () => {

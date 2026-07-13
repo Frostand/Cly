@@ -16,15 +16,51 @@ const createApp = (
   const listProject = vi
     .fn()
     .mockReturnValue({ objects: [], relationships: [] });
+  const getProject = vi.fn().mockReturnValue({
+    id: "project-1",
+    metadata: { localOnly: false },
+    name: "Project 1",
+    path: "/tmp/project-1",
+  });
   registerLiteratureRoutes(app, {
     search,
     rerank,
-    getRepository: () => ({ listProject }),
+    getRepository: () => ({ getProject, listProject }),
   });
   return { app, listProject, rerank, search };
 };
 
 describe("literature routes", () => {
+  it("blocks external searches for local-only projects without destination approval", async () => {
+    const search = vi.fn();
+    const app = new Hono();
+    registerLiteratureRoutes(app, {
+      search,
+      rerank: vi.fn(),
+      getRepository: () => ({
+        getProject: () => ({
+          id: "project-1",
+          metadata: { localOnly: true },
+          name: "Private project",
+          path: "/tmp/private",
+        }),
+        listProject: () => ({ objects: [], relationships: [] }),
+      }),
+    });
+
+    const response = await app.request(
+      "/api/projects/project-1/literature/search",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: "unpublished target" }),
+      },
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toContain("external transmission");
+    expect(search).not.toHaveBeenCalled();
+  });
   it("scopes searches to an existing project", async () => {
     const { app, listProject, rerank, search } = createApp(
       vi.fn().mockResolvedValue([{ id: "semantic-scholar:paper-1" }]),

@@ -25,7 +25,7 @@ import {
   ensurePersistedInstallId,
   loadPersistedState,
   loadPersistedThemePreference,
-  resolveStateDatabasePath,
+  savePersistedState,
   savePersistedThemePreference,
 } from "./persisted-state.js";
 import { createProcessSessionManager } from "./process-sessions.js";
@@ -341,7 +341,7 @@ async function createMainWindow() {
       additionalArguments: [getThemePreferencePreloadArgument()],
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.js"),
-      sandbox: false,
+      sandbox: true,
       spellcheck: false,
       webviewTag: true,
     },
@@ -358,6 +358,17 @@ async function createMainWindow() {
     }
     return { action: "deny" };
   });
+
+  mainWindow.webContents.on(
+    "will-attach-webview",
+    (_event, webPreferences, params) => {
+      delete webPreferences.preload;
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox = true;
+      params.allowpopups = false;
+    },
+  );
 
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (isRendererNavigation(url)) {
@@ -437,14 +448,12 @@ ipcMain.on("api:get-session-token", (event) => {
   event.returnValue = apiSessionToken;
 });
 
-// State saves rewrite the entire database synchronously; doing that on this
-// (main) thread blocked input-event delivery to every window for the duration
-// of the write — the cause of click-to-action lag on Windows. The queue runs
-// the write in a worker thread and coalesces bursts to the latest snapshot.
+// All writes share the main process's single SQLite connection. The queue
+// coalesces bursts and schedules the full rewrite on the next event-loop turn.
 let stateSaveQueue = null;
 const getStateSaveQueue = () =>
   (stateSaveQueue ??= createStateSaveQueue({
-    databasePath: resolveStateDatabasePath(),
+    saveState: savePersistedState,
   }));
 
 ipcMain.handle("state:save", (_event, state) =>
@@ -632,8 +641,8 @@ app.whenReady().then(async () => {
 });
 
 // Electron does not wait for async "before-quit" listeners, so we must
-// preventDefault, finish cleanup (including flushing any state save still
-// queued in the worker), and then re-trigger quit ourselves. Without this,
+// preventDefault, finish cleanup (including flushing any queued state save),
+// and then re-trigger quit ourselves. Without this,
 // the final renderer-side persist could be lost on exit.
 let quitCleanupDone = false;
 app.on("before-quit", (event) => {

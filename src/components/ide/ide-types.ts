@@ -13,14 +13,8 @@ export type SettingsSection = "appearance" | "providers" | "chats";
 export type TerminalStatus = "running" | "stopped";
 export type TerminalTransport = "pty" | "pipe";
 export type { RightPanelView };
-export type CodexPermissionMode =
-  | "default"
-  | "auto-accept-edits"
-  | "full-access";
-export type ClaudePermissionMode =
-  | "ask-permissions"
-  | "accept-edits"
-  | "bypass-permissions";
+export type CodexPermissionMode = "default" | "auto-accept-edits";
+export type ClaudePermissionMode = "ask-permissions" | "accept-edits";
 
 export const PROJECT_TERMINAL_SESSION_PREFIX = "__project_terminal__:";
 export const createProjectTerminalSessionId = (projectId: string): string =>

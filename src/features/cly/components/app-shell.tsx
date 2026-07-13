@@ -136,7 +136,11 @@ export function ClyAppShell() {
   useEffect(() => {
     // main.tsx installs authenticated API fetch before React mounts. Hydrating
     // here avoids firing the request while static imports are still loading.
-    void useClyStore.getState().loadFromApi();
+    const explicitDemoRuntime =
+      import.meta.env.DEV && import.meta.env.VITE_CLY_DEMO_MODE === "1";
+    if (!explicitDemoRuntime) {
+      void useClyStore.getState().loadFromApi();
+    }
   }, []);
 
   useEffect(() => {
@@ -225,6 +229,22 @@ export function ClyAppShell() {
     <ClyMotionProvider>
       <main className="cly-app">
         <Titlebar />
+        {fixtureMode !== "empty" && fixtureMode !== "loading" ? (
+          <div
+            role="status"
+            style={{
+              background: "var(--cly-danger-soft)",
+              borderBottom: "1px solid var(--cly-danger)",
+              color: "var(--cly-text)",
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "6px 12px",
+              textAlign: "center",
+            }}
+          >
+            Demo data · These are simulated records, not project research.
+          </div>
+        ) : null}
         <div
           className="cly-shell"
           data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}

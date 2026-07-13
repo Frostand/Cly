@@ -402,12 +402,7 @@ export const ChatPanel = ({
     project.path,
     gitRefreshKey,
   );
-  const permissionModes = settings.autoAcceptPermissions
-    ? {
-        claudePermissionMode: "bypass-permissions" as const,
-        codexPermissionMode: "full-access" as const,
-      }
-    : getPermissionModesForAgentMode(chat.agentMode);
+  const permissionModes = getPermissionModesForAgentMode(chat.agentMode);
   const { claudePermissionMode, codexPermissionMode } = permissionModes;
   const connectedProviders = getConnectedProviders(settings);
   const gitGenerationModelSelection = useMemo(
@@ -705,10 +700,7 @@ export const ChatPanel = ({
 
   // Auto-approve Anthropic writeFile tool calls for non-interactive modes.
   useEffect(() => {
-    if (
-      claudePermissionMode !== "accept-edits" &&
-      claudePermissionMode !== "bypass-permissions"
-    ) {
+    if (claudePermissionMode !== "accept-edits") {
       return;
     }
     for (const message of messages) {

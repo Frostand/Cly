@@ -77,6 +77,11 @@ describe("Literature workspace", () => {
       screen.getByRole("textbox", { name: "Search literature" }),
       "neural surrogate uncertainty",
     );
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Approve sending this project’s search queries to both destinations",
+      }),
+    );
     await user.click(screen.getByRole("button", { name: "Search papers" }));
 
     expect(await screen.findByText("Ranked literature results")).toBeVisible();

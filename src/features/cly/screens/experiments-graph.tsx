@@ -591,7 +591,7 @@ export function GraphScreen() {
       (edge) =>
         visibleNodeIds.has(edge.source) &&
         visibleNodeIds.has(edge.target) &&
-        (!hideLow || edge.confidence >= 0.7),
+        (!hideLow || (edge.confidence ?? 0) >= 0.7),
     )
     .slice(0, 120);
   const selectedNode = nodes.find((node) => node.id === selectedId);
@@ -631,8 +631,8 @@ export function GraphScreen() {
           : nodes[0].id,
       target: nodes.find((node) => node.id !== selectedId)?.id ?? nodes[1].id,
       relation: "linked manually",
-      confidence: 1,
-      approved: true,
+      confidence: null,
+      approved: false,
     });
     notify("Relationship created", `${edge.source} → ${edge.target}`);
   };
@@ -875,7 +875,11 @@ export function GraphScreen() {
                         {nodes.find((node) => node.id === edge.target)?.label ??
                           edge.target}
                       </td>
-                      <td>{Math.round(edge.confidence * 100)}%</td>
+                      <td>
+                        {edge.confidence === null
+                          ? "Unrated"
+                          : `${Math.round(edge.confidence * 100)}%`}
+                      </td>
                       <td>
                         {edge.approved ? (
                           <Badge tone="success">Approved</Badge>

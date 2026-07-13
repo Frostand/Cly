@@ -20,6 +20,27 @@ export interface CreateRelationshipInput {
   type: Relationship["type"];
 }
 
+export interface ProvenanceEvent {
+  id: string;
+  projectId: string;
+  objectId?: string;
+  action: string;
+  actorType: "human" | "system" | "agent" | "integration";
+  actorId?: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  sequence?: number;
+  previousHash?: string | null;
+  eventHash?: string;
+}
+
+export interface ProvenanceIntegrity {
+  valid: boolean;
+  eventCount?: number;
+  headHash?: string | null;
+  reason?: string;
+}
+
 export interface CrossEncoderReranking {
   status: "completed" | "not_configured" | "unavailable" | "empty";
   method: string | null;
@@ -75,6 +96,7 @@ export const apiClient = {
         path: project.path,
         metadata: {
           description: project.description,
+          externalTransmissionApprovals: project.externalTransmissionApprovals,
           hypothesis: project.hypothesis,
           localOnly: project.localOnly,
           phase: project.phase,
@@ -86,6 +108,18 @@ export const apiClient = {
 
   fetchResearchData(projectId: string) {
     return request<ResearchData>(projectPath(projectId));
+  },
+
+  fetchProvenance(projectId: string, limit = 100) {
+    return request<ProvenanceEvent[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/provenance?limit=${limit}`,
+    );
+  },
+
+  verifyProvenance(projectId: string) {
+    return request<ProvenanceIntegrity>(
+      `/api/projects/${encodeURIComponent(projectId)}/provenance/integrity`,
+    );
   },
 
   createObject(projectId: string, input: CreateObjectInput) {
@@ -126,6 +160,20 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify(input),
     });
+  },
+
+  reviewRelationship(
+    projectId: string,
+    relationshipId: string,
+    input: { reviewState: "approved" | "rejected"; confidence: number | null },
+  ) {
+    return request<Relationship>(
+      `${projectPath(projectId)}/relationships/${encodeURIComponent(relationshipId)}/review`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      },
+    );
   },
 
   searchLiterature(projectId: string, query: string, limit = 25) {

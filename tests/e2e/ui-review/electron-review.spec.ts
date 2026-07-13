@@ -16,6 +16,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
       ...process.env,
       NODE_ENV: "development",
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+      VITE_CLY_DEMO_MODE: "1",
     },
   });
 
@@ -58,14 +59,14 @@ test("reviews the assembled Electron shell and core interaction states", async (
       ).toBeLessThanOrEqual(1);
     }
 
-    await window.locator(".cly-title-overflow summary").click();
+    await window.getByTestId("nav-overview").click();
+    const titlebar = window.locator(".cly-titlebar");
+    const settingsButton = titlebar.getByRole("button", { name: "Settings" });
+    await expect(settingsButton).toBeVisible();
+    await settingsButton.click();
     await expect(
-      window.getByRole("menuitem", { name: "Settings" }),
+      window.getByRole("heading", { name: "Settings", level: 1 }),
     ).toBeVisible();
-    await window.keyboard.press("Escape");
-    await expect(
-      window.getByRole("menuitem", { name: "Settings" }),
-    ).not.toBeVisible();
 
     await window.getByTestId("nav-agents").click();
     await window

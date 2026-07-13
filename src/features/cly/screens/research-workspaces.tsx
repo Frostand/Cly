@@ -53,6 +53,7 @@ import { previewLiteratureThemes } from "../domain/literature-enrichment";
 import type { LiteratureSearchResult } from "../domain/literature-search";
 import { filterAndSortClaims } from "../domain/logic";
 import type { ClaimStatus, Source } from "../domain/types";
+import { apiClient } from "../services/api-client";
 import { desktopLiteratureService } from "../services/literature-service";
 import { mockServices } from "../services/mock-services";
 import { claimStatusTone, useClyStore } from "../store/cly-store";
@@ -447,6 +448,7 @@ export function LiteratureScreen() {
     [],
   );
   const [searching, setSearching] = useState(false);
+  const [externalSearchApproved, setExternalSearchApproved] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const savedSearchResultIds = useMemo(
@@ -631,6 +633,17 @@ export function LiteratureScreen() {
       if (!activeProject) {
         throw new Error("Select a research project before searching.");
       }
+      if (activeProject.localOnly && !externalSearchApproved) {
+        throw new Error(
+          "Approve transmission to arXiv and Semantic Scholar before searching this local-only project.",
+        );
+      }
+      if (activeProject.localOnly) {
+        await apiClient.ensureProject({
+          ...activeProject,
+          externalTransmissionApprovals: ["arxiv", "semantic-scholar"],
+        });
+      }
       const results = await desktopLiteratureService.search(
         activeProject,
         query,
@@ -751,6 +764,25 @@ export function LiteratureScreen() {
                   </select>
                 </label>
               </form>
+
+              <div className="cly-callout">
+                <strong>External search destinations:</strong> arXiv and
+                Semantic Scholar receive the query text. Local reranking stays
+                on this device.
+                {activeProject?.localOnly ? (
+                  <label className="cly-control-label">
+                    <input
+                      type="checkbox"
+                      checked={externalSearchApproved}
+                      onChange={(event) =>
+                        setExternalSearchApproved(event.target.checked)
+                      }
+                    />
+                    Approve sending this project’s search queries to both
+                    destinations
+                  </label>
+                ) : null}
+              </div>
 
               {searchError ? (
                 <div className="cly-callout" role="alert">
