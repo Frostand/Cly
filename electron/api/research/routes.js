@@ -3,6 +3,7 @@ import { getStateDatabase } from "../../persisted-state.js";
 import { createLineageReconstructor } from "./lineage-reconstructor.js";
 import { createResearchRepository } from "./repository.js";
 import { createRepositoryObserver } from "./repository-observer.js";
+import { createReviewerCapsuleService } from "./reviewer-capsule.js";
 
 const objectBodySchema = z.object({
   type: z.enum(["artifact", "source", "claim", "experiment", "run"]),
@@ -56,6 +57,19 @@ const provenanceQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+const reviewerCapsuleBodySchema = z
+  .object({
+    claimIds: z
+      .array(z.string().trim().min(1).max(200))
+      .min(1)
+      .max(25)
+      .refine(
+        (ids) => new Set(ids).size === ids.length,
+        "Claim IDs must be unique.",
+      ),
+  })
+  .strict();
+
 const lineageCorrectionBodySchema = z
   .object({
     confidence: z.number().finite().min(0).max(1).optional(),
@@ -104,6 +118,10 @@ export function registerResearchRoutes(
       createRepositoryObserver(createResearchRepository(getStateDatabase())),
     getLineageReconstructor = () =>
       createLineageReconstructor(createResearchRepository(getStateDatabase())),
+    getReviewerCapsuleService = () =>
+      createReviewerCapsuleService(
+        createResearchRepository(getStateDatabase()),
+      ),
   } = {},
 ) {
   app.put("/api/projects/:projectId/research", async (c) => {
@@ -167,6 +185,33 @@ export function registerResearchRoutes(
       );
     }
   });
+
+  for (const [path, operation] of [
+    ["preview", "preview"],
+    ["export", "export"],
+  ]) {
+    app.post(`/api/projects/:projectId/reviewer-capsule/${path}`, async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = reviewerCapsuleBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        const service = getReviewerCapsuleService();
+        const capsule =
+          operation === "export"
+            ? service.export(c.req.param("projectId"), parsed.data.claimIds)
+            : service.preview(c.req.param("projectId"), parsed.data.claimIds);
+        return c.json(capsule);
+      } catch (error) {
+        return c.text(
+          error instanceof Error
+            ? error.message
+            : "Reviewer capsule generation failed.",
+          400,
+        );
+      }
+    });
+  }
 
   app.post("/api/projects/:projectId/repository-observations", async (c) => {
     if (
