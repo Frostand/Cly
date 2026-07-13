@@ -293,6 +293,175 @@ export const provenanceEvents = sqliteTable(
   ],
 );
 
+export const preregistrationSnapshots = sqliteTable(
+  "preregistration_snapshots",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    experimentId: text("experiment_id")
+      .notNull()
+      .references(() => researchObjects.id),
+    version: integer("version").notNull(),
+    amendsSnapshotId: text("amends_snapshot_id"),
+    contentJson: text("content_json").notNull(),
+    contentHash: text("content_hash").notNull(),
+    actorType: text("actor_type").notNull(),
+    actorId: text("actor_id").notNull(),
+    origin: text("origin").notNull().default("human"),
+    provenanceEventId: text("provenance_event_id")
+      .notNull()
+      .references(() => provenanceEvents.id),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.amendsSnapshotId],
+      foreignColumns: [table.id],
+      name: "preregistration_snapshots_parent_fk",
+    }),
+    check("preregistration_snapshots_version", sql`${table.version} >= 1`),
+    check(
+      "preregistration_snapshots_version_parent",
+      sql`(${table.version} = 1 AND ${table.amendsSnapshotId} IS NULL) OR (${table.version} > 1 AND ${table.amendsSnapshotId} IS NOT NULL)`,
+    ),
+    check(
+      "preregistration_snapshots_content_json",
+      sql`json_valid(${table.contentJson})`,
+    ),
+    check(
+      "preregistration_snapshots_actor_type",
+      sql`${table.actorType} IN ('human', 'agent', 'system', 'integration')`,
+    ),
+    check(
+      "preregistration_snapshots_origin",
+      sql`${table.origin} IN ('human', 'imported', 'inferred', 'system')`,
+    ),
+    uniqueIndex(
+      "preregistration_snapshots_project_experiment_version_unique",
+    ).on(table.projectId, table.experimentId, table.version),
+    uniqueIndex("preregistration_snapshots_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("preregistration_snapshots_event_unique").on(
+      table.provenanceEventId,
+    ),
+    index("idx_preregistration_snapshots_project_experiment").on(
+      table.projectId,
+      table.experimentId,
+      table.version,
+    ),
+  ],
+);
+
+export const preregistrationEvaluations = sqliteTable(
+  "preregistration_evaluations",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    snapshotId: text("snapshot_id")
+      .notNull()
+      .references(() => preregistrationSnapshots.id),
+    actorId: text("actor_id").notNull(),
+    provenanceEventId: text("provenance_event_id")
+      .notNull()
+      .references(() => provenanceEvents.id),
+    evaluatedAt: text("evaluated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("preregistration_evaluations_snapshot_unique").on(
+      table.snapshotId,
+    ),
+    uniqueIndex("preregistration_evaluations_event_unique").on(
+      table.provenanceEventId,
+    ),
+  ],
+);
+
+export const analysisDeviations = sqliteTable(
+  "analysis_deviations",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    snapshotId: text("snapshot_id")
+      .notNull()
+      .references(() => preregistrationSnapshots.id),
+    fieldPath: text("field_path").notNull(),
+    beforeJson: text("before_json").notNull(),
+    afterJson: text("after_json").notNull(),
+    rationale: text("rationale").notNull(),
+    declarationTiming: text("declaration_timing").notNull(),
+    actorId: text("actor_id").notNull(),
+    provenanceEventId: text("provenance_event_id")
+      .notNull()
+      .references(() => provenanceEvents.id),
+    declaredAt: text("declared_at").notNull(),
+  },
+  (table) => [
+    check(
+      "analysis_deviations_before_json",
+      sql`json_valid(${table.beforeJson})`,
+    ),
+    check(
+      "analysis_deviations_after_json",
+      sql`json_valid(${table.afterJson})`,
+    ),
+    check(
+      "analysis_deviations_changed",
+      sql`${table.beforeJson} <> ${table.afterJson}`,
+    ),
+    check(
+      "analysis_deviations_timing",
+      sql`${table.declarationTiming} IN ('pre-evaluation', 'retrospective')`,
+    ),
+    uniqueIndex("analysis_deviations_event_unique").on(table.provenanceEventId),
+    uniqueIndex("analysis_deviations_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    index("idx_analysis_deviations_project_snapshot").on(
+      table.projectId,
+      table.snapshotId,
+      table.declaredAt,
+      table.id,
+    ),
+  ],
+);
+
+export const analysisDeviationAcknowledgements = sqliteTable(
+  "analysis_deviation_acknowledgements",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    deviationId: text("deviation_id")
+      .notNull()
+      .references(() => analysisDeviations.id),
+    state: text("state").notNull().default("acknowledged"),
+    actorId: text("actor_id").notNull(),
+    provenanceEventId: text("provenance_event_id")
+      .notNull()
+      .references(() => provenanceEvents.id),
+    acknowledgedAt: text("acknowledged_at").notNull(),
+  },
+  (table) => [
+    check("analysis_deviation_ack_state", sql`${table.state} = 'acknowledged'`),
+    uniqueIndex("analysis_deviation_ack_deviation_unique").on(
+      table.deviationId,
+    ),
+    uniqueIndex("analysis_deviation_ack_event_unique").on(
+      table.provenanceEventId,
+    ),
+  ],
+);
+
 export const costEntries = sqliteTable(
   "cost_entries",
   {

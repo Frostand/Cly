@@ -43,19 +43,22 @@ import type {
 } from "../domain/types";
 import { mockServices } from "../services/mock-services";
 import { useClyStore } from "../store/cly-store";
+import { PreregistrationWorkspace } from "./preregistration-workspace";
 
 type ExperimentView =
   | "Experiments"
   | "Runs"
   | "Compare"
   | "Timeline"
-  | "Outputs";
+  | "Outputs"
+  | "Preregistration";
 const experimentViews = [
   "Experiments",
   "Runs",
   "Compare",
   "Timeline",
   "Outputs",
+  "Preregistration",
 ] as const;
 
 type ClyFlowNode = Node<
@@ -106,6 +109,10 @@ export function ExperimentsScreen() {
           .includes(query.toLowerCase())) &&
       (filter === "All" || item.status === filter),
   );
+  const selectedExperiment =
+    data.experiments.find((item) => item.id === selectedId) ??
+    data.experiments[0] ??
+    null;
   const compareRuns = compareIds
     .map((id) => data.runs.find((item) => item.id === id))
     .filter(Boolean);
@@ -472,6 +479,10 @@ export function ExperimentsScreen() {
               </Panel>
             ))}
           </div>
+        ) : null}
+
+        {view === "Preregistration" ? (
+          <PreregistrationWorkspace experiment={selectedExperiment} />
         ) : null}
       </div>
 

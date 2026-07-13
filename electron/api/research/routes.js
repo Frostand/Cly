@@ -3,6 +3,7 @@ import { getStateDatabase } from "../../persisted-state.js";
 import { createCostLedgerRepository } from "./cost-ledger-repository.js";
 import { registerCostLedgerRoutes } from "./cost-ledger-routes.js";
 import { createLineageReconstructor } from "./lineage-reconstructor.js";
+import { registerPreregistrationRoutes } from "./preregistration-routes.js";
 import { createResearchRepository } from "./repository.js";
 import { createRepositoryObserver } from "./repository-observer.js";
 import { createReviewerCapsuleService } from "./reviewer-capsule.js";
@@ -160,6 +161,7 @@ export function registerResearchRoutes(
   registerCostLedgerRoutes(app, {
     getRepository: getCostLedgerRepository,
   });
+  registerPreregistrationRoutes(app, { getRepository });
 
   app.put("/api/projects/:projectId/research", async (c) => {
     const body = await readJson(c);

@@ -177,6 +177,67 @@ export interface Experiment {
   updatedAt: string;
 }
 
+export interface PreregistrationContent {
+  hypothesis: string;
+  primaryMetrics: string[];
+  exclusionRules: string;
+  analysisPlan: string;
+  successCriteria: string;
+  dataset: string;
+  intendedDesign: string;
+}
+
+export interface AnalysisDeviationAcknowledgement {
+  id: string;
+  state: "acknowledged";
+  actorId: string;
+  provenanceEventId: string;
+  acknowledgedAt: string;
+}
+
+export interface AnalysisDeviation {
+  id: string;
+  projectId: string;
+  snapshotId: string;
+  fieldPath: `/${keyof PreregistrationContent}`;
+  beforeValue: string | string[];
+  afterValue: string | string[];
+  rationale: string;
+  declarationTiming: "pre-evaluation" | "retrospective";
+  actorId: string;
+  provenanceEventId: string;
+  declaredAt: string;
+  acknowledgement: AnalysisDeviationAcknowledgement | null;
+}
+
+export interface PreregistrationSnapshot {
+  id: string;
+  projectId: string;
+  experimentId: string;
+  version: number;
+  amendsSnapshotId: string | null;
+  content: PreregistrationContent;
+  contentHash: string;
+  actorType: "human" | "agent" | "system" | "integration";
+  actorId: string;
+  origin: "human" | "imported" | "inferred" | "system";
+  provenanceEventId: string;
+  createdAt: string;
+  finalEvaluation: {
+    id: string;
+    actorId: string;
+    provenanceEventId: string;
+    evaluatedAt: string;
+  } | null;
+  deviations: AnalysisDeviation[];
+}
+
+export interface PreregistrationComparison {
+  fieldPath: AnalysisDeviation["fieldPath"];
+  beforeValue: string | string[];
+  afterValue: string | string[];
+}
+
 export interface NotebookArtifact {
   id: string;
   name: string;

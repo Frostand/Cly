@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
+import { createPreregistrationMethods } from "./preregistration.js";
 
 const objectPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -924,7 +925,16 @@ export function createResearchRepository(
     ];
   };
 
+  const preregistrationMethods = createPreregistrationMethods({
+    database,
+    ensureProject,
+    insertProvenance,
+    clock,
+    createId,
+  });
+
   return {
+    ...preregistrationMethods,
     upsertProject(input) {
       const parsed = projectInputSchema.parse(input);
       const normalizedPath = normalizeProjectPath(parsed.path);

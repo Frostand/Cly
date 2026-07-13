@@ -22,6 +22,7 @@ import type {
 } from "../domain/research-bridge";
 import type {
   AgentPreset,
+  AnalysisDeviation,
   Claim,
   ClaimCostSummary,
   ClaimStatus,
@@ -41,6 +42,8 @@ import type {
   LineageScanMeasurement,
   LineageSuggestion,
   NotebookArtifact,
+  PreregistrationContent,
+  PreregistrationSnapshot,
   ResearchDecision,
   ScreenId,
   Source,
@@ -87,6 +90,9 @@ interface ClyState {
   decisionBriefs: DecisionBrief[];
   decisionBriefsLoading: boolean;
   decisionBriefsError: string | null;
+  preregistrations: PreregistrationSnapshot[];
+  preregistrationsLoading: boolean;
+  preregistrationsError: string | null;
   agentSessionsMode: AgentSessionsMode;
   selectedAgentSessionId: string | null;
   selectedOverviewSessionId: string | null;
@@ -147,6 +153,25 @@ interface ClyState {
       reason?: string | null;
     },
   ) => Promise<DecisionBriefFinding | null>;
+  createPreregistration: (
+    experimentId: string,
+    content: PreregistrationContent,
+    amendsSnapshotId?: string | null,
+  ) => Promise<PreregistrationSnapshot | null>;
+  markPreregistrationEvaluated: (
+    snapshotId: string,
+  ) => Promise<PreregistrationSnapshot | null>;
+  declareAnalysisDeviation: (
+    snapshotId: string,
+    input: {
+      fieldPath: AnalysisDeviation["fieldPath"];
+      afterValue: string | string[];
+      rationale: string;
+    },
+  ) => Promise<AnalysisDeviation | null>;
+  acknowledgeAnalysisDeviation: (
+    deviationId: string,
+  ) => Promise<AnalysisDeviation | null>;
   updateContextItem: (id: string, patch: Partial<ContextItem>) => void;
   updateClaim: (id: string, patch: Partial<Claim>) => void;
   addClaim: (claim: Claim) => void;
@@ -613,6 +638,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
   decisionBriefs: [],
   decisionBriefsLoading: false,
   decisionBriefsError: null,
+  preregistrations: [],
+  preregistrationsLoading: false,
+  preregistrationsError: null,
   agentSessionsMode: savedAgentSessionIsValid
     ? (saved.agentSessionsMode ?? "overview")
     : "overview",
@@ -646,6 +674,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
       decisionBriefs: [],
       decisionBriefsLoading: false,
       decisionBriefsError: null,
+      preregistrations: [],
+      preregistrationsLoading: false,
+      preregistrationsError: null,
       costLedger: emptyCostLedger(),
       claimCosts: {},
       costsLoading: false,
@@ -672,6 +703,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
       decisionBriefs: [],
       decisionBriefsLoading: false,
       decisionBriefsError: null,
+      preregistrations: [],
+      preregistrationsLoading: false,
+      preregistrationsError: null,
       costLedger: costs.ledger,
       claimCosts: costs.claimCosts,
       costsLoading: false,
@@ -716,6 +750,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
         researchData,
         lineageSuggestions,
         decisionBriefs,
+        preregistrations,
         costLedger,
         claimCostList,
       ] = await Promise.all([
@@ -725,6 +760,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
         apiClient.fetchLineageSuggestions(projectId).catch(() => []),
         // Brief loading is optional and must never prevent canonical graph hydration.
         apiClient.fetchDecisionBriefs(projectId).catch(() => undefined),
+        // Preregistration is additive for databases created before CLY-66.
+        apiClient.fetchPreregistrations(projectId).catch(() => undefined),
         apiClient.fetchCostLedger(projectId).catch(() => emptyCostLedger()),
         apiClient.fetchClaimCosts(projectId).catch(() => []),
       ]);
@@ -740,6 +777,13 @@ export const useClyStore = create<ClyState>((set, get) => ({
         ...(decisionBriefs
           ? { decisionBriefs, decisionBriefsError: null }
           : {}),
+        ...(preregistrations
+          ? {
+              preregistrations,
+              preregistrationsError: null,
+              preregistrationsLoading: false,
+            }
+          : {}),
         costLedger,
         claimCosts: Object.fromEntries(
           claimCostList.map((summary) => [summary.claimId, summary]),
@@ -753,6 +797,130 @@ export const useClyStore = create<ClyState>((set, get) => ({
     } catch {
       // Keep the fixture repository intact when the Electron API is unavailable.
       return false;
+    }
+  },
+  createPreregistration: async (experimentId, content, amendsSnapshotId) => {
+    const projectId = get().activeProjectId;
+    set({ preregistrationsLoading: true, preregistrationsError: null });
+    try {
+      const snapshot = await apiClient.createPreregistration(
+        projectId,
+        experimentId,
+        content,
+        amendsSnapshotId,
+      );
+      if (get().activeProjectId !== projectId) return snapshot;
+      set((state) => ({
+        preregistrations: [
+          snapshot,
+          ...state.preregistrations.filter((item) => item.id !== snapshot.id),
+        ],
+        preregistrationsLoading: false,
+      }));
+      return snapshot;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Preregistration could not be saved.";
+      if (get().activeProjectId === projectId) {
+        set({ preregistrationsLoading: false, preregistrationsError: message });
+        get().notify("Preregistration was not saved", message);
+      }
+      return null;
+    }
+  },
+  markPreregistrationEvaluated: async (snapshotId) => {
+    const projectId = get().activeProjectId;
+    set({ preregistrationsLoading: true, preregistrationsError: null });
+    try {
+      const snapshot = await apiClient.markPreregistrationEvaluated(
+        projectId,
+        snapshotId,
+      );
+      if (get().activeProjectId !== projectId) return snapshot;
+      set((state) => ({
+        preregistrations: state.preregistrations.map((item) =>
+          item.id === snapshot.id ? snapshot : item,
+        ),
+        preregistrationsLoading: false,
+      }));
+      return snapshot;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Final evaluation could not be recorded.";
+      if (get().activeProjectId === projectId) {
+        set({ preregistrationsLoading: false, preregistrationsError: message });
+        get().notify("Evaluation was not recorded", message);
+      }
+      return null;
+    }
+  },
+  declareAnalysisDeviation: async (snapshotId, input) => {
+    const projectId = get().activeProjectId;
+    set({ preregistrationsLoading: true, preregistrationsError: null });
+    try {
+      const deviation = await apiClient.declareAnalysisDeviation(
+        projectId,
+        snapshotId,
+        input,
+      );
+      if (get().activeProjectId !== projectId) return deviation;
+      set((state) => ({
+        preregistrations: state.preregistrations.map((snapshot) =>
+          snapshot.id === snapshotId
+            ? {
+                ...snapshot,
+                deviations: [...snapshot.deviations, deviation],
+              }
+            : snapshot,
+        ),
+        preregistrationsLoading: false,
+      }));
+      return deviation;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Analysis deviation could not be recorded.";
+      if (get().activeProjectId === projectId) {
+        set({ preregistrationsLoading: false, preregistrationsError: message });
+        get().notify("Deviation was not recorded", message);
+      }
+      return null;
+    }
+  },
+  acknowledgeAnalysisDeviation: async (deviationId) => {
+    const projectId = get().activeProjectId;
+    set({ preregistrationsLoading: true, preregistrationsError: null });
+    try {
+      const deviation = await apiClient.acknowledgeAnalysisDeviation(
+        projectId,
+        deviationId,
+      );
+      if (get().activeProjectId !== projectId) return deviation;
+      set((state) => ({
+        preregistrations: state.preregistrations.map((snapshot) => ({
+          ...snapshot,
+          deviations: snapshot.deviations.map((item) =>
+            item.id === deviation.id ? deviation : item,
+          ),
+        })),
+        preregistrationsLoading: false,
+      }));
+      return deviation;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Analysis deviation could not be acknowledged.";
+      if (get().activeProjectId === projectId) {
+        set({ preregistrationsLoading: false, preregistrationsError: message });
+        get().notify("Deviation was not acknowledged", message);
+      }
+      return null;
     }
   },
   loadCosts: async (requestedProjectId) => {
