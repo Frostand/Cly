@@ -35,7 +35,7 @@ const DEFAULT_PERSISTED_STATE = {
   },
   chatSort: "recent",
 };
-const RELATIONAL_SCHEMA_VERSION = 4;
+const RELATIONAL_SCHEMA_VERSION = 5;
 const STATE_DB_FILENAME = "dream.db";
 const STATE_DB_PATH_ENV_VAR = "DREAM_DB_PATH";
 const SQLITE_BUSY_TIMEOUT_MS = 5_000;

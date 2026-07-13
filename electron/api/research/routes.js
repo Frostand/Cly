@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
+import { createLineageReconstructor } from "./lineage-reconstructor.js";
 import { createResearchRepository } from "./repository.js";
 import { createRepositoryObserver } from "./repository-observer.js";
 
@@ -55,6 +56,38 @@ const provenanceQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+const lineageCorrectionBodySchema = z
+  .object({
+    confidence: z.number().finite().min(0).max(1).optional(),
+    rationale: z.string().trim().min(1).max(10_000).optional(),
+  })
+  .strict()
+  .refine(
+    (value) => value.confidence !== undefined || value.rationale !== undefined,
+    "An edit decision requires at least one correction.",
+  );
+
+const lineageReviewDecisionBodySchema = z.discriminatedUnion("action", [
+  z
+    .object({ id: z.string().trim().min(1), action: z.literal("approve") })
+    .strict(),
+  z
+    .object({ id: z.string().trim().min(1), action: z.literal("reject") })
+    .strict(),
+  z
+    .object({
+      id: z.string().trim().min(1),
+      action: z.literal("edit"),
+      edit: lineageCorrectionBodySchema,
+    })
+    .strict(),
+]);
+
+const lineageReviewBodySchema = z.object({
+  actor: z.string().trim().min(1).max(200).default("local-user"),
+  decisions: z.array(lineageReviewDecisionBodySchema).min(1).max(100),
+});
+
 async function readJson(c) {
   try {
     return { data: await c.req.json() };
@@ -69,6 +102,8 @@ export function registerResearchRoutes(
     getRepository = () => createResearchRepository(getStateDatabase()),
     getRepositoryObserver = () =>
       createRepositoryObserver(createResearchRepository(getStateDatabase())),
+    getLineageReconstructor = () =>
+      createLineageReconstructor(createResearchRepository(getStateDatabase())),
   } = {},
 ) {
   app.put("/api/projects/:projectId/research", async (c) => {
@@ -154,6 +189,63 @@ export function registerResearchRoutes(
         error instanceof Error
           ? error.message
           : "Repository observation failed.",
+        400,
+      );
+    }
+  });
+
+  app.get("/api/projects/:projectId/lineage-suggestions", (c) => {
+    try {
+      return c.json(
+        getRepository().listLineageSuggestions(c.req.param("projectId")),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Lineage suggestions failed.",
+        400,
+      );
+    }
+  });
+
+  app.post("/api/projects/:projectId/lineage-suggestions/scan", async (c) => {
+    if (
+      (c.req.header("content-length") &&
+        c.req.header("content-length") !== "0") ||
+      c.req.header("transfer-encoding")
+    ) {
+      return c.text("Lineage scan requests do not accept a body.", 400);
+    }
+    try {
+      return c.json(
+        await getLineageReconstructor().scanLineage(c.req.param("projectId")),
+        201,
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error
+          ? error.message
+          : "Lineage reconstruction failed.",
+        400,
+      );
+    }
+  });
+
+  app.post("/api/projects/:projectId/lineage-suggestions/review", async (c) => {
+    const body = await readJson(c);
+    if (body.error) return body.error;
+    const parsed = lineageReviewBodySchema.safeParse(body.data);
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json({
+        suggestions: getLineageReconstructor().reviewLineageSuggestions(
+          c.req.param("projectId"),
+          parsed.data.decisions,
+          parsed.data.actor,
+        ),
+      });
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Lineage review failed.",
         400,
       );
     }

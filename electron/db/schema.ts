@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   real,
@@ -35,9 +36,6 @@ export const projects = sqliteTable(
     sortOrder: integer("sort_order").notNull().default(0),
     metadata: text("metadata").notNull().default("{}"),
     createdAt: text("created_at").notNull(),
-    sequence: integer("sequence"),
-    previousHash: text("previous_hash"),
-    eventHash: text("event_hash"),
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [
@@ -66,6 +64,117 @@ export const chats = sqliteTable(
       table.projectId,
       table.deletedAt,
       table.updatedAt,
+    ),
+  ],
+);
+
+export const lineageSuggestions = sqliteTable(
+  "lineage_suggestions",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    fingerprint: text("fingerprint").notNull(),
+    logicalKey: text("logical_key").notNull(),
+    revision: integer("revision").notNull().default(1),
+    lifecycleState: text("lifecycle_state").notNull().default("current"),
+    supersedesSuggestionId: text("supersedes_suggestion_id"),
+    chainJson: text("chain_json").notNull(),
+    confidence: real("confidence").notNull(),
+    rationale: text("rationale").notNull(),
+    origin: text("origin").notNull().default("inferred"),
+    reviewState: text("review_state").notNull().default("unreviewed"),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: text("reviewed_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "lineage_suggestions_chain_json",
+      sql`json_valid(${table.chainJson})`,
+    ),
+    uniqueIndex("lineage_suggestions_current_logical_unique")
+      .on(table.projectId, table.logicalKey)
+      .where(sql`${table.lifecycleState} = 'current'`),
+    uniqueIndex("lineage_suggestions_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    foreignKey({
+      columns: [table.supersedesSuggestionId, table.projectId],
+      foreignColumns: [table.id, table.projectId],
+      name: "lineage_suggestions_supersedes_project_fk",
+    }),
+    index("idx_lineage_suggestions_project_review").on(
+      table.projectId,
+      table.reviewState,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const lineageEvidence = sqliteTable(
+  "lineage_evidence",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    suggestionId: text("suggestion_id").notNull(),
+    evidenceType: text("evidence_type").notNull(),
+    path: text("path"),
+    coordinates: text("coordinates").notNull(),
+    excerpt: text("excerpt"),
+    contentHash: text("content_hash").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "lineage_evidence_coordinates_json",
+      sql`json_valid(${table.coordinates})`,
+    ),
+    uniqueIndex("lineage_evidence_suggestion_hash_unique").on(
+      table.suggestionId,
+      table.contentHash,
+    ),
+    index("idx_lineage_evidence_project_suggestion").on(
+      table.projectId,
+      table.suggestionId,
+    ),
+    foreignKey({
+      columns: [table.suggestionId, table.projectId],
+      foreignColumns: [lineageSuggestions.id, lineageSuggestions.projectId],
+      name: "lineage_evidence_suggestion_project_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const lineageScanMeasurements = sqliteTable(
+  "lineage_scan_measurements",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    scanDurationMs: integer("scan_duration_ms").notNull(),
+    timeToFirstChainMs: integer("time_to_first_chain_ms"),
+    suggestionCount: integer("suggestion_count").notNull(),
+    acceptedCount: integer("accepted_count").notNull().default(0),
+    rejectedCount: integer("rejected_count").notNull().default(0),
+    correctionCount: integer("correction_count").notNull().default(0),
+    manualConfigJson: text("manual_config_json").notNull().default("{}"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "lineage_scan_measurements_manual_config_json",
+      sql`json_valid(${table.manualConfigJson})`,
+    ),
+    index("idx_lineage_scan_measurements_project_created").on(
+      table.projectId,
+      table.createdAt,
     ),
   ],
 );
@@ -168,6 +277,9 @@ export const provenanceEvents = sqliteTable(
     actorId: text("actor_id"),
     metadata: text("metadata").notNull().default("{}"),
     createdAt: text("created_at").notNull(),
+    sequence: integer("sequence"),
+    previousHash: text("previous_hash"),
+    eventHash: text("event_hash"),
   },
   (table) => [
     check(

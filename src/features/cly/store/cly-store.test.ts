@@ -315,6 +315,58 @@ describe("Cly UI store", () => {
     expect(data.activity).toEqual([]);
   });
 
+  it("hydrates canonical research when the optional lineage endpoint is unavailable", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "project-cly",
+            name: "Neural surrogate reliability",
+            path: "~/Research/surrogate-reliability",
+            metadata: {},
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            objects: [
+              {
+                id: "canonical-source",
+                projectId: "project-cly",
+                type: "source",
+                title: "Canonical persisted source",
+                description: "Research data remains available.",
+                payload: { kind: "source" },
+                createdAt: "2026-07-13T00:00:00.000Z",
+                updatedAt: "2026-07-13T00:00:00.000Z",
+              },
+            ],
+            relationships: [],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response("Lineage service unavailable", { status: 503 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(useClyStore.getState().loadFromApi()).resolves.toBe(true);
+
+    expect(useClyStore.getState().data.sources).toMatchObject([
+      { id: "canonical-source", title: "Canonical persisted source" },
+    ]);
+    expect(useClyStore.getState().lineageSuggestions).toEqual([]);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/projects/project-cly/lineage-suggestions",
+      expect.any(Object),
+    );
+  });
+
   it("does not apply a completed project A mutation after switching to project B", async () => {
     let resolveCreate: ((response: Response) => void) | undefined;
     const createResponse = new Promise<Response>((resolve) => {

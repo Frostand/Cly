@@ -382,6 +382,78 @@ export interface GraphEdge {
   approved: boolean;
 }
 
+export type LineageStepKind =
+  | "objective"
+  | "notebook"
+  | "commit"
+  | "experiment"
+  | "artifact"
+  | "claim";
+
+export interface LineageStep {
+  kind: LineageStepKind;
+  id: string;
+  label: string;
+  coordinates: Record<string, unknown>;
+}
+
+export interface LineageEvidence {
+  id: string;
+  projectId: string;
+  suggestionId: string;
+  evidenceType: string;
+  path: string | null;
+  coordinates: Record<string, unknown>;
+  excerpt: string | null;
+  contentHash: string;
+  createdAt: string;
+}
+
+export interface LineageSuggestion {
+  id: string;
+  projectId: string;
+  logicalKey: string;
+  fingerprint: string;
+  revision: number;
+  lifecycleState: "current" | "stale" | "superseded";
+  supersedesSuggestionId: string | null;
+  chain: LineageStep[];
+  confidence: number;
+  rationale: string;
+  origin: "inferred";
+  reviewState: "unreviewed" | "approved" | "rejected";
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  evidence: LineageEvidence[];
+}
+
+export type LineageReviewDecision =
+  | { id: string; action: "approve" }
+  | { id: string; action: "reject" }
+  | {
+      id: string;
+      action: "edit";
+      edit:
+        | Pick<LineageSuggestion, "rationale">
+        | Pick<LineageSuggestion, "confidence">
+        | Pick<LineageSuggestion, "rationale" | "confidence">;
+    };
+
+export interface LineageScanMeasurement {
+  id: string;
+  projectId: string;
+  scanDurationMs: number;
+  timeToFirstChainMs: number | null;
+  suggestionCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  correctionCount: number;
+  manualConfig: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface Report {
   id: string;
   title: string;
