@@ -292,3 +292,67 @@ export const provenanceEvents = sqliteTable(
     ),
   ],
 );
+
+export const costEntries = sqliteTable(
+  "cost_entries",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    runId: text("run_id")
+      .notNull()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    source: text("source").notNull(),
+    providerEntryId: text("provider_entry_id"),
+    dedupKey: text("dedup_key").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    currency: text("currency").notNull(),
+    category: text("category").notNull(),
+    startedAt: text("started_at").notNull(),
+    endedAt: text("ended_at").notNull(),
+    confidenceBps: integer("confidence_bps").notNull(),
+    description: text("description").notNull().default(""),
+    rawJson: text("raw_json").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check("cost_entries_source", sql`${table.source} IN ('manual', 'aws-cur')`),
+    check(
+      "cost_entries_amount_minor_integer",
+      sql`typeof(${table.amountMinor}) = 'integer'`,
+    ),
+    check(
+      "cost_entries_currency",
+      sql`length(${table.currency}) = 3 AND ${table.currency} = upper(${table.currency})`,
+    ),
+    check(
+      "cost_entries_category",
+      sql`${table.category} IN ('gpu', 'cloud', 'storage', 'model-api', 'agent', 'rerun', 'other')`,
+    ),
+    check(
+      "cost_entries_time_range",
+      sql`${table.endedAt} >= ${table.startedAt}`,
+    ),
+    check(
+      "cost_entries_confidence",
+      sql`${table.confidenceBps} BETWEEN 0 AND 10000`,
+    ),
+    check("cost_entries_raw_json", sql`json_valid(${table.rawJson})`),
+    uniqueIndex("cost_entries_project_dedup_unique").on(
+      table.projectId,
+      table.dedupKey,
+    ),
+    index("idx_cost_entries_project_created").on(
+      table.projectId,
+      table.createdAt,
+      table.id,
+    ),
+    index("idx_cost_entries_project_run").on(
+      table.projectId,
+      table.runId,
+      table.startedAt,
+      table.id,
+    ),
+  ],
+);

@@ -23,9 +23,12 @@ import type {
 import type {
   AgentPreset,
   Claim,
+  ClaimCostSummary,
   ClaimStatus,
   ClyRepositoryData,
   ContextItem,
+  CostEntry,
+  CostLedger,
   DecisionBrief,
   DecisionBriefFinding,
   DecisionBriefFindingStatus,
@@ -42,8 +45,17 @@ import type {
   ScreenId,
   Source,
 } from "../domain/types";
+import {
+  createCostLedgerFixture,
+  emptyCostLedger,
+} from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
-import { apiClient, type ResearchData } from "../services/api-client";
+import {
+  type AwsCurImportResult,
+  apiClient,
+  type ManualCostEntryInput,
+  type ResearchData,
+} from "../services/api-client";
 
 export interface ToastMessage {
   id: string;
@@ -65,6 +77,11 @@ interface ClyState {
   fixtureSwitcherOpen: boolean;
   globalSearch: string;
   toasts: ToastMessage[];
+  costLedger: CostLedger;
+  claimCosts: Record<string, ClaimCostSummary>;
+  costsLoading: boolean;
+  costsError: string | null;
+  selectedCostEntryId: string | null;
   lineageSuggestions: LineageSuggestion[];
   lineageMeasurement: LineageScanMeasurement | null;
   decisionBriefs: DecisionBrief[];
@@ -104,6 +121,13 @@ interface ClyState {
   notify: (title: string, detail?: string) => void;
   dismissToast: (id: string) => void;
   loadFromApi: (projectId?: string) => Promise<boolean>;
+  loadCosts: (projectId?: string) => Promise<boolean>;
+  createCostEntry: (input: ManualCostEntryInput) => Promise<CostEntry | null>;
+  importAwsCur: (
+    csv: string,
+    fileName: string,
+  ) => Promise<AwsCurImportResult | null>;
+  setSelectedCostEntry: (id: string | null) => void;
   scanLineage: () => Promise<boolean>;
   reviewLineageSuggestions: (
     decisions: LineageReviewDecision[],
@@ -281,6 +305,7 @@ const initialData = hydrateAgentSessionLayouts(
   createFixtureRepository(initialFixtureMode),
   saved.agentSessionLayouts,
 );
+const initialCosts = createCostLedgerFixture(initialFixtureMode, initialData);
 const savedAgentSessionIsValid = saved.selectedAgentSessionId
   ? initialData.agentSessions.some(
       (session) => session.id === saved.selectedAgentSessionId,
@@ -433,6 +458,36 @@ const mapResearchData = (
       nextExperiment: "Link evidence or design a test.",
       updatedAt: object.updatedAt,
     }));
+  const runs = researchData.objects
+    .filter((object) => object.type === "run")
+    .map((object) => {
+      const experimentId = relationships.find(
+        (relationship) =>
+          relationship.fromObjectId === object.id &&
+          relationship.type === "generated-by" &&
+          objectsById.get(relationship.toObjectId)?.type === "experiment",
+      )?.toObjectId;
+      const status = {
+        completed: "Complete",
+        failed: "Failed",
+        planned: "Queued",
+        running: "Running",
+      }[object.payload.status] as "Complete" | "Failed" | "Queued" | "Running";
+      return {
+        id: object.id,
+        experimentId: experimentId ?? "",
+        name: object.title,
+        status,
+        startedAt: object.createdAt,
+        duration: "Not recorded",
+        codeVersion: object.payload.commitSha ?? "Not recorded",
+        environment: "Not captured",
+        metrics: {},
+        config: {},
+        reproducibility: "Partial" as const,
+        canonical: false,
+      };
+    });
   const experiments = researchData.objects
     .filter((object) => object.type === "experiment")
     .map((object) => ({
@@ -458,13 +513,15 @@ const mapResearchData = (
       dataset: "Not linked",
       limitations: [],
       nextStep: "Complete configuration",
-      runIds: [],
+      runIds: runs
+        .filter((run) => run.experimentId === object.id)
+        .map((run) => run.id),
       updatedAt: object.updatedAt,
     }));
 
   return {
     ...fixtureData,
-    runs: [],
+    runs,
     notebooks: [],
     code: [],
     artifacts: [],
@@ -546,6 +603,11 @@ export const useClyStore = create<ClyState>((set, get) => ({
   fixtureSwitcherOpen: false,
   globalSearch: "",
   toasts: [],
+  costLedger: initialCosts.ledger,
+  claimCosts: initialCosts.claimCosts,
+  costsLoading: false,
+  costsError: null,
+  selectedCostEntryId: initialCosts.ledger.entries[0]?.id ?? null,
   lineageSuggestions: [],
   lineageMeasurement: null,
   decisionBriefs: [],
@@ -584,15 +646,22 @@ export const useClyStore = create<ClyState>((set, get) => ({
       decisionBriefs: [],
       decisionBriefsLoading: false,
       decisionBriefsError: null,
+      costLedger: emptyCostLedger(),
+      claimCosts: {},
+      costsLoading: false,
+      costsError: null,
+      selectedCostEntryId: null,
       projectSwitcherOpen: false,
       selectedId: null,
     }));
     persistUi({ activeProjectId });
     void get().loadFromApi(activeProjectId);
   },
-  setFixtureMode: (fixtureMode) =>
+  setFixtureMode: (fixtureMode) => {
+    const data = createFixtureRepository(fixtureMode);
+    const costs = createCostLedgerFixture(fixtureMode, data);
     set({
-      data: createFixtureRepository(fixtureMode),
+      data,
       fixtureMode,
       selectedId: null,
       agentSessionsMode: "overview",
@@ -603,8 +672,14 @@ export const useClyStore = create<ClyState>((set, get) => ({
       decisionBriefs: [],
       decisionBriefsLoading: false,
       decisionBriefsError: null,
+      costLedger: costs.ledger,
+      claimCosts: costs.claimCosts,
+      costsLoading: false,
+      costsError: null,
+      selectedCostEntryId: costs.ledger.entries[0]?.id ?? null,
       fixtureSwitcherOpen: false,
-    }),
+    });
+  },
   toggleSidebar: () =>
     set((state) => {
       const sidebarCollapsed = !state.sidebarCollapsed;
@@ -637,15 +712,22 @@ export const useClyStore = create<ClyState>((set, get) => ({
     if (!project) return false;
     try {
       await apiClient.ensureProject(project);
-      const [researchData, lineageSuggestions, decisionBriefs] =
-        await Promise.all([
-          apiClient.fetchResearchData(projectId),
-          // Lineage reconstruction is additive. Older or temporarily unavailable
-          // APIs must not prevent hydration of the canonical research graph.
-          apiClient.fetchLineageSuggestions(projectId).catch(() => []),
-          // Brief loading is optional and must never prevent canonical graph hydration.
-          apiClient.fetchDecisionBriefs(projectId).catch(() => undefined),
-        ]);
+      const [
+        researchData,
+        lineageSuggestions,
+        decisionBriefs,
+        costLedger,
+        claimCostList,
+      ] = await Promise.all([
+        apiClient.fetchResearchData(projectId),
+        // Lineage reconstruction is additive. Older or temporarily unavailable
+        // APIs must not prevent hydration of the canonical research graph.
+        apiClient.fetchLineageSuggestions(projectId).catch(() => []),
+        // Brief loading is optional and must never prevent canonical graph hydration.
+        apiClient.fetchDecisionBriefs(projectId).catch(() => undefined),
+        apiClient.fetchCostLedger(projectId).catch(() => emptyCostLedger()),
+        apiClient.fetchClaimCosts(projectId).catch(() => []),
+      ]);
       if (get().activeProjectId !== projectId) return false;
       set((state) => ({
         data: hydrateAgentSessionLayouts(
@@ -658,6 +740,13 @@ export const useClyStore = create<ClyState>((set, get) => ({
         ...(decisionBriefs
           ? { decisionBriefs, decisionBriefsError: null }
           : {}),
+        costLedger,
+        claimCosts: Object.fromEntries(
+          claimCostList.map((summary) => [summary.claimId, summary]),
+        ),
+        costsLoading: false,
+        costsError: null,
+        selectedCostEntryId: costLedger.entries[0]?.id ?? null,
         selectedId: null,
       }));
       return true;
@@ -666,6 +755,101 @@ export const useClyStore = create<ClyState>((set, get) => ({
       return false;
     }
   },
+  loadCosts: async (requestedProjectId) => {
+    const projectId = requestedProjectId ?? get().activeProjectId;
+    set({ costsLoading: true, costsError: null });
+    try {
+      const [costLedger, claimCostList] = await Promise.all([
+        apiClient.fetchCostLedger(projectId),
+        apiClient.fetchClaimCosts(projectId),
+      ]);
+      if (get().activeProjectId !== projectId) return false;
+      set((state) => ({
+        costLedger,
+        claimCosts: Object.fromEntries(
+          claimCostList.map((summary) => [summary.claimId, summary]),
+        ),
+        costsLoading: false,
+        selectedCostEntryId:
+          state.selectedCostEntryId &&
+          costLedger.entries.some(
+            (entry) => entry.id === state.selectedCostEntryId,
+          )
+            ? state.selectedCostEntryId
+            : (costLedger.entries[0]?.id ?? null),
+      }));
+      return true;
+    } catch (error) {
+      if (get().activeProjectId !== projectId) return false;
+      set({
+        costsLoading: false,
+        costsError:
+          error instanceof Error
+            ? error.message
+            : "Cost ledger could not load.",
+      });
+      return false;
+    }
+  },
+  createCostEntry: async (input) => {
+    const projectId = get().activeProjectId;
+    set({ costsLoading: true, costsError: null });
+    try {
+      const entry = await apiClient.createManualCost(projectId, input);
+      if (get().activeProjectId !== projectId) return entry;
+      const [costLedger, claimCostList] = await Promise.all([
+        apiClient.fetchCostLedger(projectId),
+        apiClient.fetchClaimCosts(projectId),
+      ]);
+      if (get().activeProjectId !== projectId) return entry;
+      set({
+        costLedger,
+        claimCosts: Object.fromEntries(
+          claimCostList.map((summary) => [summary.claimId, summary]),
+        ),
+        costsLoading: false,
+        selectedCostEntryId: entry.id,
+      });
+      return entry;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Cost entry was not saved.";
+      if (get().activeProjectId === projectId) {
+        set({ costsLoading: false, costsError: message });
+        get().notify("Cost entry was not saved", message);
+      }
+      return null;
+    }
+  },
+  importAwsCur: async (csv, fileName) => {
+    const projectId = get().activeProjectId;
+    set({ costsLoading: true, costsError: null });
+    try {
+      const result = await apiClient.importAwsCur(projectId, csv, fileName);
+      if (get().activeProjectId !== projectId) return result;
+      const claimCostList = await apiClient.fetchClaimCosts(projectId);
+      if (get().activeProjectId !== projectId) return result;
+      set({
+        costLedger: result.ledger,
+        claimCosts: Object.fromEntries(
+          claimCostList.map((summary) => [summary.claimId, summary]),
+        ),
+        costsLoading: false,
+        selectedCostEntryId:
+          result.ledger.entries[0]?.id ?? get().selectedCostEntryId,
+      });
+      return result;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "AWS CUR import failed.";
+      if (get().activeProjectId === projectId) {
+        set({ costsLoading: false, costsError: message });
+        get().notify("AWS CUR import failed", message);
+      }
+      return null;
+    }
+  },
+  setSelectedCostEntry: (selectedCostEntryId) => set({ selectedCostEntryId }),
   scanLineage: async () => {
     const projectId = get().activeProjectId;
     try {

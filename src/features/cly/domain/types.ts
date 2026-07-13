@@ -6,6 +6,7 @@ export type ScreenId =
   | "context"
   | "graph"
   | "experiments"
+  | "costs"
   | "sources"
   | "literature"
   | "notebooks"
@@ -226,6 +227,67 @@ export interface Artifact {
   regeneration: "Ready" | "Stale" | "Broken" | "Manual";
   hash: string;
   updatedAt: string;
+}
+
+export type CostCategory =
+  | "gpu"
+  | "cloud"
+  | "storage"
+  | "model-api"
+  | "agent"
+  | "rerun"
+  | "other";
+
+export type CostWasteClassification =
+  | "failed"
+  | "duplicated"
+  | "abandoned"
+  | "unused"
+  | "repeated"
+  | "stale-rerun";
+
+export interface MoneyTotal {
+  amountMinor: number;
+  currency: string;
+}
+
+export interface CostEntry {
+  id: string;
+  projectId: string;
+  runId: string;
+  runTitle: string;
+  source: "manual" | "aws-cur";
+  providerEntryId: string | null;
+  amountMinor: number;
+  currency: string;
+  category: CostCategory;
+  startedAt: string;
+  endedAt: string;
+  confidenceBps: number;
+  description: string;
+  raw: Record<string, unknown>;
+  createdAt: string;
+  waste: CostWasteClassification[];
+}
+
+export interface CostAggregate {
+  totals: MoneyTotal[];
+  categorizedTotals: Array<{
+    category: CostCategory;
+    totals: MoneyTotal[];
+  }>;
+  conversionState: "empty" | "single-currency" | "unsupported-mixed-currency";
+}
+
+export interface CostLedger extends CostAggregate {
+  entries: CostEntry[];
+  waste: CostAggregate & { entryCount: number };
+}
+
+export interface ClaimCostSummary extends CostAggregate {
+  claimId: string;
+  entries: CostEntry[];
+  runIds: string[];
 }
 
 export interface AuditFinding {

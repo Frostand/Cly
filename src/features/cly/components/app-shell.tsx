@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { AgentSessionsScreen } from "../agent-sessions";
 import type { ScreenId } from "../domain/types";
 import { ContextScreen } from "../screens/context";
+import { CostLedgerScreen } from "../screens/cost-ledger";
 import { ExperimentsScreen, GraphScreen } from "../screens/experiments-graph";
 import {
   DecisionsScreen,
@@ -36,6 +37,7 @@ const screens: Record<ScreenId, () => React.JSX.Element> = {
   context: ContextScreen,
   graph: GraphScreen,
   experiments: ExperimentsScreen,
+  costs: CostLedgerScreen,
   sources: SourcesScreen,
   literature: LiteratureScreen,
   notebooks: NotebooksScreen,

@@ -22,6 +22,7 @@ import {
   PanelLeftOpen,
   ScrollText,
   Settings,
+  WalletCards,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { ScreenId } from "../domain/types";
@@ -68,6 +69,12 @@ const groups: { label: string; items: NavigationItem[] }[] = [
         label: "Experiments",
         icon: Beaker,
         count: (s) => s.data.experiments.length,
+      },
+      {
+        id: "costs",
+        label: "Costs",
+        icon: WalletCards,
+        count: (s) => s.costLedger.waste.entryCount,
       },
       {
         id: "sources",

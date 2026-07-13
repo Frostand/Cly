@@ -8,6 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScreenId } from "../domain/types";
+import { createCostLedgerFixture } from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
 import { useClyStore } from "../store/cly-store";
 import { ClyAppShell } from "./app-shell";
@@ -17,8 +18,13 @@ const loadFromApi = useClyStore.getState().loadFromApi;
 describe("Cly application shell", () => {
   beforeEach(() => {
     localStorage.clear();
+    const data = createFixtureRepository("active");
+    const costs = createCostLedgerFixture("active", data);
     useClyStore.setState({
-      data: createFixtureRepository("active"),
+      data,
+      costLedger: costs.ledger,
+      claimCosts: costs.claimCosts,
+      selectedCostEntryId: costs.ledger.entries[0]?.id ?? null,
       fixtureMode: "active",
       activeProjectId: "project-cly",
       activeScreen: "overview",
@@ -74,6 +80,7 @@ describe("Cly application shell", () => {
       ["context", "Context Composer"],
       ["graph", "Research Object Graph"],
       ["experiments", "Experiment Manager"],
+      ["costs", "Cost ledger"],
       ["sources", "Source Manager"],
       ["literature", "Literature Workspace"],
       ["notebooks", "Notebook Scanner"],
