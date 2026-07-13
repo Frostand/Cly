@@ -1,7 +1,11 @@
 CREATE TABLE IF NOT EXISTS lineage_suggestions (
   id TEXT PRIMARY KEY NOT NULL,
   project_id TEXT NOT NULL,
+  logical_key TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1,
+  lifecycle_state TEXT NOT NULL DEFAULT 'current',
+  supersedes_suggestion_id TEXT,
   chain_json TEXT NOT NULL,
   confidence REAL NOT NULL,
   rationale TEXT NOT NULL,
@@ -13,13 +17,20 @@ CREATE TABLE IF NOT EXISTS lineage_suggestions (
   updated_at TEXT NOT NULL,
   CONSTRAINT lineage_suggestions_project_id_projects_id_fk
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE cascade,
+  CONSTRAINT lineage_suggestions_supersedes_project_fk
+    FOREIGN KEY (supersedes_suggestion_id, project_id)
+    REFERENCES lineage_suggestions(id, project_id),
   CONSTRAINT lineage_suggestions_chain_json CHECK(json_valid(chain_json)),
   CONSTRAINT lineage_suggestions_origin_inferred CHECK(origin = 'inferred'),
-  CONSTRAINT lineage_suggestions_review_state CHECK(review_state IN ('unreviewed', 'approved', 'rejected'))
+  CONSTRAINT lineage_suggestions_review_state CHECK(review_state IN ('unreviewed', 'approved', 'rejected')),
+  CONSTRAINT lineage_suggestions_lifecycle_state CHECK(lifecycle_state IN ('current', 'stale', 'superseded')),
+  CONSTRAINT lineage_suggestions_revision_positive CHECK(revision >= 1),
+  CONSTRAINT lineage_suggestions_id_project_unique UNIQUE(id, project_id)
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS lineage_suggestions_project_fingerprint_unique
-  ON lineage_suggestions (project_id, fingerprint);
+CREATE UNIQUE INDEX IF NOT EXISTS lineage_suggestions_current_logical_unique
+  ON lineage_suggestions (project_id, logical_key)
+  WHERE lifecycle_state = 'current';
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS idx_lineage_suggestions_project_review
   ON lineage_suggestions (project_id, review_state, updated_at);
@@ -36,8 +47,9 @@ CREATE TABLE IF NOT EXISTS lineage_evidence (
   created_at TEXT NOT NULL,
   CONSTRAINT lineage_evidence_project_id_projects_id_fk
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE cascade,
-  CONSTRAINT lineage_evidence_suggestion_id_lineage_suggestions_id_fk
-    FOREIGN KEY (suggestion_id) REFERENCES lineage_suggestions(id) ON DELETE cascade,
+  CONSTRAINT lineage_evidence_suggestion_project_fk
+    FOREIGN KEY (suggestion_id, project_id)
+    REFERENCES lineage_suggestions(id, project_id) ON DELETE cascade,
   CONSTRAINT lineage_evidence_coordinates_json CHECK(json_valid(coordinates))
 );
 --> statement-breakpoint

@@ -56,27 +56,36 @@ const provenanceQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+const lineageCorrectionBodySchema = z
+  .object({
+    confidence: z.number().finite().min(0).max(1).optional(),
+    rationale: z.string().trim().min(1).max(10_000).optional(),
+  })
+  .strict()
+  .refine(
+    (value) => value.confidence !== undefined || value.rationale !== undefined,
+    "An edit decision requires at least one correction.",
+  );
+
+const lineageReviewDecisionBodySchema = z.discriminatedUnion("action", [
+  z
+    .object({ id: z.string().trim().min(1), action: z.literal("approve") })
+    .strict(),
+  z
+    .object({ id: z.string().trim().min(1), action: z.literal("reject") })
+    .strict(),
+  z
+    .object({
+      id: z.string().trim().min(1),
+      action: z.literal("edit"),
+      edit: lineageCorrectionBodySchema,
+    })
+    .strict(),
+]);
+
 const lineageReviewBodySchema = z.object({
   actor: z.string().trim().min(1).max(200).default("local-user"),
-  decisions: z
-    .array(
-      z.object({
-        id: z.string().trim().min(1),
-        action: z.enum(["approve", "reject", "edit"]),
-        edit: z
-          .object({
-            chain: z
-              .array(z.record(z.string(), z.unknown()))
-              .length(6)
-              .optional(),
-            confidence: z.number().finite().min(0).max(1).optional(),
-            rationale: z.string().trim().min(1).max(10_000).optional(),
-          })
-          .optional(),
-      }),
-    )
-    .min(1)
-    .max(100),
+  decisions: z.array(lineageReviewDecisionBodySchema).min(1).max(100),
 });
 
 async function readJson(c) {

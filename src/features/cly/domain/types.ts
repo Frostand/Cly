@@ -412,7 +412,11 @@ export interface LineageEvidence {
 export interface LineageSuggestion {
   id: string;
   projectId: string;
+  logicalKey: string;
   fingerprint: string;
+  revision: number;
+  lifecycleState: "current" | "stale" | "superseded";
+  supersedesSuggestionId: string | null;
   chain: LineageStep[];
   confidence: number;
   rationale: string;
@@ -425,11 +429,17 @@ export interface LineageSuggestion {
   evidence: LineageEvidence[];
 }
 
-export interface LineageReviewDecision {
-  id: string;
-  action: "approve" | "reject" | "edit";
-  edit?: Partial<Pick<LineageSuggestion, "chain" | "confidence" | "rationale">>;
-}
+export type LineageReviewDecision =
+  | { id: string; action: "approve" }
+  | { id: string; action: "reject" }
+  | {
+      id: string;
+      action: "edit";
+      edit:
+        | Pick<LineageSuggestion, "rationale">
+        | Pick<LineageSuggestion, "confidence">
+        | Pick<LineageSuggestion, "rationale" | "confidence">;
+    };
 
 export interface LineageScanMeasurement {
   id: string;

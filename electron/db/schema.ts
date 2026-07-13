@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   real,
@@ -75,6 +76,10 @@ export const lineageSuggestions = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     fingerprint: text("fingerprint").notNull(),
+    logicalKey: text("logical_key").notNull(),
+    revision: integer("revision").notNull().default(1),
+    lifecycleState: text("lifecycle_state").notNull().default("current"),
+    supersedesSuggestionId: text("supersedes_suggestion_id"),
     chainJson: text("chain_json").notNull(),
     confidence: real("confidence").notNull(),
     rationale: text("rationale").notNull(),
@@ -90,10 +95,18 @@ export const lineageSuggestions = sqliteTable(
       "lineage_suggestions_chain_json",
       sql`json_valid(${table.chainJson})`,
     ),
-    uniqueIndex("lineage_suggestions_project_fingerprint_unique").on(
+    uniqueIndex("lineage_suggestions_current_logical_unique")
+      .on(table.projectId, table.logicalKey)
+      .where(sql`${table.lifecycleState} = 'current'`),
+    uniqueIndex("lineage_suggestions_id_project_unique").on(
+      table.id,
       table.projectId,
-      table.fingerprint,
     ),
+    foreignKey({
+      columns: [table.supersedesSuggestionId, table.projectId],
+      foreignColumns: [table.id, table.projectId],
+      name: "lineage_suggestions_supersedes_project_fk",
+    }),
     index("idx_lineage_suggestions_project_review").on(
       table.projectId,
       table.reviewState,
@@ -109,9 +122,7 @@ export const lineageEvidence = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    suggestionId: text("suggestion_id")
-      .notNull()
-      .references(() => lineageSuggestions.id, { onDelete: "cascade" }),
+    suggestionId: text("suggestion_id").notNull(),
     evidenceType: text("evidence_type").notNull(),
     path: text("path"),
     coordinates: text("coordinates").notNull(),
@@ -132,6 +143,11 @@ export const lineageEvidence = sqliteTable(
       table.projectId,
       table.suggestionId,
     ),
+    foreignKey({
+      columns: [table.suggestionId, table.projectId],
+      foreignColumns: [lineageSuggestions.id, lineageSuggestions.projectId],
+      name: "lineage_evidence_suggestion_project_fk",
+    }).onDelete("cascade"),
   ],
 );
 

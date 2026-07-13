@@ -3,7 +3,11 @@ import { expect, test } from "@playwright/test";
 const suggestion = {
   id: "lineage-1",
   projectId: "project-cly",
+  logicalKey: "c".repeat(64),
   fingerprint: "a".repeat(64),
+  revision: 1,
+  lifecycleState: "current",
+  supersedesSuggestionId: null,
   chain: [
     "objective",
     "notebook",

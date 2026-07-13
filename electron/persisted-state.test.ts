@@ -216,6 +216,65 @@ describe("persisted research storage", () => {
     ]);
   });
 
+  it("enforces lineage evidence ownership for direct inserts and updates", () => {
+    const database = getStateDatabase(createDatabasePath());
+    database.exec(`
+      INSERT INTO projects
+        (id, path, normalized_path, name, status, sort_order, metadata, created_at, updated_at)
+      VALUES
+        ('lineage-a', '/tmp/lineage-a', '/tmp/lineage-a', 'A', 'open', 0, '{}', '2026-01-01', '2026-01-01'),
+        ('lineage-b', '/tmp/lineage-b', '/tmp/lineage-b', 'B', 'open', 0, '{}', '2026-01-01', '2026-01-01');
+    `);
+    const hasLogicalKey = database
+      .prepare("PRAGMA table_info(lineage_suggestions)")
+      .all()
+      .some((column) => column.name === "logical_key");
+    if (hasLogicalKey) {
+      database.exec(`
+        INSERT INTO lineage_suggestions
+          (id, project_id, logical_key, fingerprint, revision, lifecycle_state,
+           chain_json, confidence, rationale, origin, review_state, created_at, updated_at)
+        VALUES
+          ('suggestion-b', 'lineage-b', 'logical-b', '${"a".repeat(64)}', 1, 'current',
+           '[]', 0.5, 'B', 'inferred', 'unreviewed', '2026-01-01', '2026-01-01');
+      `);
+    } else {
+      database.exec(`
+        INSERT INTO lineage_suggestions
+          (id, project_id, fingerprint, chain_json, confidence, rationale,
+           origin, review_state, created_at, updated_at)
+        VALUES
+          ('suggestion-b', 'lineage-b', '${"a".repeat(64)}', '[]', 0.5, 'B',
+           'inferred', 'unreviewed', '2026-01-01', '2026-01-01');
+      `);
+    }
+
+    expect(() =>
+      database
+        .prepare(
+          `INSERT INTO lineage_evidence
+            (id, project_id, suggestion_id, evidence_type, coordinates, content_hash, created_at)
+           VALUES ('cross-project-evidence', 'lineage-a', 'suggestion-b', 'file', '{}', ?, '2026-01-01')`,
+        )
+        .run("b".repeat(64)),
+    ).toThrow();
+
+    database
+      .prepare(
+        `INSERT INTO lineage_evidence
+          (id, project_id, suggestion_id, evidence_type, coordinates, content_hash, created_at)
+         VALUES ('evidence-b', 'lineage-b', 'suggestion-b', 'file', '{}', ?, '2026-01-01')`,
+      )
+      .run("c".repeat(64));
+    expect(() =>
+      database
+        .prepare(
+          "UPDATE lineage_evidence SET project_id = 'lineage-a' WHERE id = 'evidence-b'",
+        )
+        .run(),
+    ).toThrow();
+  });
+
   it("enforces project isolation even for direct SQLite writes", () => {
     const database = getStateDatabase(createDatabasePath());
     seedResearchProjects(database);
