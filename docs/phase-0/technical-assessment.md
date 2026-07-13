@@ -51,10 +51,9 @@ Dream is a viable foundation for Cly. It is an MIT-licensed Electron application
 - Credential persistence where it does not use the OS credential store
 - Renderer/preload compatibility names through a staged migration
 - Broad execution approval modes before handling sensitive research projects
-- Electron `sandbox: false` after native-module compatibility testing
+- Remaining broad terminal/agent capabilities behind narrower audited brokers
 - Release signing/notarization ownership and secrets
 
 ## Upgrade constraint
 
 The safest fork strategy is additive. Upstream merges must remain dedicated pull requests, while Cly changes should cluster in `src/features/research`, `electron/api/research`, relational migrations, and small registration seams. See `docs/upstream-sync.md`.
-

@@ -20,10 +20,28 @@ export default defineConfig({
   server: {
     port: devServerPort,
     strictPort: true,
+    headers: {
+      "Content-Security-Policy": [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        "connect-src 'self' ws:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+      ].join("; "),
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+    },
     proxy: {
       "/api": {
         target: `http://127.0.0.1:${apiServerPort}`,
         changeOrigin: true,
+        headers: process.env.ELECTRON_API_TOKEN
+          ? { "x-cly-api-token": process.env.ELECTRON_API_TOKEN }
+          : undefined,
       },
     },
   },

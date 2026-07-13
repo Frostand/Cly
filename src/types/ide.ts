@@ -472,7 +472,7 @@ export interface BrowserUpdatePayload {
 
 export interface DesktopApi {
   isElectron: true;
-  apiSessionToken: string;
+  apiSessionToken?: string;
   initialThemePreferences?: {
     accentColor?: string;
     baseColor?: string;

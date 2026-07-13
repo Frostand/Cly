@@ -74,18 +74,6 @@ const parseOpenCodeModel = (model) => {
 };
 
 const getOpenCodeServerConfig = (codexPermissionMode) => {
-  if (codexPermissionMode === "full-access") {
-    return {
-      permission: {
-        bash: "allow",
-        doom_loop: "allow",
-        edit: "allow",
-        external_directory: "allow",
-        webfetch: "allow",
-      },
-    };
-  }
-
   if (codexPermissionMode === "auto-accept-edits") {
     return {
       permission: {
@@ -171,10 +159,6 @@ const shouldAutoApproveOpenCodePermission = ({
   codexPermissionMode,
   permission,
 }) => {
-  if (codexPermissionMode === "full-access") {
-    return true;
-  }
-
   return (
     codexPermissionMode === "auto-accept-edits" && permission.type === "edit"
   );
@@ -431,6 +415,7 @@ export const streamOpenCodeResponse = ({
   messages,
   model,
   projectReferencesPrompt,
+  projectId,
   projectPath,
   responseMessageMetadata,
   systemPrompt,
@@ -820,11 +805,14 @@ export const streamOpenCodeResponse = ({
 
           const approval = await waitForToolApproval({
             id: approvalId,
+            projectId: projectId ?? projectPath,
             provider: "opencode",
             request: {
+              directory: projectPath,
               input,
               toolName: permission.type || "permission",
             },
+            runId: activeSessionId,
             signal: abortSignal,
           });
 

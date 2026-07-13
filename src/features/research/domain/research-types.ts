@@ -52,6 +52,8 @@ export interface ClaimPayload {
     | "Paper-ready"
     | "Invalidated"
     | "Needs review";
+  reproducibilityStatus?: "not-assessed" | "passed" | "failed";
+  openRiskCount?: number;
 }
 
 export interface ExperimentPayload {

@@ -18,19 +18,28 @@ beforeEach(() => {
     CREATE TABLE research_objects (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, type TEXT NOT NULL,
       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL,
+      origin TEXT NOT NULL DEFAULT 'human', review_state TEXT NOT NULL DEFAULT 'unreviewed',
+      reviewed_by TEXT, reviewed_at TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
     CREATE TABLE research_relationships (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, from_object_id TEXT NOT NULL,
-      to_object_id TEXT NOT NULL, type TEXT NOT NULL, created_at TEXT NOT NULL,
+      to_object_id TEXT NOT NULL, type TEXT NOT NULL,
+      origin TEXT NOT NULL DEFAULT 'human', review_state TEXT NOT NULL DEFAULT 'unreviewed',
+      confidence REAL, reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY (from_object_id) REFERENCES research_objects(id) ON DELETE CASCADE,
       FOREIGN KEY (to_object_id) REFERENCES research_objects(id) ON DELETE CASCADE
     );
     CREATE TABLE provenance_events (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, object_id TEXT, action TEXT NOT NULL,
-      actor_type TEXT NOT NULL, actor_id TEXT, metadata TEXT NOT NULL, created_at TEXT NOT NULL
+      actor_type TEXT NOT NULL, actor_id TEXT, metadata TEXT NOT NULL, created_at TEXT NOT NULL,
+      sequence INTEGER, previous_hash TEXT, event_hash TEXT
+    );
+    CREATE TABLE provenance_heads (
+      project_id TEXT PRIMARY KEY, event_count INTEGER NOT NULL,
+      last_sequence INTEGER NOT NULL, last_hash TEXT NOT NULL
     );
     INSERT INTO projects
       (id, path, normalized_path, name, metadata, created_at, updated_at)
@@ -153,7 +162,10 @@ describe("research repository", () => {
     );
     expect(graph.relationships).toEqual([
       expect.objectContaining({
+        confidence: null,
         fromObjectId: "source-1",
+        origin: "human",
+        reviewState: "unreviewed",
         toObjectId: "claim-1",
         type: "supports",
       }),
@@ -161,6 +173,60 @@ describe("research repository", () => {
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM provenance_events").get(),
     ).toEqual({ count: 3 });
+  });
+
+  it("keeps new objects and relationships unreviewed until an attributable review", () => {
+    const repository = createResearchRepository(database);
+    const source = repository.createObject({
+      id: "source-review",
+      projectId: "project-1",
+      type: "source",
+      title: "Review source",
+      payload: { kind: "source", url: "https://example.com/review" },
+    });
+    const claim = repository.createObject({
+      id: "claim-review",
+      projectId: "project-1",
+      type: "claim",
+      title: "Review claim",
+      payload: { kind: "claim", status: "draft" },
+    });
+    const relationship = repository.createRelationship({
+      id: "relationship-review",
+      projectId: "project-1",
+      fromObjectId: source.id,
+      toObjectId: claim.id,
+      type: "supports",
+    });
+
+    expect(source).toMatchObject({
+      origin: "human",
+      reviewState: "unreviewed",
+      reviewedAt: null,
+      reviewedBy: null,
+    });
+    expect(relationship).toMatchObject({
+      confidence: null,
+      origin: "human",
+      reviewState: "unreviewed",
+      reviewedAt: null,
+      reviewedBy: null,
+    });
+
+    expect(
+      repository.reviewRelationship({
+        id: relationship.id,
+        projectId: "project-1",
+        reviewState: "approved",
+        reviewerId: "reviewer-1",
+        confidence: 0.82,
+      }),
+    ).toMatchObject({
+      confidence: 0.82,
+      reviewState: "approved",
+      reviewedBy: "reviewer-1",
+      reviewedAt: expect.any(String),
+    });
   });
 
   it("validates typed payloads before writing objects or provenance", () => {
@@ -248,7 +314,7 @@ describe("research repository", () => {
     });
   });
 
-  it("persists claim review status changes and experiment evidence links", () => {
+  it("rejects strong and paper-ready claim transitions until integrity gates pass", () => {
     const repository = createResearchRepository(database);
     repository.createObject({
       id: "claim-status",
@@ -269,26 +335,49 @@ describe("research repository", () => {
       payload: { kind: "experiment", hypothesis: "The claim holds." },
     });
 
-    expect(
+    expect(() =>
       repository.updateClaimStatus({
         id: "claim-status",
         projectId: "project-1",
         reviewStatus: "Strong",
+        reviewerId: "reviewer-1",
       }),
-    ).toMatchObject({
-      payload: {
-        kind: "claim",
-        status: "supported",
-        reviewStatus: "Strong",
-      },
-    });
-    repository.createRelationship({
+    ).toThrow("reviewed supporting evidence");
+
+    const support = repository.createRelationship({
       id: "experiment-tests-claim",
       projectId: "project-1",
       fromObjectId: "experiment-status",
       toObjectId: "claim-status",
       type: "tests",
     });
+    repository.reviewRelationship({
+      id: support.id,
+      projectId: "project-1",
+      reviewState: "approved",
+      reviewerId: "reviewer-1",
+      confidence: 0.9,
+    });
+
+    expect(
+      repository.updateClaimStatus({
+        id: "claim-status",
+        projectId: "project-1",
+        reviewStatus: "Strong",
+        reviewerId: "reviewer-1",
+      }),
+    ).toMatchObject({
+      payload: expect.objectContaining({ reviewStatus: "Strong" }),
+    });
+
+    expect(() =>
+      repository.updateClaimStatus({
+        id: "claim-status",
+        projectId: "project-1",
+        reviewStatus: "Paper-ready",
+        reviewerId: "reviewer-1",
+      }),
+    ).toThrow("reproducibility");
 
     expect(repository.listProject("project-1")).toMatchObject({
       relationships: [
@@ -304,6 +393,70 @@ describe("research repository", () => {
     expect(events.map((event) => event.action)).toContain(
       "claim.status.updated",
     );
+  });
+
+  it("allows paper-ready only with a reviewed completed reproducibility chain", () => {
+    const repository = createResearchRepository(database);
+    repository.createObject({
+      id: "claim-paper-ready",
+      projectId: "project-1",
+      type: "claim",
+      title: "Paper-ready claim",
+      payload: {
+        kind: "claim",
+        status: "draft",
+        reproducibilityStatus: "passed",
+        openRiskCount: 0,
+      },
+    });
+    repository.createObject({
+      id: "experiment-paper-ready",
+      projectId: "project-1",
+      type: "experiment",
+      title: "Reviewed experiment",
+      payload: { kind: "experiment", hypothesis: "The claim holds." },
+    });
+    repository.createObject({
+      id: "run-paper-ready",
+      projectId: "project-1",
+      type: "run",
+      title: "Completed run",
+      payload: { kind: "run", status: "completed" },
+    });
+    const tests = repository.createRelationship({
+      id: "tests-paper-ready",
+      projectId: "project-1",
+      fromObjectId: "experiment-paper-ready",
+      toObjectId: "claim-paper-ready",
+      type: "tests",
+    });
+    const generated = repository.createRelationship({
+      id: "generated-paper-ready",
+      projectId: "project-1",
+      fromObjectId: "run-paper-ready",
+      toObjectId: "experiment-paper-ready",
+      type: "generated-by",
+    });
+    for (const relationship of [tests, generated]) {
+      repository.reviewRelationship({
+        id: relationship.id,
+        projectId: "project-1",
+        reviewState: "approved",
+        reviewerId: "reviewer-1",
+        confidence: 0.9,
+      });
+    }
+
+    expect(
+      repository.updateClaimStatus({
+        id: "claim-paper-ready",
+        projectId: "project-1",
+        reviewStatus: "Paper-ready",
+        reviewerId: "reviewer-1",
+      }),
+    ).toMatchObject({
+      payload: expect.objectContaining({ reviewStatus: "Paper-ready" }),
+    });
   });
 
   it("creates and lists attributable project-scoped provenance", () => {
@@ -343,6 +496,79 @@ describe("research repository", () => {
         actorType: "human",
       }),
     ).toThrow("Provenance object does not belong to the project");
+  });
+
+  it("chains provenance events and detects tampering", () => {
+    const repository = createResearchRepository(database);
+    repository.appendProvenance({
+      action: "repository.scan.completed",
+      actorType: "system",
+      projectId: "project-1",
+    });
+    repository.appendProvenance({
+      action: "repository.change.observed",
+      actorType: "system",
+      metadata: { path: "src/index.ts" },
+      projectId: "project-1",
+    });
+
+    expect(repository.verifyProvenance("project-1")).toMatchObject({
+      eventCount: 2,
+      headHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      valid: true,
+    });
+    expect(() =>
+      database
+        .prepare(
+          "UPDATE provenance_events SET metadata = '{}' WHERE sequence = 1",
+        )
+        .run(),
+    ).toThrow("Provenance events are immutable");
+
+    database.exec("DROP TRIGGER provenance_events_immutable_update");
+    database
+      .prepare(
+        "UPDATE provenance_events SET metadata = '{\"tampered\":true}' WHERE sequence = 1",
+      )
+      .run();
+    expect(repository.verifyProvenance("project-1")).toMatchObject({
+      valid: false,
+      reason: expect.stringContaining("mismatch"),
+    });
+  });
+
+  it.each([
+    "reordered",
+    "deleted",
+  ] as const)("detects %s provenance events even if database triggers are bypassed", (mutation) => {
+    const repository = createResearchRepository(database);
+    for (const index of [1, 2, 3]) {
+      repository.appendProvenance({
+        action: "repository.change.observed",
+        actorType: "system",
+        metadata: { index },
+        projectId: "project-1",
+      });
+    }
+    database.exec(`
+        DROP TRIGGER provenance_events_immutable_update;
+        DROP TRIGGER provenance_events_immutable_delete;
+      `);
+    if (mutation === "reordered") {
+      database
+        .prepare(
+          "UPDATE provenance_events SET sequence = 99 WHERE sequence = 1",
+        )
+        .run();
+    } else {
+      database
+        .prepare("DELETE FROM provenance_events WHERE sequence = 2")
+        .run();
+    }
+
+    expect(repository.verifyProvenance("project-1")).toMatchObject({
+      valid: false,
+    });
   });
 
   it("rejects relationships across projects", () => {

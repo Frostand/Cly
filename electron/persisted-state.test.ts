@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-
+import { createResearchRepository } from "./api/research/repository.js";
 import {
   closePersistedStateDatabase,
   getStateDatabase,
   savePersistedState,
 } from "./persisted-state.js";
+import { createStateSaveQueue } from "./state-save-queue.js";
 
 const tempDirectories: string[] = [];
 
@@ -94,6 +95,48 @@ describe("persisted research storage", () => {
       { id: "project-a", status: "open" },
       { id: "project-b", status: "closed" },
     ]);
+  });
+
+  it("serializes burst state saves with research writes without loss or contention", async () => {
+    const databasePath = createDatabasePath();
+    const database = getStateDatabase(databasePath);
+    seedResearchProjects(database);
+    const repository = createResearchRepository(database);
+    const queue = createStateSaveQueue({
+      saveState: (state: unknown) =>
+        savePersistedState(state, { databasePath }),
+    });
+    const saves: Array<Promise<unknown>> = [];
+
+    for (let index = 0; index < 100; index += 1) {
+      saves.push(
+        queue.save({
+          projects: [{ id: "project-a", name: `A ${index}`, path: "/tmp/a" }],
+          closedProjects: [],
+          chats: [],
+          messagesByChatId: {},
+          settings: {},
+        }),
+      );
+      repository.appendProvenance({
+        action: "repository.change.observed",
+        actorType: "system",
+        metadata: { index },
+        projectId: "project-a",
+      });
+    }
+
+    await Promise.all(saves);
+    await queue.flushAndClose();
+    expect(repository.verifyProvenance("project-a")).toMatchObject({
+      eventCount: 101,
+      valid: true,
+    });
+    expect(
+      database
+        .prepare("SELECT name FROM projects WHERE id = 'project-a'")
+        .get(),
+    ).toEqual({ name: "A 99" });
   });
 
   it("creates a consistent pre-migration snapshot for an existing database", () => {

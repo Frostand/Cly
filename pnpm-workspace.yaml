@@ -19,6 +19,7 @@ supportedArchitectures:
 
 overrides:
   js-yaml: 4.3.0
+  lodash-es: 4.18.1
   postcss: 8.5.10
 
 ignoredBuiltDependencies:

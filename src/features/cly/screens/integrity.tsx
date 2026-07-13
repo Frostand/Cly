@@ -14,7 +14,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Badge,
   Button,
@@ -36,6 +36,11 @@ import {
 } from "../components/visuals";
 import { prioritizeNextSteps } from "../domain/logic";
 import type { NextStep } from "../domain/types";
+import {
+  apiClient,
+  type ProvenanceEvent,
+  type ProvenanceIntegrity,
+} from "../services/api-client";
 import { mockServices } from "../services/mock-services";
 import { useClyStore } from "../store/cly-store";
 
@@ -52,8 +57,40 @@ export function ProvenanceScreen() {
   const data = useClyStore((s) => s.data);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
+  const activeProjectId = useClyStore((s) => s.activeProjectId);
+  const fixtureMode = useClyStore((s) => s.fixtureMode);
   const [view, setView] = useState<ProvenanceView>("Lineage");
   const [query, setQuery] = useState("");
+  const [events, setEvents] = useState<ProvenanceEvent[]>([]);
+  const [integrity, setIntegrity] = useState<ProvenanceIntegrity | null>(null);
+
+  useEffect(() => {
+    if (fixtureMode !== "empty") return;
+    let current = true;
+    Promise.all([
+      apiClient.fetchProvenance(activeProjectId),
+      apiClient.verifyProvenance(activeProjectId),
+    ])
+      .then(([nextEvents, nextIntegrity]) => {
+        if (!current) return;
+        setEvents(nextEvents);
+        setIntegrity(nextIntegrity);
+      })
+      .catch((error) => {
+        if (!current) return;
+        setEvents([]);
+        setIntegrity({
+          valid: false,
+          reason:
+            error instanceof Error
+              ? error.message
+              : "Provenance verification failed.",
+        });
+      });
+    return () => {
+      current = false;
+    };
+  }, [activeProjectId, fixtureMode]);
   const visible = artifacts.filter(
     (item) =>
       (!query ||
@@ -102,6 +139,56 @@ export function ProvenanceScreen() {
           </>
         }
       />
+      {fixtureMode === "empty" ? (
+        <Panel className="cly-panel-body cly-section">
+          <div className="cly-row-between">
+            <div>
+              <strong>Project provenance ledger</strong>
+              <div className="cly-muted cly-small">
+                {events.length} immutable, ordered events from SQLite
+              </div>
+            </div>
+            <Badge tone={integrity?.valid ? "success" : "danger"}>
+              {integrity?.valid ? "Chain verified" : "Integrity warning"}
+            </Badge>
+          </div>
+          {integrity?.reason ? (
+            <div className="cly-callout" data-tone="danger" role="alert">
+              {integrity.reason}
+            </div>
+          ) : null}
+          {events.length > 0 ? (
+            <div className="cly-table-wrap" style={{ marginTop: 12 }}>
+              <table className="cly-table">
+                <thead>
+                  <tr>
+                    <th>Sequence</th>
+                    <th>Action</th>
+                    <th>Actor</th>
+                    <th>Object</th>
+                    <th>Time</th>
+                    <th>Hash</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((event) => (
+                    <tr key={event.id}>
+                      <td>{event.sequence ?? "Legacy"}</td>
+                      <td>{event.action}</td>
+                      <td>{event.actorId ?? event.actorType}</td>
+                      <td>{event.objectId ?? "Project"}</td>
+                      <td>{new Date(event.createdAt).toLocaleString()}</td>
+                      <td className="cly-mono">
+                        {event.eventHash?.slice(0, 12) ?? "Unchained"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </Panel>
+      ) : null}
       <div className="cly-metric-row">
         <Metric
           label="Artifacts"

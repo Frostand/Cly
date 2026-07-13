@@ -510,18 +510,6 @@ export const SettingsDialog = () => {
                     />
                   </SettingsControlRow>
 
-                  <SettingsSwitchRow
-                    checked={settings.autoAcceptPermissions}
-                    description={settingsT("fullPermissionsDescription")}
-                    label={settingsT("fullPermissions")}
-                    onCheckedChange={(checked) =>
-                      setSettings((previous) => ({
-                        ...previous,
-                        autoAcceptPermissions: checked,
-                      }))
-                    }
-                  />
-
                   <SettingsGroup label={themeT("appearance")}>
                     <SettingsControlRow
                       description={themeT("themeDescription")}

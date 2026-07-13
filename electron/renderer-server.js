@@ -3,10 +3,25 @@ import http from "node:http";
 import path from "node:path";
 import sirv from "sirv";
 
-import { createApiSessionToken, startApiServer } from "./api-server.js";
+import {
+  API_SESSION_TOKEN_HEADER,
+  createApiSessionToken,
+  startApiServer,
+} from "./api-server.js";
 import { stopChildProcess } from "./process-sessions.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const PRODUCTION_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
 
 function getNodeExecutable() {
   const candidates = [
@@ -55,6 +70,7 @@ export function createRendererServerManager({
     apiServer = await startApiServer({
       port: apiServerPort,
       apiToken: apiSessionToken,
+      allowedRendererOrigin: new URL(developmentRendererUrl).origin,
     });
 
     if (isDevelopment) {
@@ -89,6 +105,7 @@ export function createRendererServerManager({
             ...process.env,
             BROWSER: "none",
             ELECTRON_API_PORT: String(apiServerPort),
+            ELECTRON_API_TOKEN: apiSessionToken,
             ELECTRON_INTERNAL_PORT: String(internalRendererPort),
             FORCE_COLOR: "1",
           },
@@ -143,6 +160,9 @@ export function createRendererServerManager({
     });
 
     productionHttpServer = http.createServer((request, response) => {
+      response.setHeader("Content-Security-Policy", PRODUCTION_CSP);
+      response.setHeader("X-Content-Type-Options", "nosniff");
+      response.setHeader("Referrer-Policy", "no-referrer");
       if (request.url?.startsWith("/api")) {
         const proxyUrl = new URL(
           request.url,
@@ -152,7 +172,11 @@ export function createRendererServerManager({
           proxyUrl,
           {
             method: request.method,
-            headers: request.headers,
+            headers: {
+              ...request.headers,
+              host: `127.0.0.1:${apiServerPort}`,
+              [API_SESSION_TOKEN_HEADER]: apiSessionToken,
+            },
           },
           (proxyRes) => {
             response.writeHead(proxyRes.statusCode, proxyRes.headers);

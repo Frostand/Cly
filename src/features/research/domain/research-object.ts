@@ -57,6 +57,10 @@ const payloadSchema = z.discriminatedUnion("kind", [
         "Needs review",
       ])
       .optional(),
+    reproducibilityStatus: z
+      .enum(["not-assessed", "passed", "failed"])
+      .optional(),
+    openRiskCount: z.number().int().min(0).optional(),
   }),
   z.object({
     kind: z.literal("experiment"),
@@ -78,6 +82,14 @@ export const researchObjectInputSchema = z
     projectId: z.string().trim().min(1),
     title: z.string().trim().min(1).max(500),
     description: z.string().trim().max(10_000).default(""),
+    origin: z
+      .enum(["human", "imported", "inferred", "system"])
+      .default("human"),
+    reviewState: z
+      .enum(["unreviewed", "approved", "rejected"])
+      .default("unreviewed"),
+    reviewedBy: z.string().trim().min(1).nullable().default(null),
+    reviewedAt: z.iso.datetime().nullable().default(null),
     payload: payloadSchema,
   })
   .superRefine((value, context) => {
@@ -100,6 +112,10 @@ interface ResearchObjectBase {
   projectId: string;
   title: string;
   description: string;
+  origin: "human" | "imported" | "inferred" | "system";
+  reviewState: "unreviewed" | "approved" | "rejected";
+  reviewedBy: string | null;
+  reviewedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

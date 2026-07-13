@@ -17,6 +17,8 @@ import type { ClyServices } from "./interfaces";
 
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const isoNow = () => new Date().toISOString();
+const isExplicitDemoRuntime =
+  import.meta.env.DEV && import.meta.env.VITE_CLY_DEMO_MODE === "1";
 
 const ensureActiveProject = async () => {
   const state = useClyStore.getState();
@@ -25,7 +27,22 @@ const ensureActiveProject = async () => {
   );
   if (!project) throw new Error("Active research project was not found.");
   await apiClient.ensureProject(project);
-  return { projectId: project.id, state };
+  return project.id;
+};
+
+const stateForProject = (projectId: string) => {
+  const state = useClyStore.getState();
+  return state.activeProjectId === projectId ? state : null;
+};
+
+const activeProjectId = () => {
+  const state = useClyStore.getState();
+  if (
+    !state.data.projects.some((project) => project.id === state.activeProjectId)
+  ) {
+    throw new Error("Active research project was not found.");
+  }
+  return state.activeProjectId;
 };
 
 export const mockServices: ClyServices = {
@@ -74,7 +91,7 @@ export const mockServices: ClyServices = {
   },
   experiments: {
     async create(input) {
-      const { projectId, state } = await ensureActiveProject();
+      const projectId = await ensureActiveProject();
       const object = await apiClient.createObject(projectId, {
         type: "experiment",
         title: input.name,
@@ -97,7 +114,7 @@ export const mockServices: ClyServices = {
         runIds: [],
         updatedAt: object.updatedAt,
       };
-      state.addExperiment(experiment);
+      stateForProject(projectId)?.addExperiment(experiment);
       return experiment;
     },
     async duplicate(experimentId) {
@@ -113,7 +130,7 @@ export const mockServices: ClyServices = {
         runIds: [],
         updatedAt: isoNow(),
       };
-      const { projectId, state } = await ensureActiveProject();
+      const projectId = await ensureActiveProject();
       const object = await apiClient.createObject(projectId, {
         type: "experiment",
         title: duplicate.name,
@@ -128,7 +145,7 @@ export const mockServices: ClyServices = {
         id: object.id,
         updatedAt: object.updatedAt,
       };
-      state.addExperiment(persistedDuplicate);
+      stateForProject(projectId)?.addExperiment(persistedDuplicate);
       return persistedDuplicate;
     },
   },
@@ -189,12 +206,14 @@ export const mockServices: ClyServices = {
       useClyStore.getState().updateSource(sourceId, { inNotebookBundle: true });
     },
     async linkClaim(sourceId, claimId) {
-      const state = useClyStore.getState();
-      await apiClient.createRelationship(state.activeProjectId, {
+      const projectId = activeProjectId();
+      const relationship = await apiClient.createRelationship(projectId, {
         fromObjectId: sourceId,
         toObjectId: claimId,
         type: "supports",
       });
+      const state = stateForProject(projectId);
+      if (!state) return;
       const source = state.data.sources.find((item) => item.id === sourceId);
       const claim = state.data.claims.find((item) => item.id === claimId);
       if (source) {
@@ -212,20 +231,22 @@ export const mockServices: ClyServices = {
         });
       }
       state.addGraphEdge({
-        id: `edge-${crypto.randomUUID().slice(0, 8)}`,
+        id: relationship.id,
         source: sourceId,
         target: claimId,
         relation: "supports",
-        confidence: 1,
-        approved: true,
+        confidence: relationship.confidence,
+        approved: relationship.reviewState === "approved",
       });
     },
     async enrich(sourceId) {
-      const state = useClyStore.getState();
+      const projectId = activeProjectId();
+      const state = stateForProject(projectId);
+      if (!state) throw new Error("Active research project changed.");
       const source = state.data.sources.find((item) => item.id === sourceId);
       if (!source) throw new Error("Source not found.");
       const enrichment = extractLiteratureMetadata(source);
-      await apiClient.updateSource(state.activeProjectId, sourceId, {
+      await apiClient.updateSource(projectId, sourceId, {
         description: enrichment.researchProblem,
         payload: {
           kind: "source",
@@ -250,7 +271,7 @@ export const mockServices: ClyServices = {
         limitations: enrichment.limitations,
         updatedAt: enrichment.enrichedAt,
       };
-      state.updateSource(sourceId, updated);
+      stateForProject(projectId)?.updateSource(sourceId, updated);
       return updated;
     },
   },
@@ -279,7 +300,29 @@ export const mockServices: ClyServices = {
   },
   claims: {
     async create(text) {
-      const { projectId, state } = await ensureActiveProject();
+      const demoState = useClyStore.getState();
+      if (isExplicitDemoRuntime) {
+        const claim: Claim = {
+          id: id("claim"),
+          text,
+          type: "Result",
+          status: "Unsupported",
+          confidence: 0,
+          supportingSourceIds: [],
+          contradictingSourceIds: [],
+          experimentIds: [],
+          notebookIds: [],
+          artifactIds: [],
+          assumptions: [],
+          weaknesses: ["No evidence linked yet"],
+          reviewerRisks: [],
+          nextExperiment: "Link evidence or design a test.",
+          updatedAt: isoNow(),
+        };
+        demoState.addClaim(claim);
+        return claim;
+      }
+      const projectId = await ensureActiveProject();
       const object = await apiClient.createObject(projectId, {
         type: "claim",
         title: text,
@@ -307,56 +350,110 @@ export const mockServices: ClyServices = {
         nextExperiment: "Link evidence or design a test.",
         updatedAt: object.updatedAt,
       };
-      state.addClaim(claim);
+      stateForProject(projectId)?.addClaim(claim);
       return claim;
     },
     async setStatus(claimId, status) {
-      const state = useClyStore.getState();
-      await apiClient.updateClaimStatus(state.activeProjectId, claimId, status);
-      state.updateClaim(claimId, { status, updatedAt: isoNow() });
+      const projectId = activeProjectId();
+      await apiClient.updateClaimStatus(projectId, claimId, status);
+      stateForProject(projectId)?.updateClaim(claimId, {
+        status,
+        updatedAt: isoNow(),
+      });
     },
     async linkExperiment(claimId, experimentId) {
-      const state = useClyStore.getState();
+      const projectId = activeProjectId();
+      const state = stateForProject(projectId);
+      if (!state) return;
       const claim = state.data.claims.find((item) => item.id === claimId);
       if (!claim) return;
       const experiment = state.data.experiments.find(
         (item) => item.id === experimentId,
       );
       if (!experiment) return;
-      const relationship = await apiClient.createRelationship(
-        state.activeProjectId,
-        {
-          fromObjectId: experimentId,
-          toObjectId: claimId,
-          type: "tests",
-        },
+      if (isExplicitDemoRuntime) {
+        state.updateClaim(claimId, {
+          experimentIds: Array.from(
+            new Set([...claim.experimentIds, experimentId]),
+          ),
+        });
+        state.updateExperiment(experimentId, {
+          claimIds: Array.from(new Set([...experiment.claimIds, claimId])),
+        });
+        state.addGraphEdge({
+          id: id("edge"),
+          source: experimentId,
+          target: claimId,
+          relation: "tests",
+          confidence: null,
+          approved: false,
+        });
+        return;
+      }
+      const relationship = await apiClient.createRelationship(projectId, {
+        fromObjectId: experimentId,
+        toObjectId: claimId,
+        type: "tests",
+      });
+      const currentState = stateForProject(projectId);
+      if (!currentState) return;
+      const currentClaim = currentState.data.claims.find(
+        (item) => item.id === claimId,
       );
-      state.updateClaim(claimId, {
+      const currentExperiment = currentState.data.experiments.find(
+        (item) => item.id === experimentId,
+      );
+      if (!currentClaim || !currentExperiment) return;
+      currentState.updateClaim(claimId, {
         experimentIds: Array.from(
-          new Set([...claim.experimentIds, experimentId]),
+          new Set([...currentClaim.experimentIds, experimentId]),
         ),
       });
-      state.updateExperiment(experimentId, {
-        claimIds: Array.from(new Set([...experiment.claimIds, claimId])),
+      currentState.updateExperiment(experimentId, {
+        claimIds: Array.from(new Set([...currentExperiment.claimIds, claimId])),
       });
-      state.addGraphEdge({
+      currentState.addGraphEdge({
         id: relationship.id,
         source: experimentId,
         target: claimId,
-        relation: "validates",
-        confidence: 1,
-        approved: true,
+        relation: "tests",
+        confidence: relationship.confidence,
+        approved: relationship.reviewState === "approved",
       });
     },
   },
   graph: {
     async createRelationship(input) {
-      const edge = { ...input, id: id("edge") };
-      useClyStore.getState().addGraphEdge(edge);
+      const projectId = activeProjectId();
+      const relationship = await apiClient.createRelationship(projectId, {
+        fromObjectId: input.source,
+        toObjectId: input.target,
+        type: input.relation === "tests" ? "tests" : "uses",
+      });
+      const edge = {
+        ...input,
+        id: relationship.id,
+        relation:
+          relationship.type === "tests"
+            ? ("tests" as const)
+            : ("uses" as const),
+        confidence: relationship.confidence,
+        approved: relationship.reviewState === "approved",
+      };
+      stateForProject(projectId)?.addGraphEdge(edge);
       return edge;
     },
     async approveRelationship(edgeId) {
-      useClyStore.getState().updateGraphEdge(edgeId, { approved: true });
+      const projectId = activeProjectId();
+      const relationship = await apiClient.reviewRelationship(
+        projectId,
+        edgeId,
+        { reviewState: "approved", confidence: null },
+      );
+      stateForProject(projectId)?.updateGraphEdge(edgeId, {
+        approved: relationship.reviewState === "approved",
+        confidence: relationship.confidence,
+      });
     },
   },
   reproducibility: {

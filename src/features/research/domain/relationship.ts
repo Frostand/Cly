@@ -13,13 +13,18 @@ export const relationshipInputSchema = z.object({
     "tests",
     "implements",
   ]),
+  origin: z.enum(["human", "imported", "inferred", "system"]).default("human"),
 });
 
-export type RelationshipInput = z.infer<typeof relationshipInputSchema>;
+export type RelationshipInput = z.input<typeof relationshipInputSchema>;
 
-export interface Relationship extends RelationshipInput {
+export type Relationship = z.output<typeof relationshipInputSchema> & {
+  reviewState: "unreviewed" | "approved" | "rejected";
+  confidence: number | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
   createdAt: string;
-}
+};
 
 export function createRelationship(
   input: RelationshipInput,
@@ -29,5 +34,12 @@ export function createRelationship(
   if (parsed.fromObjectId === parsed.toObjectId) {
     throw new Error("A research relationship cannot point to itself.");
   }
-  return { ...parsed, createdAt: now.toISOString() };
+  return {
+    ...parsed,
+    reviewState: "unreviewed",
+    confidence: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    createdAt: now.toISOString(),
+  };
 }

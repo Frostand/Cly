@@ -12,34 +12,32 @@ security, and rollback impact in the pull request template. UI screenshots,
 Electron packaging, IDE smoke tests, and upstream synchronization are required
 only when their own issue calls for them; they are not research-core CI gates.
 
-Every pull request to `main` runs these focused checks:
+Every pull request to `main` runs these blocking aggregate checks:
 
-- `Research core CI / typecheck`
-- `Research core CI / research-domain-tests`
-- `Security / dependency-review`
-- `Security / production-licenses`
-- `Security / codeql`
+- `Cly CI / quality` — lint, typecheck, unit tests, web build, and Playwright E2E.
+- `Cly Security / security` — dependency review, production dependency audit,
+  production-license policy, Gitleaks secret scanning, and CodeQL.
 
-Authors resolve every review conversation and re-request review after material
-changes. Reviewers verify the acceptance criteria, test evidence, research-data
-or provenance impact, security boundaries, and rollback path. At least one
-approval must come from someone other than the latest contributor. When a
-`CODEOWNERS` file is introduced, changes to owned paths also require an owner.
+Authors resolve every review conversation after material changes. A reviewer,
+when available, verifies the acceptance criteria, test evidence, research-data
+or provenance impact, security boundaries, and rollback path. The repository's
+solo-maintainer baseline does not require another person's approval, so routine
+merges never require an administrative bypass.
 
 ## Protected `main` configuration
 
-A repository administrator must configure a branch ruleset for `main`; GitHub
-settings are not representable by files in this repository. The ruleset must:
+A repository administrator must configure branch protection or a ruleset for
+`main`; GitHub settings are not representable by files in this repository. The
+protection must:
 
-1. Require a pull request with at least one approving review.
-2. Dismiss stale approvals when new commits are pushed.
-3. Require review from code owners when code owners are configured.
-4. Require every review conversation to be resolved.
-5. Require the five checks listed above to pass and require the branch to be
+1. Require a pull request before merging, with zero mandatory approvals while
+   Cly has one maintainer.
+2. Require every review conversation to be resolved.
+3. Require `Cly CI / quality` and `Cly Security / security` to pass and the branch to be
    current before merge.
-6. Block force pushes, branch deletion, and direct pushes, including for
+4. Block force pushes, branch deletion, and direct pushes, including for
    administrators except through an explicitly audited emergency bypass.
-7. Allow only squash or merge commits according to the repository's selected
+5. Allow only squash or merge commits according to the repository's selected
    history policy; do not merge a pull request with a red or pending gate.
 
 After enabling the ruleset, an administrator should open a draft pull request
@@ -71,8 +69,8 @@ addresses those risks as follows:
 | --- | --- |
 | The production dependency audit blocks a pull request when the lockfile contains moderate-or-higher advisories; the adjacent license gate rejects denied copyleft licenses. | Compromised or legally incompatible supply-chain changes. |
 | The production-license script allowlists permissive licenses and narrow, documented package exceptions. | Unreviewed runtime license obligations or missing license metadata. |
-| CodeQL runs extended JavaScript/TypeScript queries on pull requests, `main`, and weekly, retaining SARIF artifacts without requiring GitHub Advanced Security. | Injection, unsafe data flow, and other code-level vulnerabilities. |
-| GitHub secret scanning and push protection must be enabled in repository settings. | Credentials entering history through source, fixtures, logs, or configuration. |
+| CodeQL runs extended JavaScript/TypeScript queries on pull requests, `main`, and weekly, retaining SARIF artifacts without requiring GitHub Advanced Security uploads. | Injection, unsafe data flow, and other code-level vulnerabilities. |
+| Gitleaks runs on pull requests, `main`, and weekly. GitHub secret scanning and push protection should additionally be enabled if the repository plan supports them. | Credentials entering history through source, fixtures, logs, or configuration. |
 | GitHub Actions receive job-specific minimum permissions; dependency updates are grouped and reviewed like other changes. | Workflow-token abuse and unreviewed supply-chain drift. |
 | The pull request security checklist requires scoped interfaces, validated untrusted input, and human approval for destructive or external actions. | Local API, IPC, agent, command, URL, and filesystem capability escalation. |
 
@@ -84,7 +82,8 @@ acceptable shortcut.
 
 ## Release ownership
 
-Releases use separation of duties even while the team is small:
+Releases use explicit ownership, with separation of duties when another
+maintainer is available:
 
 - The change owner makes the pull request release-ready, supplies test and
   migration evidence, and writes the release-note entry.
@@ -96,10 +95,10 @@ Releases use separation of duties even while the team is small:
 - The repository administrator owns branch rules, secret scanning, push
   protection, environments, and emergency-bypass auditing.
 
-The change owner and reviewer must be different people. The release owner may
-also be the reviewer for a routine release, but may not release an unreviewed
-change. Until signed distribution is configured, builds remain internal and
-must not be described as public releases.
+For a solo-maintainer release, the pull request, green required checks, and
+recorded release evidence replace a mandatory second-person approval. Until
+signed distribution is configured, builds remain internal and must not be
+described as public releases.
 
 For an emergency bypass, the repository administrator records the reason and
 commit in a GitHub issue, obtains retrospective review, and restores every gate

@@ -182,10 +182,7 @@ export const buildCodexExecArgs = ({
   reasoningEffort,
   sessionId,
 }) => {
-  const sandboxMode =
-    codexPermissionMode === "full-access"
-      ? "danger-full-access"
-      : "workspace-write";
+  const sandboxMode = "workspace-write";
   const approvalPolicy =
     codexPermissionMode === "default" ? "on-request" : "never";
   const sandboxConfig = ["-c", `sandbox_mode=${JSON.stringify(sandboxMode)}`];
@@ -234,22 +231,9 @@ export const buildCodexExecArgs = ({
   ];
 };
 
-export const getCodexAppSandboxMode = (codexPermissionMode) => {
-  if (codexPermissionMode === "full-access") {
-    return "danger-full-access";
-  }
+export const getCodexAppSandboxMode = () => "workspace-write";
 
-  return "workspace-write";
-};
-
-export const getCodexAppTurnSandboxPolicy = ({
-  codexPermissionMode,
-  projectPath,
-}) => {
-  if (codexPermissionMode === "full-access") {
-    return { type: "dangerFullAccess" };
-  }
-
+export const getCodexAppTurnSandboxPolicy = ({ projectPath }) => {
   return {
     excludeSlashTmp: false,
     excludeTmpdirEnvVar: false,
@@ -298,8 +282,10 @@ export const chooseCodexApprovalDecision = ({
 export const writeCodexApprovalRequest = async ({
   approvalId,
   input,
+  projectId,
   provider,
   request,
+  runId,
   signal,
   title,
   toolCallId,
@@ -331,8 +317,10 @@ export const writeCodexApprovalRequest = async ({
 
   return waitForToolApproval({
     id: approvalId,
+    projectId,
     provider,
     request,
+    runId,
     signal,
   });
 };

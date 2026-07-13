@@ -2,10 +2,10 @@ import { z } from "zod";
 
 export const chatRequestBodySchema = z.object({
   claudePermissionMode: z
-    .enum(["ask-permissions", "accept-edits", "bypass-permissions"])
+    .enum(["ask-permissions", "accept-edits"])
     .default("ask-permissions"),
   codexPermissionMode: z
-    .enum(["default", "auto-accept-edits", "full-access"])
+    .enum(["default", "auto-accept-edits"])
     .default("default"),
   messages: z.array(z.unknown()),
   model: z.string().min(1),

@@ -23,6 +23,11 @@ const relationshipBodySchema = z.object({
   ]),
 });
 
+const relationshipReviewBodySchema = z.object({
+  reviewState: z.enum(["approved", "rejected"]),
+  confidence: z.number().finite().min(0).max(1).nullable().default(null),
+});
+
 const claimStatusBodySchema = z.object({
   reviewStatus: z.enum([
     "Unsupported",
@@ -114,6 +119,20 @@ export function registerResearchRoutes(
     }
   });
 
+  app.get("/api/projects/:projectId/provenance/integrity", (c) => {
+    try {
+      const result = getRepository().verifyProvenance(c.req.param("projectId"));
+      return c.json(result);
+    } catch (error) {
+      return c.text(
+        error instanceof Error
+          ? error.message
+          : "Provenance verification failed.",
+        400,
+      );
+    }
+  });
+
   app.post("/api/projects/:projectId/repository-observations", async (c) => {
     if (
       (c.req.header("content-length") &&
@@ -181,6 +200,33 @@ export function registerResearchRoutes(
       );
     }
   });
+
+  app.patch(
+    "/api/projects/:projectId/research/relationships/:relationshipId/review",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = relationshipReviewBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          getRepository().reviewRelationship({
+            ...parsed.data,
+            id: c.req.param("relationshipId"),
+            projectId: c.req.param("projectId"),
+            reviewerId: "local-user",
+          }),
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error
+            ? error.message
+            : "Relationship review failed.",
+          400,
+        );
+      }
+    },
+  );
 
   app.patch("/api/projects/:projectId/research/claims/:claimId", async (c) => {
     const body = await readJson(c);

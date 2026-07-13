@@ -1188,8 +1188,10 @@ function getMigrationDirective(statement) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const directiveLine = lines.find((line) =>
-    line.startsWith("-- dream:ensure-column "),
+  const directiveLine = lines.find(
+    (line) =>
+      line.startsWith("-- cly:ensure-column ") ||
+      line.startsWith("-- dream:ensure-column "),
   );
 
   if (!directiveLine) {
@@ -1201,7 +1203,7 @@ function getMigrationDirective(statement) {
   const columnDefinition = definitionParts.join(" ").trim();
 
   if (!tableName || !columnName || !columnDefinition) {
-    throw new Error(`Invalid dream migration directive: ${directiveLine}`);
+    throw new Error(`Invalid Cly migration directive: ${directiveLine}`);
   }
 
   return {
@@ -1214,7 +1216,11 @@ function getMigrationDirective(statement) {
 function stripMigrationDirectives(statement) {
   return statement
     .split(/\r?\n/)
-    .filter((line) => !line.trim().startsWith("-- dream:"))
+    .filter(
+      (line) =>
+        !line.trim().startsWith("-- dream:") &&
+        !line.trim().startsWith("-- cly:"),
+    )
     .join("\n")
     .trim();
 }

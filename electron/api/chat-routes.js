@@ -214,6 +214,7 @@ export const registerChatRoutes = (app) => {
         messages,
         model,
         projectReferencesPrompt,
+        projectId,
         projectPath: resolvedProjectPath,
         modelSpeed,
         reasoningEffort,
@@ -234,6 +235,7 @@ export const registerChatRoutes = (app) => {
         messages,
         model,
         projectReferencesPrompt,
+        projectId,
         projectPath: resolvedProjectPath,
         responseMessageMetadata,
       });
@@ -272,9 +274,11 @@ export const registerChatRoutes = (app) => {
       messages,
       model,
       projectReferencesPrompt,
+      projectId,
       projectPath: resolvedProjectPath,
       reasoningEffort,
       responseMessageMetadata,
+      runId: resolvedChatId,
     });
   });
 };
