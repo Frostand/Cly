@@ -13,6 +13,7 @@ export type ScreenId =
   | "claims"
   | "provenance"
   | "reproducibility"
+  | "impact-review"
   | "decisions"
   | "next-steps"
   | "integrations"
