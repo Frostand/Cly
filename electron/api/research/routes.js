@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
+import { createCostLedgerRepository } from "./cost-ledger-repository.js";
+import { registerCostLedgerRoutes } from "./cost-ledger-routes.js";
 import { createLineageReconstructor } from "./lineage-reconstructor.js";
 import { createResearchRepository } from "./repository.js";
 import { createRepositoryObserver } from "./repository-observer.js";
@@ -151,8 +153,14 @@ export function registerResearchRoutes(
       createReviewerCapsuleService(
         createResearchRepository(getStateDatabase()),
       ),
+    getCostLedgerRepository = () =>
+      createCostLedgerRepository(getStateDatabase()),
   } = {},
 ) {
+  registerCostLedgerRoutes(app, {
+    getRepository: getCostLedgerRepository,
+  });
+
   app.put("/api/projects/:projectId/research", async (c) => {
     const body = await readJson(c);
     if (body.error) return body.error;

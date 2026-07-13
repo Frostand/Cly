@@ -50,6 +50,12 @@ import {
   ExecutionStrip,
   RelationshipChain,
 } from "../components/visuals";
+import {
+  costCategoryLabels,
+  costWasteLabels,
+  formatMoney,
+  formatMoneyTotals,
+} from "../domain/costs";
 import { previewLiteratureThemes } from "../domain/literature-enrichment";
 import type { LiteratureSearchResult } from "../domain/literature-search";
 import { filterAndSortClaims } from "../domain/logic";
@@ -2241,6 +2247,8 @@ function ClaimDetail({
 }) {
   const data = useClyStore((s) => s.data);
   const notify = useClyStore((s) => s.notify);
+  const claimCost = useClyStore((s) => s.claimCosts[claim.id]);
+  const setScreen = useClyStore((s) => s.setScreen);
   return (
     <div className="cly-overview-grid">
       <div>
@@ -2295,7 +2303,89 @@ function ClaimDetail({
                 label="Reviewer risks"
                 value={claim.reviewerRisks.length}
               />
+              <Metric
+                label="Supporting cost"
+                value={formatMoneyTotals(claimCost?.totals ?? [])}
+                detail={`${claimCost?.runIds.length ?? 0} deduplicated ${claimCost?.runIds.length === 1 ? "run" : "runs"}`}
+              />
             </div>
+            <Section
+              title="Cost to claim"
+              subtitle="Supporting runs are counted once across shared artifacts and evidence."
+              actions={
+                <Button variant="ghost" onClick={() => setScreen("costs")}>
+                  Open cost ledger
+                </Button>
+              }
+            >
+              {claimCost?.conversionState === "unsupported-mixed-currency" ? (
+                <div className="cly-cost-currency-warning" role="status">
+                  Different currencies remain separate; conversion is not
+                  supported.
+                </div>
+              ) : null}
+              {claimCost?.entries.length ? (
+                <div className="cly-claim-cost-layout">
+                  <table className="cly-claim-cost-table">
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th>Supporting cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {claimCost.categorizedTotals.map((category) => (
+                        <tr key={category.category}>
+                          <td>{costCategoryLabels[category.category]}</td>
+                          <td>{formatMoneyTotals(category.totals)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <th>Total</th>
+                        <th>{formatMoneyTotals(claimCost.totals)}</th>
+                      </tr>
+                    </tfoot>
+                  </table>
+                  <div className="cly-claim-cost-entries">
+                    {claimCost.entries.map((entry) => (
+                      <DisclosureRow
+                        key={entry.id}
+                        title={entry.runTitle}
+                        detail={`${costCategoryLabels[entry.category]} · ${entry.source === "aws-cur" ? "AWS CUR" : "Manual"}`}
+                        metadata={formatMoney(entry)}
+                        tone={entry.waste.length ? "warning" : undefined}
+                      >
+                        {entry.waste.length ? (
+                          <p className="cly-claim-cost-waste">
+                            {entry.waste
+                              .map((flag) => costWasteLabels[flag])
+                              .join(" · ")}
+                          </p>
+                        ) : null}
+                        <dl className="cly-detail-grid">
+                          <dt>Run</dt>
+                          <dd className="cly-mono">{entry.runId}</dd>
+                          <dt>Usage</dt>
+                          <dd>
+                            {new Date(entry.startedAt).toLocaleString()} –{" "}
+                            {new Date(entry.endedAt).toLocaleString()}
+                          </dd>
+                          <dt>Confidence</dt>
+                          <dd>{entry.confidenceBps / 100}%</dd>
+                        </dl>
+                        <pre className="cly-cost-raw">
+                          {JSON.stringify(entry.raw, null, 2)}
+                        </pre>
+                      </DisclosureRow>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="cly-muted">No supporting run costs attributed.</p>
+              )}
+            </Section>
             <Section title="Evidence chain">
               <div className="cly-evidence-chain">
                 {[

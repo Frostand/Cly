@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createCostLedgerFixture } from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
 import { mockServices } from "../services/mock-services";
 import { resolveInitialFixtureMode, useClyStore } from "./cly-store";
@@ -17,8 +18,15 @@ describe("Cly UI store", () => {
   });
 
   beforeEach(() => {
+    const data = createFixtureRepository("active");
+    const costs = createCostLedgerFixture("active", data);
     useClyStore.setState({
-      data: createFixtureRepository("active"),
+      data,
+      costLedger: costs.ledger,
+      claimCosts: costs.claimCosts,
+      costsLoading: false,
+      costsError: null,
+      selectedCostEntryId: costs.ledger.entries[0]?.id ?? null,
       fixtureMode: "active",
       activeProjectId: "project-cly",
       activeScreen: "overview",
@@ -36,6 +44,208 @@ describe("Cly UI store", () => {
 
     expect(useClyStore.getState().activeProjectId).toBe("project-cells");
     expect(useClyStore.getState().activeScreen).toBe("experiments");
+    expect(useClyStore.getState().costLedger.entries).toEqual([]);
+    expect(useClyStore.getState().claimCosts).toEqual({});
+  });
+
+  it("hydrates persisted runs, the cost ledger, and claim totals together", async () => {
+    const ledger = {
+      categorizedTotals: [
+        { category: "gpu", totals: [{ amountMinor: 1250, currency: "USD" }] },
+      ],
+      conversionState: "single-currency",
+      entries: [
+        {
+          id: "cost-1",
+          projectId: "project-cly",
+          runId: "run-costed",
+          runTitle: "Costed run",
+          source: "manual",
+          providerEntryId: null,
+          amountMinor: 1250,
+          currency: "USD",
+          category: "gpu",
+          startedAt: "2026-07-01T00:00:00.000Z",
+          endedAt: "2026-07-01T01:00:00.000Z",
+          confidenceBps: 9000,
+          description: "GPU runtime",
+          raw: { schema: "cly.manual-cost.v1" },
+          createdAt: "2026-07-01T01:00:00.000Z",
+          waste: [],
+        },
+      ],
+      totals: [{ amountMinor: 1250, currency: "USD" }],
+      waste: {
+        categorizedTotals: [],
+        conversionState: "empty",
+        entries: [],
+        entryCount: 0,
+        totals: [],
+      },
+    };
+    const claimCosts = [
+      {
+        claimId: "claim-costed",
+        entries: ledger.entries,
+        runIds: ["run-costed"],
+        totals: ledger.totals,
+        categorizedTotals: ledger.categorizedTotals,
+        conversionState: "single-currency",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.endsWith("/research") && init?.method === "PUT") {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: "project-cly",
+                name: "Project",
+                path: "/project",
+                metadata: {},
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.endsWith("/research")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                objects: [
+                  {
+                    id: "experiment-costed",
+                    projectId: "project-cly",
+                    type: "experiment",
+                    title: "Cost experiment",
+                    description: "",
+                    payload: { kind: "experiment" },
+                    createdAt: "2026-07-01T00:00:00.000Z",
+                    updatedAt: "2026-07-01T00:00:00.000Z",
+                  },
+                  {
+                    id: "run-costed",
+                    projectId: "project-cly",
+                    type: "run",
+                    title: "Costed run",
+                    description: "",
+                    payload: {
+                      kind: "run",
+                      status: "completed",
+                      commitSha: "abc1234",
+                    },
+                    createdAt: "2026-07-01T00:00:00.000Z",
+                    updatedAt: "2026-07-01T01:00:00.000Z",
+                  },
+                  {
+                    id: "claim-costed",
+                    projectId: "project-cly",
+                    type: "claim",
+                    title: "Costed claim",
+                    description: "",
+                    payload: { kind: "claim", status: "supported" },
+                    createdAt: "2026-07-01T00:00:00.000Z",
+                    updatedAt: "2026-07-01T01:00:00.000Z",
+                  },
+                ],
+                relationships: [
+                  {
+                    id: "generated-costed",
+                    projectId: "project-cly",
+                    fromObjectId: "run-costed",
+                    toObjectId: "experiment-costed",
+                    type: "generated-by",
+                    reviewState: "approved",
+                    confidence: 1,
+                    createdAt: "2026-07-01T00:00:00.000Z",
+                  },
+                ],
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.endsWith("/costs/claims")) {
+          return Promise.resolve(new Response(JSON.stringify(claimCosts)));
+        }
+        if (url.endsWith("/costs")) {
+          return Promise.resolve(new Response(JSON.stringify(ledger)));
+        }
+        return Promise.resolve(new Response("Unavailable", { status: 503 }));
+      }),
+    );
+
+    await expect(useClyStore.getState().loadFromApi()).resolves.toBe(true);
+
+    expect(useClyStore.getState().data.runs).toMatchObject([
+      {
+        id: "run-costed",
+        experimentId: "experiment-costed",
+        status: "Complete",
+        codeVersion: "abc1234",
+      },
+    ]);
+    expect(useClyStore.getState().costLedger).toMatchObject(ledger);
+    expect(useClyStore.getState().claimCosts["claim-costed"]).toMatchObject({
+      totals: [{ amountMinor: 1250, currency: "USD" }],
+      runIds: ["run-costed"],
+    });
+  });
+
+  it("persists integer manual costs before refreshing project-scoped totals", async () => {
+    const current = useClyStore.getState().costLedger.entries[0];
+    const created = {
+      ...current,
+      id: "cost-created",
+      amountMinor: 4321,
+      runId: "run-02",
+    };
+    const ledger = {
+      ...useClyStore.getState().costLedger,
+      entries: [created],
+      totals: [{ amountMinor: 4321, currency: "USD" }],
+    };
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith("/costs/claims")) {
+        return Promise.resolve(new Response(JSON.stringify([])));
+      }
+      if (url.endsWith("/costs") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(JSON.stringify(created), { status: 201 }),
+        );
+      }
+      if (url.endsWith("/costs")) {
+        return Promise.resolve(new Response(JSON.stringify(ledger)));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      useClyStore.getState().createCostEntry({
+        amountMinor: 4321,
+        category: "gpu",
+        confidenceBps: 8750,
+        currency: "USD",
+        description: "Manual GPU rate",
+        endedAt: "2026-07-01T01:00:00.000Z",
+        runId: "run-02",
+        startedAt: "2026-07-01T00:00:00.000Z",
+      }),
+    ).resolves.toMatchObject({ id: "cost-created" });
+
+    const post = fetchMock.mock.calls.find(
+      ([url, init]) => url.endsWith("/costs") && init?.method === "POST",
+    );
+    expect(JSON.parse(post?.[1]?.body as string)).toMatchObject({
+      amountMinor: 4321,
+      confidenceBps: 8750,
+    });
+    expect(useClyStore.getState().costLedger.entries[0].id).toBe(
+      "cost-created",
+    );
+    expect(useClyStore.getState().selectedCostEntryId).toBe("cost-created");
   });
 
   it("clears project-scoped research data and hydrates the selected project", async () => {

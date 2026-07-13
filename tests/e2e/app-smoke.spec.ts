@@ -11,6 +11,7 @@ const destinations = [
   ["notebooks", "Notebook Scanner"],
   ["code", "Code-to-Research Linker"],
   ["claims", "Claim Audit Board"],
+  ["costs", "Cost ledger"],
   ["provenance", "Figure & Table Provenance"],
   ["reproducibility", "Reproducibility Auditor"],
   ["decisions", "Research Decision Log"],

@@ -164,7 +164,7 @@ describe("persisted research storage", () => {
     backup.close();
   });
 
-  it("adds lineage and decision-brief tables to a migrated database without changing its provenance layout", () => {
+  it("adds lineage, decision-brief, and cost-ledger tables to a migrated database without changing its provenance layout", () => {
     const databasePath = createDatabasePath();
     const legacyDatabase = new DatabaseSync(databasePath);
     legacyDatabase.exec(`
@@ -227,6 +227,48 @@ describe("persisted research storage", () => {
       { name: "decision_brief_measurements" },
       { name: "decision_briefs" },
     ]);
+    expect(
+      database
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cost_entries'",
+        )
+        .get(),
+    ).toEqual({ name: "cost_entries" });
+  });
+
+  it("enforces cost-ledger run ownership for direct SQLite writes", () => {
+    const database = getStateDatabase(createDatabasePath());
+    seedResearchProjects(database);
+    database.exec(`
+      INSERT INTO research_objects (id, project_id, type, title, payload, created_at, updated_at)
+      VALUES
+        ('run-a', 'project-a', 'run', 'Run A', '{"kind":"run","status":"completed"}', '2026-01-01', '2026-01-01'),
+        ('run-b', 'project-b', 'run', 'Run B', '{"kind":"run","status":"completed"}', '2026-01-01', '2026-01-01');
+    `);
+
+    const insert = database.prepare(`
+      INSERT INTO cost_entries
+        (id, project_id, run_id, source, dedup_key, amount_minor, currency,
+         category, started_at, ended_at, confidence_bps, raw_json, created_at)
+      VALUES (?, ?, ?, 'manual', ?, 100, 'USD', 'gpu',
+              '2026-01-01', '2026-01-01', 9000, '{}', '2026-01-01')
+    `);
+    expect(() =>
+      insert.run("cross-cost", "project-a", "run-b", "manual:cross-cost"),
+    ).toThrow("Cost entry run must belong to its project.");
+    expect(() =>
+      insert.run("not-run", "project-a", "object-a", "manual:not-run"),
+    ).toThrow("Cost entry run must belong to its project.");
+    expect(() =>
+      insert.run("fractional", "project-a", "run-a", "manual:fractional"),
+    ).not.toThrow();
+    expect(() =>
+      database
+        .prepare(
+          "UPDATE cost_entries SET run_id = 'run-b' WHERE id = 'fractional'",
+        )
+        .run(),
+    ).toThrow("Cost entry run must belong to its project.");
   });
 
   it("enforces decision-brief evidence project isolation and immutable records", () => {

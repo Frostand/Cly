@@ -431,6 +431,216 @@
 }
 
 @layer v3 {
+  .cly-route-costs .cly-metric-row {
+    margin-bottom: var(--cly-space-3);
+  }
+  .cly-cost-currency-warning,
+  .cly-cost-form-error {
+    display: flex;
+    align-items: center;
+    gap: var(--cly-space-2);
+    border: 1px solid color-mix(in srgb, var(--cly-warning) 35%, transparent);
+    border-radius: var(--cly-radius-sm);
+    background: var(--cly-warning-soft);
+    padding: var(--cly-space-2) var(--cly-space-3);
+    color: var(--cly-text);
+    font-size: 10px;
+  }
+  .cly-cost-currency-warning {
+    margin-bottom: var(--cly-space-3);
+  }
+  .cly-cost-ledger-split {
+    height: max(460px, calc(100vh - 282px));
+    max-height: 720px;
+    border-top: 1px solid var(--cly-divider);
+    border-bottom: 1px solid var(--cly-divider);
+  }
+  .cly-cost-ledger-table-pane {
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    padding-right: var(--cly-space-3);
+  }
+  .cly-cost-ledger-table-pane .cly-toolbar {
+    border-top: 0;
+  }
+  .cly-cost-ledger-table-pane .cly-table-wrap {
+    min-height: 0;
+    overflow: auto;
+    border-bottom: 0;
+  }
+  .cly-cost-entry-count {
+    margin-left: auto;
+    color: var(--cly-text-faint);
+    font-size: 9px;
+  }
+  .cly-cost-entry-inspector {
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    background: var(--cly-surface);
+  }
+  .cly-cost-entry-inspector-content {
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--cly-space-4);
+  }
+  .cly-cost-entry-amount {
+    font-size: 20px;
+    font-weight: 660;
+    letter-spacing: -0.025em;
+  }
+  .cly-cost-entry-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cly-space-1);
+    margin: var(--cly-space-2) 0 var(--cly-space-4);
+  }
+  .cly-cost-entry-details {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+  .cly-cost-raw {
+    max-height: 270px;
+    overflow: auto;
+    margin: 0;
+    border: 1px solid var(--cly-divider);
+    border-radius: var(--cly-radius-sm);
+    background: var(--cly-workspace);
+    padding: var(--cly-space-3);
+    color: var(--cly-text-muted);
+    font-family: var(--cly-mono);
+    font-size: 9px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .cly-cost-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--cly-space-3);
+  }
+  .cly-cost-form-wide {
+    grid-column: 1 / -1;
+  }
+  .cly-cost-form-error {
+    margin-top: var(--cly-space-3);
+    border-color: color-mix(in srgb, var(--cly-danger) 35%, transparent);
+    background: var(--cly-danger-soft);
+  }
+  .cly-cost-file-picker {
+    position: relative;
+    min-height: 150px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cly-space-2);
+    border: 1px dashed var(--cly-border);
+    border-radius: var(--cly-radius);
+    background: var(--cly-workspace);
+    color: var(--cly-text-muted);
+    cursor: pointer;
+  }
+  .cly-cost-file-picker:hover,
+  .cly-cost-file-picker:focus-within {
+    border-color: var(--cly-accent);
+    box-shadow: 0 0 0 2px var(--cly-focus-ring);
+  }
+  .cly-cost-file-picker strong {
+    color: var(--cly-text);
+    font-size: 11px;
+  }
+  .cly-cost-file-picker span {
+    font-size: 9px;
+  }
+  .cly-cost-file-picker input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+  .cly-claim-cost-layout {
+    display: grid;
+    grid-template-columns: minmax(210px, 0.7fr) minmax(300px, 1.3fr);
+    gap: var(--cly-space-4);
+    border-top: 1px solid var(--cly-divider);
+  }
+  .cly-claim-cost-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+  .cly-claim-cost-table th,
+  .cly-claim-cost-table td {
+    height: 34px;
+    border-bottom: 1px solid var(--cly-divider);
+    padding: 0 var(--cly-space-2);
+    text-align: left;
+  }
+  .cly-claim-cost-table th:last-child,
+  .cly-claim-cost-table td:last-child {
+    text-align: right;
+  }
+  .cly-claim-cost-table thead th {
+    color: var(--cly-text-faint);
+    font-size: 8px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .cly-claim-cost-table tfoot th {
+    color: var(--cly-text);
+  }
+  .cly-claim-cost-entries {
+    border-left: 1px solid var(--cly-divider);
+    padding-left: var(--cly-space-4);
+  }
+  .cly-claim-cost-waste {
+    color: var(--cly-warning);
+    font-size: 10px;
+    font-weight: 620;
+  }
+
+  @media (max-width: 900px) {
+    .cly-cost-ledger-split.cly-resizable-group {
+      height: auto;
+      max-height: none;
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+    .cly-cost-ledger-split .cly-resize-handle {
+      display: none;
+    }
+    .cly-cost-ledger-table-pane {
+      min-height: 430px;
+      padding-right: 0;
+    }
+    .cly-cost-entry-inspector {
+      min-height: 360px;
+      border-top: 1px solid var(--cly-divider);
+    }
+    .cly-claim-cost-layout {
+      grid-template-columns: 1fr;
+    }
+    .cly-claim-cost-entries {
+      border-top: 1px solid var(--cly-divider);
+      border-left: 0;
+      padding-top: var(--cly-space-3);
+      padding-left: 0;
+    }
+  }
+  @media (max-width: 620px) {
+    .cly-cost-form-grid {
+      grid-template-columns: 1fr;
+    }
+    .cly-cost-form-wide {
+      grid-column: auto;
+    }
+  }
+}
+
+@layer v3 {
   .cly-sidebar-brand {
     height: 48px;
     flex: none;

@@ -1,7 +1,11 @@
 import type { LiteraturePaper } from "../domain/literature-search";
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
 import type {
+  ClaimCostSummary,
   ClaimStatus,
+  CostCategory,
+  CostEntry,
+  CostLedger,
   DecisionBrief,
   DecisionBriefFinding,
   DecisionBriefFindingStatus,
@@ -27,6 +31,24 @@ export interface CreateRelationshipInput {
   fromObjectId: string;
   toObjectId: string;
   type: Relationship["type"];
+}
+
+export interface ManualCostEntryInput {
+  amountMinor: number;
+  category: CostCategory;
+  confidenceBps: number;
+  currency: string;
+  description: string;
+  endedAt: string;
+  runId: string;
+  startedAt: string;
+}
+
+export interface AwsCurImportResult {
+  duplicateCount: number;
+  importedCount: number;
+  ledger: CostLedger;
+  rowCount: number;
 }
 
 export interface ProvenanceEvent {
@@ -144,6 +166,35 @@ export const apiClient = {
 
   fetchResearchData(projectId: string) {
     return request<ResearchData>(projectPath(projectId));
+  },
+
+  fetchCostLedger(projectId: string) {
+    return request<CostLedger>(
+      `/api/projects/${encodeURIComponent(projectId)}/costs`,
+    );
+  },
+
+  fetchClaimCosts(projectId: string) {
+    return request<ClaimCostSummary[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/costs/claims`,
+    );
+  },
+
+  createManualCost(projectId: string, input: ManualCostEntryInput) {
+    return request<CostEntry>(
+      `/api/projects/${encodeURIComponent(projectId)}/costs`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  importAwsCur(projectId: string, csv: string, fileName: string) {
+    return request<AwsCurImportResult>(
+      `/api/projects/${encodeURIComponent(projectId)}/costs/imports/aws-cur`,
+      {
+        method: "POST",
+        body: JSON.stringify({ csv, fileName }),
+      },
+    );
   },
 
   fetchProvenance(projectId: string, limit = 100) {
