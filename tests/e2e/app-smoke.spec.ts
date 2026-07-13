@@ -237,7 +237,7 @@ test("generates and assigns an evidence-linked lab-meeting brief in Decisions", 
     .getByLabel("Owner for Owner needed: baseline decision")
     .fill("Priya");
   await page.getByRole("button", { name: "Assign" }).click();
-  await expect(page.getByText("assigned")).toBeVisible();
+  await expect(page.getByText("assigned", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Event #8" })).toBeVisible();
 });
 
