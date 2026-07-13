@@ -35,6 +35,9 @@ describe("Cly UI store", () => {
       inspectorOpen: true,
       activityOpen: false,
       commandPaletteOpen: false,
+      preregistrations: [],
+      preregistrationsLoading: false,
+      preregistrationsError: null,
     });
   });
 
@@ -826,6 +829,113 @@ describe("Cly UI store", () => {
     expect(fetchMock.mock.calls[3]?.[0]).toBe(
       "/api/projects/project-cly/research/objects",
     );
+  });
+
+  it("keeps preregistration versions and append-only deviation state hydrated", async () => {
+    const experiment = useClyStore.getState().data.experiments[0];
+    const content = {
+      hypothesis: "Calibration reduces worst-group error.",
+      primaryMetrics: ["Worst-group error"],
+      exclusionRules: "Exclude corrupt records only.",
+      analysisPlan: "Use paired estimates with uncertainty intervals.",
+      successCriteria: "Worst-group error improves by two points.",
+      dataset: "Shift benchmark v2",
+      intendedDesign: "Paired ablation",
+    };
+    const snapshot = {
+      id: "snapshot-store",
+      projectId: "project-cly",
+      experimentId: experiment.id,
+      version: 1,
+      amendsSnapshotId: null,
+      content,
+      contentHash: "a".repeat(64),
+      actorType: "human",
+      actorId: "local-user",
+      origin: "human",
+      provenanceEventId: "event-snapshot",
+      createdAt: "2026-07-13T12:00:00.000Z",
+      finalEvaluation: null,
+      deviations: [],
+    } as const;
+    const evaluated = {
+      ...snapshot,
+      finalEvaluation: {
+        id: "evaluation-store",
+        actorId: "local-user",
+        provenanceEventId: "event-evaluation",
+        evaluatedAt: "2026-07-13T13:00:00.000Z",
+      },
+    };
+    const deviation = {
+      id: "deviation-store",
+      projectId: "project-cly",
+      snapshotId: snapshot.id,
+      fieldPath: "/analysisPlan",
+      beforeValue: content.analysisPlan,
+      afterValue: "Use a stratified paired analysis.",
+      rationale: "The planned strata were omitted.",
+      declarationTiming: "retrospective",
+      actorId: "local-user",
+      provenanceEventId: "event-deviation",
+      declaredAt: "2026-07-13T14:00:00.000Z",
+      acknowledgement: null,
+    } as const;
+    const acknowledged = {
+      ...deviation,
+      acknowledgement: {
+        id: "ack-store",
+        state: "acknowledged",
+        actorId: "local-user",
+        provenanceEventId: "event-ack",
+        acknowledgedAt: "2026-07-13T14:01:00.000Z",
+      },
+    } as const;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(snapshot), { status: 201 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(evaluated), { status: 201 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(deviation), { status: 201 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(acknowledged), { status: 201 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      useClyStore.getState().createPreregistration(experiment.id, content),
+    ).resolves.toMatchObject({ id: snapshot.id });
+    await expect(
+      useClyStore.getState().markPreregistrationEvaluated(snapshot.id),
+    ).resolves.toMatchObject({ finalEvaluation: evaluated.finalEvaluation });
+    await expect(
+      useClyStore.getState().declareAnalysisDeviation(snapshot.id, {
+        fieldPath: "/analysisPlan",
+        afterValue: deviation.afterValue,
+        rationale: deviation.rationale,
+      }),
+    ).resolves.toMatchObject({ declarationTiming: "retrospective" });
+    await expect(
+      useClyStore.getState().acknowledgeAnalysisDeviation(deviation.id),
+    ).resolves.toMatchObject({ acknowledgement: acknowledged.acknowledgement });
+
+    expect(useClyStore.getState().preregistrations).toEqual([
+      {
+        ...evaluated,
+        deviations: [acknowledged],
+      },
+    ]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `/api/projects/project-cly/experiments/${experiment.id}/preregistrations`,
+      "/api/projects/project-cly/preregistrations/snapshot-store/final-evaluation",
+      "/api/projects/project-cly/preregistrations/snapshot-store/deviations",
+      "/api/projects/project-cly/deviations/deviation-store/acknowledgements",
+    ]);
   });
 
   it("persists claim status changes and claim-experiment relationships", async () => {

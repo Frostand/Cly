@@ -5253,6 +5253,251 @@
   .cly-route-provenance .cly-grid-3 > .cly-panel {
     border-bottom: 1px solid var(--cly-divider);
   }
+  .cly-prereg-workspace {
+    min-height: 520px;
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    overflow: hidden;
+    border-top: 1px solid var(--cly-divider);
+    border-bottom: 1px solid var(--cly-divider);
+    background: var(--cly-workspace);
+  }
+  .cly-prereg-versions {
+    min-width: 0;
+    border-right: 1px solid var(--cly-divider);
+    background: var(--cly-surface);
+  }
+  .cly-prereg-section-header {
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cly-space-3);
+    border-bottom: 1px solid var(--cly-border-subtle);
+    padding: var(--cly-space-3) var(--cly-space-4);
+  }
+  .cly-prereg-section-header > div:first-child {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+  .cly-prereg-section-header h2,
+  .cly-prereg-section-header h3 {
+    margin: 0;
+    font-size: 13px;
+  }
+  .cly-prereg-section-header span {
+    overflow: hidden;
+    color: var(--cly-text-muted);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cly-prereg-version-list {
+    display: grid;
+  }
+  .cly-prereg-version-row {
+    min-height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cly-space-2);
+    border: 0;
+    border-bottom: 1px solid var(--cly-border-subtle);
+    background: transparent;
+    padding: var(--cly-space-2) var(--cly-space-3);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .cly-prereg-version-row:hover {
+    background: var(--cly-surface-hover);
+  }
+  .cly-prereg-version-row[aria-pressed="true"] {
+    background: var(--cly-selected);
+    box-shadow: inset 2px 0 var(--cly-accent);
+  }
+  .cly-prereg-version-row:focus-visible {
+    position: relative;
+    outline: 2px solid var(--cly-accent);
+    outline-offset: -2px;
+  }
+  .cly-prereg-version-row > span:first-child {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+  .cly-prereg-version-row small {
+    overflow: hidden;
+    color: var(--cly-text-muted);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cly-prereg-empty {
+    min-height: 220px;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: var(--cly-space-2);
+    padding: var(--cly-space-4);
+    color: var(--cly-text-muted);
+    text-align: center;
+  }
+  .cly-prereg-empty span {
+    max-width: 190px;
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .cly-prereg-detail {
+    min-width: 0;
+    background: var(--cly-workspace);
+  }
+  .cly-prereg-content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
+  }
+  .cly-prereg-content > div {
+    min-width: 0;
+    border-bottom: 1px solid var(--cly-border-subtle);
+    padding: var(--cly-space-3) var(--cly-space-4);
+  }
+  .cly-prereg-content > div:nth-child(odd) {
+    border-right: 1px solid var(--cly-border-subtle);
+  }
+  .cly-prereg-content > div:first-child,
+  .cly-prereg-content > div:nth-child(4),
+  .cly-prereg-content > div:nth-child(5) {
+    grid-column: 1 / -1;
+    border-right: 0;
+  }
+  .cly-prereg-content dt {
+    margin-bottom: var(--cly-space-1);
+    color: var(--cly-text-faint);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .cly-prereg-content dd {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+  }
+  .cly-prereg-comparison {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--cly-space-2);
+    border-bottom: 1px solid var(--cly-border-subtle);
+    background: var(--cly-info-soft);
+    padding: var(--cly-space-2) var(--cly-space-4);
+  }
+  .cly-prereg-comparison > div {
+    display: grid;
+  }
+  .cly-prereg-comparison span {
+    color: var(--cly-text-muted);
+    font-size: 10px;
+  }
+  .cly-prereg-deviations {
+    padding-bottom: var(--cly-space-4);
+  }
+  .cly-prereg-deviations > p {
+    margin: var(--cly-space-4);
+  }
+  .cly-prereg-deviation-list {
+    display: grid;
+  }
+  .cly-prereg-deviation {
+    min-height: 52px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--cly-space-3);
+    border-bottom: 1px solid var(--cly-border-subtle);
+    padding: var(--cly-space-2) var(--cly-space-4);
+  }
+  .cly-prereg-deviation > div:first-child {
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--cly-space-2);
+  }
+  .cly-prereg-deviation > div:first-child > span {
+    min-width: 0;
+    display: grid;
+  }
+  .cly-prereg-deviation small {
+    overflow: hidden;
+    color: var(--cly-text-muted);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cly-prereg-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--cly-space-3);
+  }
+  .cly-prereg-span-2 {
+    grid-column: 1 / -1;
+  }
+  .cly-prereg-form .cly-textarea {
+    min-height: 62px;
+  }
+  .cly-prereg-before {
+    border-left: 2px solid var(--cly-border);
+    padding-left: var(--cly-space-3);
+  }
+  .cly-prereg-before span {
+    color: var(--cly-text-faint);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .cly-prereg-before p {
+    margin: var(--cly-space-1) 0 0;
+    color: var(--cly-text-muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 980px) {
+    .cly-prereg-workspace {
+      grid-template-columns: 1fr;
+    }
+    .cly-prereg-versions {
+      border-right: 0;
+      border-bottom: 1px solid var(--cly-divider);
+    }
+    .cly-prereg-version-list {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .cly-prereg-empty {
+      min-height: 120px;
+    }
+  }
+  @media (max-width: 680px) {
+    .cly-prereg-form,
+    .cly-prereg-content {
+      grid-template-columns: 1fr;
+    }
+    .cly-prereg-content > div {
+      grid-column: auto;
+      border-right: 0;
+    }
+    .cly-prereg-section-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .cly-prereg-deviation,
+    .cly-prereg-comparison {
+      grid-template-columns: 1fr;
+    }
+  }
 
   .cly-route-graph {
     height: 100%;

@@ -164,7 +164,7 @@ describe("persisted research storage", () => {
     backup.close();
   });
 
-  it("adds lineage, decision-brief, and cost-ledger tables to a migrated database without changing its provenance layout", () => {
+  it("adds additive research tables to a migrated database without changing its provenance layout", () => {
     const databasePath = createDatabasePath();
     const legacyDatabase = new DatabaseSync(databasePath);
     legacyDatabase.exec(`
@@ -234,6 +234,22 @@ describe("persisted research storage", () => {
         )
         .get(),
     ).toEqual({ name: "cost_entries" });
+    expect(
+      database
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND (
+             name LIKE 'preregistration_%' OR
+             name LIKE 'analysis_deviation%'
+           ) ORDER BY name`,
+        )
+        .all(),
+    ).toEqual([
+      { name: "analysis_deviation_acknowledgements" },
+      { name: "analysis_deviations" },
+      { name: "preregistration_evaluations" },
+      { name: "preregistration_snapshots" },
+    ]);
   });
 
   it("enforces cost-ledger run ownership for direct SQLite writes", () => {

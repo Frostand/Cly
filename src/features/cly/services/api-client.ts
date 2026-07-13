@@ -1,6 +1,7 @@
 import type { LiteraturePaper } from "../domain/literature-search";
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
 import type {
+  AnalysisDeviation,
   ClaimCostSummary,
   ClaimStatus,
   CostCategory,
@@ -12,6 +13,9 @@ import type {
   LineageReviewDecision,
   LineageScanMeasurement,
   LineageSuggestion,
+  PreregistrationComparison,
+  PreregistrationContent,
+  PreregistrationSnapshot,
   ResearchProject,
 } from "../domain/types";
 
@@ -166,6 +170,82 @@ export const apiClient = {
 
   fetchResearchData(projectId: string) {
     return request<ResearchData>(projectPath(projectId));
+  },
+
+  fetchPreregistrations(projectId: string) {
+    return request<PreregistrationSnapshot[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/preregistrations`,
+    );
+  },
+
+  createPreregistration(
+    projectId: string,
+    experimentId: string,
+    content: PreregistrationContent,
+    amendsSnapshotId?: string | null,
+  ) {
+    return request<PreregistrationSnapshot>(
+      `/api/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/preregistrations`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          content,
+          amendsSnapshotId: amendsSnapshotId ?? null,
+          actorId: "local-user",
+          actorType: "human",
+          origin: "human",
+        }),
+      },
+    );
+  },
+
+  comparePreregistration(
+    projectId: string,
+    snapshotId: string,
+    content: PreregistrationContent,
+  ) {
+    return request<PreregistrationComparison[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/preregistrations/${encodeURIComponent(snapshotId)}/compare`,
+      { method: "POST", body: JSON.stringify({ content }) },
+    );
+  },
+
+  markPreregistrationEvaluated(projectId: string, snapshotId: string) {
+    return request<PreregistrationSnapshot>(
+      `/api/projects/${encodeURIComponent(projectId)}/preregistrations/${encodeURIComponent(snapshotId)}/final-evaluation`,
+      {
+        method: "POST",
+        body: JSON.stringify({ actorId: "local-user" }),
+      },
+    );
+  },
+
+  declareAnalysisDeviation(
+    projectId: string,
+    snapshotId: string,
+    input: {
+      fieldPath: AnalysisDeviation["fieldPath"];
+      afterValue: string | string[];
+      rationale: string;
+    },
+  ) {
+    return request<AnalysisDeviation>(
+      `/api/projects/${encodeURIComponent(projectId)}/preregistrations/${encodeURIComponent(snapshotId)}/deviations`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ...input, actorId: "local-user" }),
+      },
+    );
+  },
+
+  acknowledgeAnalysisDeviation(projectId: string, deviationId: string) {
+    return request<AnalysisDeviation>(
+      `/api/projects/${encodeURIComponent(projectId)}/deviations/${encodeURIComponent(deviationId)}/acknowledgements`,
+      {
+        method: "POST",
+        body: JSON.stringify({ actorId: "local-user" }),
+      },
+    );
   },
 
   fetchCostLedger(projectId: string) {
