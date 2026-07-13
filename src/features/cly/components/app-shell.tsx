@@ -26,6 +26,7 @@ import { useClyStore } from "../store/cly-store";
 import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
 import { Inspector } from "./inspector";
 import { Sidebar } from "./navigation";
+import { PrImpactReviewScreen } from "./pr-impact-review/pr-impact-review";
 import { LoadingState } from "./primitives";
 import { ClyMotionProvider, RouteTransition } from "./visuals";
 
@@ -42,6 +43,7 @@ const screens: Record<ScreenId, () => React.JSX.Element> = {
   claims: ClaimsScreen,
   provenance: ProvenanceScreen,
   reproducibility: ReproducibilityScreen,
+  "impact-review": PrImpactReviewScreen,
   decisions: DecisionsScreen,
   "next-steps": NextStepsScreen,
   integrations: IntegrationsScreen,

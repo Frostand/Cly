@@ -14,6 +14,7 @@ import {
   Code2,
   FileStack,
   GitBranch,
+  GitPullRequest,
   Library,
   Lightbulb,
   ListChecks,
@@ -103,6 +104,7 @@ const groups: { label: string; items: NavigationItem[] }[] = [
         icon: ClipboardCheck,
         count: (s) => s.data.findings.filter((x) => x.status === "Open").length,
       },
+      { id: "impact-review", label: "Impact Review", icon: GitPullRequest },
       { id: "decisions", label: "Decisions", icon: Archive },
       {
         id: "next-steps",
