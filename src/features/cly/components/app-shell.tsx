@@ -3,6 +3,7 @@ import { AgentSessionsScreen } from "../agent-sessions";
 import type { ScreenId } from "../domain/types";
 import { ContextScreen } from "../screens/context";
 import { CostLedgerScreen } from "../screens/cost-ledger";
+import { DataObligationsScreen } from "../screens/data-obligations";
 import { ExperimentsScreen, GraphScreen } from "../screens/experiments-graph";
 import {
   DecisionsScreen,
@@ -43,6 +44,7 @@ const screens: Record<ScreenId, () => React.JSX.Element> = {
   notebooks: NotebooksScreen,
   code: CodeLinkerScreen,
   claims: ClaimsScreen,
+  obligations: DataObligationsScreen,
   provenance: ProvenanceScreen,
   reproducibility: ReproducibilityScreen,
   "impact-review": PrImpactReviewScreen,
@@ -73,6 +75,7 @@ function runMenuCommand(command: string) {
     "context-composer": "context",
     "configure-agents": "models",
     "claim-audit": "claims",
+    "data-obligations": "obligations",
     "code-review": "code",
     "run-audit": "reproducibility",
     "generate-next-steps": "next-steps",

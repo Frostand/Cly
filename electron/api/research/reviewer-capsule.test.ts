@@ -270,6 +270,9 @@ describe("reviewer capsule", () => {
     const app = new Hono();
     registerResearchRoutes(app, {
       getRepository: () => repository,
+      getObligationService: () => ({
+        safeEvaluateOperation: () => ({ decision: "allow" }),
+      }),
       getReviewerCapsuleService: () =>
         createReviewerCapsuleService(repository, {
           now: () => "2026-07-13T12:00:00.000Z",

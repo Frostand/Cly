@@ -1,4 +1,12 @@
 import type { LiteraturePaper } from "../domain/literature-search";
+import type {
+  DatasetObligation,
+  DatasetObligationInput,
+  ObligationAlert,
+  ObligationEvaluation,
+  ObligationOperation,
+  ObligationSummary,
+} from "../domain/obligations";
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
 import type {
   AnalysisDeviation,
@@ -116,6 +124,7 @@ export class ApiRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly details?: unknown,
   ) {
     super(message);
   }
@@ -131,9 +140,22 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    const text = (await response.text()).trim();
+    let details: unknown;
+    try {
+      details = text ? JSON.parse(text) : undefined;
+    } catch {
+      details = undefined;
+    }
     throw new ApiRequestError(
-      (await response.text()).trim() || `Request failed (${response.status}).`,
+      typeof details === "object" &&
+        details !== null &&
+        "error" in details &&
+        typeof details.error === "string"
+        ? details.error
+        : text || `Request failed (${response.status}).`,
       response.status,
+      details,
     );
   }
 
@@ -289,22 +311,89 @@ export const apiClient = {
     );
   },
 
-  previewReviewerCapsule(projectId: string, claimIds: string[]) {
+  fetchObligations(projectId: string) {
+    return request<ObligationSummary>(
+      `/api/projects/${encodeURIComponent(projectId)}/obligations`,
+    );
+  },
+
+  saveDatasetObligation(
+    projectId: string,
+    datasetObjectId: string,
+    input: DatasetObligationInput,
+  ) {
+    return request<DatasetObligation>(
+      `/api/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetObjectId)}/obligation`,
+      { method: "PUT", body: JSON.stringify(input) },
+    );
+  },
+
+  evaluateObligations(projectId: string, operation: ObligationOperation) {
+    return request<ObligationEvaluation>(
+      `/api/projects/${encodeURIComponent(projectId)}/obligations/evaluate`,
+      { method: "POST", body: JSON.stringify(operation) },
+    );
+  },
+
+  approveObligationOperation(
+    projectId: string,
+    operation: ObligationOperation,
+    input: { actorId: string; rationale: string },
+  ) {
+    return request<{
+      approval: NonNullable<ObligationEvaluation["approval"]>;
+      evaluation: ObligationEvaluation;
+    }>(`/api/projects/${encodeURIComponent(projectId)}/obligations/approvals`, {
+      method: "POST",
+      body: JSON.stringify({ operation, ...input }),
+    });
+  },
+
+  transitionObligationAlert(
+    projectId: string,
+    alertId: string,
+    input: {
+      state: "acknowledged" | "resolved";
+      actorId: string;
+      note: string;
+    },
+  ) {
+    return request<ObligationAlert>(
+      `/api/projects/${encodeURIComponent(projectId)}/obligations/alerts/${encodeURIComponent(alertId)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
+  },
+
+  previewReviewerCapsule(
+    projectId: string,
+    claimIds: string[],
+    context: Omit<
+      ObligationOperation,
+      "kind" | "integration" | "objectIds"
+    > = {},
+  ) {
     return request<ReviewerCapsule>(
       `/api/projects/${encodeURIComponent(projectId)}/reviewer-capsule/preview`,
       {
         method: "POST",
-        body: JSON.stringify({ claimIds }),
+        body: JSON.stringify({ claimIds, ...context }),
       },
     );
   },
 
-  exportReviewerCapsule(projectId: string, claimIds: string[]) {
+  exportReviewerCapsule(
+    projectId: string,
+    claimIds: string[],
+    context: Omit<
+      ObligationOperation,
+      "kind" | "integration" | "objectIds"
+    > = {},
+  ) {
     return request<ReviewerCapsule>(
       `/api/projects/${encodeURIComponent(projectId)}/reviewer-capsule/export`,
       {
         method: "POST",
-        body: JSON.stringify({ claimIds }),
+        body: JSON.stringify({ claimIds, ...context }),
       },
     );
   },

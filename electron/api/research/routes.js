@@ -3,6 +3,8 @@ import { getStateDatabase } from "../../persisted-state.js";
 import { createCostLedgerRepository } from "./cost-ledger-repository.js";
 import { registerCostLedgerRoutes } from "./cost-ledger-routes.js";
 import { createLineageReconstructor } from "./lineage-reconstructor.js";
+import { registerObligationRoutes } from "./obligation-routes.js";
+import { createObligationService } from "./obligation-service.js";
 import { registerPreregistrationRoutes } from "./preregistration-routes.js";
 import { createResearchRepository } from "./repository.js";
 import { createRepositoryObserver } from "./repository-observer.js";
@@ -70,6 +72,13 @@ const reviewerCapsuleBodySchema = z
         (ids) => new Set(ids).size === ids.length,
         "Claim IDs must be unique.",
       ),
+    purpose: z.string().trim().min(1).max(1_000).default("peer-review"),
+    collaborators: z
+      .array(z.string().trim().min(1).max(500))
+      .max(100)
+      .default([]),
+    residency: z.string().trim().min(1).max(200).nullable().default(null),
+    license: z.string().trim().min(1).max(500).nullable().default(null),
   })
   .strict();
 
@@ -156,12 +165,14 @@ export function registerResearchRoutes(
       ),
     getCostLedgerRepository = () =>
       createCostLedgerRepository(getStateDatabase()),
+    getObligationService = () => createObligationService(getStateDatabase()),
   } = {},
 ) {
   registerCostLedgerRoutes(app, {
     getRepository: getCostLedgerRepository,
   });
   registerPreregistrationRoutes(app, { getRepository });
+  registerObligationRoutes(app, { getService: getObligationService });
 
   app.put("/api/projects/:projectId/research", async (c) => {
     const body = await readJson(c);
@@ -298,6 +309,32 @@ export function registerResearchRoutes(
       const parsed = reviewerCapsuleBodySchema.safeParse(body.data);
       if (!parsed.success) return c.text(parsed.error.message, 400);
       try {
+        const evaluation = getObligationService().safeEvaluateOperation(
+          c.req.param("projectId"),
+          {
+            kind: "export",
+            integration: "reviewer-capsule",
+            objectIds: parsed.data.claimIds,
+            purpose: parsed.data.purpose,
+            collaborators: parsed.data.collaborators,
+            residency: parsed.data.residency,
+            license: parsed.data.license,
+            provider: null,
+            external: true,
+          },
+        );
+        if (evaluation.decision !== "allow") {
+          return c.json(
+            {
+              error:
+                evaluation.decision === "block"
+                  ? "Reviewer capsule blocked by research-data obligations."
+                  : "Reviewer capsule requires recorded human approval.",
+              evaluation,
+            },
+            409,
+          );
+        }
         const service = getReviewerCapsuleService();
         const capsule =
           operation === "export"

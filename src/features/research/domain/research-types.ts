@@ -17,6 +17,7 @@ export interface ArtifactPayload {
 
 export interface SourcePayload {
   kind: "source";
+  sourceType?: "paper" | "dataset" | "documentation" | "note" | "webpage";
   status?: "placeholder" | "resolved";
   authors?: string[];
   citation?: string;

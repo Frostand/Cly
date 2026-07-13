@@ -71,6 +71,13 @@
       "when": 1783950000000,
       "tag": "0009_preregistration",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1783960000000,
+      "tag": "0010_data_obligations",
+      "breakpoints": true
     }
   ]
 }

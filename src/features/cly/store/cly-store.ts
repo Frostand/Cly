@@ -16,6 +16,14 @@ import type {
 } from "../agent-sessions/types";
 import { findDuplicateSource } from "../domain/literature-search";
 import type {
+  DatasetObligation,
+  DatasetObligationInput,
+  InheritedRestriction,
+  ObligationAlert,
+  ObligationEvaluation,
+  ObligationOperation,
+} from "../domain/obligations";
+import type {
   Relationship,
   ResearchObject,
   SourcePayload,
@@ -93,6 +101,11 @@ interface ClyState {
   preregistrations: PreregistrationSnapshot[];
   preregistrationsLoading: boolean;
   preregistrationsError: string | null;
+  datasetObligations: DatasetObligation[];
+  obligationAlerts: ObligationAlert[];
+  inheritedRestrictions: Record<string, InheritedRestriction[]>;
+  obligationsLoading: boolean;
+  obligationsError: string | null;
   agentSessionsMode: AgentSessionsMode;
   selectedAgentSessionId: string | null;
   selectedOverviewSessionId: string | null;
@@ -127,6 +140,26 @@ interface ClyState {
   notify: (title: string, detail?: string) => void;
   dismissToast: (id: string) => void;
   loadFromApi: (projectId?: string) => Promise<boolean>;
+  loadObligations: (projectId?: string) => Promise<boolean>;
+  saveDatasetObligation: (
+    datasetObjectId: string,
+    input: DatasetObligationInput,
+  ) => Promise<DatasetObligation | null>;
+  evaluateObligations: (
+    operation: ObligationOperation,
+  ) => Promise<ObligationEvaluation>;
+  approveObligationOperation: (
+    operation: ObligationOperation,
+    input: { actorId: string; rationale: string },
+  ) => Promise<ObligationEvaluation | null>;
+  transitionObligationAlert: (
+    alertId: string,
+    input: {
+      state: "acknowledged" | "resolved";
+      actorId: string;
+      note: string;
+    },
+  ) => Promise<ObligationAlert | null>;
   loadCosts: (projectId?: string) => Promise<boolean>;
   createCostEntry: (input: ManualCostEntryInput) => Promise<CostEntry | null>;
   importAwsCur: (
@@ -339,13 +372,20 @@ const savedAgentSessionIsValid = saved.selectedAgentSessionId
 
 const sourceFromResearchObject = (object: ResearchObject): Source => {
   const payload = object.payload as SourcePayload;
+  const sourceType = {
+    dataset: "Dataset",
+    documentation: "Documentation",
+    note: "Lab note",
+    paper: "Paper",
+    webpage: "Webpage",
+  } as const;
   return {
     id: object.id,
     title: object.title,
     authors:
       payload.authors?.join(", ") || payload.citation || "Unknown authors",
     year: payload.year ?? new Date(object.createdAt).getFullYear(),
-    type: "Paper",
+    type: sourceType[payload.sourceType ?? "paper"],
     status: "Needs metadata",
     relevance: "Medium",
     confidence: 0,
@@ -641,6 +681,11 @@ export const useClyStore = create<ClyState>((set, get) => ({
   preregistrations: [],
   preregistrationsLoading: false,
   preregistrationsError: null,
+  datasetObligations: [],
+  obligationAlerts: [],
+  inheritedRestrictions: {},
+  obligationsLoading: false,
+  obligationsError: null,
   agentSessionsMode: savedAgentSessionIsValid
     ? (saved.agentSessionsMode ?? "overview")
     : "overview",
@@ -751,6 +796,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
         lineageSuggestions,
         decisionBriefs,
         preregistrations,
+        obligationSummary,
         costLedger,
         claimCostList,
       ] = await Promise.all([
@@ -762,6 +808,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
         apiClient.fetchDecisionBriefs(projectId).catch(() => undefined),
         // Preregistration is additive for databases created before CLY-66.
         apiClient.fetchPreregistrations(projectId).catch(() => undefined),
+        apiClient.fetchObligations(projectId).catch(() => undefined),
         apiClient.fetchCostLedger(projectId).catch(() => emptyCostLedger()),
         apiClient.fetchClaimCosts(projectId).catch(() => []),
       ]);
@@ -784,6 +831,15 @@ export const useClyStore = create<ClyState>((set, get) => ({
               preregistrationsLoading: false,
             }
           : {}),
+        ...(obligationSummary
+          ? {
+              datasetObligations: obligationSummary.obligations,
+              obligationAlerts: obligationSummary.alerts,
+              inheritedRestrictions: obligationSummary.inheritedRestrictions,
+              obligationsError: null,
+              obligationsLoading: false,
+            }
+          : {}),
         costLedger,
         claimCosts: Object.fromEntries(
           claimCostList.map((summary) => [summary.claimId, summary]),
@@ -797,6 +853,106 @@ export const useClyStore = create<ClyState>((set, get) => ({
     } catch {
       // Keep the fixture repository intact when the Electron API is unavailable.
       return false;
+    }
+  },
+  loadObligations: async (requestedProjectId) => {
+    const projectId = requestedProjectId ?? get().activeProjectId;
+    set({ obligationsLoading: true, obligationsError: null });
+    try {
+      const summary = await apiClient.fetchObligations(projectId);
+      if (get().activeProjectId !== projectId) return false;
+      set({
+        datasetObligations: summary.obligations,
+        obligationAlerts: summary.alerts,
+        inheritedRestrictions: summary.inheritedRestrictions,
+        obligationsLoading: false,
+      });
+      return true;
+    } catch (error) {
+      if (get().activeProjectId === projectId) {
+        set({
+          obligationsLoading: false,
+          obligationsError:
+            error instanceof Error
+              ? error.message
+              : "Obligations could not be loaded.",
+        });
+      }
+      return false;
+    }
+  },
+  saveDatasetObligation: async (datasetObjectId, input) => {
+    const projectId = get().activeProjectId;
+    set({ obligationsLoading: true, obligationsError: null });
+    try {
+      const obligation = await apiClient.saveDatasetObligation(
+        projectId,
+        datasetObjectId,
+        input,
+      );
+      if (get().activeProjectId !== projectId) return obligation;
+      await get().loadObligations(projectId);
+      return obligation;
+    } catch (error) {
+      if (get().activeProjectId === projectId) {
+        set({
+          obligationsLoading: false,
+          obligationsError:
+            error instanceof Error
+              ? error.message
+              : "Obligation could not be saved.",
+        });
+      }
+      return null;
+    }
+  },
+  evaluateObligations: (operation) =>
+    apiClient.evaluateObligations(get().activeProjectId, operation),
+  approveObligationOperation: async (operation, input) => {
+    const projectId = get().activeProjectId;
+    try {
+      const result = await apiClient.approveObligationOperation(
+        projectId,
+        operation,
+        input,
+      );
+      if (get().activeProjectId === projectId)
+        await get().loadObligations(projectId);
+      return result.evaluation;
+    } catch (error) {
+      set({
+        obligationsError:
+          error instanceof Error
+            ? error.message
+            : "Approval could not be recorded.",
+      });
+      return null;
+    }
+  },
+  transitionObligationAlert: async (alertId, input) => {
+    const projectId = get().activeProjectId;
+    try {
+      const alert = await apiClient.transitionObligationAlert(
+        projectId,
+        alertId,
+        input,
+      );
+      if (get().activeProjectId === projectId) {
+        set((state) => ({
+          obligationAlerts: state.obligationAlerts.map((item) =>
+            item.id === alert.id ? alert : item,
+          ),
+        }));
+      }
+      return alert;
+    } catch (error) {
+      set({
+        obligationsError:
+          error instanceof Error
+            ? error.message
+            : "Alert could not be updated.",
+      });
+      return null;
     }
   },
   createPreregistration: async (experimentId, content, amendsSnapshotId) => {
@@ -1184,6 +1340,16 @@ export const useClyStore = create<ClyState>((set, get) => ({
         description: source.summary,
         payload: {
           kind: "source",
+          sourceType:
+            source.type === "Dataset"
+              ? "dataset"
+              : source.type === "Documentation"
+                ? "documentation"
+                : source.type === "Lab note"
+                  ? "note"
+                  : source.type === "Webpage"
+                    ? "webpage"
+                    : "paper",
           status: source.url ? "resolved" : "placeholder",
           authors: source.authors
             .split(",")

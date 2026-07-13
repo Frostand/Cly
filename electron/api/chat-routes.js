@@ -1,5 +1,8 @@
 import { promises as fs } from "node:fs";
-import { resolvePersistedProjectPath } from "../persisted-state.js";
+import {
+  getStateDatabase,
+  resolvePersistedProjectPath,
+} from "../persisted-state.js";
 import { streamClaudeResponse } from "./chat/claude-stream.js";
 import { streamCodexAppServerResponse } from "./chat/codex-app-server.js";
 import { streamCursorResponse } from "./chat/cursor-stream.js";
@@ -15,6 +18,7 @@ import {
   getCursorCliUnavailableMessage,
   isCursorCliAvailable,
 } from "./providers/cursor-cli.js";
+import { createObligationService } from "./research/obligation-service.js";
 import { isCliCommandAvailable } from "./shared/cli.js";
 
 const validateProjectPath = async (projectPath) => {
@@ -84,7 +88,69 @@ const validateCursorReady = async () => {
   return null;
 };
 
-export const registerChatRoutes = (app) => {
+const resolveEvaluationProjectId = (database, projectId, projectPath) => {
+  if (projectId) return projectId;
+  const row = database
+    .prepare(
+      "SELECT id FROM projects WHERE path = ? OR normalized_path = ? LIMIT 1",
+    )
+    .get(projectPath, projectPath);
+  return row?.id ?? null;
+};
+
+const evaluateProviderTransmission = (
+  { projectId, projectPath, provider },
+  { database, obligationService },
+) => {
+  const resolvedProjectId = resolveEvaluationProjectId(
+    database,
+    projectId,
+    projectPath,
+  );
+  if (!resolvedProjectId) {
+    return {
+      decision: "block",
+      alerts: [
+        {
+          rationale:
+            "Cly could not identify the project for research-data obligation evaluation.",
+        },
+      ],
+    };
+  }
+  return obligationService.safeEvaluateOperation(resolvedProjectId, {
+    kind: "provider-transmission",
+    integration: "agent-chat",
+    objectIds: [],
+    purpose: "research-assistance",
+    collaborators: [],
+    provider,
+    residency: null,
+    license: null,
+    external: true,
+  });
+};
+
+const blockedTransmissionResponse = (c, evaluation) =>
+  c.json(
+    {
+      error:
+        evaluation.decision === "review"
+          ? "Provider transmission requires recorded human approval."
+          : "Provider transmission blocked by research-data obligations.",
+      evaluation,
+    },
+    409,
+  );
+
+export const registerChatRoutes = (
+  app,
+  {
+    getDatabase = getStateDatabase,
+    getObligationService = (database) => createObligationService(database),
+    resolveProjectPath = resolvePersistedProjectPath,
+  } = {},
+) => {
   app.post("/api/chat-title", async (c) => {
     let rawBody;
     try {
@@ -98,10 +164,23 @@ export const registerChatRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { fallbackModel, projectPath, promptText, provider } = parsed.data;
+    const { fallbackModel, projectId, projectPath, promptText, provider } =
+      parsed.data;
     const projectPathError = await validateProjectPath(projectPath);
     if (projectPathError) {
       return c.text(projectPathError.message, projectPathError.status);
+    }
+    const database = getDatabase();
+    const evaluation = evaluateProviderTransmission(
+      {
+        projectId,
+        projectPath,
+        provider,
+      },
+      { database, obligationService: getObligationService(database) },
+    );
+    if (evaluation.decision !== "allow") {
+      return blockedTransmissionResponse(c, evaluation);
     }
 
     if (provider === "openai") {
@@ -180,7 +259,7 @@ export const registerChatRoutes = (app) => {
     } = parsed.data;
     const resolvedChatId = chatId ?? threadId;
     const resolvedProjectPath =
-      resolvePersistedProjectPath({
+      resolveProjectPath({
         chatId: resolvedChatId,
         projectId,
       }) ?? projectPath;
@@ -199,6 +278,19 @@ export const registerChatRoutes = (app) => {
     const projectPathError = await validateProjectPath(resolvedProjectPath);
     if (projectPathError) {
       return c.text(projectPathError.message, projectPathError.status);
+    }
+
+    const database = getDatabase();
+    const evaluation = evaluateProviderTransmission(
+      {
+        projectId,
+        projectPath: resolvedProjectPath,
+        provider,
+      },
+      { database, obligationService: getObligationService(database) },
+    );
+    if (evaluation.decision !== "allow") {
+      return blockedTransmissionResponse(c, evaluation);
     }
 
     if (provider === "openai") {
