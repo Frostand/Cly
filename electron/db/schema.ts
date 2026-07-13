@@ -262,6 +262,163 @@ export const researchRelationships = sqliteTable(
   ],
 );
 
+export const datasetObligations = sqliteTable(
+  "dataset_obligations",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    datasetObjectId: text("dataset_object_id")
+      .notNull()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    consentProtocolScope: text("consent_protocol_scope").notNull(),
+    approvedPurposesJson: text("approved_purposes_json")
+      .notNull()
+      .default("[]"),
+    permittedCollaboratorsJson: text("permitted_collaborators_json")
+      .notNull()
+      .default("[]"),
+    externalProcessing: text("external_processing").notNull().default("review"),
+    permittedProvidersJson: text("permitted_providers_json")
+      .notNull()
+      .default("[]"),
+    residencyJson: text("residency_json").notNull().default("[]"),
+    retentionExpiresAt: text("retention_expires_at"),
+    deletionDueAt: text("deletion_due_at"),
+    license: text("license").notNull(),
+    owner: text("owner").notNull(),
+    reviewDate: text("review_date"),
+    provenanceSource: text("provenance_source").notNull(),
+    notes: text("notes").notNull().default(""),
+    revision: integer("revision").notNull().default(1),
+    createdBy: text("created_by").notNull(),
+    updatedBy: text("updated_by").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "dataset_obligations_approved_purposes_json",
+      sql`json_valid(${table.approvedPurposesJson}) AND json_type(${table.approvedPurposesJson}) = 'array'`,
+    ),
+    check(
+      "dataset_obligations_permitted_collaborators_json",
+      sql`json_valid(${table.permittedCollaboratorsJson}) AND json_type(${table.permittedCollaboratorsJson}) = 'array'`,
+    ),
+    check(
+      "dataset_obligations_permitted_providers_json",
+      sql`json_valid(${table.permittedProvidersJson}) AND json_type(${table.permittedProvidersJson}) = 'array'`,
+    ),
+    check(
+      "dataset_obligations_residency_json",
+      sql`json_valid(${table.residencyJson}) AND json_type(${table.residencyJson}) = 'array'`,
+    ),
+    check(
+      "dataset_obligations_external_processing",
+      sql`${table.externalProcessing} IN ('allowed', 'review', 'blocked')`,
+    ),
+    check("dataset_obligations_revision", sql`${table.revision} >= 1`),
+    uniqueIndex("dataset_obligations_project_dataset_unique").on(
+      table.projectId,
+      table.datasetObjectId,
+    ),
+    index("idx_dataset_obligations_project_review").on(
+      table.projectId,
+      table.reviewDate,
+      table.deletionDueAt,
+    ),
+  ],
+);
+
+export const obligationAlerts = sqliteTable(
+  "obligation_alerts",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    sourceObligationId: text("source_obligation_id").references(
+      () => datasetObligations.id,
+      { onDelete: "cascade" },
+    ),
+    category: text("category").notNull(),
+    severity: text("severity").notNull(),
+    affectedObjectIdsJson: text("affected_object_ids_json").notNull(),
+    rationale: text("rationale").notNull(),
+    resolution: text("resolution").notNull(),
+    operationJson: text("operation_json"),
+    state: text("state").notNull().default("open"),
+    acknowledgedBy: text("acknowledged_by"),
+    acknowledgedAt: text("acknowledged_at"),
+    resolutionNote: text("resolution_note"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "obligation_alerts_affected_json",
+      sql`json_valid(${table.affectedObjectIdsJson}) AND json_type(${table.affectedObjectIdsJson}) = 'array'`,
+    ),
+    check(
+      "obligation_alerts_operation_json",
+      sql`${table.operationJson} IS NULL OR json_valid(${table.operationJson})`,
+    ),
+    check(
+      "obligation_alerts_severity",
+      sql`${table.severity} IN ('info', 'warning', 'critical')`,
+    ),
+    check(
+      "obligation_alerts_state",
+      sql`${table.state} IN ('open', 'acknowledged', 'resolved')`,
+    ),
+    index("idx_obligation_alerts_project_state").on(
+      table.projectId,
+      table.state,
+      table.severity,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const obligationOperationApprovals = sqliteTable(
+  "obligation_operation_approvals",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    evaluationHash: text("evaluation_hash").notNull(),
+    operationJson: text("operation_json").notNull(),
+    warningAlertIdsJson: text("warning_alert_ids_json").notNull(),
+    actorId: text("actor_id").notNull(),
+    rationale: text("rationale").notNull(),
+    state: text("state").notNull().default("approved"),
+    createdAt: text("created_at").notNull(),
+    revokedAt: text("revoked_at"),
+  },
+  (table) => [
+    check(
+      "obligation_operation_approvals_operation_json",
+      sql`json_valid(${table.operationJson})`,
+    ),
+    check(
+      "obligation_operation_approvals_warning_json",
+      sql`json_valid(${table.warningAlertIdsJson}) AND json_type(${table.warningAlertIdsJson}) = 'array'`,
+    ),
+    check(
+      "obligation_operation_approvals_state",
+      sql`${table.state} IN ('approved', 'revoked')`,
+    ),
+    index("idx_obligation_operation_approvals_lookup").on(
+      table.projectId,
+      table.evaluationHash,
+      table.state,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const provenanceEvents = sqliteTable(
   "provenance_events",
   {

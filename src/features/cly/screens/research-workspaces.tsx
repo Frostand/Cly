@@ -30,6 +30,7 @@ import {
   InlineMetadata,
   PaneHeader,
 } from "../components/design-system";
+import { InheritedRestrictions } from "../components/inherited-restrictions";
 import {
   Badge,
   Button,
@@ -59,11 +60,18 @@ import {
 import { previewLiteratureThemes } from "../domain/literature-enrichment";
 import type { LiteratureSearchResult } from "../domain/literature-search";
 import { filterAndSortClaims } from "../domain/logic";
+import type {
+  InheritedRestriction,
+  ObligationEvaluation,
+  ObligationOperation,
+} from "../domain/obligations";
 import type { ClaimStatus, Source } from "../domain/types";
 import { apiClient, type ReviewerCapsule } from "../services/api-client";
 import { desktopLiteratureService } from "../services/literature-service";
 import { mockServices } from "../services/mock-services";
 import { claimStatusTone, useClyStore } from "../store/cly-store";
+
+const noInheritedRestrictions: InheritedRestriction[] = [];
 
 export function SourcesScreen() {
   const sources = useClyStore((s) => s.data.sources);
@@ -78,6 +86,7 @@ export function SourcesScreen() {
   );
   const [importOpen, setImportOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [importType, setImportType] = useState<Source["type"]>("Paper");
   const relevanceRank = { Core: 0, High: 1, Medium: 2, Low: 3 };
   const filtered = sources
     .filter(
@@ -143,10 +152,11 @@ export function SourcesScreen() {
     try {
       const source = await mockServices.sources.create({
         title: title.trim() || "Imported source",
-        type: "Paper",
+        type: importType,
       });
       setImportOpen(false);
       setTitle("");
+      setImportType("Paper");
       setSelected(source.id);
       notify(
         "Source imported",
@@ -399,6 +409,23 @@ export function SourcesScreen() {
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Paper, dataset, documentation, or note"
           />
+        </div>
+        <div className="cly-field" style={{ marginTop: 12 }}>
+          <label htmlFor="source-type">Source type</label>
+          <select
+            id="source-type"
+            className="cly-select"
+            value={importType}
+            onChange={(event) =>
+              setImportType(event.target.value as Source["type"])
+            }
+          >
+            <option>Paper</option>
+            <option>Dataset</option>
+            <option>Documentation</option>
+            <option>Lab note</option>
+            <option>Webpage</option>
+          </select>
         </div>
         <div className="cly-callout" style={{ marginTop: 12 }}>
           Supported in the production boundary: PDF, paper, book chapter,
@@ -2074,32 +2101,86 @@ function ReviewerCapsuleDialog({
   onClose: () => void;
   open: boolean;
 }) {
+  const parseCsv = (value: string) => [
+    ...new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
   const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
   const [capsule, setCapsule] = useState<ReviewerCapsule | null>(null);
+  const [evaluation, setEvaluation] = useState<ObligationEvaluation | null>(
+    null,
+  );
+  const [purpose, setPurpose] = useState("peer-review");
+  const [collaborators, setCollaborators] = useState("");
+  const [residency, setResidency] = useState("");
+  const [license, setLicense] = useState("");
+  const [approvalRationale, setApprovalRationale] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setSelectedClaimIds(initialClaimId ? [initialClaimId] : []);
     setCapsule(null);
+    setEvaluation(null);
   }, [initialClaimId, open]);
 
   const toggleClaim = (id: string) => {
     setCapsule(null);
+    setEvaluation(null);
     setSelectedClaimIds((current) =>
       current.includes(id)
         ? current.filter((claimId) => claimId !== id)
         : [...current, id],
     );
   };
+  const operation = (): ObligationOperation => ({
+    kind: "export",
+    integration: "reviewer-capsule",
+    objectIds: selectedClaimIds,
+    purpose,
+    collaborators: parseCsv(collaborators),
+    provider: null,
+    residency: residency.trim() || null,
+    license: license.trim() || null,
+    external: true,
+  });
+  const context = () => ({
+    purpose,
+    collaborators: parseCsv(collaborators),
+    residency: residency.trim() || null,
+    license: license.trim() || null,
+  });
+  const authorize = async () => {
+    const result = await apiClient.evaluateObligations(
+      activeProjectId,
+      operation(),
+    );
+    setEvaluation(result);
+    if (result.decision !== "allow") {
+      notify(
+        result.decision === "block"
+          ? "Reviewer capsule blocked"
+          : "Reviewer capsule needs approval",
+        result.alerts[0]?.rationale ?? "Review the obligation findings.",
+      );
+      return false;
+    }
+    return true;
+  };
   const buildPreview = async () => {
     if (selectedClaimIds.length === 0) return;
     setLoading(true);
     try {
+      if (!(await authorize())) return;
       setCapsule(
         await apiClient.previewReviewerCapsule(
           activeProjectId,
           selectedClaimIds,
+          context(),
         ),
       );
     } catch (error) {
@@ -2117,9 +2198,11 @@ function ReviewerCapsuleDialog({
     if (selectedClaimIds.length === 0) return;
     setLoading(true);
     try {
+      if (!(await authorize())) return;
       const exported = await apiClient.exportReviewerCapsule(
         activeProjectId,
         selectedClaimIds,
+        context(),
       );
       const filename = `cly-reviewer-capsule-${exported.sha256.slice(0, 12)}.html`;
       const desktopApi = getDesktopApi();
@@ -2197,6 +2280,113 @@ function ReviewerCapsuleDialog({
             <Badge tone={claimStatusTone(claim.status)}>{claim.status}</Badge>
           </label>
         ))}
+        <div className="cly-grid-2">
+          <div className="cly-field">
+            <label htmlFor="capsule-purpose">Approved purpose</label>
+            <input
+              id="capsule-purpose"
+              className="cly-input"
+              value={purpose}
+              onChange={(event) => {
+                setPurpose(event.target.value);
+                setEvaluation(null);
+              }}
+            />
+          </div>
+          <div className="cly-field">
+            <label htmlFor="capsule-collaborators">Recipients</label>
+            <input
+              id="capsule-collaborators"
+              className="cly-input"
+              value={collaborators}
+              onChange={(event) => {
+                setCollaborators(event.target.value);
+                setEvaluation(null);
+              }}
+              placeholder="Comma-separated collaborators"
+            />
+          </div>
+          <div className="cly-field">
+            <label htmlFor="capsule-residency">Processing residency</label>
+            <input
+              id="capsule-residency"
+              className="cly-input"
+              value={residency}
+              onChange={(event) => {
+                setResidency(event.target.value);
+                setEvaluation(null);
+              }}
+              placeholder="For example, US"
+            />
+          </div>
+          <div className="cly-field">
+            <label htmlFor="capsule-license">Export license / terms</label>
+            <input
+              id="capsule-license"
+              className="cly-input"
+              value={license}
+              onChange={(event) => {
+                setLicense(event.target.value);
+                setEvaluation(null);
+              }}
+            />
+          </div>
+        </div>
+        {evaluation && evaluation.decision !== "allow" ? (
+          <div
+            className="cly-callout"
+            data-tone={evaluation.decision === "block" ? "danger" : "warning"}
+            role="status"
+          >
+            <strong>
+              {evaluation.decision === "block"
+                ? "Export blocked"
+                : "Human approval required"}
+            </strong>
+            {evaluation.alerts.map((alert) => (
+              <p className="cly-small" key={alert.id}>
+                {alert.rationale} {alert.resolution}
+              </p>
+            ))}
+            {evaluation.decision === "review" ? (
+              <div className="cly-stack">
+                <div className="cly-field">
+                  <label htmlFor="capsule-approval-rationale">
+                    Approval rationale
+                  </label>
+                  <textarea
+                    id="capsule-approval-rationale"
+                    className="cly-textarea"
+                    value={approvalRationale}
+                    onChange={(event) =>
+                      setApprovalRationale(event.target.value)
+                    }
+                  />
+                </div>
+                <Button
+                  disabled={!approvalRationale.trim()}
+                  onClick={async () => {
+                    const result = await apiClient.approveObligationOperation(
+                      activeProjectId,
+                      operation(),
+                      {
+                        actorId: "local-user",
+                        rationale: approvalRationale,
+                      },
+                    );
+                    setEvaluation(result.evaluation);
+                    notify(
+                      "Export approval recorded",
+                      "Preview or export again to apply the exact-operation approval.",
+                    );
+                  }}
+                >
+                  Record approval
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {capsule ? (
           <>
             <div className="cly-callout" data-tone="success">
@@ -2248,6 +2438,9 @@ function ClaimDetail({
   const data = useClyStore((s) => s.data);
   const notify = useClyStore((s) => s.notify);
   const claimCost = useClyStore((s) => s.claimCosts[claim.id]);
+  const restrictions = useClyStore(
+    (s) => s.inheritedRestrictions[claim.id] ?? noInheritedRestrictions,
+  );
   const setScreen = useClyStore((s) => s.setScreen);
   return (
     <div className="cly-overview-grid">
@@ -2285,6 +2478,10 @@ function ClaimDetail({
             </select>
           </div>
           <div className="cly-panel-body">
+            <InheritedRestrictions
+              restrictions={restrictions}
+              onOpen={() => setScreen("obligations")}
+            />
             <div className="cly-metric-row">
               <Metric label="Confidence" value={`${claim.confidence}%`} />
               <Metric

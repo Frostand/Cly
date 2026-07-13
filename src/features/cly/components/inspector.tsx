@@ -5,9 +5,13 @@ import {
   Pin,
   Sparkles,
 } from "lucide-react";
+import type { InheritedRestriction } from "../domain/obligations";
 import { useClyStore } from "../store/cly-store";
+import { InheritedRestrictions } from "./inherited-restrictions";
 import { screenLabels } from "./navigation";
 import { Badge, Button, toneForStatus } from "./primitives";
+
+const noRestrictions: InheritedRestriction[] = [];
 
 const pretty = (value: unknown): string => {
   if (Array.isArray(value)) return value.length ? value.join(", ") : "None";
@@ -206,6 +210,12 @@ export function Inspector() {
   const selectedId = useClyStore((s) => s.selectedId);
   const toggle = useClyStore((s) => s.toggleInspector);
   const notify = useClyStore((s) => s.notify);
+  const restrictions = useClyStore((s) =>
+    selectedId
+      ? (s.inheritedRestrictions[selectedId] ?? noRestrictions)
+      : noRestrictions,
+  );
+  const setScreen = useClyStore((s) => s.setScreen);
   const selection = selectedId ? findEntity() : null;
 
   return (
@@ -239,6 +249,11 @@ export function Inspector() {
                   {String(selection.entity.status)}
                 </Badge>
               ) : null}
+              <InheritedRestrictions
+                restrictions={restrictions}
+                compact
+                onOpen={() => setScreen("obligations")}
+              />
               <div className="cly-inspector-section">
                 <div className="cly-inspector-label">Details</div>
                 <dl className="cly-detail-grid">

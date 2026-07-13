@@ -12,6 +12,7 @@ export type ScreenId =
   | "notebooks"
   | "code"
   | "claims"
+  | "obligations"
   | "provenance"
   | "reproducibility"
   | "impact-review"

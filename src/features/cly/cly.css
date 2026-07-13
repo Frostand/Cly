@@ -6604,6 +6604,22 @@
     flex-direction: column;
     gap: 8px;
   }
+  .cly-obligations-layout {
+    min-height: 520px;
+  }
+  .cly-obligation-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--cly-space-12);
+  }
+  .cly-obligation-form .cly-field-wide {
+    grid-column: 1 / -1;
+  }
+  .cly-route-obligations .cly-callout > svg {
+    display: inline-block;
+    margin-right: var(--cly-space-4);
+    vertical-align: text-bottom;
+  }
   .cly-row {
     display: flex;
     align-items: center;
@@ -7734,6 +7750,12 @@
     .cly-settings-nav {
       flex-direction: row;
       overflow-x: auto;
+    }
+    .cly-obligation-form {
+      grid-template-columns: 1fr;
+    }
+    .cly-obligation-form .cly-field-wide {
+      grid-column: auto;
     }
   }
   @media (prefers-reduced-motion: reduce) {

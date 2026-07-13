@@ -11,6 +11,7 @@ const destinations = [
   ["notebooks", "Notebook Scanner"],
   ["code", "Code-to-Research Linker"],
   ["claims", "Claim Audit Board"],
+  ["obligations", "Research Data Obligations"],
   ["costs", "Cost ledger"],
   ["provenance", "Figure & Table Provenance"],
   ["reproducibility", "Reproducibility Auditor"],
@@ -22,6 +23,16 @@ const destinations = [
 ] as const;
 
 test.beforeEach(async ({ page }) => {
+  await page.route("**/projects/project-cly/obligations", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        obligations: [],
+        alerts: [],
+        inheritedRestrictions: {},
+      }),
+    });
+  });
   await page.goto("/");
   await expect(page).toHaveTitle("Cly");
   await expect(
@@ -133,6 +144,23 @@ test("previews a project-scoped reviewer capsule from the Claims workspace", asy
   page,
 }) => {
   let requestBody: unknown;
+  await page.route("**/obligations/evaluate", async (route) => {
+    const operation = route.request().postDataJSON();
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        projectId: "project-cly",
+        decision: "allow",
+        complete: true,
+        evaluationHash: "evaluation-e2e",
+        operation,
+        alerts: [],
+        approval: null,
+        inheritedRestrictions: {},
+        evaluatedAt: "2026-07-13T12:00:00.000Z",
+      }),
+    });
+  });
   await page.route("**/reviewer-capsule/preview", async (route) => {
     requestBody = route.request().postDataJSON();
     await route.fulfill({
@@ -159,7 +187,13 @@ test("previews a project-scoped reviewer capsule from the Claims workspace", asy
   await page.getByRole("button", { name: "Preview capsule" }).click();
 
   await expect(page.getByText("Safe static preview")).toBeVisible();
-  expect(requestBody).toEqual({ claimIds: ["claim-01"] });
+  expect(requestBody).toEqual({
+    claimIds: ["claim-01"],
+    purpose: "peer-review",
+    collaborators: [],
+    residency: null,
+    license: null,
+  });
 });
 
 test("generates and assigns an evidence-linked lab-meeting brief in Decisions", async ({

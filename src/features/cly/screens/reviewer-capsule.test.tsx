@@ -21,12 +21,31 @@ describe("reviewer capsule workflow", () => {
   it("builds a project-scoped preview from selected claims", async () => {
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith("/obligations/evaluate")) {
+          return new Response(
+            JSON.stringify({
+              projectId: "project-cly",
+              decision: "allow",
+              complete: true,
+              evaluationHash: "evaluation-a",
+              operation: JSON.parse(String(init?.body)),
+              alerts: [],
+              approval: null,
+              inheritedRestrictions: {},
+              evaluatedAt: "2026-07-13T12:00:00.000Z",
+            }),
+          );
+        }
         expect(String(input)).toBe(
           "/api/projects/project-cly/reviewer-capsule/preview",
         );
         expect(init?.method).toBe("POST");
         expect(JSON.parse(String(init?.body))).toEqual({
           claimIds: ["claim-01"],
+          purpose: "peer-review",
+          collaborators: [],
+          residency: null,
+          license: null,
         });
         return new Response(
           JSON.stringify({
@@ -54,6 +73,6 @@ describe("reviewer capsule workflow", () => {
     await user.click(screen.getByRole("button", { name: "Preview capsule" }));
 
     expect(await screen.findByText("Safe static preview")).toBeVisible();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

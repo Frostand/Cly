@@ -22,6 +22,7 @@ import {
   PanelLeftOpen,
   ScrollText,
   Settings,
+  ShieldCheck,
   WalletCards,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -104,6 +105,13 @@ const groups: { label: string; items: NavigationItem[] }[] = [
   {
     label: "Integrity",
     items: [
+      {
+        id: "obligations",
+        label: "Data Obligations",
+        icon: ShieldCheck,
+        count: (s) =>
+          s.obligationAlerts.filter((alert) => alert.state === "open").length,
+      },
       { id: "provenance", label: "Provenance", icon: FileStack },
       {
         id: "reproducibility",

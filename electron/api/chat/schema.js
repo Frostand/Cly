@@ -63,6 +63,7 @@ export const formatProjectReferencesForPrompt = (projectReferences) => {
 export const chatTitleRequestBodySchema = z.object({
   fallbackModel: z.string().min(1).optional(),
   projectPath: z.string().min(1),
+  projectId: z.string().min(1).optional(),
   promptText: z.string(),
   provider: z.enum(["openai", "anthropic", "opencode", "cursor"]),
 });

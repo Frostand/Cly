@@ -14,6 +14,9 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("source"),
+    sourceType: z
+      .enum(["paper", "dataset", "documentation", "note", "webpage"])
+      .optional(),
     status: z.enum(["placeholder", "resolved"]).default("resolved"),
     authors: z.array(z.string().trim().min(1)).optional(),
     citation: z.string().trim().min(1).optional(),
