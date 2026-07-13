@@ -38,6 +38,7 @@ const DEFAULT_PERSISTED_STATE = {
 const RELATIONAL_SCHEMA_VERSION = 4;
 const STATE_DB_FILENAME = "dream.db";
 const STATE_DB_PATH_ENV_VAR = "DREAM_DB_PATH";
+const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 const DRIZZLE_MIGRATIONS_FOLDER = path.join(__dirname, "drizzle");
 const INSTALL_ID_CONFIG_KEY = "installId";
 const THEME_PREFERENCES_CONFIG_KEY = "themePreferences";
@@ -1327,6 +1328,7 @@ export function getStateDatabase(databasePath = resolveStateDatabasePath()) {
   database.exec(`
     PRAGMA foreign_keys = ON;
     PRAGMA journal_mode = WAL;
+    PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};
   `);
   const hadRelationalState = hasRelationalState(database);
   const migrations = readMigrationFiles({

@@ -49,6 +49,14 @@ function seedResearchProjects(database: DatabaseSync) {
 }
 
 describe("persisted research storage", () => {
+  it("configures a bounded wait for concurrent SQLite writers", () => {
+    const database = getStateDatabase(createDatabasePath());
+
+    expect(database.prepare("PRAGMA busy_timeout").get()).toEqual({
+      timeout: 5_000,
+    });
+  });
+
   it("preserves research objects, relationships, and provenance during IDE state saves", () => {
     const databasePath = createDatabasePath();
     const database = getStateDatabase(databasePath);

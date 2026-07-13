@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs, realpathSync } from "node:fs";
 import path from "node:path";
 
 export const MIME_TYPES = {
@@ -47,11 +47,41 @@ const BLOCKED_DIRECTORIES = new Set([
 
 export const normalizePath = (value) => value.replace(/\\/g, "/");
 
+const isPathInside = (root, candidate) => {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === "" ||
+    (relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative))
+  );
+};
+
+const findExistingAncestor = (candidate) => {
+  let current = candidate;
+  while (!existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) return current;
+    current = parent;
+  }
+  return current;
+};
+
 export const resolveProjectPath = (projectRoot, filePath) => {
   const root = path.resolve(projectRoot);
   const fullPath = path.resolve(root, filePath);
-  if (fullPath === root) return fullPath;
-  if (!fullPath.startsWith(`${root}${path.sep}`)) {
+  if (!isPathInside(root, fullPath)) {
+    throw new Error("Path is outside of the project root.");
+  }
+
+  const canonicalRoot = realpathSync(root);
+  const existingAncestor = findExistingAncestor(fullPath);
+  const canonicalAncestor = realpathSync(existingAncestor);
+  const canonicalTarget = path.resolve(
+    canonicalAncestor,
+    path.relative(existingAncestor, fullPath),
+  );
+  if (!isPathInside(canonicalRoot, canonicalTarget)) {
     throw new Error("Path is outside of the project root.");
   }
   return fullPath;
