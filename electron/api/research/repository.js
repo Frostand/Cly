@@ -194,6 +194,70 @@ const provenanceEventInputSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
+const lineageStepSchema = z.object({
+  kind: z.enum([
+    "objective",
+    "notebook",
+    "commit",
+    "experiment",
+    "artifact",
+    "claim",
+  ]),
+  id: z.string().trim().min(1).max(4_000),
+  label: z.string().trim().min(1).max(10_000),
+  coordinates: z.record(z.string(), z.unknown()).default({}),
+});
+
+const lineageEvidenceInputSchema = z.object({
+  evidenceType: z.string().trim().min(1).max(100),
+  path: z.string().trim().min(1).max(4_000).nullable().optional(),
+  coordinates: z.record(z.string(), z.unknown()),
+  excerpt: z.string().max(4_000).nullable().optional(),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+});
+
+const lineageSuggestionInputSchema = z.object({
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/i),
+  chain: z.array(lineageStepSchema).length(6),
+  confidence: z.number().finite().min(0).max(1),
+  rationale: z.string().trim().min(1).max(10_000),
+  evidence: z.array(lineageEvidenceInputSchema).min(1).max(100),
+});
+
+const lineageReviewDecisionSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    action: z.enum(["approve", "reject", "edit"]),
+    edit: z
+      .object({
+        chain: z.array(lineageStepSchema).length(6).optional(),
+        confidence: z.number().finite().min(0).max(1).optional(),
+        rationale: z.string().trim().min(1).max(10_000).optional(),
+      })
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.action === "edit" &&
+      (!value.edit ||
+        (!value.edit.chain &&
+          value.edit.confidence === undefined &&
+          !value.edit.rationale))
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "An edit decision requires at least one correction.",
+        path: ["edit"],
+      });
+    }
+  });
+
+const lineageReviewInputSchema = z.object({
+  projectId: z.string().trim().min(1),
+  decisions: z.array(lineageReviewDecisionSchema).min(1).max(100),
+  actor: z.string().trim().min(1).max(200),
+});
+
 const parseJson = (value) => {
   try {
     return JSON.parse(value);
@@ -261,6 +325,34 @@ const mapProvenanceEvent = (row) => ({
     ? { previousHash: row.previous_hash }
     : {}),
   ...(row.event_hash ? { eventHash: row.event_hash } : {}),
+});
+
+const mapLineageEvidence = (row) => ({
+  id: row.id,
+  projectId: row.project_id,
+  suggestionId: row.suggestion_id,
+  evidenceType: row.evidence_type,
+  path: row.path ?? null,
+  coordinates: parseJson(row.coordinates),
+  excerpt: row.excerpt ?? null,
+  contentHash: row.content_hash,
+  createdAt: row.created_at,
+});
+
+const mapLineageSuggestion = (row, evidence = []) => ({
+  id: row.id,
+  projectId: row.project_id,
+  fingerprint: row.fingerprint,
+  chain: parseJson(row.chain_json),
+  confidence: row.confidence,
+  rationale: row.rationale,
+  origin: row.origin ?? "inferred",
+  reviewState: row.review_state ?? "unreviewed",
+  reviewedBy: row.reviewed_by ?? null,
+  reviewedAt: row.reviewed_at ?? null,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  evidence,
 });
 
 const hashProvenanceRow = (row, sequence, previousHash) =>
@@ -453,6 +545,52 @@ export function createResearchRepository(database) {
     return mapProvenanceEvent(
       database.prepare("SELECT * FROM provenance_events WHERE id = ?").get(id),
     );
+  };
+
+  const listLineageSuggestions = (projectId) => {
+    ensureProject(projectId);
+    const rows = database
+      .prepare(
+        `SELECT * FROM lineage_suggestions
+         WHERE project_id = ? ORDER BY created_at, id`,
+      )
+      .all(projectId);
+    const evidenceBySuggestion = new Map();
+    for (const row of database
+      .prepare(
+        `SELECT * FROM lineage_evidence
+         WHERE project_id = ? ORDER BY suggestion_id, evidence_type, path, id`,
+      )
+      .all(projectId)) {
+      const evidence = evidenceBySuggestion.get(row.suggestion_id) ?? [];
+      evidence.push(mapLineageEvidence(row));
+      evidenceBySuggestion.set(row.suggestion_id, evidence);
+    }
+    return rows.map((row) =>
+      mapLineageSuggestion(row, evidenceBySuggestion.get(row.id) ?? []),
+    );
+  };
+
+  const lineageAcceptanceMetrics = (projectId) => {
+    const counts = database
+      .prepare(
+        `SELECT
+           SUM(CASE WHEN review_state = 'approved' THEN 1 ELSE 0 END) AS accepted_count,
+           SUM(CASE WHEN review_state = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+         FROM lineage_suggestions WHERE project_id = ?`,
+      )
+      .get(projectId);
+    const corrections = database
+      .prepare(
+        `SELECT COUNT(*) AS correction_count FROM provenance_events
+         WHERE project_id = ? AND action = 'lineage.suggestion.edited'`,
+      )
+      .get(projectId);
+    return {
+      acceptedCount: Number(counts?.accepted_count ?? 0),
+      rejectedCount: Number(counts?.rejected_count ?? 0),
+      correctionCount: Number(corrections?.correction_count ?? 0),
+    };
   };
 
   return {
@@ -867,6 +1005,260 @@ export function createResearchRepository(database) {
         }
       }
       return insertProvenance(parsed, new Date().toISOString());
+    },
+
+    upsertLineageSuggestions(projectId, suggestions) {
+      ensureProject(projectId);
+      const parsedSuggestions = z
+        .array(lineageSuggestionInputSchema)
+        .max(100)
+        .parse(suggestions);
+      const duplicateFingerprint = new Set();
+      for (const suggestion of parsedSuggestions) {
+        if (duplicateFingerprint.has(suggestion.fingerprint)) {
+          throw new Error("Lineage scan produced a duplicate suggestion.");
+        }
+        duplicateFingerprint.add(suggestion.fingerprint);
+      }
+      const now = new Date().toISOString();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const suggestion of parsedSuggestions) {
+          const existing = database
+            .prepare(
+              `SELECT * FROM lineage_suggestions
+               WHERE project_id = ? AND fingerprint = ?`,
+            )
+            .get(projectId, suggestion.fingerprint);
+          if (existing) {
+            // A later inference must never replace an explicit reviewer
+            // decision while retaining its approved or rejected state.
+            if (existing.review_state !== "unreviewed") continue;
+            const existingEvidence = database
+              .prepare(
+                `SELECT content_hash FROM lineage_evidence
+                 WHERE suggestion_id = ? ORDER BY content_hash`,
+              )
+              .all(existing.id)
+              .map((row) => row.content_hash);
+            const nextEvidence = suggestion.evidence
+              .map((evidence) => evidence.contentHash)
+              .sort();
+            const unchanged =
+              existing.chain_json === JSON.stringify(suggestion.chain) &&
+              existing.confidence === suggestion.confidence &&
+              existing.rationale === suggestion.rationale &&
+              JSON.stringify(existingEvidence) === JSON.stringify(nextEvidence);
+            if (unchanged) continue;
+            database
+              .prepare(
+                `UPDATE lineage_suggestions
+                 SET chain_json = ?, confidence = ?, rationale = ?, updated_at = ?
+                 WHERE id = ? AND project_id = ?`,
+              )
+              .run(
+                JSON.stringify(suggestion.chain),
+                suggestion.confidence,
+                suggestion.rationale,
+                now,
+                existing.id,
+                projectId,
+              );
+            database
+              .prepare("DELETE FROM lineage_evidence WHERE suggestion_id = ?")
+              .run(existing.id);
+            for (const evidence of suggestion.evidence) {
+              database
+                .prepare(
+                  `INSERT INTO lineage_evidence
+                   (id, project_id, suggestion_id, evidence_type, path, coordinates,
+                    excerpt, content_hash, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                )
+                .run(
+                  randomUUID(),
+                  projectId,
+                  existing.id,
+                  evidence.evidenceType,
+                  evidence.path ?? null,
+                  JSON.stringify(evidence.coordinates),
+                  evidence.excerpt ?? null,
+                  evidence.contentHash,
+                  now,
+                );
+            }
+            continue;
+          }
+
+          const id = randomUUID();
+          database
+            .prepare(
+              `INSERT INTO lineage_suggestions
+               (id, project_id, fingerprint, chain_json, confidence, rationale, origin,
+                review_state, reviewed_by, reviewed_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'inferred', 'unreviewed', NULL, NULL, ?, ?)`,
+            )
+            .run(
+              id,
+              projectId,
+              suggestion.fingerprint,
+              JSON.stringify(suggestion.chain),
+              suggestion.confidence,
+              suggestion.rationale,
+              now,
+              now,
+            );
+          for (const evidence of suggestion.evidence) {
+            database
+              .prepare(
+                `INSERT INTO lineage_evidence
+                 (id, project_id, suggestion_id, evidence_type, path, coordinates,
+                  excerpt, content_hash, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              )
+              .run(
+                randomUUID(),
+                projectId,
+                id,
+                evidence.evidenceType,
+                evidence.path ?? null,
+                JSON.stringify(evidence.coordinates),
+                evidence.excerpt ?? null,
+                evidence.contentHash,
+                now,
+              );
+          }
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      return listLineageSuggestions(projectId);
+    },
+
+    listLineageSuggestions(projectId) {
+      return listLineageSuggestions(projectId);
+    },
+
+    recordLineageScanMeasurement(projectId, input) {
+      ensureProject(projectId);
+      const parsed = z
+        .object({
+          scanDurationMs: z.number().int().min(0),
+          timeToFirstChainMs: z.number().int().min(0).nullable(),
+          suggestionCount: z.number().int().min(0),
+          manualConfig: z.record(z.string(), z.unknown()),
+        })
+        .parse(input);
+      const metrics = lineageAcceptanceMetrics(projectId);
+      const measurement = {
+        id: randomUUID(),
+        projectId,
+        ...parsed,
+        ...metrics,
+        createdAt: new Date().toISOString(),
+      };
+      database
+        .prepare(
+          `INSERT INTO lineage_scan_measurements
+           (id, project_id, scan_duration_ms, time_to_first_chain_ms, suggestion_count,
+            accepted_count, rejected_count, correction_count, manual_config_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          measurement.id,
+          projectId,
+          measurement.scanDurationMs,
+          measurement.timeToFirstChainMs,
+          measurement.suggestionCount,
+          measurement.acceptedCount,
+          measurement.rejectedCount,
+          measurement.correctionCount,
+          JSON.stringify(measurement.manualConfig),
+          measurement.createdAt,
+        );
+      return measurement;
+    },
+
+    reviewLineageSuggestions(input) {
+      const parsed = lineageReviewInputSchema.parse(input);
+      ensureProject(parsed.projectId);
+      const ids = parsed.decisions.map((decision) => decision.id);
+      if (new Set(ids).size !== ids.length) {
+        throw new Error(
+          "A lineage suggestion can only be reviewed once per batch.",
+        );
+      }
+      const rows = database
+        .prepare(
+          `SELECT * FROM lineage_suggestions
+           WHERE project_id = ? AND id IN (${ids.map(() => "?").join(", ")})`,
+        )
+        .all(parsed.projectId, ...ids);
+      if (rows.length !== ids.length) {
+        throw new Error("A lineage suggestion does not belong to the project.");
+      }
+      const rowsById = new Map(rows.map((row) => [row.id, row]));
+      const now = new Date().toISOString();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const decision of parsed.decisions) {
+          const existing = rowsById.get(decision.id);
+          const reviewState =
+            decision.action === "reject" ? "rejected" : "approved";
+          const chain = decision.edit?.chain ?? parseJson(existing.chain_json);
+          const confidence = decision.edit?.confidence ?? existing.confidence;
+          const rationale = decision.edit?.rationale ?? existing.rationale;
+          database
+            .prepare(
+              `UPDATE lineage_suggestions
+               SET chain_json = ?, confidence = ?, rationale = ?, review_state = ?,
+                   reviewed_by = ?, reviewed_at = ?, updated_at = ?
+               WHERE id = ? AND project_id = ?`,
+            )
+            .run(
+              JSON.stringify(chain),
+              confidence,
+              rationale,
+              reviewState,
+              parsed.actor,
+              now,
+              now,
+              decision.id,
+              parsed.projectId,
+            );
+          insertProvenance(
+            {
+              action: `lineage.suggestion.${
+                decision.action === "approve"
+                  ? "approved"
+                  : decision.action === "reject"
+                    ? "rejected"
+                    : "edited"
+              }`,
+              actorId: parsed.actor,
+              actorType: "human",
+              projectId: parsed.projectId,
+              metadata: {
+                action: decision.action,
+                suggestionId: decision.id,
+                reviewState,
+                ...(decision.edit ? { correction: decision.edit } : {}),
+              },
+            },
+            now,
+          );
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      const reviewed = listLineageSuggestions(parsed.projectId);
+      return ids.map((id) =>
+        reviewed.find((suggestion) => suggestion.id === id),
+      );
     },
 
     listProject(projectId) {

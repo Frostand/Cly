@@ -1,6 +1,12 @@
 import type { LiteraturePaper } from "../domain/literature-search";
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
-import type { ClaimStatus, ResearchProject } from "../domain/types";
+import type {
+  ClaimStatus,
+  LineageReviewDecision,
+  LineageScanMeasurement,
+  LineageSuggestion,
+  ResearchProject,
+} from "../domain/types";
 
 export interface ResearchData {
   objects: ResearchObject[];
@@ -48,6 +54,12 @@ export interface CrossEncoderReranking {
   signals: Array<{ sourceId: string; score: number }>;
   error?: string;
   errorKind?: string;
+}
+
+export interface LineageScanResult {
+  projectId: string;
+  suggestions: LineageSuggestion[];
+  measurement: LineageScanMeasurement;
 }
 
 export class ApiRequestError extends Error {
@@ -119,6 +131,33 @@ export const apiClient = {
   verifyProvenance(projectId: string) {
     return request<ProvenanceIntegrity>(
       `/api/projects/${encodeURIComponent(projectId)}/provenance/integrity`,
+    );
+  },
+
+  fetchLineageSuggestions(projectId: string) {
+    return request<LineageSuggestion[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/lineage-suggestions`,
+    );
+  },
+
+  scanLineage(projectId: string) {
+    return request<LineageScanResult>(
+      `/api/projects/${encodeURIComponent(projectId)}/lineage-suggestions/scan`,
+      { method: "POST" },
+    );
+  },
+
+  reviewLineageSuggestions(
+    projectId: string,
+    decisions: LineageReviewDecision[],
+    actor = "local-user",
+  ) {
+    return request<{ suggestions: LineageSuggestion[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/lineage-suggestions/review`,
+      {
+        method: "POST",
+        body: JSON.stringify({ actor, decisions }),
+      },
     );
   },
 

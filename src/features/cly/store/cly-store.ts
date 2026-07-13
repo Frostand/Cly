@@ -31,6 +31,9 @@ import type {
   FixtureMode,
   GraphEdge,
   Integration,
+  LineageReviewDecision,
+  LineageScanMeasurement,
+  LineageSuggestion,
   NotebookArtifact,
   ResearchDecision,
   ScreenId,
@@ -59,6 +62,8 @@ interface ClyState {
   fixtureSwitcherOpen: boolean;
   globalSearch: string;
   toasts: ToastMessage[];
+  lineageSuggestions: LineageSuggestion[];
+  lineageMeasurement: LineageScanMeasurement | null;
   agentSessionsMode: AgentSessionsMode;
   selectedAgentSessionId: string | null;
   selectedOverviewSessionId: string | null;
@@ -93,6 +98,10 @@ interface ClyState {
   notify: (title: string, detail?: string) => void;
   dismissToast: (id: string) => void;
   loadFromApi: (projectId?: string) => Promise<boolean>;
+  scanLineage: () => Promise<boolean>;
+  reviewLineageSuggestions: (
+    decisions: LineageReviewDecision[],
+  ) => Promise<boolean>;
   updateContextItem: (id: string, patch: Partial<ContextItem>) => void;
   updateClaim: (id: string, patch: Partial<Claim>) => void;
   addClaim: (claim: Claim) => void;
@@ -516,6 +525,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
   fixtureSwitcherOpen: false,
   globalSearch: "",
   toasts: [],
+  lineageSuggestions: [],
+  lineageMeasurement: null,
   agentSessionsMode: savedAgentSessionIsValid
     ? (saved.agentSessionsMode ?? "overview")
     : "overview",
@@ -544,6 +555,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
     set((state) => ({
       activeProjectId,
       data: clearPersistedResearchData(state.data),
+      lineageSuggestions: [],
+      lineageMeasurement: null,
       projectSwitcherOpen: false,
       selectedId: null,
     }));
@@ -558,6 +571,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
       agentSessionsMode: "overview",
       selectedAgentSessionId: null,
       selectedOverviewSessionId: null,
+      lineageSuggestions: [],
+      lineageMeasurement: null,
       fixtureSwitcherOpen: false,
     }),
   toggleSidebar: () =>
@@ -592,7 +607,10 @@ export const useClyStore = create<ClyState>((set, get) => ({
     if (!project) return false;
     try {
       await apiClient.ensureProject(project);
-      const researchData = await apiClient.fetchResearchData(projectId);
+      const [researchData, lineageSuggestions] = await Promise.all([
+        apiClient.fetchResearchData(projectId),
+        apiClient.fetchLineageSuggestions(projectId),
+      ]);
       if (get().activeProjectId !== projectId) return false;
       set((state) => ({
         data: hydrateAgentSessionLayouts(
@@ -600,11 +618,61 @@ export const useClyStore = create<ClyState>((set, get) => ({
           state.agentSessionLayouts,
         ),
         fixtureMode: "empty",
+        lineageSuggestions,
+        lineageMeasurement: null,
         selectedId: null,
       }));
       return true;
     } catch {
       // Keep the fixture repository intact when the Electron API is unavailable.
+      return false;
+    }
+  },
+  scanLineage: async () => {
+    const projectId = get().activeProjectId;
+    try {
+      const result = await apiClient.scanLineage(projectId);
+      if (get().activeProjectId !== projectId) return false;
+      set({
+        lineageMeasurement: result.measurement,
+        lineageSuggestions: result.suggestions,
+      });
+      return true;
+    } catch (error) {
+      get().notify(
+        "Lineage reconstruction was not completed",
+        error instanceof Error
+          ? error.message
+          : "Unable to reach the research API.",
+      );
+      return false;
+    }
+  },
+  reviewLineageSuggestions: async (decisions) => {
+    if (!decisions.length) return false;
+    const projectId = get().activeProjectId;
+    try {
+      const { suggestions } = await apiClient.reviewLineageSuggestions(
+        projectId,
+        decisions,
+      );
+      if (get().activeProjectId !== projectId) return false;
+      const byId = new Map(
+        suggestions.map((suggestion) => [suggestion.id, suggestion]),
+      );
+      set((state) => ({
+        lineageSuggestions: state.lineageSuggestions.map(
+          (suggestion) => byId.get(suggestion.id) ?? suggestion,
+        ),
+      }));
+      return true;
+    } catch (error) {
+      get().notify(
+        "Lineage review was not saved",
+        error instanceof Error
+          ? error.message
+          : "Unable to reach the research API.",
+      );
       return false;
     }
   },

@@ -382,6 +382,68 @@ export interface GraphEdge {
   approved: boolean;
 }
 
+export type LineageStepKind =
+  | "objective"
+  | "notebook"
+  | "commit"
+  | "experiment"
+  | "artifact"
+  | "claim";
+
+export interface LineageStep {
+  kind: LineageStepKind;
+  id: string;
+  label: string;
+  coordinates: Record<string, unknown>;
+}
+
+export interface LineageEvidence {
+  id: string;
+  projectId: string;
+  suggestionId: string;
+  evidenceType: string;
+  path: string | null;
+  coordinates: Record<string, unknown>;
+  excerpt: string | null;
+  contentHash: string;
+  createdAt: string;
+}
+
+export interface LineageSuggestion {
+  id: string;
+  projectId: string;
+  fingerprint: string;
+  chain: LineageStep[];
+  confidence: number;
+  rationale: string;
+  origin: "inferred";
+  reviewState: "unreviewed" | "approved" | "rejected";
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  evidence: LineageEvidence[];
+}
+
+export interface LineageReviewDecision {
+  id: string;
+  action: "approve" | "reject" | "edit";
+  edit?: Partial<Pick<LineageSuggestion, "chain" | "confidence" | "rationale">>;
+}
+
+export interface LineageScanMeasurement {
+  id: string;
+  projectId: string;
+  scanDurationMs: number;
+  timeToFirstChainMs: number | null;
+  suggestionCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  correctionCount: number;
+  manualConfig: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface Report {
   id: string;
   title: string;

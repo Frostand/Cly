@@ -569,10 +569,23 @@ export function GraphScreen() {
   const selectedId = useClyStore((s) => s.selectedId);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
+  const lineageSuggestions = useClyStore((s) => s.lineageSuggestions);
+  const lineageMeasurement = useClyStore((s) => s.lineageMeasurement);
+  const scanLineage = useClyStore((s) => s.scanLineage);
+  const reviewLineageSuggestions = useClyStore(
+    (s) => s.reviewLineageSuggestions,
+  );
   const [view, setView] = useState<GraphView>("Graph");
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [hideLow, setHideLow] = useState(true);
+  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>(
+    [],
+  );
+  const [editingSuggestionId, setEditingSuggestionId] = useState<string | null>(
+    null,
+  );
+  const [editedRationale, setEditedRationale] = useState("");
   const visibleNodes = useMemo(
     () =>
       nodes
@@ -637,6 +650,62 @@ export function GraphScreen() {
     notify("Relationship created", `${edge.source} → ${edge.target}`);
   };
 
+  const runLineageScan = async () => {
+    if (await scanLineage()) {
+      setSelectedSuggestionIds([]);
+      notify(
+        "Lineage reconstruction completed",
+        "Suggestions remain inferred until explicitly reviewed.",
+      );
+    }
+  };
+
+  const reviewSuggestions = async (
+    action: "approve" | "reject",
+    ids: string[],
+  ) => {
+    const pendingIds = ids.filter((id) =>
+      lineageSuggestions.some(
+        (suggestion) =>
+          suggestion.id === id && suggestion.reviewState === "unreviewed",
+      ),
+    );
+    if (!pendingIds.length) return;
+    if (
+      await reviewLineageSuggestions(pendingIds.map((id) => ({ action, id })))
+    ) {
+      setSelectedSuggestionIds((current) =>
+        current.filter((id) => !pendingIds.includes(id)),
+      );
+      notify(
+        action === "approve"
+          ? "Lineage suggestions approved"
+          : "Lineage suggestions rejected",
+        `${pendingIds.length} reviewer decision${pendingIds.length === 1 ? "" : "s"} recorded.`,
+      );
+    }
+  };
+
+  const saveEditedSuggestion = async () => {
+    if (!editingSuggestionId || !editedRationale.trim()) return;
+    if (
+      await reviewLineageSuggestions([
+        {
+          action: "edit",
+          id: editingSuggestionId,
+          edit: { rationale: editedRationale.trim() },
+        },
+      ])
+    ) {
+      setEditingSuggestionId(null);
+      setEditedRationale("");
+      notify(
+        "Lineage suggestion corrected",
+        "The explicit reviewer correction is recorded in provenance.",
+      );
+    }
+  };
+
   return (
     <div className="cly-page cly-page-wide cly-route-graph">
       <PageHeader
@@ -681,6 +750,201 @@ export function GraphScreen() {
           </>
         }
       />
+      <Panel
+        className="cly-panel-body"
+        data-testid="lineage-reconstruction-panel"
+      >
+        <div className="cly-row-between" style={{ gap: 12 }}>
+          <div>
+            <div className="cly-inspector-label">
+              Retrospective lineage reconstruction
+            </div>
+            <p className="cly-muted cly-small" style={{ margin: "4px 0 0" }}>
+              Scan the registered project for inferred objective-to-claim
+              chains. Nothing is verified until a reviewer decides.
+            </p>
+          </div>
+          <Button onClick={() => void runLineageScan()}>
+            <Sparkles size={13} /> Reconstruct lineage
+          </Button>
+        </div>
+        {lineageMeasurement ? (
+          <div
+            className="cly-row cly-small cly-muted"
+            style={{ marginTop: 10 }}
+          >
+            Last scan {lineageMeasurement.scanDurationMs}ms
+            {lineageMeasurement.timeToFirstChainMs !== null
+              ? ` · first chain ${lineageMeasurement.timeToFirstChainMs}ms`
+              : " · no complete chain"}
+            {` · accepted ${lineageMeasurement.acceptedCount} · corrections ${lineageMeasurement.correctionCount}`}
+          </div>
+        ) : null}
+        {lineageSuggestions.length ? (
+          <div className="cly-stack" style={{ marginTop: 12 }}>
+            <div className="cly-row-between">
+              <label className="cly-row cly-small">
+                <input
+                  className="cly-checkbox"
+                  type="checkbox"
+                  checked={
+                    lineageSuggestions.filter(
+                      (suggestion) => suggestion.reviewState === "unreviewed",
+                    ).length > 0 &&
+                    lineageSuggestions
+                      .filter(
+                        (suggestion) => suggestion.reviewState === "unreviewed",
+                      )
+                      .every((suggestion) =>
+                        selectedSuggestionIds.includes(suggestion.id),
+                      )
+                  }
+                  onChange={(event) =>
+                    setSelectedSuggestionIds(
+                      event.target.checked
+                        ? lineageSuggestions
+                            .filter(
+                              (suggestion) =>
+                                suggestion.reviewState === "unreviewed",
+                            )
+                            .map((suggestion) => suggestion.id)
+                        : [],
+                    )
+                  }
+                />
+                Select unreviewed
+              </label>
+              <div className="cly-row">
+                <Button
+                  disabled={!selectedSuggestionIds.length}
+                  onClick={() =>
+                    void reviewSuggestions("approve", selectedSuggestionIds)
+                  }
+                >
+                  <Check size={13} /> Approve selected
+                </Button>
+                <Button
+                  disabled={!selectedSuggestionIds.length}
+                  onClick={() =>
+                    void reviewSuggestions("reject", selectedSuggestionIds)
+                  }
+                >
+                  <X size={13} /> Reject selected
+                </Button>
+              </div>
+            </div>
+            {lineageSuggestions.map((suggestion) => (
+              <div
+                className="cly-callout"
+                data-tone={
+                  suggestion.reviewState === "rejected" ? "warning" : undefined
+                }
+                key={suggestion.id}
+              >
+                <div
+                  className="cly-row-between"
+                  style={{ alignItems: "flex-start", gap: 12 }}
+                >
+                  <label
+                    className="cly-row"
+                    style={{ alignItems: "flex-start" }}
+                  >
+                    <input
+                      aria-label={`Select lineage suggestion ${suggestion.id}`}
+                      className="cly-checkbox"
+                      disabled={suggestion.reviewState !== "unreviewed"}
+                      type="checkbox"
+                      checked={selectedSuggestionIds.includes(suggestion.id)}
+                      onChange={(event) =>
+                        setSelectedSuggestionIds((current) =>
+                          event.target.checked
+                            ? [...current, suggestion.id]
+                            : current.filter((id) => id !== suggestion.id),
+                        )
+                      }
+                    />
+                    <span>
+                      <strong>
+                        {suggestion.chain.map((step) => step.label).join(" → ")}
+                      </strong>
+                      <span
+                        className="cly-muted cly-small"
+                        style={{ display: "block", marginTop: 4 }}
+                      >
+                        {Math.round(suggestion.confidence * 100)}% confidence ·
+                        inferred · {suggestion.reviewState}
+                      </span>
+                    </span>
+                  </label>
+                  {suggestion.reviewState === "unreviewed" ? (
+                    <div className="cly-row">
+                      <Button
+                        onClick={() =>
+                          void reviewSuggestions("approve", [suggestion.id])
+                        }
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setEditingSuggestionId(suggestion.id);
+                          setEditedRationale(suggestion.rationale);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          void reviewSuggestions("reject", [suggestion.id])
+                        }
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  ) : (
+                    <Badge
+                      tone={
+                        suggestion.reviewState === "approved"
+                          ? "success"
+                          : "warning"
+                      }
+                    >
+                      {suggestion.reviewState}
+                    </Badge>
+                  )}
+                </div>
+                <p className="cly-muted cly-small" style={{ margin: "8px 0" }}>
+                  {suggestion.rationale}
+                </p>
+                <details>
+                  <summary className="cly-small">
+                    Inspect {suggestion.evidence.length} evidence coordinates
+                  </summary>
+                  <div className="cly-stack" style={{ marginTop: 8 }}>
+                    {suggestion.evidence.map((evidence) => (
+                      <div
+                        className="cly-row-between cly-small"
+                        key={evidence.id}
+                      >
+                        <span>{evidence.evidenceType}</span>
+                        <span className="cly-mono">
+                          {evidence.path ??
+                            JSON.stringify(evidence.coordinates)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="cly-muted cly-small" style={{ margin: "12px 0 0" }}>
+            No saved reconstruction suggestions. Run a bounded local scan to
+            inspect candidate chains.
+          </p>
+        )}
+      </Panel>
       {nodes.length === 0 ? (
         <EmptyState
           title="The research graph is empty"
@@ -942,6 +1206,35 @@ export function GraphScreen() {
           ) : null}
         </>
       )}
+      <Dialog
+        open={editingSuggestionId !== null}
+        onClose={() => setEditingSuggestionId(null)}
+        title="Correct lineage suggestion"
+        description="Saving this correction explicitly approves the edited inference and records reviewer provenance."
+        footer={
+          <>
+            <Button onClick={() => setEditingSuggestionId(null)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={!editedRationale.trim()}
+              onClick={() => void saveEditedSuggestion()}
+            >
+              Save correction
+            </Button>
+          </>
+        }
+      >
+        <div className="cly-field">
+          <label htmlFor="lineage-rationale">Reviewer rationale</label>
+          <textarea
+            autoFocus
+            className="cly-textarea"
+            id="lineage-rationale"
+            value={editedRationale}
+            onChange={(event) => setEditedRationale(event.target.value)}
+          />
+        </div>
+      </Dialog>
     </div>
   );
 }

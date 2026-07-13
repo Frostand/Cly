@@ -164,6 +164,58 @@ describe("persisted research storage", () => {
     backup.close();
   });
 
+  it("adds lineage tables to a migrated database without changing its provenance layout", () => {
+    const databasePath = createDatabasePath();
+    const legacyDatabase = new DatabaseSync(databasePath);
+    legacyDatabase.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+      CREATE TABLE projects (
+        id TEXT PRIMARY KEY, path TEXT NOT NULL, normalized_path TEXT NOT NULL,
+        name TEXT NOT NULL, status TEXT NOT NULL, sort_order INTEGER NOT NULL,
+        metadata TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE provenance_events (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, object_id TEXT, action TEXT NOT NULL,
+        actor_type TEXT NOT NULL, actor_id TEXT, metadata TEXT NOT NULL, created_at TEXT NOT NULL,
+        sequence INTEGER, previous_hash TEXT, event_hash TEXT
+      );
+      CREATE TABLE __drizzle_migrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, hash TEXT NOT NULL, created_at NUMERIC
+      );
+      INSERT INTO projects VALUES ('legacy-project', '/tmp/legacy', '/tmp/legacy', 'Legacy', 'open', 0, '{}', '2026-01-01', '2026-01-01');
+      INSERT INTO provenance_events VALUES ('legacy-event', 'legacy-project', NULL, 'legacy.event', 'system', NULL, '{}', '2026-01-01', 1, NULL, 'hash');
+      INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('0005', 1783910000000);
+    `);
+    legacyDatabase.close();
+
+    const database = getStateDatabase(databasePath);
+
+    expect(
+      database
+        .prepare("SELECT id FROM projects WHERE id = 'legacy-project'")
+        .get(),
+    ).toEqual({ id: "legacy-project" });
+    expect(
+      database
+        .prepare("PRAGMA table_info(provenance_events)")
+        .all()
+        .map((column) => column.name),
+    ).toEqual(
+      expect.arrayContaining(["sequence", "previous_hash", "event_hash"]),
+    );
+    expect(
+      database
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'lineage_%' ORDER BY name",
+        )
+        .all(),
+    ).toEqual([
+      { name: "lineage_evidence" },
+      { name: "lineage_scan_measurements" },
+      { name: "lineage_suggestions" },
+    ]);
+  });
+
   it("enforces project isolation even for direct SQLite writes", () => {
     const database = getStateDatabase(createDatabasePath());
     seedResearchProjects(database);
