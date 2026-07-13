@@ -16,6 +16,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
       ...process.env,
       NODE_ENV: "development",
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+      VITE_CLY_DEMO_MODE: "1",
     },
   });
 
