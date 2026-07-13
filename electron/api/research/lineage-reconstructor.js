@@ -350,38 +350,137 @@ function parseCommits(output) {
   return commits;
 }
 
-function structuredScalar(line) {
-  const separator = line.search(/[:=]/);
-  if (separator === -1) return null;
-  let value = line.slice(separator + 1).trim();
+function structuredScalar(value) {
+  let scalar = value.trim();
   let quote = null;
-  for (let index = 0; index < value.length; index += 1) {
-    const character = value[index];
-    if ((character === '"' || character === "'") && value[index - 1] !== "\\") {
+  for (let index = 0; index < scalar.length; index += 1) {
+    const character = scalar[index];
+    if (
+      (character === '"' || character === "'") &&
+      scalar[index - 1] !== "\\"
+    ) {
       quote = quote === character ? null : (quote ?? character);
     }
     if (
       character === "#" &&
       quote === null &&
-      /\s/.test(value[index - 1] ?? "")
+      /\s/.test(scalar[index - 1] ?? "")
     ) {
-      value = value.slice(0, index).trimEnd();
+      scalar = scalar.slice(0, index).trimEnd();
       break;
     }
   }
-  if (value.endsWith(",")) value = value.slice(0, -1).trimEnd();
-  const first = value[0];
-  if ((first === '"' || first === "'") && value.at(-1) === first) {
+  const first = scalar[0];
+  if ((first === '"' || first === "'") && scalar.at(-1) === first) {
     if (first === '"') {
       try {
-        return JSON.parse(value);
+        return JSON.parse(scalar);
       } catch {
         return null;
       }
     }
-    return value.slice(1, -1).replaceAll("''", "'");
+    return scalar.slice(1, -1).replaceAll("''", "'");
   }
-  return value;
+  return scalar;
+}
+
+function structuredValueFragments(
+  value,
+  assertWithinTime,
+  inCollection = false,
+) {
+  const collection = inCollection || value.trimStart().startsWith("[");
+  if (!collection) return [value];
+  const fragments = [];
+  let depth = 0;
+  let quote = null;
+  let start = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    assertWithinTime?.();
+    const character = value[index];
+    if (quote) {
+      if (character === quote && value[index - 1] !== "\\") quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "[") {
+      depth += 1;
+      if (depth === 1) start = index + 1;
+      continue;
+    }
+    if (character === "]") {
+      if (depth === 1) {
+        fragments.push(value.slice(start, index));
+        start = index + 1;
+      }
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    if (character === "," && depth <= 1) {
+      const next = value.slice(index + 1).trimStart();
+      if (
+        depth === 1 &&
+        next.startsWith("]") &&
+        !value.slice(start, index).trimStart().startsWith('"') &&
+        !value.slice(start, index).trimStart().startsWith("'")
+      ) {
+        continue;
+      }
+      fragments.push(value.slice(start, index));
+      start = index + 1;
+    }
+  }
+  if (start < value.length && depth === 0) fragments.push(value.slice(start));
+  return fragments;
+}
+
+function structuredCollectionDepthDelta(
+  value,
+  assertWithinTime,
+  inCollection = false,
+) {
+  if (!inCollection && !value.trimStart().startsWith("[")) return 0;
+  let delta = 0;
+  let quote = null;
+  for (let index = 0; index < value.length; index += 1) {
+    assertWithinTime?.();
+    const character = value[index];
+    if (quote) {
+      if (character === quote && value[index - 1] !== "\\") quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") quote = character;
+    if (character === "[") delta += 1;
+    if (character === "]") delta -= 1;
+  }
+  return delta;
+}
+
+function structuredLineValue(line, inCollection) {
+  const sequence = line.match(/^\s*-\s+(.+)$/u);
+  if (sequence) return sequence[1];
+  let quote = null;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote) {
+      if (character === quote && line[index - 1] !== "\\") quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (
+      character === "=" ||
+      (character === ":" && /\s/u.test(line[index + 1] ?? ""))
+    ) {
+      return line.slice(index + 1);
+    }
+  }
+  return inCollection ? line.trim() : null;
 }
 
 function jsonContainsReference(value, reference, assertWithinTime) {
@@ -422,13 +521,35 @@ function structuredValueReferencing(
     return { line: 1, text: text.trim().slice(0, 1_000) };
   }
   const lines = text.split(/\r?\n/);
+  let collectionDepth = 0;
   for (let index = 0; index < lines.length; index += 1) {
     beforeReferenceScan?.();
     assertWithinTime?.();
     const line = lines[index];
-    if (normalizeReference(structuredScalar(line)) === normalizedReference) {
-      return { line: index + 1, text: line.trim().slice(0, 1_000) };
+    const value = structuredLineValue(line, collectionDepth > 0);
+    if (value !== null) {
+      for (const fragment of structuredValueFragments(
+        value,
+        assertWithinTime,
+        collectionDepth > 0,
+      )) {
+        assertWithinTime?.();
+        if (
+          normalizeReference(structuredScalar(fragment)) === normalizedReference
+        ) {
+          return { line: index + 1, text: line.trim().slice(0, 1_000) };
+        }
+      }
     }
+    collectionDepth = Math.max(
+      0,
+      collectionDepth +
+        structuredCollectionDepthDelta(
+          value ?? line,
+          assertWithinTime,
+          collectionDepth > 0,
+        ),
+    );
   }
   return null;
 }
@@ -447,23 +568,48 @@ function reportReferenceTokens(line, assertWithinTime) {
   return tokens;
 }
 
+function reportTokenReference(token, references) {
+  const normalizedToken = normalizeReference(token);
+  if (normalizedToken && references.has(normalizedToken))
+    return normalizedToken;
+  let punctuated = token;
+  while (/[,:;!?.]$/u.test(punctuated)) {
+    punctuated = punctuated.slice(0, -1);
+    const normalizedPunctuationFreeToken = normalizeReference(punctuated);
+    if (
+      normalizedPunctuationFreeToken &&
+      references.has(normalizedPunctuationFreeToken)
+    ) {
+      return normalizedPunctuationFreeToken;
+    }
+  }
+  return null;
+}
+
 function reportTokenReferencing(
   text,
   reference,
-  { assertWithinTime, beforeReferenceScan } = {},
+  { assertWithinTime, beforeReferenceScan, knownReferences = [] } = {},
 ) {
   const normalizedReference = normalizeReference(reference);
   if (!normalizedReference) return null;
+  const knownReferenceSet = new Set(
+    [normalizedReference, ...knownReferences]
+      .map(normalizeReference)
+      .filter(Boolean),
+  );
   const lines = text.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     beforeReferenceScan?.();
     assertWithinTime?.();
     const line = lines[index];
     if (!CITATION_PATTERN.test(line)) continue;
-    const references = reportReferenceTokens(line, assertWithinTime);
+    const tokens = reportReferenceTokens(line, assertWithinTime);
     if (
-      references.some(
-        (token) => normalizeReference(token) === normalizedReference,
+      tokens.some(
+        (token) =>
+          reportTokenReference(token, knownReferenceSet) ===
+          normalizedReference,
       )
     ) {
       return { line: index + 1, text: line.trim().slice(0, 1_000) };
@@ -714,6 +860,7 @@ export function createLineageReconstructor(repository, options = {}) {
           );
         });
         if (!commit) continue;
+        const linkedArtifacts = [];
         for (const artifact of artifacts) {
           assertWithinTime();
           const artifactLink = structuredValueReferencing(
@@ -723,6 +870,13 @@ export function createLineageReconstructor(repository, options = {}) {
           );
           if (!artifactLink) continue;
           if (!(await verifyDiscoveredFile(artifact, beforeFileRead))) continue;
+          linkedArtifacts.push({ artifact, artifactLink });
+        }
+        const artifactReferences = linkedArtifacts.map(
+          ({ artifact }) => artifact.path,
+        );
+        for (const { artifact, artifactLink } of linkedArtifacts) {
+          assertWithinTime();
           for (const report of reports) {
             assertWithinTime();
             const claimLink = reportTokenReferencing(
@@ -731,6 +885,7 @@ export function createLineageReconstructor(repository, options = {}) {
               {
                 assertWithinTime,
                 beforeReferenceScan,
+                knownReferences: artifactReferences,
               },
             );
             if (!claimLink) continue;

@@ -456,6 +456,157 @@ describe("lineage reconstructor", () => {
     ).toHaveLength(1);
   });
 
+  it.each([
+    {
+      collection:
+        "notebooks:\n  - ./notebooks/analysis.ipynb\noutputs:\n  - ./outputs/figure-1.png\nseed: 7\n",
+      extension: "yaml",
+      initial:
+        "notebook: notebooks/analysis.ipynb\noutput: outputs/figure-1.png\nseed: 7\n",
+      name: "YAML block sequences",
+    },
+    {
+      collection:
+        'notebooks = ["./notebooks/analysis.ipynb"]\noutputs = [\n  "./outputs/figure-1.png",\n]\nseed = 7\n',
+      extension: "toml",
+      initial:
+        'notebook = "notebooks/analysis.ipynb"\noutput = "outputs/figure-1.png"\nseed = 7\n',
+      name: "TOML inline and multiline arrays",
+    },
+    {
+      collection: JSON.stringify({
+        inputs: { notebooks: ["./notebooks/analysis.ipynb"] },
+        outputs: ["./outputs/figure-1.png"],
+        seed: 7,
+      }),
+      extension: "json",
+      initial: JSON.stringify({
+        notebook: "notebooks/analysis.ipynb",
+        output: "outputs/figure-1.png",
+        seed: 7,
+      }),
+      name: "JSON nested arrays",
+    },
+  ])("rescans $name and sentence-punctuated report references without staling the suggestion", async ({
+    collection,
+    extension,
+    initial,
+  }) => {
+    const root = await createGitRepository();
+    const experimentPath = `experiments/baseline.${extension}`;
+    if (extension !== "yaml") {
+      await rm(path.join(root, "experiments", "baseline.yaml"));
+      await writeFile(
+        path.join(root, "notebooks", "analysis.ipynb"),
+        JSON.stringify({
+          metadata: {
+            title: "Analysis notebook",
+            cly: {
+              objective: "Does the baseline support the objective?",
+              experiment: experimentPath,
+            },
+          },
+          cells: [],
+        }),
+      );
+    }
+    await writeFile(path.join(root, experimentPath), initial);
+    if (extension !== "yaml") {
+      await execFileAsync("git", ["add", "."], { cwd: root });
+      await execFileAsync(
+        "git",
+        [
+          "-c",
+          "user.name=Cly Test",
+          "-c",
+          "user.email=cly@example.test",
+          "commit",
+          "--quiet",
+          "-m",
+          `Prepare ${extension} collection fixture`,
+        ],
+        { cwd: root },
+      );
+    }
+    const repository = createResearchRepository(createDatabase());
+    repository.upsertProject({
+      id: "project-1",
+      name: "Project",
+      path: root,
+      metadata: { question: "Does the baseline support the objective?" },
+    });
+    const reconstructor = createLineageReconstructor(repository);
+    const first = await reconstructor.scanLineage("project-1");
+    const original = first.suggestions[0];
+    expect(original).toBeDefined();
+    if (!original) throw new Error("Expected a lineage suggestion.");
+    await writeFile(path.join(root, experimentPath), collection);
+    await writeFile(
+      path.join(root, "reports", "results.md"),
+      "Claim from outputs/figure-1.png, supports this [@smith2026].\n",
+    );
+
+    const rescanned = await reconstructor.scanLineage("project-1");
+
+    expect(rescanned.suggestions).toEqual([
+      expect.objectContaining({
+        id: original.id,
+        lifecycleState: "current",
+      }),
+    ]);
+    expect(
+      repository.listLineageSuggestions("project-1", {
+        includeHistorical: true,
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("keeps filename punctuation when resolving prose punctuation and embedded shorter collisions", async () => {
+    const root = await createGitRepository();
+    const punctuatedArtifact = "outputs/figure-1.png,";
+    await writeFile(path.join(root, punctuatedArtifact), "punctuated artifact");
+    await writeFile(
+      path.join(root, "experiments", "baseline.yaml"),
+      `notebooks: [notebooks/analysis.ipynb]\noutputs: [outputs/figure-1.png, "${punctuatedArtifact}"]\nseed: 7\n`,
+    );
+    await writeFile(
+      path.join(root, "reports", "results.md"),
+      `Claim from ${punctuatedArtifact}. supports this [@smith2026].\n`,
+    );
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    await execFileAsync(
+      "git",
+      [
+        "-c",
+        "user.name=Cly Test",
+        "-c",
+        "user.email=cly@example.test",
+        "commit",
+        "--quiet",
+        "-m",
+        "Add punctuation collision fixture",
+      ],
+      { cwd: root },
+    );
+    const repository = createResearchRepository(createDatabase());
+    repository.upsertProject({
+      id: "project-1",
+      name: "Project",
+      path: root,
+      metadata: { question: "Does the baseline support the objective?" },
+    });
+
+    const result =
+      await createLineageReconstructor(repository).scanLineage("project-1");
+
+    expect(result.suggestions).toHaveLength(1);
+    expect(result.suggestions[0]?.chain).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: `file:${punctuatedArtifact}` }),
+      ]),
+    );
+  });
+
   it("skips symlink escapes and malformed or oversized inputs without reading outside the project", async () => {
     const root = await createGitRepository();
     const outside = await mkdtemp(path.join(tmpdir(), "cly-lineage-outside-"));
