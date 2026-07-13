@@ -609,7 +609,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
       await apiClient.ensureProject(project);
       const [researchData, lineageSuggestions] = await Promise.all([
         apiClient.fetchResearchData(projectId),
-        apiClient.fetchLineageSuggestions(projectId),
+        // Lineage reconstruction is additive. Older or temporarily unavailable
+        // APIs must not prevent hydration of the canonical research graph.
+        apiClient.fetchLineageSuggestions(projectId).catch(() => []),
       ]);
       if (get().activeProjectId !== projectId) return false;
       set((state) => ({
