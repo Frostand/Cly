@@ -65,7 +65,9 @@ export function ProvenanceScreen() {
   const [integrity, setIntegrity] = useState<ProvenanceIntegrity | null>(null);
 
   useEffect(() => {
-    if (fixtureMode !== "empty") return;
+    const explicitDemoRuntime =
+      import.meta.env.DEV && import.meta.env.VITE_CLY_DEMO_MODE === "1";
+    if (fixtureMode !== "empty" || explicitDemoRuntime) return;
     let current = true;
     Promise.all([
       apiClient.fetchProvenance(activeProjectId),

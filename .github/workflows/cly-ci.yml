@@ -29,7 +29,7 @@ jobs:
           - name: web-build
             command: pnpm vite:build
           - name: end-to-end
-            command: pnpm test:e2e
+            command: xvfb-run --auto-servernum pnpm test:e2e
             browser: true
     steps:
       - name: Check out repository

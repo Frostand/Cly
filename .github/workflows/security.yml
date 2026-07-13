@@ -78,6 +78,7 @@ jobs:
   codeql:
     name: codeql
     permissions:
+      actions: read
       contents: read
       packages: read
       security-events: write
