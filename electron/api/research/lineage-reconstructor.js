@@ -90,8 +90,9 @@ async function runGit(
   operationArguments,
   maxBuffer,
   {
-    allowFailure = false,
+    acceptedExitCodes = [],
     executor = execFileAsync,
+    failureMessage = "Registered project is not an observable Git repository.",
     timeoutMs = DEFAULT_GIT_TIMEOUT_MS,
   } = {},
 ) {
@@ -124,8 +125,8 @@ async function runGit(
     ) {
       throw new Error("Lineage reconstruction exceeded its Git history limit.");
     }
-    if (allowFailure) return null;
-    throw new Error("Registered project is not an observable Git repository.");
+    if (acceptedExitCodes.includes(error?.code)) return null;
+    throw new Error(failureMessage);
   }
 }
 
@@ -346,15 +347,35 @@ function parseCommits(output) {
   return commits;
 }
 
-function lineReferencing(text, reference, { citation = false } = {}) {
+function isPathContinuation(character) {
+  return character !== undefined && /[A-Za-z0-9._~%+@=/-]/.test(character);
+}
+
+function lineReferencing(
+  text,
+  reference,
+  { assertWithinTime, beforeReferenceScan, citation = false } = {},
+) {
+  const normalizedReference = normalizeReference(reference);
+  if (!normalizedReference) return null;
   const lines = text.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
+    beforeReferenceScan?.();
+    assertWithinTime?.();
     const line = lines[index];
-    if (
-      line.includes(reference) &&
-      (!citation || CITATION_PATTERN.test(line))
-    ) {
-      return { line: index + 1, text: line.trim().slice(0, 1_000) };
+    if (citation && !CITATION_PATTERN.test(line)) continue;
+    const normalizedLine = line.replaceAll("\\", "/");
+    let fromIndex = 0;
+    while (fromIndex <= normalizedLine.length - normalizedReference.length) {
+      assertWithinTime?.();
+      const matchIndex = normalizedLine.indexOf(normalizedReference, fromIndex);
+      if (matchIndex === -1) break;
+      const before = normalizedLine[matchIndex - 1];
+      const after = normalizedLine[matchIndex + normalizedReference.length];
+      if (!isPathContinuation(before) && !isPathContinuation(after)) {
+        return { line: index + 1, text: line.trim().slice(0, 1_000) };
+      }
+      fromIndex = matchIndex + 1;
     }
   }
   return null;
@@ -395,6 +416,7 @@ export function createLineageReconstructor(repository, options = {}) {
   const now = options.now ?? Date.now;
   const gitExecutor = options.gitExecutor ?? execFileAsync;
   const beforeFileRead = options.beforeFileRead;
+  const beforeReferenceScan = options.beforeReferenceScan;
 
   return {
     async scanLineage(projectIdInput) {
@@ -436,22 +458,36 @@ export function createLineageReconstructor(repository, options = {}) {
         config,
         assertWithinTime,
       );
-      const rawCommits = await runGit(
+      const historyProbe = await runGit(
         canonicalRoot,
-        [
-          "log",
-          `--max-count=${config.maxGitCommits}`,
-          "--format=%x1e%H%x1f%cI%x1f%s",
-          "--name-only",
-          "--no-renames",
-        ],
-        config.maxGitOutputBytes,
+        ["show-ref", "--head", "--verify", "--quiet", "HEAD"],
+        CONTROL_COMMAND_OUTPUT_BYTES,
         {
-          allowFailure: true,
+          acceptedExitCodes: [1],
           executor: gitExecutor,
+          failureMessage: "Git history could not be observed.",
           timeoutMs: config.gitTimeoutMs,
         },
       );
+      const rawCommits =
+        historyProbe === null
+          ? ""
+          : await runGit(
+              canonicalRoot,
+              [
+                "log",
+                `--max-count=${config.maxGitCommits}`,
+                "--format=%x1e%H%x1f%cI%x1f%s",
+                "--name-only",
+                "--no-renames",
+              ],
+              config.maxGitOutputBytes,
+              {
+                executor: gitExecutor,
+                failureMessage: "Git history could not be observed.",
+                timeoutMs: config.gitTimeoutMs,
+              },
+            );
       assertWithinTime();
       const commits = parseCommits(rawCommits);
       const files = inventory.files.sort((left, right) =>
@@ -570,25 +606,36 @@ export function createLineageReconstructor(repository, options = {}) {
       const proposals = [];
       let timeToFirstChainMs = null;
       for (const notebook of notebooks) {
+        assertWithinTime();
         const experiment = experiments.get(notebook.experimentPath);
         if (!experiment) continue;
         const notebookConfigLink = lineReferencing(
           experiment.text,
           notebook.file.path,
+          { assertWithinTime, beforeReferenceScan },
         );
         if (!notebookConfigLink) continue;
-        const commit = commits.find(
-          (item) =>
+        const commit = commits.find((item) => {
+          assertWithinTime();
+          return (
             item.paths.includes(notebook.file.path) &&
-            item.paths.includes(experiment.file.path),
-        );
+            item.paths.includes(experiment.file.path)
+          );
+        });
         if (!commit) continue;
         for (const artifact of artifacts) {
-          const artifactLink = lineReferencing(experiment.text, artifact.path);
+          assertWithinTime();
+          const artifactLink = lineReferencing(experiment.text, artifact.path, {
+            assertWithinTime,
+            beforeReferenceScan,
+          });
           if (!artifactLink) continue;
           if (!(await verifyDiscoveredFile(artifact, beforeFileRead))) continue;
           for (const report of reports) {
+            assertWithinTime();
             const claimLink = lineReferencing(report.text, artifact.path, {
+              assertWithinTime,
+              beforeReferenceScan,
               citation: true,
             });
             if (!claimLink) continue;

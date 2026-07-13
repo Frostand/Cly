@@ -255,6 +255,82 @@ describe("lineage reconstructor", () => {
     );
   });
 
+  it.each([
+    {
+      artifact: "outputs/figure-1.png.backup.png",
+      name: "prefix",
+      notebook: "notebooks/analysis.ipynb.backup.ipynb",
+    },
+    {
+      artifact: "outputs/archive/outputs/figure-1.png",
+      name: "suffix",
+      notebook: "archive/notebooks/analysis.ipynb",
+    },
+  ])("matches $name-collision notebook and artifact references only at exact path boundaries", async ({
+    artifact,
+    name,
+    notebook,
+  }) => {
+    const root = await createGitRepository();
+    await mkdir(path.dirname(path.join(root, notebook)), { recursive: true });
+    await mkdir(path.dirname(path.join(root, artifact)), { recursive: true });
+    await writeFile(
+      path.join(root, notebook),
+      JSON.stringify({
+        metadata: {
+          title: "Exactly referenced notebook",
+          cly: {
+            objective: "Does the baseline support the objective?",
+            experiment: "experiments/baseline.yaml",
+          },
+        },
+        cells: [],
+      }),
+    );
+    await writeFile(path.join(root, artifact), "exact artifact");
+    await writeFile(
+      path.join(root, "experiments", "baseline.yaml"),
+      `notebook: ${notebook}\noutput: ${artifact}\nseed: 7\n`,
+    );
+    await writeFile(
+      path.join(root, "reports", "results.md"),
+      `The claim from ${artifact} supports the objective [@smith2026].\n`,
+    );
+    await execFileAsync("git", ["add", "."], { cwd: root });
+    await execFileAsync(
+      "git",
+      [
+        "-c",
+        "user.name=Cly Test",
+        "-c",
+        "user.email=cly@example.test",
+        "commit",
+        "--quiet",
+        "-m",
+        `Add exact ${name} collision fixture`,
+      ],
+      { cwd: root },
+    );
+    const repository = createResearchRepository(createDatabase());
+    repository.upsertProject({
+      id: "project-1",
+      name: "Project",
+      path: root,
+      metadata: { question: "Does the baseline support the objective?" },
+    });
+
+    const result =
+      await createLineageReconstructor(repository).scanLineage("project-1");
+
+    expect(result.suggestions).toHaveLength(1);
+    expect(result.suggestions[0]?.chain).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: `file:${notebook}` }),
+        expect.objectContaining({ id: `file:${artifact}` }),
+      ]),
+    );
+  });
+
   it("skips symlink escapes and malformed or oversized inputs without reading outside the project", async () => {
     const root = await createGitRepository();
     const outside = await mkdtemp(path.join(tmpdir(), "cly-lineage-outside-"));
@@ -605,6 +681,65 @@ describe("lineage reconstructor", () => {
         gitTimeoutMs: 3,
       }).scanLineage("project-1"),
     ).rejects.toThrow("Git command timed out");
+  });
+
+  it("cancels when the deadline expires during candidate reference scanning", async () => {
+    const root = await createGitRepository();
+    const repository = createResearchRepository(createDatabase());
+    repository.upsertProject({
+      id: "project-1",
+      name: "Project",
+      path: root,
+      metadata: { question: "Does the baseline support the objective?" },
+    });
+    let clock = 0;
+
+    await expect(
+      createLineageReconstructor(repository, {
+        beforeReferenceScan: () => {
+          clock = 2;
+        },
+        maxScanDurationMs: 1,
+        now: () => clock,
+      }).scanLineage("project-1"),
+    ).rejects.toThrow("time limit");
+    expect(repository.listLineageSuggestions("project-1")).toEqual([]);
+  });
+
+  it("does not reconcile an existing suggestion after an operational Git-log failure", async () => {
+    const root = await createGitRepository();
+    const repository = createResearchRepository(createDatabase());
+    repository.upsertProject({
+      id: "project-1",
+      name: "Project",
+      path: root,
+      metadata: { question: "Does the baseline support the objective?" },
+    });
+    const existing =
+      await createLineageReconstructor(repository).scanLineage("project-1");
+    const existingSuggestion = existing.suggestions[0];
+    expect(existingSuggestion).toBeDefined();
+    if (!existingSuggestion) throw new Error("Expected a lineage suggestion.");
+    const failingGitExecutor = async (
+      file: string,
+      args: readonly string[],
+      executionOptions: Parameters<typeof execFileAsync>[2],
+    ) => {
+      if (args.includes("log")) throw new Error("injected Git I/O failure");
+      return execFileAsync(file, args, executionOptions);
+    };
+
+    await expect(
+      createLineageReconstructor(repository, {
+        gitExecutor: failingGitExecutor,
+      }).scanLineage("project-1"),
+    ).rejects.toThrow("Git history could not be observed");
+    expect(repository.listLineageSuggestions("project-1")).toEqual([
+      expect.objectContaining({
+        id: existingSuggestion.id,
+        lifecycleState: "current",
+      }),
+    ]);
   });
 
   it("uses one no-follow descriptor and hard caps a file that changes after discovery", async () => {
