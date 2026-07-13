@@ -264,6 +264,33 @@ const lineageReviewInputSchema = z.object({
   actor: z.string().trim().min(1).max(200),
 });
 
+const decisionBriefTransitionSchema = z
+  .object({
+    projectId: z.string().trim().min(1),
+    briefId: z.string().trim().min(1),
+    findingId: z.string().trim().min(1),
+    status: z.enum(["open", "assigned", "resolved", "deferred"]),
+    owner: z.string().trim().min(1).max(200).nullable().optional(),
+    reason: z.string().trim().min(1).max(10_000).nullable().optional(),
+    actor: z.string().trim().min(1).max(200),
+  })
+  .superRefine((value, context) => {
+    if (value.status === "assigned" && !value.owner) {
+      context.addIssue({
+        code: "custom",
+        message: "Assigning a finding requires an owner.",
+        path: ["owner"],
+      });
+    }
+    if (value.status === "deferred" && !value.reason) {
+      context.addIssue({
+        code: "custom",
+        message: "Deferring a finding requires a reason.",
+        path: ["reason"],
+      });
+    }
+  });
+
 const parseJson = (value) => {
   try {
     return JSON.parse(value);
@@ -383,7 +410,10 @@ const hashProvenanceRow = (row, sequence, previousHash) =>
     )
     .digest("hex");
 
-export function createResearchRepository(database) {
+export function createResearchRepository(
+  database,
+  { clock = () => new Date().toISOString(), createId = randomUUID } = {},
+) {
   const provenanceColumns = database
     .prepare("PRAGMA table_info(provenance_events)")
     .all();
@@ -612,6 +642,286 @@ export function createResearchRepository(database) {
       rejectedCount: Number(counts?.rejected_count ?? 0),
       correctionCount: Number(corrections?.correction_count ?? 0),
     };
+  };
+
+  const mapDecisionBriefFinding = (row, evidence = []) => ({
+    id: row.id,
+    projectId: row.project_id,
+    briefId: row.brief_id,
+    category: row.category,
+    sortOrder: row.sort_order,
+    title: row.title,
+    detail: row.detail,
+    recommendedAction: row.recommended_action,
+    status: row.status,
+    owner: row.owner ?? null,
+    deferredReason: row.deferred_reason ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    evidence,
+  });
+
+  const mapDecisionBrief = (row) => {
+    const findingRows = database
+      .prepare(
+        `SELECT * FROM decision_brief_findings
+         WHERE project_id = ? AND brief_id = ? ORDER BY sort_order, id`,
+      )
+      .all(row.project_id, row.id);
+    const evidenceByFinding = new Map();
+    for (const evidence of database
+      .prepare(
+        `SELECT evidence.*, object.title AS object_title, object.type AS object_type,
+                event.action AS event_action, event.sequence AS event_sequence
+         FROM decision_brief_finding_evidence evidence
+         JOIN research_objects object
+           ON object.id = evidence.object_id AND object.project_id = evidence.project_id
+         JOIN provenance_events event
+           ON event.id = evidence.provenance_event_id AND event.project_id = evidence.project_id
+         WHERE evidence.project_id = ? AND evidence.finding_id IN (
+           SELECT id FROM decision_brief_findings WHERE brief_id = ? AND project_id = ?
+         )
+         ORDER BY evidence.finding_id, event.sequence, evidence.object_id, evidence.id`,
+      )
+      .all(row.project_id, row.id, row.project_id)) {
+      const values = evidenceByFinding.get(evidence.finding_id) ?? [];
+      values.push({
+        objectId: evidence.object_id,
+        objectTitle: evidence.object_title,
+        objectType: evidence.object_type,
+        provenanceEventId: evidence.provenance_event_id,
+        provenanceSequence: evidence.event_sequence,
+        provenanceAction: evidence.event_action,
+      });
+      evidenceByFinding.set(evidence.finding_id, values);
+    }
+    const findings = findingRows.map((finding) =>
+      mapDecisionBriefFinding(finding, evidenceByFinding.get(finding.id) ?? []),
+    );
+    const latestMeasurement = database
+      .prepare(
+        `SELECT * FROM decision_brief_measurements
+         WHERE project_id = ? AND brief_id = ?
+         ORDER BY recorded_at DESC, id DESC LIMIT 1`,
+      )
+      .get(row.project_id, row.id);
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      startSequence: row.start_sequence,
+      cutoffSequence: row.cutoff_sequence,
+      generatedBy: row.generated_by,
+      createdAt: row.created_at,
+      findings,
+      pilot: latestMeasurement
+        ? {
+            meetingNumber: latestMeasurement.meeting_number,
+            targetMeetings: latestMeasurement.target_meetings,
+            surfacedDecisionCount: latestMeasurement.surfaced_decision_count,
+            assignedOrResolvedCount:
+              latestMeasurement.assigned_or_resolved_count,
+            assignmentOrResolutionRate:
+              latestMeasurement.assignment_or_resolution_rate,
+            recordedAt: latestMeasurement.recorded_at,
+          }
+        : null,
+    };
+  };
+
+  const recordDecisionBriefMeasurement = (projectId, briefId, now) => {
+    const meetingNumber = database
+      .prepare(
+        `SELECT COUNT(*) AS count FROM decision_briefs
+         WHERE project_id = ? AND cutoff_sequence <= (
+           SELECT cutoff_sequence FROM decision_briefs WHERE id = ? AND project_id = ?
+         )`,
+      )
+      .get(projectId, briefId, projectId)?.count;
+    const counts = database
+      .prepare(
+        `SELECT COUNT(*) AS surfaced_count,
+                SUM(CASE WHEN status IN ('assigned', 'resolved') THEN 1 ELSE 0 END) AS acted_count
+         FROM decision_brief_findings WHERE project_id = ? AND brief_id = ?`,
+      )
+      .get(projectId, briefId);
+    const surfacedDecisionCount = Number(counts?.surfaced_count ?? 0);
+    const assignedOrResolvedCount = Number(counts?.acted_count ?? 0);
+    database
+      .prepare(
+        `INSERT INTO decision_brief_measurements
+         (id, project_id, brief_id, meeting_number, target_meetings,
+          surfaced_decision_count, assigned_or_resolved_count,
+          assignment_or_resolution_rate, recorded_at)
+         VALUES (?, ?, ?, ?, 4, ?, ?, ?, ?)`,
+      )
+      .run(
+        createId(),
+        projectId,
+        briefId,
+        Math.min(4, Number(meetingNumber ?? 1)),
+        surfacedDecisionCount,
+        assignedOrResolvedCount,
+        surfacedDecisionCount === 0
+          ? 0
+          : assignedOrResolvedCount / surfacedDecisionCount,
+        now,
+      );
+  };
+
+  const deriveDecisionBriefFindings = (projectId, events) => {
+    const objects = database
+      .prepare(
+        `SELECT * FROM research_objects WHERE project_id = ? ORDER BY id`,
+      )
+      .all(projectId);
+    const objectsById = new Map(objects.map((object) => [object.id, object]));
+    const findings = [];
+    const keys = new Set();
+    const add = (category, key, title, detail, recommendedAction, evidence) => {
+      if (keys.has(key) || evidence.length === 0) return;
+      keys.add(key);
+      findings.push({
+        category,
+        key,
+        title,
+        detail,
+        recommendedAction,
+        evidence: evidence.toSorted(
+          (left, right) =>
+            left.provenanceSequence - right.provenanceSequence ||
+            left.objectId.localeCompare(right.objectId),
+        ),
+      });
+    };
+
+    for (const event of events) {
+      const object = event.object_id
+        ? objectsById.get(event.object_id)
+        : undefined;
+      const evidenceFor = (objectRow) =>
+        objectRow
+          ? [
+              {
+                objectId: objectRow.id,
+                provenanceEventId: event.id,
+                provenanceSequence: event.sequence,
+              },
+            ]
+          : [];
+      const payload = object ? parseJson(object.payload) : {};
+      if (object?.type === "run" && payload.status === "failed") {
+        add(
+          "failed-run",
+          `failed-run:${object.id}`,
+          `Failed run: ${object.title}`,
+          "A run entered the interval with a failed status.",
+          "Assign an owner to diagnose the run and decide whether to retry, revise, or stop it.",
+          evidenceFor(object),
+        );
+      }
+      if (
+        object &&
+        (object.type === "artifact" || object.type === "claim") &&
+        /(?:^|[.-])stale(?:$|[.-])/.test(event.action)
+      ) {
+        add(
+          "stale-artifact-or-claim",
+          `stale:${object.id}`,
+          `Newly stale ${object.type}: ${object.title}`,
+          "The provenance interval marked this research object as stale.",
+          "Assign an owner to refresh the object or explicitly retire it.",
+          evidenceFor(object),
+        );
+      }
+      if (
+        object?.type === "claim" &&
+        ["draft", "needs-evidence", "contradicted"].includes(payload.status)
+      ) {
+        add(
+          "unresolved-decision",
+          `unresolved:${object.id}`,
+          `Owner needed: ${object.title}`,
+          "A changed claim still needs a decision, evidence, or an explicit disposition.",
+          "Assign a decision owner before the next meeting.",
+          evidenceFor(object),
+        );
+      }
+      if (event.action === "relationship.contradicts.created" && object) {
+        const relationships = database
+          .prepare(
+            `SELECT * FROM research_relationships
+             WHERE project_id = ? AND type = 'contradicts' AND to_object_id = ?
+             ORDER BY id`,
+          )
+          .all(projectId, object.id);
+        for (const relationship of relationships) {
+          const source = objectsById.get(relationship.from_object_id);
+          if (!source) continue;
+          add(
+            "contradictory-evidence",
+            `contradiction:${relationship.id}`,
+            `Contradictory evidence for ${object.title}`,
+            `${source.title} contradicts this claim in the interval.`,
+            "Assign an owner to reconcile the contradiction and update the decision record.",
+            [source, object].map((item) => ({
+              objectId: item.id,
+              provenanceEventId: event.id,
+              provenanceSequence: event.sequence,
+            })),
+          );
+          if (
+            !database
+              .prepare(
+                `SELECT 1 FROM provenance_events
+                 WHERE project_id = ? AND object_id = ? LIMIT 1`,
+              )
+              .get(projectId, source.id)
+          ) {
+            add(
+              "missing-provenance",
+              `missing-provenance:${source.id}`,
+              `Missing provenance: ${source.title}`,
+              "A changed evidence relationship references an object with no object-level provenance.",
+              "Assign an owner to attach provenance before relying on this evidence.",
+              [
+                {
+                  objectId: source.id,
+                  provenanceEventId: event.id,
+                  provenanceSequence: event.sequence,
+                },
+              ],
+            );
+          }
+        }
+      }
+    }
+
+    const categoryOrder = {
+      "unresolved-decision": 0,
+      "failed-run": 1,
+      "contradictory-evidence": 2,
+      "stale-artifact-or-claim": 3,
+      "missing-provenance": 4,
+      "recommended-next-action": 5,
+    };
+    const rootFindings = findings.toSorted(
+      (left, right) =>
+        categoryOrder[left.category] - categoryOrder[right.category] ||
+        left.evidence[0].provenanceSequence -
+          right.evidence[0].provenanceSequence ||
+        left.key.localeCompare(right.key),
+    );
+    return [
+      ...rootFindings,
+      ...rootFindings.map((finding) => ({
+        category: "recommended-next-action",
+        key: `next:${finding.key}`,
+        title: `Next action: ${finding.title}`,
+        detail: finding.recommendedAction,
+        recommendedAction: finding.recommendedAction,
+        evidence: finding.evidence,
+      })),
+    ];
   };
 
   return {
@@ -1301,6 +1611,228 @@ export function createResearchRepository(database) {
       return ids.map((id) =>
         reviewed.find((suggestion) => suggestion.id === id),
       );
+    },
+
+    listDecisionBriefs(projectId) {
+      ensureProject(projectId);
+      return database
+        .prepare(
+          `SELECT * FROM decision_briefs
+           WHERE project_id = ? ORDER BY cutoff_sequence DESC, created_at DESC, id DESC`,
+        )
+        .all(projectId)
+        .map(mapDecisionBrief);
+    },
+
+    generateDecisionBrief(projectId, actor = "local-user") {
+      ensureProject(projectId);
+      const generatedBy = z.string().trim().min(1).max(200).parse(actor);
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const previous = database
+          .prepare(
+            `SELECT * FROM decision_briefs
+             WHERE project_id = ? ORDER BY cutoff_sequence DESC, created_at DESC, id DESC LIMIT 1`,
+          )
+          .get(projectId);
+        const startSequence = previous?.cutoff_sequence ?? 0;
+        const events = database
+          .prepare(
+            `SELECT * FROM provenance_events
+             WHERE project_id = ? AND sequence > ?
+               AND action NOT LIKE 'decision-brief.%'
+             ORDER BY sequence, id`,
+          )
+          .all(projectId, startSequence);
+        if (events.length === 0) {
+          database.exec("COMMIT");
+          return previous
+            ? {
+                brief: mapDecisionBrief(previous),
+                created: false,
+                noChanges: false,
+              }
+            : { brief: null, created: false, noChanges: true };
+        }
+        const cutoffSequence = events.at(-1).sequence;
+        const existing = database
+          .prepare(
+            `SELECT * FROM decision_briefs
+             WHERE project_id = ? AND start_sequence = ? AND cutoff_sequence = ?`,
+          )
+          .get(projectId, startSequence, cutoffSequence);
+        if (existing) {
+          database.exec("COMMIT");
+          return {
+            brief: mapDecisionBrief(existing),
+            created: false,
+            noChanges: false,
+          };
+        }
+        const now = clock();
+        const briefId = createId();
+        database
+          .prepare(
+            `INSERT INTO decision_briefs
+             (id, project_id, start_sequence, cutoff_sequence, generated_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            briefId,
+            projectId,
+            startSequence,
+            cutoffSequence,
+            generatedBy,
+            now,
+          );
+        const findings = deriveDecisionBriefFindings(projectId, events);
+        for (const [index, finding] of findings.entries()) {
+          const findingId = createId();
+          database
+            .prepare(
+              `INSERT INTO decision_brief_findings
+               (id, project_id, brief_id, category, sort_order, title, detail,
+                recommended_action, status, owner, deferred_reason, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, NULL, ?, ?)`,
+            )
+            .run(
+              findingId,
+              projectId,
+              briefId,
+              finding.category,
+              index + 1,
+              finding.title,
+              finding.detail,
+              finding.recommendedAction,
+              now,
+              now,
+            );
+          for (const evidence of finding.evidence) {
+            database
+              .prepare(
+                `INSERT INTO decision_brief_finding_evidence
+                 (id, project_id, finding_id, object_id, provenance_event_id, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+              )
+              .run(
+                createId(),
+                projectId,
+                findingId,
+                evidence.objectId,
+                evidence.provenanceEventId,
+                now,
+              );
+          }
+        }
+        recordDecisionBriefMeasurement(projectId, briefId, now);
+        insertProvenance(
+          {
+            action: "decision-brief.generated",
+            actorId: generatedBy,
+            actorType: "human",
+            projectId,
+            metadata: {
+              briefId,
+              startSequence,
+              cutoffSequence,
+              findingCount: findings.length,
+            },
+          },
+          now,
+        );
+        const brief = mapDecisionBrief(
+          database
+            .prepare("SELECT * FROM decision_briefs WHERE id = ?")
+            .get(briefId),
+        );
+        database.exec("COMMIT");
+        return { brief, created: true, noChanges: false };
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+
+    transitionDecisionBriefFinding(input) {
+      const parsed = decisionBriefTransitionSchema.parse(input);
+      ensureProject(parsed.projectId);
+      const now = clock();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const finding = database
+          .prepare(
+            `SELECT * FROM decision_brief_findings
+             WHERE id = ? AND brief_id = ? AND project_id = ?`,
+          )
+          .get(parsed.findingId, parsed.briefId, parsed.projectId);
+        if (!finding) {
+          throw new Error(
+            "Decision brief finding does not belong to the project.",
+          );
+        }
+        const owner = parsed.owner ?? finding.owner ?? null;
+        const reason = parsed.reason ?? null;
+        database
+          .prepare(
+            `UPDATE decision_brief_findings
+             SET status = ?, owner = ?, deferred_reason = ?, updated_at = ?
+             WHERE id = ? AND brief_id = ? AND project_id = ?`,
+          )
+          .run(
+            parsed.status,
+            owner,
+            parsed.status === "deferred" ? reason : null,
+            now,
+            parsed.findingId,
+            parsed.briefId,
+            parsed.projectId,
+          );
+        database
+          .prepare(
+            `INSERT INTO decision_brief_finding_transitions
+             (id, project_id, finding_id, from_status, to_status, actor, owner, reason, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            createId(),
+            parsed.projectId,
+            parsed.findingId,
+            finding.status,
+            parsed.status,
+            parsed.actor,
+            owner,
+            reason,
+            now,
+          );
+        insertProvenance(
+          {
+            action: `decision-brief.finding.${parsed.status}`,
+            actorId: parsed.actor,
+            actorType: "human",
+            projectId: parsed.projectId,
+            metadata: {
+              briefId: parsed.briefId,
+              findingId: parsed.findingId,
+              fromStatus: finding.status,
+              toStatus: parsed.status,
+              owner,
+              reason,
+            },
+          },
+          now,
+        );
+        recordDecisionBriefMeasurement(parsed.projectId, parsed.briefId, now);
+        const transitioned = mapDecisionBriefFinding(
+          database
+            .prepare("SELECT * FROM decision_brief_findings WHERE id = ?")
+            .get(parsed.findingId),
+        );
+        database.exec("COMMIT");
+        return transitioned;
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
     },
 
     listProject(projectId) {
