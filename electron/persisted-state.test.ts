@@ -164,7 +164,7 @@ describe("persisted research storage", () => {
     backup.close();
   });
 
-  it("adds lineage tables to a migrated database without changing its provenance layout", () => {
+  it("adds lineage and decision-brief tables to a migrated database without changing its provenance layout", () => {
     const databasePath = createDatabasePath();
     const legacyDatabase = new DatabaseSync(databasePath);
     legacyDatabase.exec(`
@@ -214,6 +214,54 @@ describe("persisted research storage", () => {
       { name: "lineage_scan_measurements" },
       { name: "lineage_suggestions" },
     ]);
+    expect(
+      database
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'decision_brief%' ORDER BY name",
+        )
+        .all(),
+    ).toEqual([
+      { name: "decision_brief_finding_evidence" },
+      { name: "decision_brief_finding_transitions" },
+      { name: "decision_brief_findings" },
+      { name: "decision_brief_measurements" },
+      { name: "decision_briefs" },
+    ]);
+  });
+
+  it("enforces decision-brief evidence project isolation and immutable records", () => {
+    const database = getStateDatabase(createDatabasePath());
+    seedResearchProjects(database);
+    database.exec(`
+      INSERT INTO provenance_events
+        (id, project_id, object_id, action, actor_type, metadata, created_at)
+      VALUES
+        ('brief-event-a', 'project-a', 'object-a', 'claim.created', 'human', '{}', '2026-01-01'),
+        ('brief-event-b', 'project-b', 'object-b', 'claim.created', 'human', '{}', '2026-01-01');
+      INSERT INTO decision_briefs
+        (id, project_id, start_sequence, cutoff_sequence, generated_by, created_at)
+      VALUES ('brief-a', 'project-a', 0, 1, 'facilitator', '2026-01-01');
+      INSERT INTO decision_brief_findings
+        (id, project_id, brief_id, category, sort_order, title, detail, recommended_action, status, created_at, updated_at)
+      VALUES ('brief-finding-a', 'project-a', 'brief-a', 'unresolved-decision', 1, 'Owner needed', 'Detail', 'Assign', 'open', '2026-01-01', '2026-01-01');
+    `);
+
+    expect(() =>
+      database
+        .prepare(
+          `INSERT INTO decision_brief_finding_evidence
+            (id, project_id, finding_id, object_id, provenance_event_id, created_at)
+           VALUES ('cross-brief-evidence', 'project-a', 'brief-finding-a', 'object-b', 'brief-event-b', '2026-01-01')`,
+        )
+        .run(),
+    ).toThrow("Decision brief evidence object must belong to its project.");
+    expect(() =>
+      database
+        .prepare(
+          "UPDATE decision_briefs SET generated_by = 'other' WHERE id = 'brief-a'",
+        )
+        .run(),
+    ).toThrow("Decision briefs are immutable");
   });
 
   it("enforces lineage evidence ownership for direct inserts and updates", () => {

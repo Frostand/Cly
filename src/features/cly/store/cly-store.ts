@@ -26,6 +26,9 @@ import type {
   ClaimStatus,
   ClyRepositoryData,
   ContextItem,
+  DecisionBrief,
+  DecisionBriefFinding,
+  DecisionBriefFindingStatus,
   EntityType,
   Experiment,
   FixtureMode,
@@ -64,6 +67,9 @@ interface ClyState {
   toasts: ToastMessage[];
   lineageSuggestions: LineageSuggestion[];
   lineageMeasurement: LineageScanMeasurement | null;
+  decisionBriefs: DecisionBrief[];
+  decisionBriefsLoading: boolean;
+  decisionBriefsError: string | null;
   agentSessionsMode: AgentSessionsMode;
   selectedAgentSessionId: string | null;
   selectedOverviewSessionId: string | null;
@@ -102,6 +108,21 @@ interface ClyState {
   reviewLineageSuggestions: (
     decisions: LineageReviewDecision[],
   ) => Promise<boolean>;
+  loadDecisionBriefs: () => Promise<boolean>;
+  generateDecisionBrief: () => Promise<{
+    brief: DecisionBrief | null;
+    created: boolean;
+    noChanges: boolean;
+  } | null>;
+  transitionDecisionBriefFinding: (
+    briefId: string,
+    findingId: string,
+    input: {
+      status: DecisionBriefFindingStatus;
+      owner?: string | null;
+      reason?: string | null;
+    },
+  ) => Promise<DecisionBriefFinding | null>;
   updateContextItem: (id: string, patch: Partial<ContextItem>) => void;
   updateClaim: (id: string, patch: Partial<Claim>) => void;
   addClaim: (claim: Claim) => void;
@@ -527,6 +548,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
   toasts: [],
   lineageSuggestions: [],
   lineageMeasurement: null,
+  decisionBriefs: [],
+  decisionBriefsLoading: false,
+  decisionBriefsError: null,
   agentSessionsMode: savedAgentSessionIsValid
     ? (saved.agentSessionsMode ?? "overview")
     : "overview",
@@ -557,6 +581,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
       data: clearPersistedResearchData(state.data),
       lineageSuggestions: [],
       lineageMeasurement: null,
+      decisionBriefs: [],
+      decisionBriefsLoading: false,
+      decisionBriefsError: null,
       projectSwitcherOpen: false,
       selectedId: null,
     }));
@@ -573,6 +600,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
       selectedOverviewSessionId: null,
       lineageSuggestions: [],
       lineageMeasurement: null,
+      decisionBriefs: [],
+      decisionBriefsLoading: false,
+      decisionBriefsError: null,
       fixtureSwitcherOpen: false,
     }),
   toggleSidebar: () =>
@@ -607,12 +637,15 @@ export const useClyStore = create<ClyState>((set, get) => ({
     if (!project) return false;
     try {
       await apiClient.ensureProject(project);
-      const [researchData, lineageSuggestions] = await Promise.all([
-        apiClient.fetchResearchData(projectId),
-        // Lineage reconstruction is additive. Older or temporarily unavailable
-        // APIs must not prevent hydration of the canonical research graph.
-        apiClient.fetchLineageSuggestions(projectId).catch(() => []),
-      ]);
+      const [researchData, lineageSuggestions, decisionBriefs] =
+        await Promise.all([
+          apiClient.fetchResearchData(projectId),
+          // Lineage reconstruction is additive. Older or temporarily unavailable
+          // APIs must not prevent hydration of the canonical research graph.
+          apiClient.fetchLineageSuggestions(projectId).catch(() => []),
+          // Brief loading is optional and must never prevent canonical graph hydration.
+          apiClient.fetchDecisionBriefs(projectId).catch(() => undefined),
+        ]);
       if (get().activeProjectId !== projectId) return false;
       set((state) => ({
         data: hydrateAgentSessionLayouts(
@@ -622,6 +655,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
         fixtureMode: "empty",
         lineageSuggestions,
         lineageMeasurement: null,
+        ...(decisionBriefs
+          ? { decisionBriefs, decisionBriefsError: null }
+          : {}),
         selectedId: null,
       }));
       return true;
@@ -676,6 +712,88 @@ export const useClyStore = create<ClyState>((set, get) => ({
           : "Unable to reach the research API.",
       );
       return false;
+    }
+  },
+  loadDecisionBriefs: async () => {
+    const projectId = get().activeProjectId;
+    set({ decisionBriefsLoading: true, decisionBriefsError: null });
+    try {
+      const decisionBriefs = await apiClient.fetchDecisionBriefs(projectId);
+      if (get().activeProjectId !== projectId) return false;
+      set({ decisionBriefs, decisionBriefsLoading: false });
+      return true;
+    } catch (error) {
+      if (get().activeProjectId !== projectId) return false;
+      set({
+        decisionBriefsLoading: false,
+        decisionBriefsError:
+          error instanceof Error
+            ? error.message
+            : "Decision briefs could not load.",
+      });
+      return false;
+    }
+  },
+  generateDecisionBrief: async () => {
+    const projectId = get().activeProjectId;
+    set({ decisionBriefsLoading: true, decisionBriefsError: null });
+    try {
+      const result = await apiClient.generateDecisionBrief(projectId);
+      if (get().activeProjectId !== projectId) return null;
+      set((state) => ({
+        decisionBriefsLoading: false,
+        decisionBriefs: result.brief
+          ? [
+              result.brief,
+              ...state.decisionBriefs.filter(
+                (brief) => brief.id !== result.brief?.id,
+              ),
+            ]
+          : state.decisionBriefs,
+      }));
+      return result;
+    } catch (error) {
+      if (get().activeProjectId === projectId) {
+        set({
+          decisionBriefsLoading: false,
+          decisionBriefsError:
+            error instanceof Error
+              ? error.message
+              : "Decision brief generation failed.",
+        });
+      }
+      return null;
+    }
+  },
+  transitionDecisionBriefFinding: async (briefId, findingId, input) => {
+    const projectId = get().activeProjectId;
+    try {
+      const finding = await apiClient.transitionDecisionBriefFinding(
+        projectId,
+        briefId,
+        findingId,
+        input,
+      );
+      if (get().activeProjectId !== projectId) return null;
+      set((state) => ({
+        decisionBriefs: state.decisionBriefs.map((brief) =>
+          brief.id === briefId
+            ? {
+                ...brief,
+                findings: brief.findings.map((item) =>
+                  item.id === finding.id ? { ...item, ...finding } : item,
+                ),
+              }
+            : brief,
+        ),
+      }));
+      return finding;
+    } catch (error) {
+      set({
+        decisionBriefsError:
+          error instanceof Error ? error.message : "Finding update failed.",
+      });
+      return null;
     }
   },
   updateContextItem: (id, patch) =>

@@ -161,6 +161,86 @@ test("previews a project-scoped reviewer capsule from the Claims workspace", asy
   expect(requestBody).toEqual({ claimIds: ["claim-01"] });
 });
 
+test("generates and assigns an evidence-linked lab-meeting brief in Decisions", async ({
+  page,
+}) => {
+  const brief = {
+    id: "brief-e2e",
+    projectId: "project-cly",
+    startSequence: 0,
+    cutoffSequence: 8,
+    generatedBy: "local-user",
+    createdAt: "2026-07-13T12:00:00.000Z",
+    pilot: {
+      meetingNumber: 1,
+      targetMeetings: 4,
+      surfacedDecisionCount: 1,
+      assignedOrResolvedCount: 0,
+      assignmentOrResolutionRate: 0,
+      recordedAt: "2026-07-13T12:00:00.000Z",
+    },
+    findings: [
+      {
+        id: "finding-e2e",
+        projectId: "project-cly",
+        briefId: "brief-e2e",
+        category: "unresolved-decision",
+        sortOrder: 1,
+        title: "Owner needed: baseline decision",
+        detail: "A changed claim needs an owner.",
+        recommendedAction: "Assign an owner.",
+        status: "open",
+        owner: null,
+        deferredReason: null,
+        createdAt: "2026-07-13T12:00:00.000Z",
+        updatedAt: "2026-07-13T12:00:00.000Z",
+        evidence: [
+          {
+            objectId: "claim-01",
+            objectTitle: "Baseline decision",
+            objectType: "claim",
+            provenanceEventId: "event-e2e",
+            provenanceSequence: 8,
+            provenanceAction: "claim.status.updated",
+          },
+        ],
+      },
+    ],
+  };
+  await page.route("**/decision-briefs**", async (route) => {
+    const method = route.request().method();
+    if (method === "PATCH") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...brief.findings[0],
+          status: "assigned",
+          owner: "Priya",
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(
+        method === "POST"
+          ? { brief, created: true, noChanges: false }
+          : [brief],
+      ),
+    });
+  });
+
+  await page.getByTestId("nav-decisions").click();
+  await page.getByRole("radio", { name: "Briefs" }).click();
+  await expect(page.getByText("Decisions needing owners")).toBeVisible();
+  await page
+    .getByLabel("Owner for Owner needed: baseline decision")
+    .fill("Priya");
+  await page.getByRole("button", { name: "Assign" }).click();
+  await expect(page.getByText("assigned")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Event #8" })).toBeVisible();
+});
+
 test("supports shell controls, shortcuts, command execution, and inspector selection", async ({
   page,
 }) => {

@@ -2,6 +2,9 @@ import type { LiteraturePaper } from "../domain/literature-search";
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
 import type {
   ClaimStatus,
+  DecisionBrief,
+  DecisionBriefFinding,
+  DecisionBriefFindingStatus,
   LineageReviewDecision,
   LineageScanMeasurement,
   LineageSuggestion,
@@ -178,6 +181,43 @@ export const apiClient = {
   fetchLineageSuggestions(projectId: string) {
     return request<LineageSuggestion[]>(
       `/api/projects/${encodeURIComponent(projectId)}/lineage-suggestions`,
+    );
+  },
+
+  fetchDecisionBriefs(projectId: string) {
+    return request<DecisionBrief[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/decision-briefs`,
+    );
+  },
+
+  generateDecisionBrief(projectId: string, actor = "local-user") {
+    return request<{
+      brief: DecisionBrief | null;
+      created: boolean;
+      noChanges: boolean;
+    }>(`/api/projects/${encodeURIComponent(projectId)}/decision-briefs`, {
+      method: "POST",
+      body: JSON.stringify({ actor }),
+    });
+  },
+
+  transitionDecisionBriefFinding(
+    projectId: string,
+    briefId: string,
+    findingId: string,
+    input: {
+      status: DecisionBriefFindingStatus;
+      owner?: string | null;
+      reason?: string | null;
+      actor?: string;
+    },
+  ) {
+    return request<DecisionBriefFinding>(
+      `/api/projects/${encodeURIComponent(projectId)}/decision-briefs/${encodeURIComponent(briefId)}/findings/${encodeURIComponent(findingId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      },
     );
   },
 

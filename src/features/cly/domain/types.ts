@@ -454,6 +454,64 @@ export interface LineageScanMeasurement {
   createdAt: string;
 }
 
+export type DecisionBriefFindingCategory =
+  | "failed-run"
+  | "stale-artifact-or-claim"
+  | "contradictory-evidence"
+  | "missing-provenance"
+  | "unresolved-decision"
+  | "recommended-next-action";
+
+export type DecisionBriefFindingStatus =
+  | "open"
+  | "assigned"
+  | "resolved"
+  | "deferred";
+
+export interface DecisionBriefEvidence {
+  objectId: string;
+  objectTitle: string;
+  objectType: string;
+  provenanceEventId: string;
+  provenanceSequence: number;
+  provenanceAction: string;
+}
+
+export interface DecisionBriefFinding {
+  id: string;
+  projectId: string;
+  briefId: string;
+  category: DecisionBriefFindingCategory;
+  sortOrder: number;
+  title: string;
+  detail: string;
+  recommendedAction: string;
+  status: DecisionBriefFindingStatus;
+  owner: string | null;
+  deferredReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  evidence: DecisionBriefEvidence[];
+}
+
+export interface DecisionBrief {
+  id: string;
+  projectId: string;
+  startSequence: number;
+  cutoffSequence: number;
+  generatedBy: string;
+  createdAt: string;
+  findings: DecisionBriefFinding[];
+  pilot: {
+    meetingNumber: number;
+    targetMeetings: number;
+    surfacedDecisionCount: number;
+    assignedOrResolvedCount: number;
+    assignmentOrResolutionRate: number;
+    recordedAt: string;
+  } | null;
+}
+
 export interface Report {
   id: string;
   title: string;

@@ -41,6 +41,32 @@ beforeEach(() => {
       project_id TEXT PRIMARY KEY, event_count INTEGER NOT NULL,
       last_sequence INTEGER NOT NULL, last_hash TEXT NOT NULL
     );
+    CREATE TABLE decision_briefs (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, start_sequence INTEGER NOT NULL,
+      cutoff_sequence INTEGER NOT NULL, generated_by TEXT NOT NULL, created_at TEXT NOT NULL,
+      UNIQUE(id, project_id), UNIQUE(project_id, start_sequence, cutoff_sequence)
+    );
+    CREATE TABLE decision_brief_findings (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, brief_id TEXT NOT NULL,
+      category TEXT NOT NULL, sort_order INTEGER NOT NULL, title TEXT NOT NULL,
+      detail TEXT NOT NULL, recommended_action TEXT NOT NULL, status TEXT NOT NULL,
+      owner TEXT, deferred_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE decision_brief_finding_evidence (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, finding_id TEXT NOT NULL,
+      object_id TEXT NOT NULL, provenance_event_id TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE decision_brief_finding_transitions (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, finding_id TEXT NOT NULL,
+      from_status TEXT NOT NULL, to_status TEXT NOT NULL, actor TEXT NOT NULL,
+      owner TEXT, reason TEXT, created_at TEXT NOT NULL
+    );
+    CREATE TABLE decision_brief_measurements (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, brief_id TEXT NOT NULL,
+      meeting_number INTEGER NOT NULL, target_meetings INTEGER NOT NULL,
+      surfaced_decision_count INTEGER NOT NULL, assigned_or_resolved_count INTEGER NOT NULL,
+      assignment_or_resolution_rate REAL NOT NULL, recorded_at TEXT NOT NULL
+    );
     INSERT INTO projects
       (id, path, normalized_path, name, metadata, created_at, updated_at)
     VALUES
@@ -50,6 +76,125 @@ beforeEach(() => {
 });
 
 describe("research repository", () => {
+  it("generates an idempotent sequence-bounded brief and records immutable finding transitions", () => {
+    const ids = [
+      "brief-1",
+      "finding-1",
+      "evidence-1",
+      "measurement-1",
+      "transition-1",
+      "event-1",
+    ];
+    let fallbackId = 0;
+    const repository = createResearchRepository(database, {
+      clock: () => "2026-07-13T12:00:00.000Z",
+      createId: () => ids.shift() ?? `overflow-${++fallbackId}`,
+    });
+    repository.createObject({
+      id: "run-failed",
+      projectId: "project-1",
+      type: "run",
+      title: "Failed ablation",
+      payload: { kind: "run", status: "failed" },
+    });
+
+    const first = repository.generateDecisionBrief(
+      "project-1",
+      "facilitator-1",
+    );
+    const repeated = repository.generateDecisionBrief(
+      "project-1",
+      "facilitator-1",
+    );
+
+    expect(first.created).toBe(true);
+    expect(first.brief).toMatchObject({
+      id: "brief-1",
+      startSequence: 0,
+      cutoffSequence: 1,
+      pilot: { meetingNumber: 1, targetMeetings: 4 },
+    });
+    expect(first.brief.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "failed-run",
+          evidence: [
+            expect.objectContaining({
+              objectId: "run-failed",
+              provenanceEventId: expect.any(String),
+            }),
+          ],
+        }),
+      ]),
+    );
+    expect(repeated).toEqual({
+      brief: first.brief,
+      created: false,
+      noChanges: false,
+    });
+
+    repository.createObject({
+      id: "claim-needs-owner",
+      projectId: "project-1",
+      type: "claim",
+      title: "Unresolved calibration decision",
+      payload: { kind: "claim", status: "needs-evidence" },
+    });
+    const second = repository.generateDecisionBrief(
+      "project-1",
+      "facilitator-1",
+    );
+    expect(second).toMatchObject({
+      created: true,
+      noChanges: false,
+      brief: {
+        startSequence: first.brief.cutoffSequence,
+        cutoffSequence: expect.any(Number),
+      },
+    });
+    expect(second.brief.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "unresolved-decision" }),
+      ]),
+    );
+    expect(second.brief.cutoffSequence).toBeGreaterThan(
+      first.brief.cutoffSequence,
+    );
+
+    const finding = first.brief.findings[0];
+    const transitioned = repository.transitionDecisionBriefFinding({
+      projectId: "project-1",
+      briefId: first.brief.id,
+      findingId: finding.id,
+      status: "assigned",
+      owner: "owner-1",
+      actor: "facilitator-1",
+    });
+    expect(transitioned.status).toBe("assigned");
+    expect(transitioned.owner).toBe("owner-1");
+    expect(
+      repository
+        .listDecisionBriefs("project-1")
+        .find((brief) => brief.id === first.brief.id)?.pilot
+        .assignmentOrResolutionRate,
+    ).toBe(0.5);
+    expect(() =>
+      repository.transitionDecisionBriefFinding({
+        projectId: "project-1",
+        briefId: first.brief.id,
+        findingId: finding.id,
+        status: "deferred",
+        actor: "facilitator-1",
+      }),
+    ).toThrow("Deferring a finding requires a reason.");
+    expect(
+      database
+        .prepare(
+          "SELECT action FROM provenance_events ORDER BY sequence DESC LIMIT 1",
+        )
+        .get(),
+    ).toEqual({ action: "decision-brief.finding.assigned" });
+  });
   it("gets registered projects and records reviewable system provenance", () => {
     const repository = createResearchRepository(database);
 

@@ -102,6 +102,35 @@ const lineageReviewBodySchema = z.object({
   decisions: z.array(lineageReviewDecisionBodySchema).min(1).max(100),
 });
 
+const decisionBriefGenerateBodySchema = z
+  .object({ actor: z.string().trim().min(1).max(200).default("local-user") })
+  .strict();
+
+const decisionBriefTransitionBodySchema = z
+  .object({
+    status: z.enum(["open", "assigned", "resolved", "deferred"]),
+    owner: z.string().trim().min(1).max(200).nullable().optional(),
+    reason: z.string().trim().min(1).max(10_000).nullable().optional(),
+    actor: z.string().trim().min(1).max(200).default("local-user"),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.status === "assigned" && !value.owner) {
+      context.addIssue({
+        code: "custom",
+        message: "Assigning a finding requires an owner.",
+        path: ["owner"],
+      });
+    }
+    if (value.status === "deferred" && !value.reason) {
+      context.addIssue({
+        code: "custom",
+        message: "Deferring a finding requires a reason.",
+        path: ["reason"],
+      });
+    }
+  });
+
 async function readJson(c) {
   try {
     return { data: await c.req.json() };
@@ -185,6 +214,69 @@ export function registerResearchRoutes(
       );
     }
   });
+
+  app.get("/api/projects/:projectId/decision-briefs", (c) => {
+    try {
+      return c.json(
+        getRepository().listDecisionBriefs(c.req.param("projectId")),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Decision briefs failed.",
+        400,
+      );
+    }
+  });
+
+  app.post("/api/projects/:projectId/decision-briefs", async (c) => {
+    const body = await readJson(c);
+    if (body.error) return body.error;
+    const parsed = decisionBriefGenerateBodySchema.safeParse(body.data);
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        getRepository().generateDecisionBrief(
+          c.req.param("projectId"),
+          parsed.data.actor,
+        ),
+        201,
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error
+          ? error.message
+          : "Decision brief generation failed.",
+        400,
+      );
+    }
+  });
+
+  app.patch(
+    "/api/projects/:projectId/decision-briefs/:briefId/findings/:findingId",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = decisionBriefTransitionBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          getRepository().transitionDecisionBriefFinding({
+            ...parsed.data,
+            projectId: c.req.param("projectId"),
+            briefId: c.req.param("briefId"),
+            findingId: c.req.param("findingId"),
+          }),
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error
+            ? error.message
+            : "Decision brief finding update failed.",
+          400,
+        );
+      }
+    },
+  );
 
   for (const [path, operation] of [
     ["preview", "preview"],
