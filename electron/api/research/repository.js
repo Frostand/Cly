@@ -39,6 +39,17 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("claim"),
     status: z.enum(["draft", "supported", "contradicted", "needs-evidence"]),
+    reviewStatus: z
+      .enum([
+        "Unsupported",
+        "Weak",
+        "Medium",
+        "Strong",
+        "Paper-ready",
+        "Invalidated",
+        "Needs review",
+      ])
+      .optional(),
   }),
   z.object({
     kind: z.literal("experiment"),
@@ -99,6 +110,35 @@ const relationshipInputSchema = z.object({
     "implements",
   ]),
 });
+
+const claimStatusInputSchema = z.object({
+  id: z.string().trim().min(1),
+  projectId: z.string().trim().min(1),
+  reviewStatus: z.enum([
+    "Unsupported",
+    "Weak",
+    "Medium",
+    "Strong",
+    "Paper-ready",
+    "Invalidated",
+    "Needs review",
+  ]),
+});
+
+const canonicalClaimStatus = (reviewStatus) => {
+  if (reviewStatus === "Strong" || reviewStatus === "Paper-ready") {
+    return "supported";
+  }
+  if (reviewStatus === "Invalidated") return "contradicted";
+  if (
+    reviewStatus === "Weak" ||
+    reviewStatus === "Medium" ||
+    reviewStatus === "Needs review"
+  ) {
+    return "needs-evidence";
+  }
+  return "draft";
+};
 
 const projectInputSchema = z.object({
   id: z.string().trim().min(1),
@@ -395,6 +435,58 @@ export function createResearchRepository(database) {
         database
           .prepare("SELECT * FROM research_objects WHERE id = ?")
           .get(input.id),
+      );
+    },
+
+    updateClaimStatus(input) {
+      const parsed = claimStatusInputSchema.parse(input);
+      ensureProject(parsed.projectId);
+      const existing = database
+        .prepare(
+          "SELECT * FROM research_objects WHERE id = ? AND project_id = ? AND type = 'claim'",
+        )
+        .get(parsed.id, parsed.projectId);
+      if (!existing) throw new Error("Claim does not belong to the project.");
+      const previousPayload = objectPayloadSchema.parse(
+        parseJson(existing.payload),
+      );
+      if (previousPayload.kind !== "claim") {
+        throw new Error("Claim payload kind cannot be changed.");
+      }
+      const payload = objectPayloadSchema.parse({
+        ...previousPayload,
+        status: canonicalClaimStatus(parsed.reviewStatus),
+        reviewStatus: parsed.reviewStatus,
+      });
+      const now = new Date().toISOString();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database
+          .prepare(
+            "UPDATE research_objects SET payload = ?, updated_at = ? WHERE id = ? AND project_id = ?",
+          )
+          .run(JSON.stringify(payload), now, parsed.id, parsed.projectId);
+        insertProvenance(
+          {
+            action: "claim.status.updated",
+            objectId: parsed.id,
+            projectId: parsed.projectId,
+            metadata: {
+              from: previousPayload.reviewStatus ?? previousPayload.status,
+              to: parsed.reviewStatus,
+            },
+          },
+          now,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      return mapObject(
+        database
+          .prepare("SELECT * FROM research_objects WHERE id = ?")
+          .get(parsed.id),
       );
     },
 

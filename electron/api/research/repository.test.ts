@@ -248,6 +248,64 @@ describe("research repository", () => {
     });
   });
 
+  it("persists claim review status changes and experiment evidence links", () => {
+    const repository = createResearchRepository(database);
+    repository.createObject({
+      id: "claim-status",
+      projectId: "project-1",
+      type: "claim",
+      title: "Claim under review",
+      payload: {
+        kind: "claim",
+        status: "draft",
+        reviewStatus: "Unsupported",
+      },
+    });
+    repository.createObject({
+      id: "experiment-status",
+      projectId: "project-1",
+      type: "experiment",
+      title: "Evidence experiment",
+      payload: { kind: "experiment", hypothesis: "The claim holds." },
+    });
+
+    expect(
+      repository.updateClaimStatus({
+        id: "claim-status",
+        projectId: "project-1",
+        reviewStatus: "Strong",
+      }),
+    ).toMatchObject({
+      payload: {
+        kind: "claim",
+        status: "supported",
+        reviewStatus: "Strong",
+      },
+    });
+    repository.createRelationship({
+      id: "experiment-tests-claim",
+      projectId: "project-1",
+      fromObjectId: "experiment-status",
+      toObjectId: "claim-status",
+      type: "tests",
+    });
+
+    expect(repository.listProject("project-1")).toMatchObject({
+      relationships: [
+        expect.objectContaining({
+          id: "experiment-tests-claim",
+          type: "tests",
+        }),
+      ],
+    });
+    const events = database
+      .prepare("SELECT action FROM provenance_events WHERE object_id = ?")
+      .all("claim-status") as Array<{ action: string }>;
+    expect(events.map((event) => event.action)).toContain(
+      "claim.status.updated",
+    );
+  });
+
   it("creates and lists attributable project-scoped provenance", () => {
     const repository = createResearchRepository(database);
     repository.createObject({

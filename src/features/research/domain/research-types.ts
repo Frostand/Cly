@@ -44,6 +44,14 @@ export interface SourcePayload {
 export interface ClaimPayload {
   kind: "claim";
   status: "draft" | "supported" | "contradicted" | "needs-evidence";
+  reviewStatus?:
+    | "Unsupported"
+    | "Weak"
+    | "Medium"
+    | "Strong"
+    | "Paper-ready"
+    | "Invalidated"
+    | "Needs review";
 }
 
 export interface ExperimentPayload {

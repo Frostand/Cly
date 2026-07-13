@@ -4,7 +4,7 @@ import { createResearchRepository } from "./repository.js";
 import { createRepositoryObserver } from "./repository-observer.js";
 
 const objectBodySchema = z.object({
-  type: z.enum(["source", "claim"]),
+  type: z.enum(["artifact", "source", "claim", "experiment", "run"]),
   title: z.string().trim().min(1).max(500),
   description: z.string().trim().max(10_000).default(""),
   payload: z.record(z.string(), z.unknown()),
@@ -13,7 +13,26 @@ const objectBodySchema = z.object({
 const relationshipBodySchema = z.object({
   fromObjectId: z.string().trim().min(1),
   toObjectId: z.string().trim().min(1),
-  type: z.enum(["supports", "contradicts"]),
+  type: z.enum([
+    "supports",
+    "contradicts",
+    "generated-by",
+    "uses",
+    "tests",
+    "implements",
+  ]),
+});
+
+const claimStatusBodySchema = z.object({
+  reviewStatus: z.enum([
+    "Unsupported",
+    "Weak",
+    "Medium",
+    "Strong",
+    "Paper-ready",
+    "Invalidated",
+    "Needs review",
+  ]),
 });
 
 const sourceUpdateBodySchema = z.object({
@@ -158,6 +177,27 @@ export function registerResearchRoutes(
         error instanceof Error
           ? error.message
           : "Research relationship creation failed.",
+        400,
+      );
+    }
+  });
+
+  app.patch("/api/projects/:projectId/research/claims/:claimId", async (c) => {
+    const body = await readJson(c);
+    if (body.error) return body.error;
+    const parsed = claimStatusBodySchema.safeParse(body.data);
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        getRepository().updateClaimStatus({
+          ...parsed.data,
+          id: c.req.param("claimId"),
+          projectId: c.req.param("projectId"),
+        }),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Claim update failed.",
         400,
       );
     }

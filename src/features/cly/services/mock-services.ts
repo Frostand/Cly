@@ -18,6 +18,16 @@ import type { ClyServices } from "./interfaces";
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const isoNow = () => new Date().toISOString();
 
+const ensureActiveProject = async () => {
+  const state = useClyStore.getState();
+  const project = state.data.projects.find(
+    (item) => item.id === state.activeProjectId,
+  );
+  if (!project) throw new Error("Active research project was not found.");
+  await apiClient.ensureProject(project);
+  return { projectId: project.id, state };
+};
+
 export const mockServices: ClyServices = {
   projects: {
     async switchProject(projectId) {
@@ -64,8 +74,15 @@ export const mockServices: ClyServices = {
   },
   experiments: {
     async create(input) {
+      const { projectId, state } = await ensureActiveProject();
+      const object = await apiClient.createObject(projectId, {
+        type: "experiment",
+        title: input.name,
+        description: input.goal,
+        payload: { kind: "experiment", hypothesis: "To be specified" },
+      });
       const experiment: Experiment = {
-        id: id("exp"),
+        id: object.id,
         name: input.name,
         goal: input.goal,
         hypothesis: "To be specified",
@@ -78,9 +95,9 @@ export const mockServices: ClyServices = {
         limitations: [],
         nextStep: "Complete configuration",
         runIds: [],
-        updatedAt: isoNow(),
+        updatedAt: object.updatedAt,
       };
-      useClyStore.getState().addExperiment(experiment);
+      state.addExperiment(experiment);
       return experiment;
     },
     async duplicate(experimentId) {
@@ -90,14 +107,29 @@ export const mockServices: ClyServices = {
       if (!source) throw new Error("Experiment not found");
       const duplicate = {
         ...source,
-        id: id("exp"),
+        id: "",
         name: `${source.name} · copy`,
         status: "Planned" as const,
         runIds: [],
         updatedAt: isoNow(),
       };
-      useClyStore.getState().addExperiment(duplicate);
-      return duplicate;
+      const { projectId, state } = await ensureActiveProject();
+      const object = await apiClient.createObject(projectId, {
+        type: "experiment",
+        title: duplicate.name,
+        description: duplicate.goal,
+        payload: {
+          kind: "experiment",
+          hypothesis: duplicate.hypothesis,
+        },
+      });
+      const persistedDuplicate = {
+        ...duplicate,
+        id: object.id,
+        updatedAt: object.updatedAt,
+      };
+      state.addExperiment(persistedDuplicate);
+      return persistedDuplicate;
     },
   },
   literature: {
@@ -132,7 +164,8 @@ export const mockServices: ClyServices = {
         updatedAt: isoNow(),
       };
       const persistedSource = await useClyStore.getState().addSource(source);
-      return persistedSource ?? source;
+      if (!persistedSource) throw new Error("Source was not saved.");
+      return persistedSource;
     },
     async createFromSearch(result: LiteratureSearchResult) {
       const candidate: Source = {
@@ -246,8 +279,19 @@ export const mockServices: ClyServices = {
   },
   claims: {
     async create(text) {
+      const { projectId, state } = await ensureActiveProject();
+      const object = await apiClient.createObject(projectId, {
+        type: "claim",
+        title: text,
+        description: "",
+        payload: {
+          kind: "claim",
+          status: "draft",
+          reviewStatus: "Unsupported",
+        },
+      });
       const claim: Claim = {
-        id: id("claim"),
+        id: object.id,
         text,
         type: "Result",
         status: "Unsupported",
@@ -261,23 +305,47 @@ export const mockServices: ClyServices = {
         weaknesses: ["No evidence linked yet"],
         reviewerRisks: [],
         nextExperiment: "Link evidence or design a test.",
-        updatedAt: isoNow(),
+        updatedAt: object.updatedAt,
       };
-      useClyStore.getState().addClaim(claim);
+      state.addClaim(claim);
       return claim;
     },
     async setStatus(claimId, status) {
-      useClyStore.getState().updateClaim(claimId, { status });
+      const state = useClyStore.getState();
+      await apiClient.updateClaimStatus(state.activeProjectId, claimId, status);
+      state.updateClaim(claimId, { status, updatedAt: isoNow() });
     },
     async linkExperiment(claimId, experimentId) {
-      const claim = useClyStore
-        .getState()
-        .data.claims.find((item) => item.id === claimId);
+      const state = useClyStore.getState();
+      const claim = state.data.claims.find((item) => item.id === claimId);
       if (!claim) return;
-      useClyStore.getState().updateClaim(claimId, {
+      const experiment = state.data.experiments.find(
+        (item) => item.id === experimentId,
+      );
+      if (!experiment) return;
+      const relationship = await apiClient.createRelationship(
+        state.activeProjectId,
+        {
+          fromObjectId: experimentId,
+          toObjectId: claimId,
+          type: "tests",
+        },
+      );
+      state.updateClaim(claimId, {
         experimentIds: Array.from(
           new Set([...claim.experimentIds, experimentId]),
         ),
+      });
+      state.updateExperiment(experimentId, {
+        claimIds: Array.from(new Set([...experiment.claimIds, claimId])),
+      });
+      state.addGraphEdge({
+        id: relationship.id,
+        source: experimentId,
+        target: claimId,
+        relation: "validates",
+        confidence: 1,
+        approved: true,
       });
     },
   },

@@ -44,6 +44,27 @@ describe("Cly application shell", () => {
     await waitFor(() => expect(hydrate).toHaveBeenCalledOnce());
   });
 
+  it("keeps source input open and never reports success when persistence fails", async () => {
+    const user = userEvent.setup();
+    useClyStore.setState({ activeScreen: "sources" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("Research API unavailable")),
+    );
+
+    render(<ClyAppShell />);
+    await user.click(screen.getByRole("button", { name: "Import source" }));
+    await user.type(screen.getByLabelText("Source title"), "Unsaved paper");
+    await user.click(screen.getByRole("button", { name: "Import and scan" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Source was not saved")).toBeVisible(),
+    );
+    expect(screen.getByRole("dialog", { name: "Import source" })).toBeVisible();
+    expect(screen.getByLabelText("Source title")).toHaveValue("Unsaved paper");
+    expect(screen.queryByText("Source imported")).not.toBeInTheDocument();
+  });
+
   it("navigates every major research component from the grouped sidebar", async () => {
     const user = userEvent.setup();
     render(<ClyAppShell />);

@@ -157,6 +157,34 @@ describe("local service smoke suite", () => {
     expect(claim.status).toBe(201);
     const claimObject = await claim.json();
 
+    const experiment = await request(
+      service.port,
+      "/api/projects/research-project/research/objects",
+      {
+        body: JSON.stringify({
+          type: "experiment",
+          title: "Persistence experiment",
+          description: "Verify research writes survive a restart.",
+          payload: { kind: "experiment", hypothesis: "Writes persist." },
+        }),
+        method: "POST",
+      },
+    );
+    expect(experiment.status).toBe(201);
+    const experimentObject = await experiment.json();
+
+    const claimStatus = await request(
+      service.port,
+      `/api/projects/research-project/research/claims/${claimObject.id}`,
+      {
+        body: JSON.stringify({
+          reviewStatus: "Strong",
+        }),
+        method: "PATCH",
+      },
+    );
+    expect(claimStatus.status).toBe(200);
+
     const relationship = await request(
       service.port,
       "/api/projects/research-project/research/relationships",
@@ -170,6 +198,20 @@ describe("local service smoke suite", () => {
       },
     );
     expect(relationship.status).toBe(201);
+
+    const experimentRelationship = await request(
+      service.port,
+      "/api/projects/research-project/research/relationships",
+      {
+        body: JSON.stringify({
+          fromObjectId: experimentObject.id,
+          toObjectId: claimObject.id,
+          type: "tests",
+        }),
+        method: "POST",
+      },
+    );
+    expect(experimentRelationship.status).toBe(201);
 
     const observation = await request(
       service.port,
@@ -209,18 +251,24 @@ describe("local service smoke suite", () => {
       objects: expect.arrayContaining([
         expect.objectContaining({ id: sourceObject.id }),
         expect.objectContaining({ id: claimObject.id }),
+        expect.objectContaining({ id: experimentObject.id }),
       ]),
-      relationships: [
+      relationships: expect.arrayContaining([
         expect.objectContaining({
           fromObjectId: sourceObject.id,
           toObjectId: claimObject.id,
           type: "supports",
         }),
-      ],
+        expect.objectContaining({
+          fromObjectId: experimentObject.id,
+          toObjectId: claimObject.id,
+          type: "tests",
+        }),
+      ]),
     });
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM provenance_events").get(),
-    ).toEqual({ count: 5 });
+    ).toEqual({ count: 8 });
     await restartedService.close();
   });
 });

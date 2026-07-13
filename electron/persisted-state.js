@@ -589,7 +589,6 @@ function saveStateToRelationalDatabase(database, state) {
 
     database.prepare("DELETE FROM chat_messages").run();
     database.prepare("DELETE FROM chats").run();
-    database.prepare("DELETE FROM projects").run();
     const deleteConfig = database.prepare("DELETE FROM config WHERE key = ?");
     for (const key of PERSISTED_STATE_CONFIG_KEYS) {
       deleteConfig.run(key);
@@ -745,8 +744,24 @@ function saveStateToRelationalDatabase(database, state) {
           updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          path = excluded.path,
+          normalized_path = excluded.normalized_path,
+          name = excluded.name,
+          status = excluded.status,
+          sort_order = excluded.sort_order,
+          metadata = excluded.metadata,
+          updated_at = excluded.updated_at
       `,
     );
+
+    // The IDE state owns whether a project is open or closed, but research
+    // records own the project row's lifetime. Deleting and reinserting every
+    // project would trigger the research tables' ON DELETE CASCADE rules.
+    // Preserve rows omitted from the current IDE snapshot as closed instead.
+    database
+      .prepare("UPDATE projects SET status = 'closed', updated_at = ?")
+      .run(now);
 
     projectsToPersist.forEach(({ project, status }, index) => {
       const projectPath = typeof project.path === "string" ? project.path : "";

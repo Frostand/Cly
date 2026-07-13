@@ -90,48 +90,55 @@ export function Titlebar() {
   );
 
   const createObject = async () => {
-    const screen = useClyStore.getState().activeScreen;
-    if (screen === "claims") {
-      const claim = await mockServices.claims.create(
-        "New research claim — edit evidence and scope",
-      );
-      useClyStore.getState().setSelected(claim.id);
+    try {
+      const screen = useClyStore.getState().activeScreen;
+      if (screen === "claims") {
+        const claim = await mockServices.claims.create(
+          "New research claim — edit evidence and scope",
+        );
+        useClyStore.getState().setSelected(claim.id);
+        notify(
+          "Claim created",
+          "The new claim is unsupported until evidence is linked.",
+        );
+        return;
+      }
+      if (screen === "experiments") {
+        const experiment = await mockServices.experiments.create({
+          name: "Untitled experiment",
+          goal: "Define the research goal",
+          type: "Custom",
+        });
+        useClyStore.getState().setSelected(experiment.id);
+        notify(
+          "Experiment created",
+          "Complete configuration before scheduling a run.",
+        );
+        return;
+      }
+      if (screen === "sources") {
+        const source = await mockServices.sources.create({
+          title: "Untitled source",
+          type: "Paper",
+        });
+        useClyStore.getState().setSelected(source.id);
+        notify(
+          "Source created",
+          "Metadata extraction is simulated in this prototype.",
+        );
+        return;
+      }
       notify(
-        "Claim created",
-        "The new claim is unsupported until evidence is linked.",
+        "Create new research object",
+        "Choose New Claim, New Experiment, New Source, or New Decision from the command palette.",
       );
-      return;
-    }
-    if (screen === "experiments") {
-      const experiment = await mockServices.experiments.create({
-        name: "Untitled experiment",
-        goal: "Define the research goal",
-        type: "Custom",
-      });
-      useClyStore.getState().setSelected(experiment.id);
+      setCommandOpen(true);
+    } catch (error) {
       notify(
-        "Experiment created",
-        "Complete configuration before scheduling a run.",
+        "Research object was not saved",
+        error instanceof Error ? error.message : "Unable to save the object.",
       );
-      return;
     }
-    if (screen === "sources") {
-      const source = await mockServices.sources.create({
-        title: "Untitled source",
-        type: "Paper",
-      });
-      useClyStore.getState().setSelected(source.id);
-      notify(
-        "Source created",
-        "Metadata extraction is simulated in this prototype.",
-      );
-      return;
-    }
-    notify(
-      "Create new research object",
-      "Choose New Claim, New Experiment, New Source, or New Decision from the command palette.",
-    );
-    setCommandOpen(true);
   };
 
   return (
@@ -598,7 +605,14 @@ export function CommandPalette() {
   const run = async (action?: CommandAction) => {
     if (!action) return;
     setOpen(false);
-    await action.run();
+    try {
+      await action.run();
+    } catch (error) {
+      notify(
+        "Action failed",
+        error instanceof Error ? error.message : "The action did not complete.",
+      );
+    }
   };
   return (
     <CommandPrimitive.Dialog

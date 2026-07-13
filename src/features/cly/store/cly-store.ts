@@ -92,13 +92,14 @@ interface ClyState {
   setGlobalSearch: (value: string) => void;
   notify: (title: string, detail?: string) => void;
   dismissToast: (id: string) => void;
-  loadFromApi: () => Promise<boolean>;
+  loadFromApi: (projectId?: string) => Promise<boolean>;
   updateContextItem: (id: string, patch: Partial<ContextItem>) => void;
   updateClaim: (id: string, patch: Partial<Claim>) => void;
   addClaim: (claim: Claim) => void;
   addSource: (source: Source) => Promise<Source | null>;
   updateSource: (id: string, patch: Partial<Source>) => void;
   addExperiment: (experiment: Experiment) => void;
+  updateExperiment: (id: string, patch: Partial<Experiment>) => void;
   addNotebook: (notebook: NotebookArtifact) => void;
   addGraphEdge: (edge: GraphEdge) => void;
   updateGraphEdge: (id: string, patch: Partial<GraphEdge>) => void;
@@ -285,6 +286,7 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
 
 const claimStatusFromResearchObject = (object: ResearchObject): ClaimStatus => {
   if (object.payload.kind !== "claim") return "Unsupported";
+  if (object.payload.reviewStatus) return object.payload.reviewStatus;
   const statusByPayload = {
     draft: "Unsupported",
     supported: "Strong",
@@ -370,7 +372,14 @@ const mapResearchData = (
             objectsById.get(relationship.fromObjectId)?.type === "source",
         )
         .map((relationship) => relationship.fromObjectId),
-      experimentIds: [],
+      experimentIds: relationships
+        .filter(
+          (relationship) =>
+            relationship.toObjectId === object.id &&
+            relationship.type === "tests" &&
+            objectsById.get(relationship.fromObjectId)?.type === "experiment",
+        )
+        .map((relationship) => relationship.fromObjectId),
       notebookIds: [],
       artifactIds: [],
       assumptions: [],
@@ -393,7 +402,14 @@ const mapResearchData = (
       status: "Planned" as const,
       command: "Not configured",
       environment: "Not captured",
-      claimIds: [],
+      claimIds: relationships
+        .filter(
+          (relationship) =>
+            relationship.fromObjectId === object.id &&
+            relationship.type === "tests" &&
+            objectsById.get(relationship.toObjectId)?.type === "claim",
+        )
+        .map((relationship) => relationship.toObjectId),
       dataset: "Not linked",
       limitations: [],
       nextStep: "Complete configuration",
@@ -424,6 +440,17 @@ const mapResearchData = (
     })),
   };
 };
+
+const clearPersistedResearchData = (
+  data: ClyRepositoryData,
+): ClyRepositoryData => ({
+  ...data,
+  sources: [],
+  claims: [],
+  experiments: [],
+  graphNodes: [],
+  graphEdges: [],
+});
 
 export const useClyStore = create<ClyState>((set, get) => ({
   data: initialData,
@@ -460,8 +487,18 @@ export const useClyStore = create<ClyState>((set, get) => ({
   setSelected: (selectedId) =>
     set({ selectedId, inspectorOpen: selectedId ? true : get().inspectorOpen }),
   setActiveProject: (activeProjectId) => {
-    set({ activeProjectId, projectSwitcherOpen: false, selectedId: null });
+    if (activeProjectId === get().activeProjectId) {
+      set({ projectSwitcherOpen: false, selectedId: null });
+      return;
+    }
+    set((state) => ({
+      activeProjectId,
+      data: clearPersistedResearchData(state.data),
+      projectSwitcherOpen: false,
+      selectedId: null,
+    }));
     persistUi({ activeProjectId });
+    void get().loadFromApi(activeProjectId);
   },
   setFixtureMode: (fixtureMode) =>
     set({
@@ -499,13 +536,17 @@ export const useClyStore = create<ClyState>((set, get) => ({
     set((state) => ({
       toasts: state.toasts.filter((toast) => toast.id !== id),
     })),
-  loadFromApi: async () => {
-    const projectId = get().activeProjectId;
+  loadFromApi: async (requestedProjectId) => {
+    const projectId = requestedProjectId ?? get().activeProjectId;
+    const project = get().data.projects.find((item) => item.id === projectId);
+    if (!project) return false;
     try {
+      await apiClient.ensureProject(project);
       const researchData = await apiClient.fetchResearchData(projectId);
+      if (get().activeProjectId !== projectId) return false;
       set((state) => ({
         data: hydrateAgentSessionLayouts(
-          mapResearchData(createFixtureRepository("active"), researchData),
+          mapResearchData(state.data, researchData),
           state.agentSessionLayouts,
         ),
         fixtureMode: "active",
@@ -543,7 +584,13 @@ export const useClyStore = create<ClyState>((set, get) => ({
     const duplicate = findDuplicateSource(source, get().data.sources);
     if (duplicate) return duplicate;
     try {
-      const object = await apiClient.createObject(get().activeProjectId, {
+      const state = get();
+      const project = state.data.projects.find(
+        (item) => item.id === state.activeProjectId,
+      );
+      if (!project) throw new Error("Active research project was not found.");
+      await apiClient.ensureProject(project);
+      const object = await apiClient.createObject(state.activeProjectId, {
         type: "source",
         title: source.title,
         description: source.summary,
@@ -616,6 +663,15 @@ export const useClyStore = create<ClyState>((set, get) => ({
       data: {
         ...state.data,
         experiments: [experiment, ...state.data.experiments],
+      },
+    })),
+  updateExperiment: (id, patch) =>
+    set((state) => ({
+      data: {
+        ...state.data,
+        experiments: state.data.experiments.map((item) =>
+          item.id === id ? { ...item, ...patch } : item,
+        ),
       },
     })),
   addNotebook: (notebook) =>

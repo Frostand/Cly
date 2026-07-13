@@ -132,17 +132,22 @@ export function SourcesScreen() {
   );
 
   const importSource = async () => {
-    const source = await mockServices.sources.create({
-      title: title.trim() || "Imported source",
-      type: "Paper",
-    });
-    setImportOpen(false);
-    setTitle("");
-    setSelected(source.id);
-    notify(
-      "Source imported",
-      "Extraction and metadata are simulated in fixture mode.",
-    );
+    try {
+      const source = await mockServices.sources.create({
+        title: title.trim() || "Imported source",
+        type: "Paper",
+      });
+      setImportOpen(false);
+      setTitle("");
+      setSelected(source.id);
+      notify(
+        "Source imported",
+        "Extraction and metadata are simulated in fixture mode.",
+      );
+    } catch {
+      // addSource already reports the persistence error. Keep the dialog open
+      // so the user's input is not lost and never show a success state.
+    }
   };
 
   return (
@@ -1799,14 +1804,21 @@ export function ClaimsScreen() {
   const selected = claims.find((item) => item.id === selectedId) ?? claims[0];
   const create = async () => {
     if (!text.trim()) return;
-    const claim = await mockServices.claims.create(text.trim());
-    setCreateOpen(false);
-    setText("");
-    setSelected(claim.id);
-    notify(
-      "Unsupported claim created",
-      "Link evidence or design a required experiment.",
-    );
+    try {
+      const claim = await mockServices.claims.create(text.trim());
+      setCreateOpen(false);
+      setText("");
+      setSelected(claim.id);
+      notify(
+        "Unsupported claim created",
+        "Link evidence or design a required experiment.",
+      );
+    } catch (error) {
+      notify(
+        "Claim was not saved",
+        error instanceof Error ? error.message : "Unable to save the claim.",
+      );
+    }
   };
   return (
     <div className="cly-page cly-page-wide cly-route-claims">
@@ -2017,12 +2029,19 @@ function ClaimDetail({
               className="cly-select"
               style={{ width: 130 }}
               value={claim.status}
-              onChange={(event) =>
-                void mockServices.claims.setStatus(
-                  claim.id,
-                  event.target.value as ClaimStatus,
-                )
-              }
+              onChange={(event) => {
+                const status = event.target.value as ClaimStatus;
+                void mockServices.claims
+                  .setStatus(claim.id, status)
+                  .catch((error) =>
+                    notify(
+                      "Claim status was not saved",
+                      error instanceof Error
+                        ? error.message
+                        : "Unable to update the claim.",
+                    ),
+                  );
+              }}
               aria-label="Change claim status"
             >
               {claimStatuses.map((status) => (

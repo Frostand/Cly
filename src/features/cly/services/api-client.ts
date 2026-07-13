@@ -1,6 +1,6 @@
 import type { LiteraturePaper } from "../domain/literature-search";
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
-import type { ResearchProject } from "../domain/types";
+import type { ClaimStatus, ResearchProject } from "../domain/types";
 
 export interface ResearchData {
   objects: ResearchObject[];
@@ -8,16 +8,16 @@ export interface ResearchData {
 }
 
 export interface CreateObjectInput {
-  type: "source" | "claim";
+  type: ResearchObject["type"];
   title: string;
   description?: string;
-  payload: Record<string, unknown>;
+  payload: ResearchObject["payload"];
 }
 
 export interface CreateRelationshipInput {
   fromObjectId: string;
   toObjectId: string;
-  type: "supports" | "contradicts";
+  type: Relationship["type"];
 }
 
 export interface CrossEncoderReranking {
@@ -105,6 +105,18 @@ export const apiClient = {
       {
         method: "PATCH",
         body: JSON.stringify(input),
+      },
+    );
+  },
+
+  updateClaimStatus(projectId: string, claimId: string, status: ClaimStatus) {
+    return request<ResearchObject>(
+      `${projectPath(projectId)}/claims/${encodeURIComponent(claimId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          reviewStatus: status,
+        }),
       },
     );
   },

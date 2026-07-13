@@ -46,6 +46,17 @@ const payloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("claim"),
     status: z.enum(["draft", "supported", "contradicted", "needs-evidence"]),
+    reviewStatus: z
+      .enum([
+        "Unsupported",
+        "Weak",
+        "Medium",
+        "Strong",
+        "Paper-ready",
+        "Invalidated",
+        "Needs review",
+      ])
+      .optional(),
   }),
   z.object({
     kind: z.literal("experiment"),

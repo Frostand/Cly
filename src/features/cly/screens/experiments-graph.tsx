@@ -175,19 +175,28 @@ export function ExperimentsScreen() {
 
   const create = async () => {
     if (!name.trim()) return;
-    const experiment = await mockServices.experiments.create({
-      name: name.trim(),
-      goal: goal.trim() || "Define research goal",
-      type,
-    });
-    setCreateOpen(false);
-    setName("");
-    setGoal("");
-    setSelected(experiment.id);
-    notify(
-      "Experiment created",
-      "The planned experiment is available across claims, graph, and next steps.",
-    );
+    try {
+      const experiment = await mockServices.experiments.create({
+        name: name.trim(),
+        goal: goal.trim() || "Define research goal",
+        type,
+      });
+      setCreateOpen(false);
+      setName("");
+      setGoal("");
+      setSelected(experiment.id);
+      notify(
+        "Experiment created",
+        "The planned experiment is available across claims, graph, and next steps.",
+      );
+    } catch (error) {
+      notify(
+        "Experiment was not saved",
+        error instanceof Error
+          ? error.message
+          : "Unable to save the experiment.",
+      );
+    }
   };
 
   return (
