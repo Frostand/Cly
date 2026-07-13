@@ -23,7 +23,8 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getDesktopApi } from "../../../lib/electron";
 import {
   DisclosureRow,
   InlineMetadata,
@@ -53,7 +54,7 @@ import { previewLiteratureThemes } from "../domain/literature-enrichment";
 import type { LiteratureSearchResult } from "../domain/literature-search";
 import { filterAndSortClaims } from "../domain/logic";
 import type { ClaimStatus, Source } from "../domain/types";
-import { apiClient } from "../services/api-client";
+import { apiClient, type ReviewerCapsule } from "../services/api-client";
 import { desktopLiteratureService } from "../services/literature-service";
 import { mockServices } from "../services/mock-services";
 import { claimStatusTone, useClyStore } from "../store/cly-store";
@@ -1827,10 +1828,12 @@ export function ClaimsScreen() {
   const selectedId = useClyStore((s) => s.selectedId);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
+  const activeProjectId = useClyStore((s) => s.activeProjectId);
   const [view, setView] = useState<ClaimView>("Board");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
   const [createOpen, setCreateOpen] = useState(false);
+  const [capsuleOpen, setCapsuleOpen] = useState(false);
   const [text, setText] = useState("");
   const visible = filterAndSortClaims(claims, query, status, "confidence");
   const selected = claims.find((item) => item.id === selectedId) ?? claims[0];
@@ -1912,6 +1915,9 @@ export function ClaimsScreen() {
               }
             >
               <Sparkles size={13} /> Adversarial review
+            </Button>
+            <Button disabled={!selected} onClick={() => setCapsuleOpen(true)}>
+              <Download size={13} /> Reviewer capsule
             </Button>
           </div>
           {view === "Board" ? (
@@ -2035,7 +2041,196 @@ export function ClaimsScreen() {
           />
         </div>
       </Dialog>
+      <ReviewerCapsuleDialog
+        activeProjectId={activeProjectId}
+        claims={claims}
+        initialClaimId={selected?.id ?? null}
+        notify={notify}
+        onClose={() => setCapsuleOpen(false)}
+        open={capsuleOpen}
+      />
     </div>
+  );
+}
+
+function ReviewerCapsuleDialog({
+  activeProjectId,
+  claims,
+  initialClaimId,
+  notify,
+  onClose,
+  open,
+}: {
+  activeProjectId: string;
+  claims: Array<{ id: string; text: string; status: ClaimStatus }>;
+  initialClaimId: string | null;
+  notify: (title: string, message: string) => void;
+  onClose: () => void;
+  open: boolean;
+}) {
+  const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
+  const [capsule, setCapsule] = useState<ReviewerCapsule | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedClaimIds(initialClaimId ? [initialClaimId] : []);
+    setCapsule(null);
+  }, [initialClaimId, open]);
+
+  const toggleClaim = (id: string) => {
+    setCapsule(null);
+    setSelectedClaimIds((current) =>
+      current.includes(id)
+        ? current.filter((claimId) => claimId !== id)
+        : [...current, id],
+    );
+  };
+  const buildPreview = async () => {
+    if (selectedClaimIds.length === 0) return;
+    setLoading(true);
+    try {
+      setCapsule(
+        await apiClient.previewReviewerCapsule(
+          activeProjectId,
+          selectedClaimIds,
+        ),
+      );
+    } catch (error) {
+      notify(
+        "Reviewer capsule blocked",
+        error instanceof Error
+          ? error.message
+          : "Unable to generate a safe capsule.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+  const exportCapsule = async () => {
+    if (selectedClaimIds.length === 0) return;
+    setLoading(true);
+    try {
+      const exported = await apiClient.exportReviewerCapsule(
+        activeProjectId,
+        selectedClaimIds,
+      );
+      const filename = `cly-reviewer-capsule-${exported.sha256.slice(0, 12)}.html`;
+      const desktopApi = getDesktopApi();
+      if (desktopApi) {
+        const saved = await desktopApi.saveTextFile({
+          contents: exported.html,
+          defaultPath: filename,
+          title: "Save reviewer capsule",
+        });
+        if (!saved) return;
+      } else {
+        const blob = new Blob([exported.html], {
+          type: "text/html;charset=utf-8",
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+      setCapsule(exported);
+      notify(
+        "Reviewer capsule exported",
+        `Saved exact reviewed bytes (SHA-256 ${exported.sha256.slice(0, 12)}…).`,
+      );
+    } catch (error) {
+      notify(
+        "Reviewer capsule blocked",
+        error instanceof Error
+          ? error.message
+          : "Unable to export a safe capsule.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Reviewer capsule"
+      description="Build a read-only, offline HTML record from canonical project data. Private paths, credentials, chat, provider configuration, and unsafe output are removed or block export."
+      wide
+      footer={
+        <>
+          <Button onClick={onClose}>Close</Button>
+          <Button
+            disabled={loading || selectedClaimIds.length === 0}
+            onClick={() => void buildPreview()}
+          >
+            Preview capsule
+          </Button>
+          <Button
+            variant="primary"
+            disabled={loading || selectedClaimIds.length === 0}
+            onClick={() => void exportCapsule()}
+          >
+            <Download size={13} /> Export HTML
+          </Button>
+        </>
+      }
+    >
+      <div className="cly-stack">
+        <div className="cly-inspector-label">Selected claims</div>
+        {claims.map((claim) => (
+          <label className="cly-list-row" key={claim.id}>
+            <input
+              type="checkbox"
+              checked={selectedClaimIds.includes(claim.id)}
+              onChange={() => toggleClaim(claim.id)}
+            />
+            <span className="cly-clamp-2">{claim.text}</span>
+            <Badge tone={claimStatusTone(claim.status)}>{claim.status}</Badge>
+          </label>
+        ))}
+        {capsule ? (
+          <>
+            <div className="cly-callout" data-tone="success">
+              <strong>Safe static preview</strong>
+              <div className="cly-mono cly-small">SHA-256 {capsule.sha256}</div>
+            </div>
+            <div className="cly-table-wrap">
+              <table className="cly-table">
+                <thead>
+                  <tr>
+                    <th>Disposition</th>
+                    <th>Records</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Included</td>
+                    <td>{capsule.manifest.included.length}</td>
+                    <td>
+                      Current, verification, and reproducibility shown in
+                      capsule
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Omitted</td>
+                    <td>{capsule.manifest.omitted.length}</td>
+                    <td>Explicit reason recorded in capsule manifest</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="cly-muted cly-small">
+            Preview first to inspect included and omitted records before export.
+          </div>
+        )}
+      </div>
+    </Dialog>
   );
 }
 

@@ -128,6 +128,39 @@ test("completes the linked research workflow", async ({ page }) => {
   await expect(page.getByText("Untitled decision")).toBeVisible();
 });
 
+test("previews a project-scoped reviewer capsule from the Claims workspace", async ({
+  page,
+}) => {
+  let requestBody: unknown;
+  await page.route("**/reviewer-capsule/preview", async (route) => {
+    requestBody = route.request().postDataJSON();
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        html: '<!doctype html><html lang="en"></html>',
+        sha256: "a".repeat(64),
+        manifest: {
+          version: 1,
+          generatedAt: "2026-07-13T12:00:00.000Z",
+          selectedClaimIds: ["claim-01"],
+          included: [],
+          omitted: [],
+        },
+      }),
+    });
+  });
+
+  await page.getByTestId("nav-claims").click();
+  await page.getByRole("button", { name: "Reviewer capsule" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Reviewer capsule" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Preview capsule" }).click();
+
+  await expect(page.getByText("Safe static preview")).toBeVisible();
+  expect(requestBody).toEqual({ claimIds: ["claim-01"] });
+});
+
 test("supports shell controls, shortcuts, command execution, and inspector selection", async ({
   page,
 }) => {

@@ -62,6 +62,27 @@ export interface LineageScanResult {
   measurement: LineageScanMeasurement;
 }
 
+export interface ReviewerCapsuleManifestRecord {
+  id: string;
+  kind: string;
+  currentness?: "current" | "stale";
+  verification?: "verified" | "inferred";
+  reproducibility?: "reproducible" | "documented-only" | "unverifiable";
+  reason?: string;
+}
+
+export interface ReviewerCapsule {
+  html: string;
+  sha256: string;
+  manifest: {
+    version: number;
+    generatedAt: string;
+    selectedClaimIds: string[];
+    included: ReviewerCapsuleManifestRecord[];
+    omitted: ReviewerCapsuleManifestRecord[];
+  };
+}
+
 export class ApiRequestError extends Error {
   constructor(
     message: string,
@@ -131,6 +152,26 @@ export const apiClient = {
   verifyProvenance(projectId: string) {
     return request<ProvenanceIntegrity>(
       `/api/projects/${encodeURIComponent(projectId)}/provenance/integrity`,
+    );
+  },
+
+  previewReviewerCapsule(projectId: string, claimIds: string[]) {
+    return request<ReviewerCapsule>(
+      `/api/projects/${encodeURIComponent(projectId)}/reviewer-capsule/preview`,
+      {
+        method: "POST",
+        body: JSON.stringify({ claimIds }),
+      },
+    );
+  },
+
+  exportReviewerCapsule(projectId: string, claimIds: string[]) {
+    return request<ReviewerCapsule>(
+      `/api/projects/${encodeURIComponent(projectId)}/reviewer-capsule/export`,
+      {
+        method: "POST",
+        body: JSON.stringify({ claimIds }),
+      },
     );
   },
 
