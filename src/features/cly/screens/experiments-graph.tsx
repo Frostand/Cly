@@ -789,6 +789,11 @@ export function GraphScreen() {
               ? ` · first chain ${lineageMeasurement.timeToFirstChainMs}ms`
               : " · no complete chain"}
             {` · accepted ${lineageMeasurement.acceptedCount} · corrections ${lineageMeasurement.correctionCount}`}
+            {typeof lineageMeasurement.manualConfig
+              .projectContextSuggestionCount === "number" &&
+            lineageMeasurement.manualConfig.projectContextSuggestionCount > 0
+              ? ` · ${lineageMeasurement.manualConfig.projectContextSuggestionCount} metadata-free`
+              : ""}
           </div>
         ) : null}
         {lineageSuggestions.length ? (
