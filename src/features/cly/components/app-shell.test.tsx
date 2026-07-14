@@ -28,6 +28,8 @@ describe("Cly application shell", () => {
       fixtureMode: "active",
       activeProjectId: "project-cly",
       activeScreen: "overview",
+      activeProduct: "research",
+      activeDevSection: "projects",
       selectedId: null,
       sidebarCollapsed: false,
       inspectorOpen: true,
@@ -76,6 +78,7 @@ describe("Cly application shell", () => {
     render(<ClyAppShell />);
 
     const destinations = [
+      ["objectives", "Objectives"],
       ["agents", "Agent Sessions"],
       ["context", "Context Composer"],
       ["graph", "Research Object Graph"],
@@ -90,6 +93,7 @@ describe("Cly application shell", () => {
       ["reproducibility", "Reproducibility Auditor"],
       ["decisions", "Research Decision Log"],
       ["next-steps", "Next-Step Planner"],
+      ["reviewer-capsules", "Reviewer Capsules"],
       ["integrations", "Integrations & Providers"],
       ["models", "Models & Agents"],
     ] as const;
@@ -100,6 +104,33 @@ describe("Cly application shell", () => {
         screen.getByRole("heading", { name: heading, level: 1 }),
       ).toBeVisible();
     }
+  });
+
+  it("switches between Cly Research and the Cly Dev command center", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByTestId("product-dev"));
+    expect(
+      screen.getByRole("heading", { name: "Projects", level: 1 }),
+    ).toBeVisible();
+    expect(document.querySelector(".cly-shell")).toHaveAttribute(
+      "data-product",
+      "dev",
+    );
+
+    await user.click(screen.getByTestId("nav-dev-features"));
+    expect(
+      screen.getByRole("heading", { name: "Features", level: 1 }),
+    ).toBeVisible();
+
+    await user.click(screen.getByTestId("product-research"));
+    expect(
+      screen.getByRole("heading", {
+        name: "Neural surrogate reliability",
+        level: 1,
+      }),
+    ).toBeVisible();
   });
 
   it("opens the command palette and executes navigation", async () => {

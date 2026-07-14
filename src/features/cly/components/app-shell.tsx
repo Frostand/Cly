@@ -13,6 +13,11 @@ import {
 } from "../screens/integrity";
 import { OverviewScreen } from "../screens/overview";
 import {
+  DevWorkspaceScreen,
+  ObjectivesScreen,
+  ReviewerCapsulesScreen,
+} from "../screens/platform-workspaces";
+import {
   ClaimsScreen,
   CodeLinkerScreen,
   LiteratureScreen,
@@ -34,6 +39,7 @@ import { ClyMotionProvider, RouteTransition } from "./visuals";
 
 const screens: Record<ScreenId, () => React.JSX.Element> = {
   overview: OverviewScreen,
+  objectives: ObjectivesScreen,
   agents: AgentSessionsScreen,
   context: ContextScreen,
   graph: GraphScreen,
@@ -50,6 +56,8 @@ const screens: Record<ScreenId, () => React.JSX.Element> = {
   "impact-review": PrImpactReviewScreen,
   decisions: DecisionsScreen,
   "next-steps": NextStepsScreen,
+  "reviewer-capsules": ReviewerCapsulesScreen,
+  dev: DevWorkspaceScreen,
   integrations: IntegrationsScreen,
   models: ModelsAgentsScreen,
   settings: SettingsScreen,
@@ -132,6 +140,7 @@ function runMenuCommand(command: string) {
 
 export function ClyAppShell() {
   const activeScreen = useClyStore((s) => s.activeScreen);
+  const activeProduct = useClyStore((s) => s.activeProduct);
   const sidebarCollapsed = useClyStore((s) => s.sidebarCollapsed);
   const inspectorOpen = useClyStore((s) => s.inspectorOpen);
   const selectedId = useClyStore((s) => s.selectedId);
@@ -254,6 +263,7 @@ export function ClyAppShell() {
         ) : null}
         <div
           className="cly-shell"
+          data-product={activeProduct}
           data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
           data-inspector={
             inspectorOpen && selectedId && activeScreen !== "agents"

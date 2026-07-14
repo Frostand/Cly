@@ -15,35 +15,45 @@ import {
   FileStack,
   GitBranch,
   GitPullRequest,
+  Goal,
+  HardDrive,
   Library,
   Lightbulb,
   ListChecks,
+  ListTodo,
+  Monitor,
+  PackageCheck,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelsTopLeft,
   ScrollText,
   Settings,
   ShieldCheck,
+  TestTube2,
+  Tickets,
   WalletCards,
 } from "lucide-react";
 import type { ComponentType } from "react";
-import type { ScreenId } from "../domain/types";
+import type { DevSection, ScreenId } from "../domain/types";
 import { useClyStore } from "../store/cly-store";
 import { ClyLogo, ThemeSwitcher } from "./brand";
 
 interface NavigationItem {
   id: ScreenId;
   label: string;
+  ariaLabel?: string;
   icon: ComponentType<{ size?: number }>;
   count?: (
     state: ReturnType<typeof useClyStore.getState>,
   ) => number | undefined;
 }
 
-const groups: { label: string; items: NavigationItem[] }[] = [
+const researchGroups: { label: string; items: NavigationItem[] }[] = [
   {
     label: "Workspace",
     items: [
       { id: "overview", label: "Overview", icon: CircleGauge },
+      { id: "objectives", label: "Objectives", icon: Goal },
       {
         id: "agents",
         label: "Agent Sessions",
@@ -128,6 +138,12 @@ const groups: { label: string; items: NavigationItem[] }[] = [
         count: (s) =>
           s.data.nextSteps.filter((x) => x.status === "Recommended").length,
       },
+      {
+        id: "reviewer-capsules",
+        label: "Reviewer Capsules",
+        ariaLabel: "Reviewer evidence packages",
+        icon: PackageCheck,
+      },
     ],
   },
   {
@@ -140,14 +156,76 @@ const groups: { label: string; items: NavigationItem[] }[] = [
   },
 ];
 
-export const screenLabels = Object.fromEntries(
-  groups.flatMap((group) => group.items.map((item) => [item.id, item.label])),
-) as Record<ScreenId, string>;
+interface DevNavigationItem {
+  id: DevSection;
+  label: string;
+  icon: ComponentType<{ size?: number }>;
+  count?: (
+    state: ReturnType<typeof useClyStore.getState>,
+  ) => number | undefined;
+}
+
+const devGroups: { label: string; items: DevNavigationItem[] }[] = [
+  {
+    label: "Development",
+    items: [
+      { id: "projects", label: "Projects", icon: PanelsTopLeft },
+      { id: "repositories", label: "Repositories", icon: GitBranch },
+      { id: "features", label: "Features", icon: ListTodo },
+      { id: "issues", label: "Issues", icon: Tickets },
+    ],
+  },
+  {
+    label: "Execution",
+    items: [
+      {
+        id: "sessions",
+        label: "Sessions",
+        icon: Bot,
+        count: (s) =>
+          s.data.agentSessions.filter((session) =>
+            ["running", "waiting_approval"].includes(session.status),
+          ).length,
+      },
+      { id: "agents", label: "Agents", icon: Activity },
+      { id: "machines", label: "Machines", icon: Monitor },
+    ],
+  },
+  {
+    label: "Delivery",
+    items: [
+      { id: "pull-requests", label: "Pull Requests", icon: GitPullRequest },
+      { id: "tests", label: "Tests", icon: TestTube2 },
+      {
+        id: "context",
+        label: "Context",
+        icon: BrainCircuit,
+        count: (s) =>
+          s.data.contextItems.filter((item) => item.included).length,
+      },
+    ],
+  },
+  {
+    label: "System",
+    items: [{ id: "settings", label: "Settings", icon: Settings }],
+  },
+];
+
+export const screenLabels = Object.fromEntries([
+  ...researchGroups.flatMap((group) =>
+    group.items.map((item) => [item.id, item.label]),
+  ),
+  ["dev", "Cly Dev"],
+]) as Record<ScreenId, string>;
 
 export function Sidebar() {
   const activeScreen = useClyStore((s) => s.activeScreen);
+  const activeProduct = useClyStore((s) => s.activeProduct);
+  const activeDevSection = useClyStore((s) => s.activeDevSection);
   const sidebarCollapsed = useClyStore((s) => s.sidebarCollapsed);
   const setScreen = useClyStore((s) => s.setScreen);
+  const setProductArea = useClyStore((s) => s.setProductArea);
+  const setDevSection = useClyStore((s) => s.setDevSection);
   const toggleSidebar = useClyStore((s) => s.toggleSidebar);
   const state = useClyStore();
 
@@ -156,43 +234,135 @@ export function Sidebar() {
       <div className="cly-sidebar-brand">
         <ClyLogo compact={sidebarCollapsed} />
       </div>
+      <div
+        className="cly-product-switcher"
+        role="tablist"
+        aria-label="Cly application"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeProduct === "research"}
+          aria-label="Cly Research"
+          title={sidebarCollapsed ? "Cly Research" : undefined}
+          onClick={() => setProductArea("research")}
+          data-testid="product-research"
+        >
+          <Library size={14} />
+          <span>Research</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeProduct === "dev"}
+          aria-label="Cly Dev"
+          title={sidebarCollapsed ? "Cly Dev" : undefined}
+          onClick={() => setProductArea("dev")}
+          data-testid="product-dev"
+        >
+          <Code2 size={14} />
+          <span>Dev</span>
+        </button>
+      </div>
       <div className="cly-sidebar-scroll">
-        {groups.map((group) => (
-          <nav
-            className="cly-sidebar-group"
-            key={group.label}
-            aria-label={group.label}
-          >
-            <div className="cly-sidebar-group-label">{group.label}</div>
-            {group.items.map((item) => {
-              const Icon = item.icon;
-              const count = item.count?.(state);
-              return (
-                <button
-                  type="button"
-                  className="cly-sidebar-item"
-                  aria-current={activeScreen === item.id ? "page" : undefined}
-                  aria-label={sidebarCollapsed ? item.label : undefined}
-                  title={sidebarCollapsed ? item.label : undefined}
-                  onClick={() => setScreen(item.id)}
-                  key={item.id}
-                  data-testid={`nav-${item.id}`}
-                >
-                  <Icon size={15} />
-                  <span className="cly-sidebar-item-label">{item.label}</span>
-                  {count ? (
-                    <span className="cly-nav-count">
-                      {count > 999 ? "999+" : count}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </nav>
-        ))}
+        {activeProduct === "research"
+          ? researchGroups.map((group) => (
+              <nav
+                className="cly-sidebar-group"
+                key={group.label}
+                aria-label={group.label}
+              >
+                <div className="cly-sidebar-group-label">{group.label}</div>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const count = item.count?.(state);
+                  return (
+                    <button
+                      type="button"
+                      className="cly-sidebar-item"
+                      aria-current={
+                        activeScreen === item.id ? "page" : undefined
+                      }
+                      aria-label={
+                        item.ariaLabel ??
+                        (sidebarCollapsed ? item.label : undefined)
+                      }
+                      title={sidebarCollapsed ? item.label : undefined}
+                      onClick={() => setScreen(item.id)}
+                      key={item.id}
+                      data-testid={`nav-${item.id}`}
+                    >
+                      <Icon size={15} />
+                      <span className="cly-sidebar-item-label">
+                        {item.label}
+                      </span>
+                      {count ? (
+                        <span className="cly-nav-count">
+                          {count > 999 ? "999+" : count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </nav>
+            ))
+          : devGroups.map((group) => (
+              <nav
+                className="cly-sidebar-group"
+                key={group.label}
+                aria-label={group.label}
+              >
+                <div className="cly-sidebar-group-label">{group.label}</div>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const count = item.count?.(state);
+                  const active =
+                    (activeScreen === "dev" && activeDevSection === item.id) ||
+                    (activeScreen === "agents" && item.id === "sessions");
+                  return (
+                    <button
+                      type="button"
+                      className="cly-sidebar-item"
+                      aria-current={active ? "page" : undefined}
+                      aria-label={sidebarCollapsed ? item.label : undefined}
+                      title={sidebarCollapsed ? item.label : undefined}
+                      onClick={() => setDevSection(item.id)}
+                      key={item.id}
+                      data-testid={`nav-dev-${item.id}`}
+                    >
+                      <Icon size={15} />
+                      <span className="cly-sidebar-item-label">
+                        {item.label}
+                      </span>
+                      {count ? (
+                        <span className="cly-nav-count">
+                          {count > 999 ? "999+" : count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </nav>
+            ))}
       </div>
       <div className="cly-sidebar-footer">
         <ThemeSwitcher compact={sidebarCollapsed} />
+        {activeProduct === "dev" ? (
+          <button
+            className="cly-sidebar-item"
+            type="button"
+            onClick={() =>
+              useClyStore
+                .getState()
+                .notify("Execution machine", "Local Mac · connected · private")
+            }
+            aria-label="Local execution machine"
+          >
+            <HardDrive size={15} />
+            <span className="cly-sidebar-item-label">Local machine</span>
+            {!sidebarCollapsed ? <span className="cly-device-dot" /> : null}
+          </button>
+        ) : null}
         <button
           className="cly-sidebar-item"
           type="button"
