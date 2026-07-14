@@ -2086,7 +2086,7 @@ export function ClaimsScreen() {
   );
 }
 
-function ReviewerCapsuleDialog({
+export function ReviewerCapsuleDialog({
   activeProjectId,
   claims,
   initialClaimId,

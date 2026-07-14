@@ -1,10 +1,10 @@
 # Cly
 
-**Cly is the system of record for computational research.**
+**Cly is a connected platform for computational research and development.**
 
-It connects papers, code, experiments, outputs, and claims in one auditable workspace. Researchers plan objectives, manage sources and literature, track experiments, record claims and evidence, and audit reproducibility — all with AI agents working alongside them.
+**Cly Research** is the system of record for computational research. **Cly Dev** is a local-first, multi-provider coding-agent workspace. **Cly Core** connects both applications through one research graph, context system, permission boundary, and provenance history.
 
-Cly is a standalone research platform, not an IDE. It includes an integrated coding environment for computational work and integrates with external editors (VS Code, Cursor, Jupyter) through extensions and APIs.
+Together they connect papers, objectives, code, experiments, outputs, and claims in one auditable workspace while preserving development context across agents, devices, and machines.
 
 ## What Cly answers
 
@@ -18,20 +18,19 @@ Cly is a standalone research platform, not an IDE. It includes an integrated cod
 ## Architecture
 
 ```
-Cly Core (research graph, sources, claims, provenance, agents)
-    ↓
-Cly Desktop App (dashboard, literature, experiments, audits)
-    ↓
-Coding Workspace (editor, terminal, git, notebooks)
-    ↓
-External Integrations (VS Code, Jupyter, GitHub, CLI)
+Shared Cly Core (graph, context, permissions, sync, provenance)
+    ├── Cly Research (objectives, evidence, experiments, claims, audits)
+    └── Cly Dev (sessions, repositories, machines, tests, pull requests)
+            ↓
+External tools (VS Code, Jupyter, GitHub, Linear, model providers)
 ```
 
 The coding workspace is currently powered by Dream IDE as an implementation component. The research core — graph, sources, claims, provenance, memory, and agent orchestration — is independent of the editor and will remain so.
 
 ## Status
 
-Cly now includes a complete UI/UX research-cockpit shell with shared fixtures,
+Cly now includes a two-application Research/Dev shell, objective planning,
+reviewer-capsule workflows, a local-first development command center, shared fixtures,
 mock service boundaries, all primary research and integrity workspaces, desktop
 menus, keyboard navigation, automated workflows, and responsive visual
 fixtures. Agent Sessions includes a complete two-mode Overview and Orchestrator

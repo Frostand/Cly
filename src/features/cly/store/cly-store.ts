@@ -41,6 +41,7 @@ import type {
   DecisionBrief,
   DecisionBriefFinding,
   DecisionBriefFindingStatus,
+  DevSection,
   EntityType,
   Experiment,
   FixtureMode,
@@ -52,6 +53,7 @@ import type {
   NotebookArtifact,
   PreregistrationContent,
   PreregistrationSnapshot,
+  ProductArea,
   ResearchDecision,
   ScreenId,
   Source,
@@ -79,6 +81,8 @@ interface ClyState {
   fixtureMode: FixtureMode;
   activeProjectId: string;
   activeScreen: ScreenId;
+  activeProduct: ProductArea;
+  activeDevSection: DevSection;
   selectedId: string | null;
   sidebarCollapsed: boolean;
   inspectorOpen: boolean;
@@ -127,6 +131,8 @@ interface ClyState {
     >
   >;
   setScreen: (screen: ScreenId) => void;
+  setProductArea: (area: ProductArea) => void;
+  setDevSection: (section: DevSection) => void;
   setSelected: (id: string | null) => void;
   setActiveProject: (id: string) => void;
   setFixtureMode: (mode: FixtureMode) => void;
@@ -315,6 +321,8 @@ const loadUi = () => {
       Pick<
         ClyState,
         | "activeScreen"
+        | "activeProduct"
+        | "activeDevSection"
         | "sidebarCollapsed"
         | "inspectorOpen"
         | "activeProjectId"
@@ -658,7 +666,10 @@ export const useClyStore = create<ClyState>((set, get) => ({
   data: initialData,
   fixtureMode: initialFixtureMode,
   activeProjectId: saved.activeProjectId ?? "project-cly",
-  activeScreen: saved.activeScreen ?? "overview",
+  activeScreen:
+    saved.activeProduct === "dev" ? "dev" : (saved.activeScreen ?? "overview"),
+  activeProduct: saved.activeProduct ?? "research",
+  activeDevSection: saved.activeDevSection ?? "projects",
   selectedId: null,
   sidebarCollapsed: saved.sidebarCollapsed ?? false,
   inspectorOpen: saved.inspectorOpen ?? true,
@@ -701,8 +712,32 @@ export const useClyStore = create<ClyState>((set, get) => ({
   agentSessionLayouts: saved.agentSessionLayouts ?? {},
 
   setScreen: (activeScreen) => {
-    set({ activeScreen, selectedId: null, commandPaletteOpen: false });
-    persistUi({ activeScreen });
+    const activeProduct = activeScreen === "dev" ? "dev" : "research";
+    set({
+      activeScreen,
+      activeProduct,
+      selectedId: null,
+      commandPaletteOpen: false,
+    });
+    persistUi({ activeScreen, activeProduct });
+  },
+  setProductArea: (activeProduct) => {
+    const activeScreen: ScreenId = activeProduct === "dev" ? "dev" : "overview";
+    set({ activeProduct, activeScreen, selectedId: null });
+    persistUi({ activeProduct, activeScreen });
+  },
+  setDevSection: (activeDevSection) => {
+    set({
+      activeProduct: "dev",
+      activeScreen: "dev",
+      activeDevSection,
+      selectedId: null,
+    });
+    persistUi({
+      activeProduct: "dev",
+      activeScreen: "dev",
+      activeDevSection,
+    });
   },
   setSelected: (selectedId) =>
     set({ selectedId, inspectorOpen: selectedId ? true : get().inspectorOpen }),

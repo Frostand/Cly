@@ -2,6 +2,7 @@ import type { AgentSession } from "../agent-sessions/types";
 
 export type ScreenId =
   | "overview"
+  | "objectives"
   | "agents"
   | "context"
   | "graph"
@@ -18,8 +19,25 @@ export type ScreenId =
   | "impact-review"
   | "decisions"
   | "next-steps"
+  | "reviewer-capsules"
+  | "dev"
   | "integrations"
   | "models"
+  | "settings";
+
+export type ProductArea = "research" | "dev";
+
+export type DevSection =
+  | "projects"
+  | "repositories"
+  | "features"
+  | "issues"
+  | "sessions"
+  | "agents"
+  | "machines"
+  | "pull-requests"
+  | "tests"
+  | "context"
   | "settings";
 
 export type FixtureMode =

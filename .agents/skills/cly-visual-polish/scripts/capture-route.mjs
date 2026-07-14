@@ -29,8 +29,15 @@ try {
     (window, size) => window.setSize(size.width, size.height),
     { width, height },
   );
-  await page.getByTestId(`nav-${route}`).click();
-  await page.waitForTimeout(250);
+  if (route === "dev") {
+    await page.getByTestId("product-dev").click();
+  } else if (route.startsWith("dev-")) {
+    await page.getByTestId("product-dev").click();
+    await page.getByTestId(`nav-${route}`).click();
+  } else {
+    await page.getByTestId(`nav-${route}`).click();
+  }
+  await page.waitForTimeout(650);
   await page.screenshot({
     path: path.join(output, `${route}-${width}x${height}.png`),
     animations: "disabled",

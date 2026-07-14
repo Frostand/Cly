@@ -78,9 +78,11 @@ export function Titlebar() {
       s.data.projects[0],
   );
   const search = useClyStore((s) => s.globalSearch);
+  const activeProduct = useClyStore((s) => s.activeProduct);
   const setCommandOpen = useClyStore((s) => s.setCommandPaletteOpen);
   const setFixtureOpen = useClyStore((s) => s.setFixtureSwitcherOpen);
   const setScreen = useClyStore((s) => s.setScreen);
+  const setDevSection = useClyStore((s) => s.setDevSection);
   const toggleInspector = useClyStore((s) => s.toggleInspector);
   const selectedId = useClyStore((s) => s.selectedId);
   const notify = useClyStore((s) => s.notify);
@@ -91,6 +93,14 @@ export function Titlebar() {
 
   const createObject = async () => {
     try {
+      if (activeProduct === "dev") {
+        setDevSection("sessions");
+        notify(
+          "Session setup ready",
+          "Choose a provider, machine, context package, permissions, and budget.",
+        );
+        return;
+      }
       const screen = useClyStore.getState().activeScreen;
       if (screen === "claims") {
         const claim = await mockServices.claims.create(
@@ -153,13 +163,23 @@ export function Titlebar() {
       >
         <Search size={13} />
         <span style={{ flex: 1, textAlign: "left" }}>
-          {search || "Search project or run a command"}
+          {search ||
+            (activeProduct === "dev"
+              ? "Search code, sessions, issues, or run a command"
+              : "Search research objects or run a command")}
         </span>
         <kbd>⌘K</kbd>
       </button>
       <div className="cly-title-actions cly-no-drag">
-        {project ? (
-          <Badge tone="info" square>
+        <Badge
+          className="cly-title-product-badge"
+          tone={activeProduct === "research" ? "info" : "success"}
+          square
+        >
+          {activeProduct === "research" ? "Research" : "Dev"}
+        </Badge>
+        {project && activeProduct === "research" ? (
+          <Badge className="cly-title-phase-badge" tone="info" square>
             {project.phase}
           </Badge>
         ) : null}
@@ -168,7 +188,11 @@ export function Titlebar() {
             variant="ghost"
             iconOnly
             aria-label={`${activeSessions} active agent sessions`}
-            onClick={() => setScreen("agents")}
+            onClick={() =>
+              activeProduct === "dev"
+                ? setDevSection("sessions")
+                : setScreen("agents")
+            }
           >
             <Activity size={14} />
             {activeSessions ? (
@@ -222,7 +246,7 @@ export function Titlebar() {
           aria-label="Create new object"
           onClick={createObject}
         >
-          <Plus size={14} /> New
+          <Plus size={14} /> {activeProduct === "dev" ? "New session" : "New"}
         </Button>
         <ClyTooltip label="Toggle inspector">
           <Button
