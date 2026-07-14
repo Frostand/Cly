@@ -65,7 +65,10 @@ test("keeps retrospective reconstruction inside the existing graph screen and re
             acceptedCount: 0,
             rejectedCount: 0,
             correctionCount: 0,
-            manualConfig: {},
+            manualConfig: {
+              projectContextSuggestionCount: 1,
+              requiresClyNotebookMetadata: false,
+            },
             createdAt: "2026-07-13T00:00:00.000Z",
           },
         }),
@@ -106,6 +109,7 @@ test("keeps retrospective reconstruction inside the existing graph screen and re
     ),
   ).toBeVisible();
   await expect(panel.getByText("inferred · unreviewed")).toBeVisible();
+  await expect(panel.getByText(/1 metadata-free/)).toBeVisible();
   await panel.getByText("Inspect 1 evidence coordinates").click();
   await expect(panel.getByText("notebooks/analysis.ipynb")).toBeVisible();
 

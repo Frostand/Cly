@@ -78,7 +78,11 @@ function createDatabase() {
   return database;
 }
 
-async function createGitRepository() {
+async function createGitRepository({
+  includeClyMetadata = true,
+}: {
+  includeClyMetadata?: boolean;
+} = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "cly-lineage-"));
   temporaryDirectories.push(root);
   await execFileAsync("git", ["init", "--quiet", root]);
@@ -91,10 +95,14 @@ async function createGitRepository() {
     JSON.stringify({
       metadata: {
         title: "Analysis notebook",
-        cly: {
-          objective: "Does the baseline support the objective?",
-          experiment: "experiments/baseline.yaml",
-        },
+        ...(includeClyMetadata
+          ? {
+              cly: {
+                objective: "Does the baseline support the objective?",
+                experiment: "experiments/baseline.yaml",
+              },
+            }
+          : {}),
       },
       cells: [],
     }),
@@ -181,6 +189,63 @@ describe("lineage reconstructor", () => {
       timeToFirstChainMs: expect.any(Number),
       manualConfig: expect.any(Object),
     });
+  });
+
+  it("reconstructs a lower-confidence chain without requiring Cly notebook metadata", async () => {
+    const root = await createGitRepository({ includeClyMetadata: false });
+    const repository = createResearchRepository(createDatabase());
+    repository.upsertProject({
+      id: "project-1",
+      name: "Representative existing repository",
+      path: root,
+      metadata: { question: "Does the baseline support the objective?" },
+    });
+
+    const result =
+      await createLineageReconstructor(repository).scanLineage("project-1");
+
+    expect(result.suggestions).toHaveLength(1);
+    expect(result.suggestions[0]).toMatchObject({
+      confidence: 0.78,
+      rationale: expect.stringContaining("registered project objective"),
+      chain: [
+        expect.objectContaining({
+          kind: "objective",
+          coordinates: { source: "project-metadata" },
+        }),
+        expect.objectContaining({ kind: "notebook" }),
+        expect.objectContaining({ kind: "commit" }),
+        expect.objectContaining({ kind: "experiment" }),
+        expect.objectContaining({ kind: "artifact" }),
+        expect.objectContaining({ kind: "claim" }),
+      ],
+      evidence: expect.arrayContaining([
+        expect.objectContaining({
+          evidenceType: "objective-project-context",
+          path: null,
+          coordinates: expect.objectContaining({
+            source: "project.metadata.question-or-hypothesis",
+          }),
+        }),
+        expect.objectContaining({
+          evidenceType: "commit-experiment-link",
+          coordinates: expect.objectContaining({
+            discoveredFromExperimentConfig: true,
+            lineStart: 1,
+          }),
+        }),
+      ]),
+    });
+    expect(result.measurement).toMatchObject({
+      timeToFirstChainMs: expect.any(Number),
+      manualConfig: expect.objectContaining({
+        discoveredExperimentLinkSuggestionCount: 1,
+        explicitNotebookMetadataSuggestionCount: 0,
+        projectContextSuggestionCount: 1,
+        requiresClyNotebookMetadata: false,
+      }),
+    });
+    expect(result.measurement.timeToFirstChainMs).toBeLessThan(10 * 60 * 1000);
   });
 
   it("derives each edge from linked evidence and ignores lexical decoys across Git history", async () => {

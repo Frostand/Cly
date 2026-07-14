@@ -758,23 +758,27 @@ export function createLineageReconstructor(repository, options = {}) {
           const cly = notebook?.metadata?.cly;
           const declaredObjective =
             typeof cly?.objective === "string" ? cly.objective.trim() : "";
-          const experimentPath = normalizeReference(cly?.experiment);
-          const objective = configuredObjective(project, declaredObjective);
+          const configuredProjectObjective = configuredObjective(project, "");
           if (
-            !objective ||
-            objective !== declaredObjective ||
-            !experimentPath
+            declaredObjective &&
+            configuredProjectObjective &&
+            configuredProjectObjective !== declaredObjective
           ) {
             continue;
           }
+          const objective = declaredObjective || configuredProjectObjective;
+          if (!objective) continue;
           const title =
             typeof notebook?.metadata?.title === "string"
               ? notebook.metadata.title.trim()
               : "";
           notebooks.push({
-            experimentPath,
+            experimentPath: normalizeReference(cly?.experiment),
             file,
             objective,
+            objectiveSource: declaredObjective
+              ? "notebook-metadata"
+              : "project-metadata",
             title: title || path.posix.basename(file.path, NOTEBOOK_EXTENSION),
           });
         } catch {
@@ -842,176 +846,204 @@ export function createLineageReconstructor(repository, options = {}) {
 
       const proposals = [];
       let timeToFirstChainMs = null;
+      let discoveredExperimentLinkSuggestionCount = 0;
+      let explicitNotebookMetadataSuggestionCount = 0;
+      let projectContextSuggestionCount = 0;
       for (const notebook of notebooks) {
         assertWithinTime();
-        const experiment = experiments.get(notebook.experimentPath);
-        if (!experiment) continue;
-        const notebookConfigLink = structuredValueReferencing(
-          experiment.text,
-          notebook.file.path,
-          { assertWithinTime, beforeReferenceScan },
-        );
-        if (!notebookConfigLink) continue;
-        const commit = commits.find((item) => {
+        const candidateExperiments = notebook.experimentPath
+          ? [experiments.get(notebook.experimentPath)].filter(Boolean)
+          : [...experiments.values()];
+        for (const experiment of candidateExperiments) {
           assertWithinTime();
-          return (
-            item.paths.includes(notebook.file.path) &&
-            item.paths.includes(experiment.file.path)
-          );
-        });
-        if (!commit) continue;
-        const linkedArtifacts = [];
-        for (const artifact of artifacts) {
-          assertWithinTime();
-          const artifactLink = structuredValueReferencing(
+          const notebookConfigLink = structuredValueReferencing(
             experiment.text,
-            artifact.path,
+            notebook.file.path,
             { assertWithinTime, beforeReferenceScan },
           );
-          if (!artifactLink) continue;
-          if (!(await verifyDiscoveredFile(artifact, beforeFileRead))) continue;
-          linkedArtifacts.push({ artifact, artifactLink });
-        }
-        const artifactReferences = linkedArtifacts.map(
-          ({ artifact }) => artifact.path,
-        );
-        for (const { artifact, artifactLink } of linkedArtifacts) {
-          assertWithinTime();
-          for (const report of reports) {
+          if (!notebookConfigLink) continue;
+          const commit = commits.find((item) => {
             assertWithinTime();
-            const claimLink = reportTokenReferencing(
-              report.text,
+            return (
+              item.paths.includes(notebook.file.path) &&
+              item.paths.includes(experiment.file.path)
+            );
+          });
+          if (!commit) continue;
+          const linkedArtifacts = [];
+          for (const artifact of artifacts) {
+            assertWithinTime();
+            const artifactLink = structuredValueReferencing(
+              experiment.text,
               artifact.path,
-              {
-                assertWithinTime,
-                beforeReferenceScan,
-                knownReferences: artifactReferences,
-              },
+              { assertWithinTime, beforeReferenceScan },
             );
-            if (!claimLink) continue;
-            const chain = [
-              {
-                kind: "objective",
-                id: `objective:${hash(notebook.objective).slice(0, 16)}`,
-                label: notebook.objective,
-                coordinates: { source: "project.metadata-or-notebook" },
-              },
-              {
-                kind: "notebook",
-                id: `file:${notebook.file.path}`,
-                label: notebook.title,
-                coordinates: fileCoordinates(notebook.file),
-              },
-              {
-                kind: "commit",
-                id: `git:${commit.sha}`,
-                label: commit.subject,
-                coordinates: {
-                  committedAt: commit.committedAt,
-                  sha: commit.sha,
+            if (!artifactLink) continue;
+            if (!(await verifyDiscoveredFile(artifact, beforeFileRead))) {
+              continue;
+            }
+            linkedArtifacts.push({ artifact, artifactLink });
+          }
+          const artifactReferences = linkedArtifacts.map(
+            ({ artifact }) => artifact.path,
+          );
+          for (const { artifact, artifactLink } of linkedArtifacts) {
+            assertWithinTime();
+            for (const report of reports) {
+              assertWithinTime();
+              const claimLink = reportTokenReferencing(
+                report.text,
+                artifact.path,
+                {
+                  assertWithinTime,
+                  beforeReferenceScan,
+                  knownReferences: artifactReferences,
                 },
-              },
-              {
-                kind: "experiment",
-                id: `file:${experiment.file.path}`,
-                label: experiment.file.path,
-                coordinates: fileCoordinates(experiment.file),
-              },
-              {
-                kind: "artifact",
-                id: `file:${artifact.path}`,
-                label: artifact.path,
-                coordinates: fileCoordinates(artifact),
-              },
-              {
-                kind: "claim",
-                id: `report:${report.file.path}:${claimLink.line}`,
-                label: claimLink.text,
-                coordinates: {
-                  lineEnd: claimLink.line,
-                  lineStart: claimLink.line,
+              );
+              if (!claimLink) continue;
+              const chain = [
+                {
+                  kind: "objective",
+                  id: `objective:${hash(notebook.objective).slice(0, 16)}`,
+                  label: notebook.objective,
+                  coordinates: { source: notebook.objectiveSource },
                 },
-              },
-            ];
-            const evidence = [
-              makeEvidence({
-                evidenceType: "objective-notebook-link",
-                file: notebook.file,
-                coordinates: {
-                  jsonPointer: "/metadata/cly/objective",
-                  lineEnd: 1,
-                  lineStart: 1,
-                  valueHash: hash(notebook.objective),
+                {
+                  kind: "notebook",
+                  id: `file:${notebook.file.path}`,
+                  label: notebook.title,
+                  coordinates: fileCoordinates(notebook.file),
                 },
-                excerpt: notebook.objective,
-              }),
-              makeEvidence({
-                evidenceType: "notebook-commit-link",
-                file: notebook.file,
-                coordinates: {
-                  committedAt: commit.committedAt,
-                  sha: commit.sha,
+                {
+                  kind: "commit",
+                  id: `git:${commit.sha}`,
+                  label: commit.subject,
+                  coordinates: {
+                    committedAt: commit.committedAt,
+                    sha: commit.sha,
+                  },
                 },
-                excerpt: commit.subject,
-              }),
-              makeEvidence({
-                evidenceType: "commit-experiment-link",
-                file: experiment.file,
-                coordinates: {
-                  committedAt: commit.committedAt,
-                  sha: commit.sha,
+                {
+                  kind: "experiment",
+                  id: `file:${experiment.file.path}`,
+                  label: experiment.file.path,
+                  coordinates: fileCoordinates(experiment.file),
                 },
-                excerpt: notebookConfigLink.text,
-              }),
-              makeEvidence({
-                evidenceType: "experiment-artifact-link",
-                file: experiment.file,
-                coordinates: {
-                  lineEnd: artifactLink.line,
-                  lineStart: artifactLink.line,
+                {
+                  kind: "artifact",
+                  id: `file:${artifact.path}`,
+                  label: artifact.path,
+                  coordinates: fileCoordinates(artifact),
                 },
-                excerpt: artifactLink.text,
-              }),
-              makeEvidence({
-                evidenceType: "artifact-claim-link",
-                file: report.file,
-                coordinates: {
-                  artifactMtimeMs: artifact.mtimeMs,
-                  lineEnd: claimLink.line,
-                  lineStart: claimLink.line,
+                {
+                  kind: "claim",
+                  id: `report:${report.file.path}:${claimLink.line}`,
+                  label: claimLink.text,
+                  coordinates: {
+                    lineEnd: claimLink.line,
+                    lineStart: claimLink.line,
+                  },
                 },
-                excerpt: claimLink.text,
-              }),
-              ...environmentEvidence,
-            ];
-            const logicalKey = hash(
-              JSON.stringify({
-                artifact: artifact.path,
-                experiment: experiment.file.path,
-                notebook: notebook.file.path,
-                objective: hash(notebook.objective),
-                report: report.file.path,
-              }),
-            );
-            const fingerprint = hash(
-              JSON.stringify({
-                evidence: evidence
-                  .map((item) => item.contentHash)
-                  .sort((left, right) => left.localeCompare(right, "en")),
-                nodes: chain.map(({ id, label }) => ({ id, label })),
-              }),
-            );
-            proposals.push({
-              chain,
-              confidence: 0.9,
-              evidence,
-              fingerprint,
-              logicalKey,
-              rationale:
-                "A deterministic, bounded scan found explicit linkage evidence for every objective-to-claim edge.",
-            });
-            if (timeToFirstChainMs === null) {
-              timeToFirstChainMs = now() - startedAt;
+              ];
+              const usesProjectContext =
+                notebook.objectiveSource === "project-metadata";
+              const discoveredExperimentLink = !notebook.experimentPath;
+              const evidence = [
+                makeEvidence({
+                  evidenceType: usesProjectContext
+                    ? "objective-project-context"
+                    : "objective-notebook-link",
+                  file: usesProjectContext ? null : notebook.file,
+                  coordinates: usesProjectContext
+                    ? {
+                        source: "project.metadata.question-or-hypothesis",
+                        valueHash: hash(notebook.objective),
+                      }
+                    : {
+                        jsonPointer: "/metadata/cly/objective",
+                        lineEnd: 1,
+                        lineStart: 1,
+                        valueHash: hash(notebook.objective),
+                      },
+                  excerpt: notebook.objective,
+                }),
+                makeEvidence({
+                  evidenceType: "notebook-commit-link",
+                  file: notebook.file,
+                  coordinates: {
+                    committedAt: commit.committedAt,
+                    sha: commit.sha,
+                  },
+                  excerpt: commit.subject,
+                }),
+                makeEvidence({
+                  evidenceType: "commit-experiment-link",
+                  file: experiment.file,
+                  coordinates: {
+                    committedAt: commit.committedAt,
+                    discoveredFromExperimentConfig: discoveredExperimentLink,
+                    lineEnd: notebookConfigLink.line,
+                    lineStart: notebookConfigLink.line,
+                    sha: commit.sha,
+                  },
+                  excerpt: notebookConfigLink.text,
+                }),
+                makeEvidence({
+                  evidenceType: "experiment-artifact-link",
+                  file: experiment.file,
+                  coordinates: {
+                    lineEnd: artifactLink.line,
+                    lineStart: artifactLink.line,
+                  },
+                  excerpt: artifactLink.text,
+                }),
+                makeEvidence({
+                  evidenceType: "artifact-claim-link",
+                  file: report.file,
+                  coordinates: {
+                    artifactMtimeMs: artifact.mtimeMs,
+                    lineEnd: claimLink.line,
+                    lineStart: claimLink.line,
+                  },
+                  excerpt: claimLink.text,
+                }),
+                ...environmentEvidence,
+              ];
+              const logicalKey = hash(
+                JSON.stringify({
+                  artifact: artifact.path,
+                  experiment: experiment.file.path,
+                  notebook: notebook.file.path,
+                  objective: hash(notebook.objective),
+                  report: report.file.path,
+                }),
+              );
+              const fingerprint = hash(
+                JSON.stringify({
+                  evidence: evidence
+                    .map((item) => item.contentHash)
+                    .sort((left, right) => left.localeCompare(right, "en")),
+                  nodes: chain.map(({ id, label }) => ({ id, label })),
+                }),
+              );
+              proposals.push({
+                chain,
+                confidence: usesProjectContext ? 0.78 : 0.9,
+                evidence,
+                fingerprint,
+                logicalKey,
+                rationale: usesProjectContext
+                  ? "A deterministic, bounded scan used the registered project objective as context and found explicit linkage evidence for every file-to-file edge. Review is required."
+                  : "A deterministic, bounded scan found explicit linkage evidence for every objective-to-claim edge.",
+              });
+              if (usesProjectContext) projectContextSuggestionCount += 1;
+              else explicitNotebookMetadataSuggestionCount += 1;
+              if (discoveredExperimentLink) {
+                discoveredExperimentLinkSuggestionCount += 1;
+              }
+              if (timeToFirstChainMs === null) {
+                timeToFirstChainMs = now() - startedAt;
+              }
             }
           }
         }
@@ -1037,12 +1069,16 @@ export function createLineageReconstructor(repository, options = {}) {
           maxGitOutputBytes: config.maxGitOutputBytes,
           maxScanDurationMs: config.maxScanDurationMs,
           maxTotalReadBytes: config.maxTotalReadBytes,
+          discoveredExperimentLinkSuggestionCount,
+          explicitNotebookMetadataSuggestionCount,
           observedDirectoryCount: inventory.directoryCount,
           observedEntryCount: inventory.entryCount,
           observedEnvironmentFiles: environmentEvidence
             .map((item) => item.path)
             .filter(Boolean),
           observedFileCount: filesByPath.size,
+          projectContextSuggestionCount,
+          requiresClyNotebookMetadata: false,
         },
         scanDurationMs,
         suggestionCount: suggestions.length,
