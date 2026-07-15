@@ -23,7 +23,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getDesktopApi } from "../../../lib/electron";
 import {
   DisclosureRow,
@@ -65,7 +65,7 @@ import type {
   ObligationEvaluation,
   ObligationOperation,
 } from "../domain/obligations";
-import type { ClaimStatus, Source } from "../domain/types";
+import type { Claim, ClaimStatus, Source } from "../domain/types";
 import { apiClient, type ReviewerCapsule } from "../services/api-client";
 import { capabilityUnavailableMessage } from "../services/capabilities";
 import { desktopLiteratureService } from "../services/literature-service";
@@ -1906,7 +1906,7 @@ export function ClaimsScreen() {
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
   const activeProjectId = useClyStore((s) => s.activeProjectId);
-  const [view, setView] = useState<ClaimView>("Board");
+  const [view, setView] = useState<ClaimView>("Table");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
   const [createOpen, setCreateOpen] = useState(false);
@@ -1914,6 +1914,41 @@ export function ClaimsScreen() {
   const [text, setText] = useState("");
   const visible = filterAndSortClaims(claims, query, status, "confidence");
   const selected = claims.find((item) => item.id === selectedId) ?? claims[0];
+  const claimColumns = useMemo<ColumnDef<Claim, unknown>[]>(
+    () => [
+      { accessorKey: "text", header: "Claim" },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <Badge tone={claimStatusTone(row.original.status)}>
+            {row.original.status}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "confidence",
+        header: "Confidence",
+        cell: ({ row }) => `${row.original.confidence}%`,
+      },
+      {
+        id: "support",
+        header: "Support",
+        accessorFn: (claim) =>
+          claim.supportingSourceIds.length + claim.experimentIds.length,
+      },
+      {
+        id: "contradictions",
+        header: "Contradictions",
+        accessorFn: (claim) => claim.contradictingSourceIds.length,
+      },
+      {
+        accessorKey: "nextExperiment",
+        header: "Next required experiment",
+      },
+    ],
+    [],
+  );
   const create = async () => {
     if (!text.trim()) return;
     try {
@@ -2048,42 +2083,15 @@ export function ClaimsScreen() {
             </div>
           ) : null}
           {view === "Table" ? (
-            <div className="cly-table-wrap">
-              <table className="cly-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: "40%" }}>Claim</th>
-                    <th>Status</th>
-                    <th>Confidence</th>
-                    <th>Support</th>
-                    <th>Contradictions</th>
-                    <th>Experiments</th>
-                    <th>Next required experiment</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((claim) => (
-                    <tr
-                      key={claim.id}
-                      onClick={() => setSelected(claim.id)}
-                      data-selected={selectedId === claim.id}
-                    >
-                      <td>{claim.text}</td>
-                      <td>
-                        <Badge tone={claimStatusTone(claim.status)}>
-                          {claim.status}
-                        </Badge>
-                      </td>
-                      <td>{claim.confidence}%</td>
-                      <td>{claim.supportingSourceIds.length}</td>
-                      <td>{claim.contradictingSourceIds.length}</td>
-                      <td>{claim.experimentIds.length}</td>
-                      <td>{claim.nextExperiment}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ClyDataTable
+              id="claims-audit"
+              data={visible}
+              columns={claimColumns}
+              selectedId={selectedId}
+              getRowId={(claim) => claim.id}
+              onSelect={(claim) => setSelected(claim.id)}
+              emptyMessage="No claims match this audit filter"
+            />
           ) : null}
           {view === "Detail" && selected ? (
             <ClaimDetail claim={selected} />
@@ -2487,6 +2495,60 @@ function ClaimDetail({
     (s) => s.inheritedRestrictions[claim.id] ?? noInheritedRestrictions,
   );
   const setScreen = useClyStore((s) => s.setScreen);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [relationship, setRelationship] = useState<"supports" | "contradicts">(
+    "supports",
+  );
+  const [sourceId, setSourceId] = useState(data.sources[0]?.id ?? "");
+  const [savingEvidence, setSavingEvidence] = useState(false);
+  const evidenceTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeEvidence = () => {
+    setEvidenceOpen(false);
+    requestAnimationFrame(() => evidenceTriggerRef.current?.focus());
+  };
+  const openEvidence = (
+    type: "supports" | "contradicts",
+    trigger: HTMLButtonElement,
+  ) => {
+    evidenceTriggerRef.current = trigger;
+    setRelationship(type);
+    const linked =
+      type === "supports"
+        ? claim.supportingSourceIds
+        : claim.contradictingSourceIds;
+    setSourceId(
+      data.sources.find((source) => !linked.includes(source.id))?.id ??
+        data.sources[0]?.id ??
+        "",
+    );
+    setEvidenceOpen(true);
+  };
+  const linkEvidence = async () => {
+    if (!sourceId) return;
+    setSavingEvidence(true);
+    try {
+      await projectServices.claims.linkEvidence(
+        claim.id,
+        sourceId,
+        relationship,
+      );
+      const source = data.sources.find((item) => item.id === sourceId);
+      closeEvidence();
+      notify(
+        relationship === "supports"
+          ? "Supporting evidence linked"
+          : "Contradiction recorded",
+        source?.title ?? sourceId,
+      );
+    } catch (error) {
+      notify(
+        "Evidence relationship was not saved",
+        error instanceof Error ? error.message : "Unable to link the source.",
+      );
+    } finally {
+      setSavingEvidence(false);
+    }
+  };
   return (
     <div className="cly-overview-grid">
       <div>
@@ -2717,33 +2779,32 @@ function ClaimDetail({
           <div className="cly-inspector-label">Claim actions</div>
           <div className="cly-stack">
             <Button
-              disabled={data.experiments.length === 0}
+              disabled={!isClyDemoRuntime && data.experiments.length === 0}
               title={
-                data.experiments.length === 0
+                !isClyDemoRuntime && data.experiments.length === 0
                   ? "Create an experiment before linking evidence."
                   : undefined
               }
-              onClick={() =>
+              onClick={(event) => {
+                if (isClyDemoRuntime) {
+                  openEvidence("supports", event.currentTarget);
+                  return;
+                }
                 void projectServices.claims
                   .linkExperiment(claim.id, data.experiments[0].id)
                   .then(() =>
                     notify(
                       "Experiment linked",
-                      "Calibrated ensemble sweep now appears in this claim's evidence chain.",
+                      "The experiment now appears in this claim's evidence chain.",
                     ),
-                  )
-              }
+                  );
+              }}
             >
               <Link2 size={13} /> Link evidence
             </Button>
             <Button
-              disabled={!isClyDemoRuntime}
-              title={capabilityUnavailableMessage("claims.secondary-actions")}
-              onClick={() =>
-                notify(
-                  "Contradiction recorded",
-                  "A conflicting source can now be selected in the inspector.",
-                )
+              onClick={(event) =>
+                openEvidence("contradicts", event.currentTarget)
               }
             >
               <X size={13} /> Add contradiction
@@ -2766,6 +2827,58 @@ function ClaimDetail({
           </div>
         </Panel>
       </aside>
+      <Dialog
+        open={evidenceOpen}
+        onClose={closeEvidence}
+        title={
+          relationship === "supports"
+            ? "Link supporting evidence"
+            : "Record contradictory evidence"
+        }
+        description="The relationship is stored in the research graph and included in claim audits."
+        footer={
+          <>
+            <Button onClick={closeEvidence}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={!sourceId || savingEvidence}
+              onClick={() => void linkEvidence()}
+            >
+              {savingEvidence ? "Linking…" : "Link source"}
+            </Button>
+          </>
+        }
+      >
+        <div className="cly-field">
+          <label htmlFor={`claim-evidence-${claim.id}`}>Source</label>
+          <select
+            id={`claim-evidence-${claim.id}`}
+            className="cly-select"
+            value={sourceId}
+            onChange={(event) => setSourceId(event.target.value)}
+          >
+            {data.sources.map((source) => (
+              <option key={source.id} value={source.id}>
+                {source.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="cly-field">
+          <label htmlFor={`claim-relation-${claim.id}`}>Relationship</label>
+          <select
+            id={`claim-relation-${claim.id}`}
+            className="cly-select"
+            value={relationship}
+            onChange={(event) =>
+              setRelationship(event.target.value as "supports" | "contradicts")
+            }
+          >
+            <option value="supports">Supports claim</option>
+            <option value="contradicts">Contradicts claim</option>
+          </select>
+        </div>
+      </Dialog>
     </div>
   );
 }

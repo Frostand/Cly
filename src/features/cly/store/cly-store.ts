@@ -28,6 +28,7 @@ import type {
 import type {
   AgentPreset,
   AnalysisDeviation,
+  AuditFinding,
   Claim,
   ClaimCostSummary,
   ClaimStatus,
@@ -51,6 +52,7 @@ import type {
   PreregistrationContent,
   PreregistrationSnapshot,
   ProductArea,
+  ReproducibilityAudit,
   ResearchDecision,
   ScreenId,
   Source,
@@ -224,6 +226,10 @@ interface ClyState {
       status?: "Open" | "Assigned" | "Resolved" | "Ignored";
       assignee?: string;
     },
+  ) => void;
+  replaceReproducibilityAudit: (
+    audit: ReproducibilityAudit,
+    findings: AuditFinding[],
   ) => void;
   updateIntegration: (id: string, patch: Partial<Integration>) => void;
   updateNextStep: (
@@ -1658,6 +1664,17 @@ export const useClyStore = create<ClyState>((set, get) => ({
         findings: state.data.findings.map((item) =>
           item.id === id ? { ...item, ...patch } : item,
         ),
+      },
+    })),
+  replaceReproducibilityAudit: (audit, findings) =>
+    set((state) => ({
+      data: {
+        ...state.data,
+        audits: [
+          audit,
+          ...state.data.audits.filter((item) => item.id !== audit.id),
+        ],
+        findings,
       },
     })),
   updateIntegration: (id, patch) =>

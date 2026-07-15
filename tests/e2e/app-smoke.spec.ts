@@ -73,7 +73,11 @@ test("completes the linked research workflow", async ({ page }) => {
   ).toBeVisible();
   await page.getByRole("radio", { name: "Detail" }).click();
   await page.getByRole("button", { name: "Link evidence" }).click();
-  await expect(page.getByText("Experiment linked")).toBeVisible();
+  await page
+    .getByRole("dialog", { name: "Link supporting evidence" })
+    .getByRole("button", { name: "Link source" })
+    .click();
+  await expect(page.getByText("Supporting evidence linked")).toBeVisible();
 
   // Add a source to a NotebookLM bundle.
   await page.getByTestId("nav-sources").click();
@@ -121,7 +125,7 @@ test("completes the linked research workflow", async ({ page }) => {
   await expect(page.getByText("Agent preset saved")).toBeVisible();
   await page.getByTestId("nav-reproducibility").click();
   await page.getByRole("button", { name: "Run audit" }).click();
-  await expect(page.getByText("Simulated audit started")).toBeVisible();
+  await expect(page.getByText("Reproducibility audit complete")).toBeVisible();
 
   // Accept a next step.
   await page.getByTestId("nav-next-steps").click();

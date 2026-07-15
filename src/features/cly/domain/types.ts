@@ -380,7 +380,18 @@ export interface AuditFinding {
   status: "Open" | "Assigned" | "Resolved" | "Ignored";
   objectIds: string[];
   assignee?: string;
+  area?: AuditArea;
+  affectedClaimIds?: string[];
+  recommendedFix?: string;
 }
+
+export type AuditArea =
+  | "Code"
+  | "Data"
+  | "Environment"
+  | "Experiments"
+  | "Outputs"
+  | "Claims";
 
 export interface ReproducibilityAudit {
   id: string;
@@ -393,6 +404,11 @@ export interface ReproducibilityAudit {
     | "Publication-ready";
   createdAt: string;
   findingIds: string[];
+  areas?: Array<{
+    area: AuditArea;
+    passed: boolean;
+    findingCount: number;
+  }>;
 }
 
 export interface Integration {

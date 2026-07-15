@@ -383,24 +383,14 @@ export function ProvenanceScreen() {
   );
 }
 
-const auditCategories = [
-  "dependencies",
-  "environment",
-  "datasets",
-  "random seeds",
-  "commands",
-  "configuration",
-  "notebooks",
-  "outputs",
-  "figure regeneration",
-  "table regeneration",
-  "code/result consistency",
-  "claim/evidence consistency",
-  "paths and portability",
-  "Git state",
-  "artifact tracking",
-  "documentation",
-];
+const auditAreas = [
+  "Code",
+  "Data",
+  "Environment",
+  "Experiments",
+  "Outputs",
+  "Claims",
+] as const;
 
 export function ReproducibilityScreen() {
   const audit = useClyStore((s) => s.data.audits[0]);
@@ -408,10 +398,22 @@ export function ReproducibilityScreen() {
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
   const [filter, setFilter] = useState("All");
+  const [running, setRunning] = useState(false);
   const visible = findings.filter(
     (item) =>
-      filter === "All" || item.severity === filter || item.status === filter,
+      filter === "All" ||
+      item.severity === filter ||
+      item.status === filter ||
+      item.area === filter,
   );
+  const runAudit = async () => {
+    setRunning(true);
+    try {
+      await projectServices.reproducibility.runAudit();
+    } finally {
+      setRunning(false);
+    }
+  };
   return (
     <div className="cly-page cly-route-reproducibility">
       <PageHeader
@@ -432,11 +434,12 @@ export function ReproducibilityScreen() {
             </Button>
             <Button
               variant="primary"
-              disabled={!isClyDemoRuntime}
+              disabled={!isClyDemoRuntime || running}
               title={capabilityUnavailableMessage("reproducibility.audit")}
-              onClick={() => void projectServices.reproducibility.runAudit()}
+              onClick={() => void runAudit()}
             >
-              <RefreshCw size={13} /> Run audit
+              <RefreshCw size={13} className={running ? "animate-spin" : ""} />
+              {running ? "Auditing…" : "Run audit"}
             </Button>
           </>
         }
@@ -444,13 +447,13 @@ export function ReproducibilityScreen() {
       {!audit ? (
         <EmptyState
           title="No reproducibility audit"
-          description="Run an audit to check 16 integrity categories."
+          description="Run an audit across six reproducibility areas."
           action={
             <Button
               variant="primary"
-              disabled={!isClyDemoRuntime}
+              disabled={!isClyDemoRuntime || running}
               title={capabilityUnavailableMessage("reproducibility.audit")}
-              onClick={() => void projectServices.reproducibility.runAudit()}
+              onClick={() => void runAudit()}
             >
               Run audit
             </Button>
@@ -586,7 +589,7 @@ export function ReproducibilityScreen() {
           </div>
           <Section
             title="Audit findings"
-            subtitle={`${auditCategories.length} categories · evidence-linked and assignable`}
+            subtitle={`${auditAreas.length} areas · evidence-linked and assignable`}
             actions={
               <select
                 className="cly-select"
@@ -602,6 +605,9 @@ export function ReproducibilityScreen() {
                 <option>Passed</option>
                 <option>Open</option>
                 <option>Resolved</option>
+                {auditAreas.map((area) => (
+                  <option key={area}>{area}</option>
+                ))}
               </select>
             }
           >
@@ -629,6 +635,14 @@ export function ReproducibilityScreen() {
                     <div className="cly-list-detail">
                       {finding.category} · {finding.detail}
                     </div>
+                    {finding.recommendedFix ? (
+                      <div className="cly-list-detail">
+                        Recommended fix: {finding.recommendedFix}
+                        {finding.affectedClaimIds?.length
+                          ? ` · ${finding.affectedClaimIds.length} affected claim${finding.affectedClaimIds.length === 1 ? "" : "s"}`
+                          : ""}
+                      </div>
+                    ) : null}
                   </button>
                   <div className="cly-row">
                     <Badge tone={toneForStatus(finding.status)}>
@@ -658,15 +672,50 @@ export function ReproducibilityScreen() {
           </Section>
           <Section
             title="Audit coverage"
-            subtitle="Every category has a defined future service boundary"
+            subtitle="Code, data, environment, experiment, output, and claim checks"
           >
-            <div className="cly-grid-3">
-              {auditCategories.map((category) => (
-                <div className="cly-row" key={category}>
-                  <CheckCircle2 size={13} className="cly-faint" />
-                  <span className="cly-small">{category}</span>
-                </div>
-              ))}
+            <div className="cly-table-wrap">
+              <table className="cly-table">
+                <thead>
+                  <tr>
+                    <th>Area</th>
+                    <th>Result</th>
+                    <th>Open findings</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditAreas.map((area) => {
+                    const coverage = audit.areas?.find(
+                      (item) => item.area === area,
+                    );
+                    const count =
+                      coverage?.findingCount ??
+                      findings.filter(
+                        (finding) =>
+                          finding.area === area &&
+                          finding.severity !== "Passed" &&
+                          finding.status !== "Resolved",
+                      ).length;
+                    const passed = coverage?.passed ?? count === 0;
+                    return (
+                      <tr key={area}>
+                        <td>
+                          <span className="cly-row">
+                            <CheckCircle2 size={13} className="cly-faint" />
+                            {area}
+                          </span>
+                        </td>
+                        <td>
+                          <Badge tone={passed ? "success" : "warning"}>
+                            {passed ? "Passed" : "Needs attention"}
+                          </Badge>
+                        </td>
+                        <td>{count}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </Section>
         </>
