@@ -33,7 +33,7 @@ import { useMemo, useRef, useState } from "react";
 import { Badge, Button } from "../components/primitives";
 import { ClySplitPane } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
-import { mockAgentSessionServices } from "./services";
+import { demoAgentSessionServices } from "./demo-services";
 import { AgentSessionsModeSwitcher } from "./shared";
 import type { AgentMessage as AgentMessageType, AgentSession } from "./types";
 import { sessionStatusLabel, toneForAgentStatus } from "./utils";
@@ -693,7 +693,7 @@ export function ChatComposer({ session }: { session: AgentSession }) {
     });
     setDraft(session.id, "");
     setStreaming(true);
-    for await (const message of mockAgentSessionServices.transcript.send(
+    for await (const message of demoAgentSessionServices.transcript.send(
       session.id,
       body,
     )) {

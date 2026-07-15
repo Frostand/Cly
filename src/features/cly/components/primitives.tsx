@@ -239,10 +239,14 @@ export function Toggle({
   pressed,
   onChange,
   label,
+  disabled = false,
+  reason,
 }: {
   pressed: boolean;
   onChange: (value: boolean) => void;
   label: string;
+  disabled?: boolean;
+  reason?: string;
 }) {
   return (
     <button
@@ -251,6 +255,9 @@ export function Toggle({
       role="switch"
       aria-checked={pressed}
       aria-label={label}
+      aria-description={disabled ? reason : undefined}
+      disabled={disabled}
+      title={disabled ? reason : undefined}
       onClick={() => onChange(!pressed)}
     />
   );

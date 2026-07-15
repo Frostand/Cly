@@ -45,7 +45,9 @@ import {
   type ProvenanceEvent,
   type ProvenanceIntegrity,
 } from "../services/api-client";
-import { mockServices } from "../services/mock-services";
+import { capabilityUnavailableMessage } from "../services/capabilities";
+import { projectServices } from "../services/project-services";
+import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 
 type ProvenanceView =
@@ -133,6 +135,8 @@ export function ProvenanceScreen() {
               label="Provenance view"
             />
             <Button
+              disabled={!isClyDemoRuntime}
+              title={capabilityUnavailableMessage("reproducibility.audit")}
               onClick={() =>
                 notify(
                   "Provenance report generated",
@@ -428,7 +432,9 @@ export function ReproducibilityScreen() {
             </Button>
             <Button
               variant="primary"
-              onClick={() => void mockServices.reproducibility.runAudit()}
+              disabled={!isClyDemoRuntime}
+              title={capabilityUnavailableMessage("reproducibility.audit")}
+              onClick={() => void projectServices.reproducibility.runAudit()}
             >
               <RefreshCw size={13} /> Run audit
             </Button>
@@ -442,9 +448,11 @@ export function ReproducibilityScreen() {
           action={
             <Button
               variant="primary"
-              onClick={() => void mockServices.reproducibility.runAudit()}
+              disabled={!isClyDemoRuntime}
+              title={capabilityUnavailableMessage("reproducibility.audit")}
+              onClick={() => void projectServices.reproducibility.runAudit()}
             >
-              Run mock audit
+              Run audit
             </Button>
           }
         />
@@ -628,9 +636,13 @@ export function ReproducibilityScreen() {
                     </Badge>
                     {finding.status !== "Resolved" ? (
                       <Button
+                        disabled={!isClyDemoRuntime}
+                        title={capabilityUnavailableMessage(
+                          "reproducibility.audit",
+                        )}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void mockServices.reproducibility.resolveFinding(
+                          void projectServices.reproducibility.resolveFinding(
                             finding.id,
                           );
                           notify("Finding resolved", finding.title);
@@ -718,13 +730,19 @@ function NextStepRow({
         <small>{step.contextPack}</small>
       </div>
       <div className="cly-next-step-actions">
-        <Button onClick={onAccept}>
+        <Button
+          onClick={onAccept}
+          disabled={!isClyDemoRuntime}
+          title={capabilityUnavailableMessage("planner.update")}
+        >
           <Check size={12} /> Accept
         </Button>
         <Button
           variant="ghost"
           iconOnly
           aria-label={`Defer ${step.title}`}
+          disabled={!isClyDemoRuntime}
+          title={capabilityUnavailableMessage("planner.update")}
           onClick={onDefer}
         >
           <Clock size={12} />
@@ -733,6 +751,8 @@ function NextStepRow({
           variant="ghost"
           iconOnly
           aria-label={`Create agent session for ${step.title}`}
+          disabled={!isClyDemoRuntime}
+          title={capabilityUnavailableMessage("agents.execute")}
           onClick={onCreateSession}
         >
           <Sparkles size={12} />
@@ -741,6 +761,8 @@ function NextStepRow({
           variant="ghost"
           iconOnly
           aria-label={`Dismiss ${step.title}`}
+          disabled={!isClyDemoRuntime}
+          title={capabilityUnavailableMessage("planner.update")}
           onClick={onDismiss}
         >
           <X size={12} />
@@ -771,10 +793,12 @@ export function NextStepsScreen() {
       index={index}
       onSelect={() => setSelected(step.id)}
       onAccept={() => {
-        void mockServices.planner.setStatus(step.id, "Accepted");
+        void projectServices.planner.setStatus(step.id, "Accepted");
         notify("Recommendation accepted", step.title);
       }}
-      onDefer={() => void mockServices.planner.setStatus(step.id, "Deferred")}
+      onDefer={() =>
+        void projectServices.planner.setStatus(step.id, "Deferred")
+      }
       onCreateSession={() => {
         setScreen("agents");
         notify(
@@ -783,7 +807,7 @@ export function NextStepsScreen() {
         );
       }}
       onDismiss={() =>
-        void mockServices.planner.setStatus(step.id, "Dismissed")
+        void projectServices.planner.setStatus(step.id, "Dismissed")
       }
     />
   );
@@ -1166,7 +1190,7 @@ export function DecisionsScreen() {
   );
   const create = async () => {
     if (!title.trim() || !decision.trim()) return;
-    const item = await mockServices.decisions.create({
+    const item = await projectServices.decisions.create({
       title,
       decision,
       reason: reason || "Reason not yet recorded",
@@ -1231,7 +1255,12 @@ export function DecisionsScreen() {
               />
             ) : null}
             {mode === "Decisions" ? (
-              <Button variant="primary" onClick={() => setCreateOpen(true)}>
+              <Button
+                variant="primary"
+                disabled={!isClyDemoRuntime}
+                title={capabilityUnavailableMessage("decisions.create")}
+                onClick={() => setCreateOpen(true)}
+              >
                 <Plus size={13} /> New decision
               </Button>
             ) : null}

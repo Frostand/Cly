@@ -32,7 +32,8 @@
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
     "format": "biome format --write .",
-    "licenses:check": "node scripts/check-production-licenses.mjs"
+    "licenses:check": "node scripts/check-production-licenses.mjs",
+    "capabilities:check": "node scripts/check-cly-capabilities.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
