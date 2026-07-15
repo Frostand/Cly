@@ -320,6 +320,49 @@ describe("research repository", () => {
     ).toEqual({ count: 3 });
   });
 
+  it("recovers project objects, relationships, and provenance after service restart", () => {
+    const firstService = createResearchRepository(database);
+    firstService.createObject({
+      id: "restart-source",
+      projectId: "project-1",
+      type: "source",
+      title: "Restart evidence",
+      payload: { kind: "source", url: "https://example.com/restart" },
+    });
+    firstService.createObject({
+      id: "restart-claim",
+      projectId: "project-1",
+      type: "claim",
+      title: "Persistence survives service restart",
+      payload: { kind: "claim", status: "supported" },
+    });
+    firstService.createRelationship({
+      id: "restart-link",
+      projectId: "project-1",
+      fromObjectId: "restart-source",
+      toObjectId: "restart-claim",
+      type: "supports",
+    });
+
+    const restartedService = createResearchRepository(database);
+
+    expect(restartedService.listProject("project-1")).toMatchObject({
+      objects: expect.arrayContaining([
+        expect.objectContaining({ id: "restart-source" }),
+        expect.objectContaining({ id: "restart-claim" }),
+      ]),
+      relationships: [expect.objectContaining({ id: "restart-link" })],
+    });
+    expect(restartedService.verifyProvenance("project-1")).toMatchObject({
+      valid: true,
+      eventCount: 3,
+    });
+    expect(restartedService.listProject("project-2")).toEqual({
+      objects: [],
+      relationships: [],
+    });
+  });
+
   it("keeps new objects and relationships unreviewed until an attributable review", () => {
     const repository = createResearchRepository(database);
     const source = repository.createObject({

@@ -31,10 +31,6 @@ import {
   LoadingState,
   Segmented,
 } from "../primitives";
-import {
-  emptyPrImpactReviewFixture,
-  populatedPrImpactReviewFixture,
-} from "./fixtures";
 
 type ViewState = "loading" | "error" | "ready";
 type SourceMode = "Local diff" | "Pull request";
@@ -387,9 +383,15 @@ export function PrImpactReviewScreen({
 
   useEffect(() => {
     if (initialState || initialReview) return;
+    if (!__CLY_INCLUDE_DEMOS__) {
+      void analyze();
+      return;
+    }
     if (["active", "large", "risks", "new"].includes(fixtureMode)) {
-      setReview(populatedPrImpactReviewFixture);
-      setStatus("ready");
+      void import("./fixtures").then(({ populatedPrImpactReviewFixture }) => {
+        setReview(populatedPrImpactReviewFixture);
+        setStatus("ready");
+      });
       return;
     }
     if (fixtureMode === "errors" || fixtureMode === "offline") {
@@ -400,8 +402,10 @@ export function PrImpactReviewScreen({
       void analyze();
       return;
     }
-    setReview(emptyPrImpactReviewFixture);
-    setStatus("ready");
+    void import("./fixtures").then(({ emptyPrImpactReviewFixture }) => {
+      setReview(emptyPrImpactReviewFixture);
+      setStatus("ready");
+    });
   }, [analyze, fixtureMode, initialReview, initialState]);
 
   const effectiveStatus = initialState ?? status;
