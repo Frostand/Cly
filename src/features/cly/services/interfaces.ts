@@ -8,6 +8,7 @@ import type {
   GraphEdge,
   Integration,
   NotebookArtifact,
+  ReproducibilityAudit,
   ResearchDecision,
   ResearchProject,
   Source,
@@ -63,6 +64,11 @@ export interface ClaimService {
   create(text: string): Promise<Claim>;
   setStatus(id: string, status: ClaimStatus): Promise<void>;
   linkExperiment(claimId: string, experimentId: string): Promise<void>;
+  linkEvidence(
+    claimId: string,
+    sourceId: string,
+    relationship: "supports" | "contradicts",
+  ): Promise<void>;
 }
 
 export interface ResearchGraphService {
@@ -71,7 +77,7 @@ export interface ResearchGraphService {
 }
 
 export interface ReproducibilityService {
-  runAudit(): Promise<void>;
+  runAudit(): Promise<ReproducibilityAudit>;
   resolveFinding(id: string): Promise<void>;
 }
 
