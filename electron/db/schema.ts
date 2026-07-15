@@ -733,3 +733,210 @@ export const costEntries = sqliteTable(
     ),
   ],
 );
+
+export const experimentDefinitionVersions = sqliteTable(
+  "experiment_definition_versions",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    experimentId: text("experiment_id")
+      .notNull()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    hypothesis: text("hypothesis").notNull(),
+    objective: text("objective").notNull().default(""),
+    configurationJson: text("configuration_json").notNull(),
+    datasetsJson: text("datasets_json").notNull(),
+    declaredMetricsJson: text("declared_metrics_json").notNull(),
+    definitionHash: text("definition_hash").notNull(),
+    provenanceEventId: text("provenance_event_id")
+      .notNull()
+      .references(() => provenanceEvents.id),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "experiment_definition_versions_configuration_json",
+      sql`json_valid(${table.configurationJson})`,
+    ),
+    check(
+      "experiment_definition_versions_datasets_json",
+      sql`json_valid(${table.datasetsJson}) AND json_type(${table.datasetsJson}) = 'array'`,
+    ),
+    check(
+      "experiment_definition_versions_declared_metrics_json",
+      sql`json_valid(${table.declaredMetricsJson}) AND json_type(${table.declaredMetricsJson}) = 'array'`,
+    ),
+    check(
+      "experiment_definition_versions_version_positive",
+      sql`${table.version} >= 1`,
+    ),
+    uniqueIndex("experiment_definition_versions_project_id_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("experiment_definition_versions_experiment_version_unique").on(
+      table.projectId,
+      table.experimentId,
+      table.version,
+    ),
+    index("idx_experiment_definitions_project_experiment").on(
+      table.projectId,
+      table.experimentId,
+      table.version,
+    ),
+  ],
+);
+
+export const experimentRuns = sqliteTable(
+  "experiment_runs",
+  {
+    id: text("id")
+      .primaryKey()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    experimentId: text("experiment_id")
+      .notNull()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    definitionVersionId: text("definition_version_id")
+      .notNull()
+      .references(() => experimentDefinitionVersions.id),
+    status: text("status").notNull(),
+    commitSha: text("commit_sha").notNull(),
+    configurationJson: text("configuration_json").notNull(),
+    datasetsJson: text("datasets_json").notNull(),
+    codeRefsJson: text("code_refs_json").notNull(),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    startedAt: text("started_at").notNull(),
+    finishedAt: text("finished_at"),
+    exitCode: integer("exit_code"),
+    provenanceEventId: text("provenance_event_id")
+      .notNull()
+      .references(() => provenanceEvents.id),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "experiment_runs_status",
+      sql`${table.status} IN ('planned', 'running', 'completed', 'failed', 'cancelled')`,
+    ),
+    check(
+      "experiment_runs_configuration_json",
+      sql`json_valid(${table.configurationJson})`,
+    ),
+    check(
+      "experiment_runs_datasets_json",
+      sql`json_valid(${table.datasetsJson}) AND json_type(${table.datasetsJson}) = 'array'`,
+    ),
+    check(
+      "experiment_runs_code_refs_json",
+      sql`json_valid(${table.codeRefsJson}) AND json_type(${table.codeRefsJson}) = 'array'`,
+    ),
+    uniqueIndex("experiment_runs_project_id_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    index("idx_experiment_runs_project_experiment").on(
+      table.projectId,
+      table.experimentId,
+      table.startedAt,
+    ),
+  ],
+);
+
+export const runMetrics = sqliteTable(
+  "run_metrics",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    runId: text("run_id")
+      .notNull()
+      .references(() => experimentRuns.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    value: real("value").notNull(),
+    unit: text("unit"),
+    step: integer("step"),
+    loggedAt: text("logged_at").notNull(),
+    provenanceEventId: text("provenance_event_id")
+      .notNull()
+      .references(() => provenanceEvents.id),
+  },
+  (table) => [
+    check(
+      "run_metrics_step_nonnegative",
+      sql`${table.step} IS NULL OR ${table.step} >= 0`,
+    ),
+    uniqueIndex("run_metrics_run_name_step_unique").on(
+      table.runId,
+      table.name,
+      table.step,
+    ),
+    index("idx_run_metrics_project_run").on(
+      table.projectId,
+      table.runId,
+      table.name,
+      table.step,
+    ),
+  ],
+);
+
+export const runArtifacts = sqliteTable(
+  "run_artifacts",
+  {
+    id: text("id")
+      .primaryKey()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    runId: text("run_id")
+      .notNull()
+      .references(() => experimentRuns.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    path: text("path").notNull(),
+    mediaType: text("media_type").notNull(),
+    contentHash: text("content_hash").notNull(),
+    generatorPath: text("generator_path"),
+    generatorHash: text("generator_hash"),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    state: text("state").notNull().default("current"),
+    staleReasonsJson: text("stale_reasons_json").notNull().default("[]"),
+    provenanceEventId: text("provenance_event_id")
+      .notNull()
+      .references(() => provenanceEvents.id),
+    generatedAt: text("generated_at").notNull(),
+    checkedAt: text("checked_at").notNull(),
+  },
+  (table) => [
+    check(
+      "run_artifacts_kind",
+      sql`${table.kind} IN ('figure', 'table', 'file')`,
+    ),
+    check("run_artifacts_state", sql`${table.state} IN ('current', 'stale')`),
+    check(
+      "run_artifacts_stale_reasons_json",
+      sql`json_valid(${table.staleReasonsJson}) AND json_type(${table.staleReasonsJson}) = 'array'`,
+    ),
+    uniqueIndex("run_artifacts_project_id_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("run_artifacts_project_path_unique").on(
+      table.projectId,
+      table.path,
+    ),
+    index("idx_run_artifacts_project_run").on(
+      table.projectId,
+      table.runId,
+      table.state,
+      table.generatedAt,
+    ),
+  ],
+);

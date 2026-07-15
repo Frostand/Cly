@@ -169,7 +169,7 @@ export interface ExperimentRun {
   id: string;
   experimentId: string;
   name: string;
-  status: "Complete" | "Running" | "Failed" | "Queued";
+  status: "Complete" | "Running" | "Failed" | "Queued" | "Cancelled";
   startedAt: string;
   duration: string;
   codeVersion: string;
@@ -307,6 +307,7 @@ export interface Artifact {
   commit: string;
   claimIds: string[];
   regeneration: "Ready" | "Stale" | "Broken" | "Manual";
+  staleReasons?: string[];
   hash: string;
   updatedAt: string;
 }
