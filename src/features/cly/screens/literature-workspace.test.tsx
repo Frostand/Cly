@@ -73,6 +73,12 @@ describe("Literature workspace", () => {
     const user = userEvent.setup();
     render(<LiteratureScreen />);
 
+    expect(
+      screen.getByRole("heading", {
+        name: "Search across open literature",
+        level: 2,
+      }),
+    ).toBeVisible();
     await user.type(
       screen.getByRole("textbox", { name: "Search literature" }),
       "neural surrogate uncertainty",
@@ -90,6 +96,19 @@ describe("Literature workspace", () => {
       screen.getByRole("heading", { name: paper.title, level: 2 }),
     ).toBeVisible();
     expect(screen.getByText(paper.abstract)).toBeVisible();
+
+    const projectRequests = fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith("/api/projects/project-cly/research") &&
+        (init as RequestInit | undefined)?.method === "PUT",
+    );
+    const lastProjectBody = JSON.parse(
+      (projectRequests.at(-1)?.[1] as RequestInit).body as string,
+    );
+    expect(lastProjectBody.metadata.externalTransmissionApprovals).toEqual([
+      "arxiv",
+      "semantic-scholar",
+    ]);
 
     await user.click(screen.getByRole("button", { name: "Save to project" }));
     expect(

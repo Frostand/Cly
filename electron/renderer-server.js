@@ -3,11 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import sirv from "sirv";
 
-import {
-  API_SESSION_TOKEN_HEADER,
-  createApiSessionToken,
-  startApiServer,
-} from "./api-server.js";
+import { createApiSessionToken, startApiServer } from "./api-server.js";
 import { stopChildProcess } from "./process-sessions.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -59,7 +55,6 @@ export function createRendererServerManager({
   rendererUrlFromEnv,
 }) {
   const apiSessionToken = createApiSessionToken();
-
   let rendererUrl = developmentRendererUrl;
   let apiServer = null;
   let viteDevProcess = null;
@@ -105,7 +100,6 @@ export function createRendererServerManager({
             ...process.env,
             BROWSER: "none",
             ELECTRON_API_PORT: String(apiServerPort),
-            ELECTRON_API_TOKEN: apiSessionToken,
             ELECTRON_INTERNAL_PORT: String(internalRendererPort),
             FORCE_COLOR: "1",
           },
@@ -175,7 +169,6 @@ export function createRendererServerManager({
             headers: {
               ...request.headers,
               host: `127.0.0.1:${apiServerPort}`,
-              [API_SESSION_TOKEN_HEADER]: apiSessionToken,
             },
           },
           (proxyRes) => {

@@ -269,6 +269,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
     });
 
     child.stdout?.on("data", (chunk) => {
+      if (runProcesses.get(projectId) !== child) {
+        return;
+      }
       sendToRenderer("runner:data", {
         chunk: chunk.toString(),
         projectId,
@@ -277,6 +280,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
     });
 
     child.stderr?.on("data", (chunk) => {
+      if (runProcesses.get(projectId) !== child) {
+        return;
+      }
       sendToRenderer("runner:data", {
         chunk: chunk.toString(),
         projectId,
@@ -285,6 +291,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
     });
 
     child.on("close", (code, signal) => {
+      if (runProcesses.get(projectId) !== child) {
+        return;
+      }
       runProcesses.delete(projectId);
       sendToRenderer("runner:status", {
         code,
@@ -295,6 +304,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
     });
 
     child.on("error", (error) => {
+      if (runProcesses.get(projectId) !== child) {
+        return;
+      }
       sendToRenderer("runner:data", {
         chunk: `[runner error] ${error.message}\n`,
         projectId,
@@ -395,7 +407,7 @@ export function createProcessSessionManager({ sendToRenderer }) {
         return { status: "stopped" };
       }
 
-      terminalSessions.set(projectId, {
+      const pipeSession = {
         kill: () => stopChildProcess(child),
         write: (data) => {
           if (
@@ -409,7 +421,8 @@ export function createProcessSessionManager({ sendToRenderer }) {
 
           child.stdin.write(data);
         },
-      });
+      };
+      terminalSessions.set(projectId, pipeSession);
       terminalTransports.set(projectId, "pipe");
       const shellCommand = formatShellCommand(
         pipeFallbackCandidate.command,
@@ -433,6 +446,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
       }
 
       child.stdout?.on("data", (chunk) => {
+        if (terminalSessions.get(projectId) !== pipeSession) {
+          return;
+        }
         sendToRenderer("terminal:data", {
           chunk: chunk.toString(),
           projectId,
@@ -440,6 +456,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
       });
 
       child.stderr?.on("data", (chunk) => {
+        if (terminalSessions.get(projectId) !== pipeSession) {
+          return;
+        }
         sendToRenderer("terminal:data", {
           chunk: chunk.toString(),
           projectId,
@@ -447,6 +466,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
       });
 
       child.on("close", (code, signal) => {
+        if (terminalSessions.get(projectId) !== pipeSession) {
+          return;
+        }
         terminalSessions.delete(projectId);
         terminalTransports.delete(projectId);
         terminalShells.delete(projectId);
@@ -461,6 +483,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
       });
 
       child.on("error", (error) => {
+        if (terminalSessions.get(projectId) !== pipeSession) {
+          return;
+        }
         terminalSessions.delete(projectId);
         terminalTransports.delete(projectId);
         terminalShells.delete(projectId);
@@ -505,6 +530,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
     });
 
     terminalSession.onData((chunk) => {
+      if (terminalSessions.get(projectId) !== terminalSession) {
+        return;
+      }
       sendToRenderer("terminal:data", {
         chunk,
         projectId,
@@ -512,6 +540,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
     });
 
     terminalSession.onExit(({ exitCode, signal }) => {
+      if (terminalSessions.get(projectId) !== terminalSession) {
+        return;
+      }
       terminalSessions.delete(projectId);
       terminalTransports.delete(projectId);
       terminalShells.delete(projectId);

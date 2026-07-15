@@ -195,6 +195,9 @@ describe("Cly application shell", () => {
       "data-sidebar",
       "collapsed",
     );
+    expect(document.querySelectorAll(".cly-sidebar-group-label")).toHaveLength(
+      0,
+    );
     fireEvent.keyDown(window, { key: "i", metaKey: true, altKey: true });
     expect(document.querySelector(".cly-shell")).toHaveAttribute(
       "data-inspector",

@@ -272,7 +272,9 @@ export function Sidebar() {
                 key={group.label}
                 aria-label={group.label}
               >
-                <div className="cly-sidebar-group-label">{group.label}</div>
+                {!sidebarCollapsed ? (
+                  <div className="cly-sidebar-group-label">{group.label}</div>
+                ) : null}
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const count = item.count?.(state);
@@ -312,7 +314,9 @@ export function Sidebar() {
                 key={group.label}
                 aria-label={group.label}
               >
-                <div className="cly-sidebar-group-label">{group.label}</div>
+                {!sidebarCollapsed ? (
+                  <div className="cly-sidebar-group-label">{group.label}</div>
+                ) : null}
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const count = item.count?.(state);

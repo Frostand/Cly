@@ -332,6 +332,18 @@ describe("Cly UI store", () => {
     expect(useClyStore.getState().data.claims).toHaveLength(0);
   });
 
+  it("preserves a fixture selector opened during background demo hydration", async () => {
+    useClyStore.setState({ fixtureSwitcherOpen: false });
+
+    useClyStore.getState().setFixtureMode("active");
+    useClyStore.getState().setFixtureSwitcherOpen(true);
+
+    await vi.waitFor(() =>
+      expect(useClyStore.getState().data.claims.length).toBeGreaterThan(0),
+    );
+    expect(useClyStore.getState().fixtureSwitcherOpen).toBe(true);
+  });
+
   it("persists context and claim mutations across feature views", () => {
     useClyStore.getState().updateContextItem("ctx-03", { included: true });
     useClyStore.getState().updateClaim("claim-03", { status: "Strong" });

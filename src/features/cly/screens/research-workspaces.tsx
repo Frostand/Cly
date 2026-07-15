@@ -65,7 +65,12 @@ import type {
   ObligationEvaluation,
   ObligationOperation,
 } from "../domain/obligations";
-import type { Claim, ClaimStatus, Source } from "../domain/types";
+import type {
+  Claim,
+  ClaimStatus,
+  ResearchProject,
+  Source,
+} from "../domain/types";
 import {
   apiClient,
   type LiteratureReadingList,
@@ -911,14 +916,17 @@ export function LiteratureScreen() {
           "Approve transmission to arXiv and Semantic Scholar before searching this local-only project.",
         );
       }
-      if (activeProject.localOnly) {
-        await apiClient.ensureProject({
-          ...activeProject,
-          externalTransmissionApprovals: ["arxiv", "semantic-scholar"],
-        });
+      const searchProject: ResearchProject = activeProject.localOnly
+        ? {
+            ...activeProject,
+            externalTransmissionApprovals: ["arxiv", "semantic-scholar"],
+          }
+        : activeProject;
+      if (searchProject.localOnly) {
+        await apiClient.ensureProject(searchProject);
       }
       const results = await desktopLiteratureService.search(
-        activeProject,
+        searchProject,
         query,
       );
       setSearchResults(results);
@@ -1243,6 +1251,7 @@ export function LiteratureScreen() {
                   title="Search across open literature"
                   description="Start with a research question. Cly will rank matching papers and keep the ranking rationale attached when you save one."
                   icon={<ScanSearch size={20} />}
+                  headingLevel="h2"
                 />
               ) : null}
             </>

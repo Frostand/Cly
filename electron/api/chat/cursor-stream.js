@@ -389,7 +389,9 @@ export const streamCursorResponse = ({
           finished = true;
           finishText();
           abortSignal?.removeEventListener("abort", handleAbort);
-          preparedAttachments?.cleanup?.();
+          const attachments = preparedAttachments;
+          preparedAttachments = null;
+          attachments?.cleanup?.();
           callback();
         };
 
@@ -590,10 +592,19 @@ export const streamCursorResponse = ({
         };
 
         abortSignal?.addEventListener("abort", handleAbort, { once: true });
+        if (abortSignal?.aborted) {
+          handleAbort();
+          return;
+        }
         writeMetadata(responseMessageMetadata);
 
         void prepareCodexPromptAttachments(getLatestUserMessage(messages))
           .then((attachments) => {
+            if (finished || abortSignal?.aborted) {
+              attachments?.cleanup?.();
+              return null;
+            }
+
             preparedAttachments = attachments;
             const prompt = buildCursorConversationPrompt({
               currentTurnAttachments: attachments?.promptText ?? null,
@@ -607,7 +618,12 @@ export const streamCursorResponse = ({
               Promise.resolve(prompt),
             ]);
           })
-          .then(([launch, prompt]) => {
+          .then((preparedLaunch) => {
+            if (!preparedLaunch || finished || abortSignal?.aborted) {
+              return;
+            }
+
+            const [launch, prompt] = preparedLaunch;
             const args = buildCursorArgs({
               codexPermissionMode,
               model,

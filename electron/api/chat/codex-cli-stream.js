@@ -283,7 +283,9 @@ export const streamCodexCliResponse = ({
           if (finished) return;
           finished = true;
           abortSignal?.removeEventListener("abort", handleAbort);
-          preparedAttachments?.cleanup?.();
+          const attachments = preparedAttachments;
+          preparedAttachments = null;
+          attachments?.cleanup?.();
           callback();
         };
 
@@ -563,8 +565,16 @@ export const streamCodexCliResponse = ({
         };
 
         abortSignal?.addEventListener("abort", handleAbort, { once: true });
+        if (abortSignal?.aborted) {
+          handleAbort();
+          return;
+        }
 
         const runAttempt = (sessionId) => {
+          if (finished || abortSignal?.aborted) {
+            return;
+          }
+
           stdoutBuffer = "";
           stderrBuffer = "";
           startedToolCalls.clear();
@@ -586,6 +596,10 @@ export const streamCodexCliResponse = ({
 
           void resolveCodexCliLaunch()
             .then((launch) => {
+              if (finished || abortSignal?.aborted) {
+                return;
+              }
+
               child = spawn(launch.command, [...launch.argsPrefix, ...args], {
                 cwd: projectPath,
                 env: process.env,
@@ -656,6 +670,11 @@ export const streamCodexCliResponse = ({
 
         void prepareCodexPromptAttachments(getLatestUserMessage(messages))
           .then((attachments) => {
+            if (finished || abortSignal?.aborted) {
+              attachments?.cleanup?.();
+              return;
+            }
+
             preparedAttachments = attachments;
             fullPrompt = buildCodexConversationPrompt({
               currentTurnAttachments: attachments?.promptText ?? null,

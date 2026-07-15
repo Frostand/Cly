@@ -10,6 +10,7 @@ import {
   HardDrive,
   KeyRound,
   Laptop,
+  PanelRightOpen,
   Play,
   Plus,
   RotateCcw,
@@ -94,11 +95,7 @@ export function IntegrationsScreen() {
             {visible.map((integration) => {
               const Icon = providerIcon(integration.name);
               return (
-                <Panel
-                  key={integration.id}
-                  onClick={() => setSelected(integration.id)}
-                  style={{ cursor: "pointer" }}
-                >
+                <Panel key={integration.id}>
                   <div className="cly-panel-body">
                     <div className="cly-row-between">
                       <div className="cly-row">
@@ -137,37 +134,45 @@ export function IntegrationsScreen() {
                       <span className="cly-faint" style={{ fontSize: 9 }}>
                         {integration.privacy}
                       </span>
-                      <Button
-                        disabled={!isClyDemoRuntime}
-                        title={
-                          isClyDemoRuntime
-                            ? undefined
-                            : capabilityUnavailableMessage(
-                                "integrations.configure",
-                              )
-                        }
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          if (integration.status === "Connected")
-                            notify(
-                              `${integration.name} settings`,
-                              "Permissions and project scope are shown in the inspector.",
-                            );
-                          else
-                            void projectServices.integrations
-                              .updateStatus(integration.id, "Setup required")
-                              .then(() =>
-                                notify(
-                                  `${integration.name} setup`,
-                                  "Real connection is unavailable in the UI prototype.",
-                                ),
+                      <div className="cly-row">
+                        <Button
+                          variant="ghost"
+                          aria-label={`View ${integration.name} details`}
+                          onClick={() => setSelected(integration.id)}
+                        >
+                          <PanelRightOpen size={13} /> Details
+                        </Button>
+                        <Button
+                          disabled={!isClyDemoRuntime}
+                          title={
+                            isClyDemoRuntime
+                              ? undefined
+                              : capabilityUnavailableMessage(
+                                  "integrations.configure",
+                                )
+                          }
+                          onClick={() => {
+                            if (integration.status === "Connected")
+                              notify(
+                                `${integration.name} settings`,
+                                "Permissions and project scope are shown in the inspector.",
                               );
-                        }}
-                      >
-                        {integration.status === "Connected"
-                          ? "Manage"
-                          : "Setup"}
-                      </Button>
+                            else
+                              void projectServices.integrations
+                                .updateStatus(integration.id, "Setup required")
+                                .then(() =>
+                                  notify(
+                                    `${integration.name} setup`,
+                                    "Real connection is unavailable in the UI prototype.",
+                                  ),
+                                );
+                          }}
+                        >
+                          {integration.status === "Connected"
+                            ? "Manage"
+                            : "Setup"}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </Panel>

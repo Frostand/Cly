@@ -918,18 +918,21 @@ export const useClyStore = create<ClyState>((set, get) => ({
   },
   setFixtureMode: (fixtureMode) => {
     if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
+    const closeFixtureSwitcherWhenReady = get().fixtureSwitcherOpen;
     if (fixtureMode === "empty") {
       const data = createProductionRepository(get().data.projects);
       const costs = emptyCostLedger();
-      set({
+      set((state) => ({
         data,
         fixtureMode,
         selectedId: null,
         costLedger: costs,
         claimCosts: {},
         selectedCostEntryId: null,
-        fixtureSwitcherOpen: false,
-      });
+        fixtureSwitcherOpen: closeFixtureSwitcherWhenReady
+          ? false
+          : state.fixtureSwitcherOpen,
+      }));
       return;
     }
     void Promise.all([
@@ -941,7 +944,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
       createDemoWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
       const data = repositoryModule.createFixtureRepository(fixtureMode);
       const costs = costModule.createCostLedgerFixture(fixtureMode, data);
-      set({
+      set((state) => ({
         data,
         fixtureMode,
         selectedId: null,
@@ -961,8 +964,10 @@ export const useClyStore = create<ClyState>((set, get) => ({
         costsLoading: false,
         costsError: null,
         selectedCostEntryId: costs.ledger.entries[0]?.id ?? null,
-        fixtureSwitcherOpen: false,
-      });
+        fixtureSwitcherOpen: closeFixtureSwitcherWhenReady
+          ? false
+          : state.fixtureSwitcherOpen,
+      }));
     });
   },
   toggleSidebar: () =>

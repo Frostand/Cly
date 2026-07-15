@@ -1,7 +1,12 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import * as RadixToggleGroup from "@radix-ui/react-toggle-group";
 import { AlertTriangle, Inbox, LoaderCircle, Search, X } from "lucide-react";
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
+import {
+  type ButtonHTMLAttributes,
+  type HTMLAttributes,
+  type ReactNode,
+  useRef,
+} from "react";
 import type { StatusTone } from "../domain/types";
 import {
   SkeletonRows,
@@ -178,17 +183,20 @@ export function EmptyState({
   description,
   action,
   icon,
+  headingLevel = "h3",
 }: {
   title: string;
   description: string;
   action?: ReactNode;
   icon?: ReactNode;
+  headingLevel?: "h2" | "h3";
 }) {
+  const Heading = headingLevel;
   return (
     <div className="cly-empty" role="status">
       <div>
         <div className="cly-empty-icon">{icon ?? <Inbox size={18} />}</div>
-        <h3>{title}</h3>
+        <Heading>{title}</Heading>
         <p>{description}</p>
         {action}
       </div>
@@ -280,6 +288,7 @@ export function Dialog({
   onClose: () => void;
   wide?: boolean;
 }) {
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   return (
     <RadixDialog.Root
       open={open}
@@ -292,6 +301,10 @@ export function Dialog({
         <RadixDialog.Content
           className={`cly-dialog${wide ? " cly-dialog-wide" : ""}`}
           onOpenAutoFocus={(event) => {
+            returnFocusRef.current =
+              document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : null;
             const content = event.currentTarget as HTMLElement | null;
             const target = content?.querySelector<HTMLElement>(
               "[autofocus], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
@@ -299,6 +312,14 @@ export function Dialog({
             if (target) {
               event.preventDefault();
               target.focus();
+            }
+          }}
+          onCloseAutoFocus={(event) => {
+            const returnTarget = returnFocusRef.current;
+            returnFocusRef.current = null;
+            if (returnTarget?.isConnected) {
+              event.preventDefault();
+              returnTarget.focus();
             }
           }}
         >
@@ -351,29 +372,16 @@ export function toneForStatus(status: string): StatusTone {
   if (value === "blocking" || value === "high") return "danger";
   if (
     [
-      "connected",
-      "complete",
-      "verified",
-      "strong",
-      "paper-ready",
-      "ready",
-      "resolved",
-      "active",
-      "publication-ready",
-      "artifact-ready",
-      "canonical",
-    ].some((item) => value.includes(item))
-  )
-    return "success";
-  if (
-    [
       "failed",
       "broken",
       "blocked",
       "unsupported",
       "invalidated",
       "error",
+      "not connected",
+      "disconnected",
       "not reproducible",
+      "unavailable",
       "at risk",
     ].some((item) => value.includes(item))
   )
@@ -387,12 +395,31 @@ export function toneForStatus(status: string): StatusTone {
       "review",
       "required",
       "unresolved",
+      "incomplete",
+      "inactive",
       "manual",
       "running",
       "assigned",
     ].some((item) => value.includes(item))
   )
     return "warning";
+  if (
+    [
+      "connected",
+      "complete",
+      "verified",
+      "strong",
+      "paper-ready",
+      "ready",
+      "resolved",
+      "active",
+      "reproducible",
+      "publication-ready",
+      "artifact-ready",
+      "canonical",
+    ].some((item) => value.includes(item))
+  )
+    return "success";
   if (
     ["medium", "planned", "queued", "reading", "suggested", "waiting"].some(
       (item) => value.includes(item),
