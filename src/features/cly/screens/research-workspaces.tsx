@@ -2779,7 +2779,26 @@ function ClaimDetail({
           <div className="cly-inspector-label">Claim actions</div>
           <div className="cly-stack">
             <Button
-              onClick={(event) => openEvidence("supports", event.currentTarget)}
+              disabled={!isClyDemoRuntime && data.experiments.length === 0}
+              title={
+                !isClyDemoRuntime && data.experiments.length === 0
+                  ? "Create an experiment before linking evidence."
+                  : undefined
+              }
+              onClick={(event) => {
+                if (isClyDemoRuntime) {
+                  openEvidence("supports", event.currentTarget);
+                  return;
+                }
+                void projectServices.claims
+                  .linkExperiment(claim.id, data.experiments[0].id)
+                  .then(() =>
+                    notify(
+                      "Experiment linked",
+                      "The experiment now appears in this claim's evidence chain.",
+                    ),
+                  );
+              }}
             >
               <Link2 size={13} /> Link evidence
             </Button>
