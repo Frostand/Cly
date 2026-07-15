@@ -36,6 +36,15 @@ await browserWindow.evaluate((nativeWindow) => {
 await window.waitForLoadState("domcontentloaded");
 await window.getByRole("heading", { level: 1 }).first().waitFor();
 
+const reviewTheme = process.env.CLY_REVIEW_THEME;
+if (["light", "dark", "system"].includes(reviewTheme)) {
+  await window.evaluate((theme) => {
+    window.localStorage.setItem("cly-theme", theme);
+  }, reviewTheme);
+  await window.reload();
+  await window.getByRole("heading", { level: 1 }).first().waitFor();
+}
+
 const problems = [];
 window.on("console", (message) => {
   if (["error", "warning"].includes(message.type())) {
@@ -87,9 +96,9 @@ const viewportMatrix = [
   [1440, 900],
   [1728, 1117],
 ];
-for (const [id, fileName, heading] of routes) {
+for (const [id, fileName] of routes) {
   await window.getByTestId(`nav-${id}`).click();
-  await window.getByRole("heading", { name: heading, level: 1 }).waitFor();
+  await window.getByRole("heading", { level: 1 }).first().waitFor();
   for (const [width, height] of viewportMatrix) {
     await resize(width, height);
     await capture(`${fileName}-${width}x${height}`);
@@ -109,6 +118,15 @@ for (const [id, fileName, heading] of routes) {
   );
 }
 await resize(1440, 900);
+
+if (process.env.CLY_REVIEW_ROUTES_ONLY === "1") {
+  writeFileSync(
+    path.join(output, "review-data.json"),
+    `${JSON.stringify({ iteration, routeMetrics, problems }, null, 2)}\n`,
+  );
+  await app.close();
+  process.exit(0);
+}
 
 await window.getByTestId("nav-overview").click();
 await window.getByRole("button", { name: "Switch project" }).click();
