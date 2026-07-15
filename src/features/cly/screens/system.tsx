@@ -23,6 +23,7 @@ import { DisclosureRow } from "../components/design-system";
 import {
   Badge,
   Button,
+  EmptyState,
   Metric,
   PageHeader,
   Panel,
@@ -32,7 +33,9 @@ import {
   toneForStatus,
 } from "../components/primitives";
 import type { AgentNode, AgentPreset } from "../domain/types";
-import { mockServices } from "../services/mock-services";
+import { capabilityUnavailableMessage } from "../services/capabilities";
+import { projectServices } from "../services/project-services";
+import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 
 const providerIcon = (name: string) =>
@@ -79,79 +82,99 @@ export function IntegrationsScreen() {
       />
       <Section
         title="Integration catalog"
-        subtitle="Fixture data · no connections are active"
+        subtitle={capabilityUnavailableMessage("integrations.configure")}
       >
-        <div className="cly-integration-catalog">
-          {visible.map((integration) => {
-            const Icon = providerIcon(integration.name);
-            return (
-              <Panel
-                key={integration.id}
-                onClick={() => setSelected(integration.id)}
-                style={{ cursor: "pointer" }}
-              >
-                <div className="cly-panel-body">
-                  <div className="cly-row-between">
-                    <div className="cly-row">
-                      <span className="cly-project-mark">
-                        <Icon size={14} />
-                      </span>
-                      <div>
-                        <strong>{integration.name}</strong>
-                        <div className="cly-faint cly-small">
-                          {integration.category}
+        {visible.length === 0 ? (
+          <EmptyState
+            title="No integration providers are configured"
+            description={capabilityUnavailableMessage("integrations.configure")}
+          />
+        ) : (
+          <div className="cly-integration-catalog">
+            {visible.map((integration) => {
+              const Icon = providerIcon(integration.name);
+              return (
+                <Panel
+                  key={integration.id}
+                  onClick={() => setSelected(integration.id)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <div className="cly-panel-body">
+                    <div className="cly-row-between">
+                      <div className="cly-row">
+                        <span className="cly-project-mark">
+                          <Icon size={14} />
+                        </span>
+                        <div>
+                          <strong>{integration.name}</strong>
+                          <div className="cly-faint cly-small">
+                            {integration.category}
+                          </div>
                         </div>
                       </div>
+                      <Badge tone={toneForStatus(integration.status)}>
+                        {integration.status}
+                      </Badge>
                     </div>
-                    <Badge tone={toneForStatus(integration.status)}>
-                      {integration.status}
-                    </Badge>
-                  </div>
-                  <p
-                    className="cly-muted cly-small"
-                    style={{ minHeight: 32, lineHeight: 1.45 }}
-                  >
-                    {integration.purpose}
-                  </p>
-                  <div className="cly-row" style={{ flexWrap: "wrap" }}>
-                    {integration.capabilities.map((capability) => (
-                      <span className="cly-inline-capability" key={capability}>
-                        {capability}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="cly-divider" style={{ margin: "11px 0" }} />
-                  <div className="cly-row-between">
-                    <span className="cly-faint" style={{ fontSize: 9 }}>
-                      {integration.privacy}
-                    </span>
-                    <Button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (integration.status === "Connected")
-                          notify(
-                            `${integration.name} settings`,
-                            "Permissions and project scope are shown in the inspector.",
-                          );
-                        else
-                          void mockServices.integrations
-                            .updateStatus(integration.id, "Setup required")
-                            .then(() =>
-                              notify(
-                                `${integration.name} setup`,
-                                "Real connection is unavailable in the UI prototype.",
-                              ),
-                            );
-                      }}
+                    <p
+                      className="cly-muted cly-small"
+                      style={{ minHeight: 32, lineHeight: 1.45 }}
                     >
-                      {integration.status === "Connected" ? "Manage" : "Setup"}
-                    </Button>
+                      {integration.purpose}
+                    </p>
+                    <div className="cly-row" style={{ flexWrap: "wrap" }}>
+                      {integration.capabilities.map((capability) => (
+                        <span
+                          className="cly-inline-capability"
+                          key={capability}
+                        >
+                          {capability}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="cly-divider" style={{ margin: "11px 0" }} />
+                    <div className="cly-row-between">
+                      <span className="cly-faint" style={{ fontSize: 9 }}>
+                        {integration.privacy}
+                      </span>
+                      <Button
+                        disabled={!isClyDemoRuntime}
+                        title={
+                          isClyDemoRuntime
+                            ? undefined
+                            : capabilityUnavailableMessage(
+                                "integrations.configure",
+                              )
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (integration.status === "Connected")
+                            notify(
+                              `${integration.name} settings`,
+                              "Permissions and project scope are shown in the inspector.",
+                            );
+                          else
+                            void projectServices.integrations
+                              .updateStatus(integration.id, "Setup required")
+                              .then(() =>
+                                notify(
+                                  `${integration.name} setup`,
+                                  "Real connection is unavailable in the UI prototype.",
+                                ),
+                              );
+                        }}
+                      >
+                        {integration.status === "Connected"
+                          ? "Manage"
+                          : "Setup"}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </Panel>
-            );
-          })}
-        </div>
+                </Panel>
+              );
+            })}
+          </div>
+        )}
       </Section>
       <DisclosureRow
         title="Connection modes"
@@ -216,6 +239,10 @@ export function IntegrationsScreen() {
                 <div className="cly-row-between" key={name}>
                   <span>{name}</span>
                   <Button
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage(
+                      "integrations.configure",
+                    )}
                     onClick={() =>
                       notify(
                         "Prototype credential",
@@ -278,6 +305,8 @@ export function IntegrationsScreen() {
                 <button
                   className="cly-input"
                   type="button"
+                  disabled={!isClyDemoRuntime}
+                  title={capabilityUnavailableMessage("integrations.configure")}
                   onClick={() =>
                     notify("Routing preference", `${label}: ${value}`)
                   }
@@ -337,8 +366,12 @@ export function ModelsAgentsScreen() {
       usage: budget as AgentPreset["usage"],
       nodes,
     };
-    await mockServices.agents.savePreset(preset);
+    await projectServices.agents.savePreset(preset);
     setSelectedPresetId(preset.id);
+    notify(
+      "Agent preset saved",
+      `${preset.name} is available in this demo session.`,
+    );
   };
 
   return (
@@ -357,7 +390,16 @@ export function ModelsAgentsScreen() {
             >
               <RotateCcw size={13} /> Reset
             </Button>
-            <Button variant="primary" onClick={() => void save()}>
+            <Button
+              variant="primary"
+              disabled={!isClyDemoRuntime}
+              title={
+                isClyDemoRuntime
+                  ? undefined
+                  : capabilityUnavailableMessage("agents.configure")
+              }
+              onClick={() => void save()}
+            >
               <Save size={13} /> Save preset
             </Button>
           </>
@@ -609,8 +651,10 @@ export function ModelsAgentsScreen() {
             </div>
             <Button
               variant="primary"
+              disabled
+              title={capabilityUnavailableMessage("agents.execute")}
               onClick={() =>
-                void mockServices.agents.startPreview(selectedPresetId)
+                void projectServices.agents.startPreview(selectedPresetId)
               }
             >
               <Play size={13} /> Preview execution
@@ -643,7 +687,9 @@ export function SettingsScreen() {
             "Privacy",
             "Research defaults",
             "Keyboard shortcuts",
-            "Fixture mode",
+            ...(__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime
+              ? ["Fixture mode"]
+              : []),
             "Diagnostics",
           ].map((item) => (
             <button
@@ -681,13 +727,10 @@ export function SettingsScreen() {
                 </span>
                 <Toggle
                   pressed
-                  onChange={() =>
-                    notify(
-                      "Density preference",
-                      "Comfortable table density will be available in Phase 2.",
-                    )
-                  }
+                  onChange={() => {}}
                   label="Dense tables"
+                  disabled
+                  reason="Table density preferences are not yet persisted."
                 />
               </div>
             </Panel>
@@ -697,7 +740,7 @@ export function SettingsScreen() {
               rows={[
                 "Open inspector on selection",
                 "Restore last workspace",
-                "Confirm destructive mock actions",
+                "Confirm destructive actions",
                 "Show activity completion notifications",
               ]}
             />
@@ -707,8 +750,9 @@ export function SettingsScreen() {
               <div className="cly-callout">
                 <strong>Local-first by default</strong>
                 <p className="cly-muted cly-small">
-                  Fixture research data stays in renderer memory. No model,
-                  OAuth, sync, or external source requests are made.
+                  Research records use the project-scoped local SQLite service.
+                  External and sensitive effects require an implemented approval
+                  flow before their controls become available.
                 </p>
               </div>
               {[
@@ -721,13 +765,10 @@ export function SettingsScreen() {
                   <span>{item}</span>
                   <Toggle
                     pressed
-                    onChange={() =>
-                      notify(
-                        "Privacy control",
-                        `${item} remains enabled in prototype mode.`,
-                      )
-                    }
+                    onChange={() => {}}
                     label={item}
+                    disabled
+                    reason="This privacy preference is not yet persisted or enforced."
                   />
                 </div>
               ))}
@@ -747,6 +788,8 @@ export function SettingsScreen() {
                     <button
                       type="button"
                       className="cly-input"
+                      disabled
+                      title="Research defaults are not yet persisted."
                       style={{ textAlign: "left" }}
                       onClick={() =>
                         notify("Research default", `${label}: ${value}`)
@@ -785,7 +828,9 @@ export function SettingsScreen() {
               ))}
             </Panel>
           ) : null}
-          {section === "Fixture mode" ? (
+          {__CLY_INCLUDE_DEMOS__ &&
+          isClyDemoRuntime &&
+          section === "Fixture mode" ? (
             <Panel className="cly-panel-body">
               <div className="cly-callout" data-tone="warning">
                 Development-only state selector. Production builds will not
@@ -838,11 +883,15 @@ export function SettingsScreen() {
                 <dt>Desktop</dt>
                 <dd>Electron 41</dd>
                 <dt>Storage</dt>
-                <dd>Fixture memory · Dream SQLite retained</dd>
+                <dd>Project-scoped SQLite research repository</dd>
                 <dt>Network</dt>
-                <dd>No UI prototype requests</dd>
-                <dt>Fixture</dt>
-                <dd>{fixtureMode}</dd>
+                <dd>Local authenticated research API</dd>
+                {isClyDemoRuntime ? (
+                  <>
+                    <dt>Fixture</dt>
+                    <dd>{fixtureMode}</dd>
+                  </>
+                ) : null}
                 <dt>Build</dt>
                 <dd>0.5.0</dd>
               </div>
@@ -851,7 +900,7 @@ export function SettingsScreen() {
                 onClick={() =>
                   notify(
                     "Diagnostics copied",
-                    "Renderer, Electron, fixture, and service-boundary details copied.",
+                    "Renderer, Electron, storage, and service-boundary details copied.",
                   )
                 }
               >
@@ -866,22 +915,17 @@ export function SettingsScreen() {
 }
 
 function SettingsRows({ rows }: { rows: string[] }) {
-  const notify = useClyStore((s) => s.notify);
-  const [values, setValues] = useState(() =>
-    Object.fromEntries(rows.map((row) => [row, true])),
-  );
   return (
     <Panel className="cly-panel-body cly-stack">
       {rows.map((row) => (
         <div className="cly-row-between" key={row}>
           <span>{row}</span>
           <Toggle
-            pressed={values[row]}
-            onChange={(value) => {
-              setValues((current) => ({ ...current, [row]: value }));
-              notify("Setting updated", `${row}: ${value ? "on" : "off"}`);
-            }}
+            pressed
+            onChange={() => {}}
             label={row}
+            disabled
+            reason="This behavior preference is not yet persisted."
           />
         </div>
       ))}

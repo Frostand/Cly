@@ -41,7 +41,7 @@ import type {
   ExperimentRun,
   ExperimentType,
 } from "../domain/types";
-import { mockServices } from "../services/mock-services";
+import { projectServices } from "../services/project-services";
 import { useClyStore } from "../store/cly-store";
 import { PreregistrationWorkspace } from "./preregistration-workspace";
 
@@ -184,7 +184,7 @@ export function ExperimentsScreen() {
   const create = async () => {
     if (!name.trim()) return;
     try {
-      const experiment = await mockServices.experiments.create({
+      const experiment = await projectServices.experiments.create({
         name: name.trim(),
         goal: goal.trim() || "Define research goal",
         hypothesis: hypothesis.trim() || undefined,
@@ -495,7 +495,7 @@ export function ExperimentsScreen() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="New experiment"
-        description="Create a versioned experiment definition. Runs and outputs can attach reproducible lineage to it."
+        description="Create a versioned experiment definition. Runs and outputs can attach reproducible lineage to it; remote execution remains unavailable in this version."
         footer={
           <>
             <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -663,7 +663,7 @@ export function GraphScreen() {
 
   const createLink = async () => {
     if (nodes.length < 2) return;
-    const edge = await mockServices.graph.createRelationship({
+    const edge = await projectServices.graph.createRelationship({
       source:
         selectedId && nodes.some((node) => node.id === selectedId)
           ? selectedId
@@ -1181,7 +1181,7 @@ export function GraphScreen() {
                         ) : (
                           <Button
                             onClick={() =>
-                              void mockServices.graph.approveRelationship(
+                              void projectServices.graph.approveRelationship(
                                 edge.id,
                               )
                             }

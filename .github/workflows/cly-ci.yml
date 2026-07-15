@@ -24,6 +24,8 @@ jobs:
             command: pnpm lint
           - name: typecheck
             command: pnpm typecheck
+          - name: capability-inventory
+            command: pnpm capabilities:check
           - name: unit-tests
             command: pnpm test
           - name: web-build

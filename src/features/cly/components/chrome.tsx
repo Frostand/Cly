@@ -21,7 +21,9 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { clyFadeSlide, clyMotion } from "../design-system/motion";
 import type { FixtureMode, ScreenId } from "../domain/types";
-import { mockServices } from "../services/mock-services";
+import { capabilityUnavailableMessage } from "../services/capabilities";
+import { projectServices } from "../services/project-services";
+import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import {
   ProjectSwitcherButton,
@@ -103,7 +105,7 @@ export function Titlebar() {
       }
       const screen = useClyStore.getState().activeScreen;
       if (screen === "claims") {
-        const claim = await mockServices.claims.create(
+        const claim = await projectServices.claims.create(
           "New research claim — edit evidence and scope",
         );
         useClyStore.getState().setSelected(claim.id);
@@ -114,7 +116,7 @@ export function Titlebar() {
         return;
       }
       if (screen === "experiments") {
-        const experiment = await mockServices.experiments.create({
+        const experiment = await projectServices.experiments.create({
           name: "Untitled experiment",
           goal: "Define the research goal",
           type: "Custom",
@@ -127,7 +129,7 @@ export function Titlebar() {
         return;
       }
       if (screen === "sources") {
-        const source = await mockServices.sources.create({
+        const source = await projectServices.sources.create({
           title: "Untitled source",
           type: "Paper",
         });
@@ -208,7 +210,7 @@ export function Titlebar() {
             onClick={() =>
               notify(
                 "Local-first status",
-                "Research metadata and fixtures remain on this device. No external requests are made in UI prototype mode.",
+                "Research records are stored by the project-scoped local service. External effects remain unavailable until their approval flows are implemented.",
               )
             }
           >
@@ -230,20 +232,27 @@ export function Titlebar() {
             <Bell size={14} />
           </Button>
         </ClyTooltip>
-        <Button
-          variant="ghost"
-          iconOnly
-          title="Fixture mode"
-          aria-label="Open fixture mode selector"
-          onClick={() => setFixtureOpen(true)}
-          data-testid="fixture-selector"
-        >
-          <CircleDot size={14} />
-        </Button>
+        {__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime ? (
+          <Button
+            variant="ghost"
+            iconOnly
+            title="Fixture mode"
+            aria-label="Open fixture mode selector"
+            onClick={() => setFixtureOpen(true)}
+            data-testid="fixture-selector"
+          >
+            <CircleDot size={14} />
+          </Button>
+        ) : null}
         <Button
           variant="primary"
-          title="Create new object"
           aria-label="Create new object"
+          disabled={activeProduct === "dev" && !isClyDemoRuntime}
+          title={
+            activeProduct === "dev" && !isClyDemoRuntime
+              ? capabilityUnavailableMessage("agents.execute")
+              : "Create new object"
+          }
           onClick={createObject}
         >
           <Plus size={14} /> {activeProduct === "dev" ? "New session" : "New"}
@@ -288,7 +297,7 @@ function FixtureSwitcherPopover() {
   const setMode = useClyStore((s) => s.setFixtureMode);
   const setOpen = useClyStore((s) => s.setFixtureSwitcherOpen);
   const notify = useClyStore((s) => s.notify);
-  if (!open) return null;
+  if (!__CLY_INCLUDE_DEMOS__ || !isClyDemoRuntime || !open) return null;
   return (
     <>
       <button
@@ -341,6 +350,8 @@ interface CommandAction {
   group: "Navigate" | "Create" | "View" | "Research";
   icon: typeof CommandIcon;
   shortcut?: string;
+  disabled?: boolean;
+  reason?: string;
   run: () => void | Promise<void>;
 }
 
@@ -403,6 +414,8 @@ export function CommandPalette() {
         group: "Create",
         icon: FilePlus2,
         shortcut: "⌘N",
+        disabled: !isClyDemoRuntime,
+        reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           useClyStore.getState().setScreen("agents");
           useClyStore.getState().setNewAgentSessionOpen(true);
@@ -413,6 +426,8 @@ export function CommandPalette() {
         label: "Configure Agent Team",
         group: "Research",
         icon: Sparkles,
+        disabled: !isClyDemoRuntime,
+        reason: capabilityUnavailableMessage("agents.configure"),
         run: () => {
           const state = useClyStore.getState();
           const session = state.data.agentSessions.find(
@@ -439,6 +454,8 @@ export function CommandPalette() {
         label,
         group: "View" as const,
         icon: CommandIcon,
+        disabled: !isClyDemoRuntime,
+        reason: capabilityUnavailableMessage("agents.workbench"),
         run: () => {
           const state = useClyStore.getState();
           if (state.selectedAgentSessionId) {
@@ -468,6 +485,8 @@ export function CommandPalette() {
         label: "Pause Current Agent Session",
         group: "Research",
         icon: CommandIcon,
+        disabled: !isClyDemoRuntime,
+        reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           const state = useClyStore.getState();
           if (state.selectedAgentSessionId)
@@ -479,6 +498,8 @@ export function CommandPalette() {
         label: "Stop Current Agent Session",
         group: "Research",
         icon: CommandIcon,
+        disabled: !isClyDemoRuntime,
+        reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           const state = useClyStore.getState();
           if (state.selectedAgentSessionId)
@@ -492,7 +513,7 @@ export function CommandPalette() {
         icon: FilePlus2,
         shortcut: "⌘N",
         run: async () => {
-          const item = await mockServices.claims.create(
+          const item = await projectServices.claims.create(
             "New research claim — define scope and evidence",
           );
           setScreen("claims");
@@ -506,7 +527,7 @@ export function CommandPalette() {
         group: "Create",
         icon: FilePlus2,
         run: async () => {
-          const item = await mockServices.experiments.create({
+          const item = await projectServices.experiments.create({
             name: "Untitled experiment",
             goal: "Define the research goal",
             type: "Custom",
@@ -522,12 +543,12 @@ export function CommandPalette() {
         group: "Create",
         icon: FilePlus2,
         run: async () => {
-          await mockServices.sources.create({
+          await projectServices.sources.create({
             title: "Imported source",
             type: "Paper",
           });
           setScreen("sources");
-          notify("Mock source imported");
+          notify("Source imported");
         },
       },
       {
@@ -535,8 +556,10 @@ export function CommandPalette() {
         label: "New Decision",
         group: "Create",
         icon: FilePlus2,
+        disabled: !isClyDemoRuntime,
+        reason: capabilityUnavailableMessage("decisions.create"),
         run: async () => {
-          await mockServices.decisions.create({
+          await projectServices.decisions.create({
             title: "Untitled decision",
             decision: "Describe the selected direction",
             reason: "Record the evidence and tradeoff",
@@ -550,8 +573,10 @@ export function CommandPalette() {
         label: "Run Reproducibility Audit",
         group: "Research",
         icon: Sparkles,
+        disabled: !isClyDemoRuntime,
+        reason: capabilityUnavailableMessage("reproducibility.audit"),
         run: async () => {
-          await mockServices.reproducibility.runAudit();
+          await projectServices.reproducibility.runAudit();
           setScreen("reproducibility");
         },
       },
@@ -560,6 +585,8 @@ export function CommandPalette() {
         label: "Run Claim Audit",
         group: "Research",
         icon: Sparkles,
+        disabled: !isClyDemoRuntime,
+        reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           setScreen("agents");
           notify(
@@ -573,6 +600,8 @@ export function CommandPalette() {
         label: "Create NotebookLM Bundle",
         group: "Research",
         icon: FilePlus2,
+        disabled: !isClyDemoRuntime,
+        reason: capabilityUnavailableMessage("exports.notebook-bundle"),
         run: () => {
           setScreen("literature");
           notify(
@@ -627,7 +656,7 @@ export function CommandPalette() {
   }, [open]);
 
   const run = async (action?: CommandAction) => {
-    if (!action) return;
+    if (!action || action.disabled) return;
     setOpen(false);
     try {
       await action.run();
@@ -683,10 +712,15 @@ export function CommandPalette() {
                     value={action.label}
                     keywords={[action.group, action.id]}
                     key={action.id}
+                    disabled={action.disabled}
+                    title={action.reason}
                     onSelect={() => void run(action)}
                   >
                     <Icon size={14} />
                     <span>{action.label}</span>
+                    {action.disabled ? (
+                      <span className="cly-faint">Unavailable</span>
+                    ) : null}
                     {action.shortcut ? (
                       <kbd className="cly-kbd">{action.shortcut}</kbd>
                     ) : null}
@@ -750,7 +784,7 @@ export function ActivityDrawer() {
                   className="cly-empty"
                   style={{ minHeight: 110, border: 0 }}
                 >
-                  <p>No recent activity in this fixture.</p>
+                  <p>No recent activity.</p>
                 </div>
               )}
             </div>

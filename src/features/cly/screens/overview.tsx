@@ -425,7 +425,7 @@ export function OverviewScreen() {
                         .getState()
                         .notify(
                           "Report preview",
-                          `${report.title} is available as a fixture-backed ${report.type.toLowerCase()}.`,
+                          `${report.title} is available as a ${report.type.toLowerCase()} preview.`,
                         )
                     }
                   >

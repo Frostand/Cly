@@ -59,10 +59,11 @@ const rendererProbeIntervalMs = 300;
 const APP_NAME = "Cly";
 const APP_ID = "ai.cly.cly";
 const APP_USER_DATA_DIR_NAME = "cly";
-const APP_USER_DATA_PATH = path.join(
-  app.getPath("appData"),
-  APP_USER_DATA_DIR_NAME,
-);
+const isolatedE2eUserDataPath =
+  process.env.CLY_E2E === "1" ? process.env.CLY_E2E_USER_DATA_PATH?.trim() : "";
+const APP_USER_DATA_PATH =
+  isolatedE2eUserDataPath ||
+  path.join(app.getPath("appData"), APP_USER_DATA_DIR_NAME);
 const APP_SESSION_DATA_PATH = path.join(
   app.getPath("temp"),
   APP_USER_DATA_DIR_NAME,
