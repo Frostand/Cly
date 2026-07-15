@@ -4,6 +4,7 @@ import {
   type LiteratureSearchResult,
   rankLiteratureWithRrf,
 } from "../domain/literature-search";
+import { generateReproducibilityAudit } from "../domain/reproducibility-audit";
 import type {
   Claim,
   Experiment,
@@ -421,6 +422,62 @@ export const mockServices: ClyServices = {
         approved: relationship.reviewState === "approved",
       });
     },
+    async linkEvidence(claimId, sourceId, type) {
+      const projectId = activeProjectId();
+      const state = stateForProject(projectId);
+      if (!state) return;
+      const claim = state.data.claims.find((item) => item.id === claimId);
+      const source = state.data.sources.find((item) => item.id === sourceId);
+      if (!claim || !source) throw new Error("Claim or source not found.");
+      const relationship = isExplicitDemoRuntime
+        ? {
+            id: id("edge"),
+            confidence: null,
+            reviewState: "unreviewed" as const,
+          }
+        : await apiClient.createRelationship(projectId, {
+            fromObjectId: sourceId,
+            toObjectId: claimId,
+            type,
+          });
+      const currentState = stateForProject(projectId);
+      if (!currentState) return;
+      const currentClaim = currentState.data.claims.find(
+        (item) => item.id === claimId,
+      );
+      const currentSource = currentState.data.sources.find(
+        (item) => item.id === sourceId,
+      );
+      if (!currentClaim || !currentSource) return;
+      currentState.updateSource(sourceId, {
+        linkedClaimIds: Array.from(
+          new Set([...currentSource.linkedClaimIds, claimId]),
+        ),
+      });
+      currentState.updateClaim(claimId, {
+        supportingSourceIds:
+          type === "supports"
+            ? Array.from(
+                new Set([...currentClaim.supportingSourceIds, sourceId]),
+              )
+            : currentClaim.supportingSourceIds,
+        contradictingSourceIds:
+          type === "contradicts"
+            ? Array.from(
+                new Set([...currentClaim.contradictingSourceIds, sourceId]),
+              )
+            : currentClaim.contradictingSourceIds,
+        updatedAt: isoNow(),
+      });
+      currentState.addGraphEdge({
+        id: relationship.id,
+        source: sourceId,
+        target: claimId,
+        relation: type,
+        confidence: relationship.confidence,
+        approved: relationship.reviewState === "approved",
+      });
+    },
   },
   graph: {
     async createRelationship(input) {
@@ -458,12 +515,14 @@ export const mockServices: ClyServices = {
   },
   reproducibility: {
     async runAudit() {
-      useClyStore
-        .getState()
-        .notify(
-          "Simulated audit started",
-          "16 integrity categories are being checked against the active fixture.",
-        );
+      const state = useClyStore.getState();
+      const generated = generateReproducibilityAudit(state.data);
+      state.replaceReproducibilityAudit(generated.audit, generated.findings);
+      state.notify(
+        "Reproducibility audit complete",
+        `${generated.findings.filter((finding) => finding.severity !== "Passed").length} findings across code, data, environment, experiments, outputs, and claims.`,
+      );
+      return generated.audit;
     },
     async resolveFinding(findingId) {
       useClyStore.getState().updateFinding(findingId, { status: "Resolved" });
