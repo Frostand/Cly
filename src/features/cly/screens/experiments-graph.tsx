@@ -100,6 +100,7 @@ export function ExperimentsScreen() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
+  const [hypothesis, setHypothesis] = useState("");
   const [type, setType] = useState<ExperimentType>("Simulation");
   const experiments = data.experiments.filter(
     (item) =>
@@ -186,11 +187,13 @@ export function ExperimentsScreen() {
       const experiment = await mockServices.experiments.create({
         name: name.trim(),
         goal: goal.trim() || "Define research goal",
+        hypothesis: hypothesis.trim() || undefined,
         type,
       });
       setCreateOpen(false);
       setName("");
       setGoal("");
+      setHypothesis("");
       setSelected(experiment.id);
       notify(
         "Experiment created",
@@ -473,7 +476,9 @@ export function ExperimentsScreen() {
                     </Badge>
                   </div>
                   <p className="cly-muted cly-small cly-clamp-2">
-                    {artifact.preview}
+                    {artifact.regeneration === "Stale"
+                      ? artifact.staleReasons?.[0] || artifact.preview
+                      : artifact.preview}
                   </p>
                 </div>
               </Panel>
@@ -490,7 +495,7 @@ export function ExperimentsScreen() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="New experiment"
-        description="Create a fixture-backed research experiment. Execution remains disabled in this phase."
+        description="Create a versioned experiment definition. Runs and outputs can attach reproducible lineage to it."
         footer={
           <>
             <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -523,6 +528,16 @@ export function ExperimentsScreen() {
               value={goal}
               onChange={(event) => setGoal(event.target.value)}
               placeholder="What question will this experiment answer?"
+            />
+          </div>
+          <div className="cly-field">
+            <label htmlFor="experiment-hypothesis">Hypothesis</label>
+            <textarea
+              id="experiment-hypothesis"
+              className="cly-textarea"
+              value={hypothesis}
+              onChange={(event) => setHypothesis(event.target.value)}
+              placeholder="What outcome do you expect, and why?"
             />
           </div>
           <div className="cly-field">

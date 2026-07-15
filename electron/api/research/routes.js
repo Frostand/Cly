@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
 import { createCostLedgerRepository } from "./cost-ledger-repository.js";
 import { registerCostLedgerRoutes } from "./cost-ledger-routes.js";
+import { registerExperimentProvenanceRoutes } from "./experiment-provenance-routes.js";
 import { createLineageReconstructor } from "./lineage-reconstructor.js";
 import { registerObligationRoutes } from "./obligation-routes.js";
 import { createObligationService } from "./obligation-service.js";
@@ -171,6 +172,7 @@ export function registerResearchRoutes(
   registerCostLedgerRoutes(app, {
     getRepository: getCostLedgerRepository,
   });
+  registerExperimentProvenanceRoutes(app, { getRepository });
   registerPreregistrationRoutes(app, { getRepository });
   registerObligationRoutes(app, { getService: getObligationService });
 

@@ -1,4 +1,17 @@
 export type {
+  ArtifactLineage,
+  ArtifactStaleReason,
+  CodeVersionRef,
+  DatasetVersionRef,
+  ExperimentDefinitionContent,
+  ExperimentDefinitionVersion,
+  ExperimentLineage,
+  ExperimentRun,
+  RunArtifact,
+  RunMetric,
+  RunStatus,
+} from "./experiment-provenance";
+export type {
   Attachment,
   AttachmentRecord,
   AttachRequest,

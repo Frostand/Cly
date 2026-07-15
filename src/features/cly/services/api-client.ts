@@ -1,3 +1,8 @@
+import type {
+  ExperimentDefinitionContent,
+  ExperimentDefinitionVersion,
+  ExperimentLineage,
+} from "../../research/contracts/experiment-provenance";
 import type { LiteraturePaper } from "../domain/literature-search";
 import type {
   DatasetObligation,
@@ -192,6 +197,32 @@ export const apiClient = {
 
   fetchResearchData(projectId: string) {
     return request<ResearchData>(projectPath(projectId));
+  },
+
+  fetchExperimentLineages(projectId: string) {
+    return request<ExperimentLineage[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/experiments/lineage`,
+    );
+  },
+
+  createExperiment(
+    projectId: string,
+    input: {
+      title: string;
+      description?: string;
+      definition: ExperimentDefinitionContent;
+    },
+  ) {
+    return request<{
+      id: string;
+      projectId: string;
+      title: string;
+      description: string;
+      definition: ExperimentDefinitionVersion;
+    }>(`/api/projects/${encodeURIComponent(projectId)}/experiments`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   },
 
   fetchPreregistrations(projectId: string) {

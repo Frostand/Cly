@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ExperimentLineage } from "../../research/contracts/experiment-provenance";
 import {
   createNewAgentSession,
   workbenchFixtureTabs,
@@ -470,11 +471,20 @@ const entityTypeFromResearchObject: Record<ResearchObject["type"], EntityType> =
 const mapResearchData = (
   fixtureData: ClyRepositoryData,
   researchData: ResearchData,
+  experimentLineages: ExperimentLineage[] = [],
 ): ClyRepositoryData => {
   const objectsById = new Map(
     researchData.objects.map((object) => [object.id, object]),
   );
   const relationships = researchData.relationships;
+  const lineageByExperimentId = new Map(
+    experimentLineages.map((lineage) => [lineage.experiment.id, lineage]),
+  );
+  const detailedRunsById = new Map(
+    experimentLineages
+      .flatMap((lineage) => lineage.runs)
+      .map((run) => [run.id, run]),
+  );
 
   const sources = researchData.objects
     .filter((object) => object.type === "source")
@@ -546,58 +556,175 @@ const mapResearchData = (
         planned: "Queued",
         running: "Running",
       }[object.payload.status] as "Complete" | "Failed" | "Queued" | "Running";
+      const detailed = detailedRunsById.get(object.id);
+      const durationMs = detailed?.finishedAt
+        ? Date.parse(detailed.finishedAt) - Date.parse(detailed.startedAt)
+        : null;
+      const config = detailed
+        ? Object.fromEntries(
+            Object.entries(detailed.configuration).filter(
+              (entry): entry is [string, string | number | boolean] =>
+                ["string", "number", "boolean"].includes(typeof entry[1]),
+            ),
+          )
+        : {};
       return {
         id: object.id,
         experimentId: experimentId ?? "",
         name: object.title,
-        status,
-        startedAt: object.createdAt,
-        duration: "Not recorded",
-        codeVersion: object.payload.commitSha ?? "Not recorded",
-        environment: "Not captured",
-        metrics: {},
-        config: {},
-        reproducibility: "Partial" as const,
-        canonical: false,
+        status:
+          detailed?.status === "cancelled" ? ("Cancelled" as const) : status,
+        startedAt: detailed?.startedAt ?? object.createdAt,
+        duration:
+          durationMs === null
+            ? "In progress"
+            : `${Math.max(0, Math.round(durationMs / 1000))}s`,
+        codeVersion:
+          detailed?.commitSha ?? object.payload.commitSha ?? "Not recorded",
+        environment: detailed ? "Inputs captured" : "Not captured",
+        metrics: detailed
+          ? Object.fromEntries(
+              detailed.metrics.map((metric) => [metric.name, metric.value]),
+            )
+          : {},
+        config,
+        reproducibility:
+          detailed?.status === "failed" || detailed?.status === "cancelled"
+            ? ("Blocked" as const)
+            : detailed?.status === "completed" &&
+                detailed.artifacts.length > 0 &&
+                detailed.artifacts.every(
+                  (artifact) => artifact.state === "current",
+                )
+              ? ("Verified" as const)
+              : ("Partial" as const),
+        canonical:
+          detailed?.definitionVersionId ===
+          lineageByExperimentId.get(experimentId ?? "")?.definitions.at(-1)?.id,
       };
     });
   const experiments = researchData.objects
     .filter((object) => object.type === "experiment")
-    .map((object) => ({
-      id: object.id,
-      name: object.title,
-      goal: object.description || "Define the research goal.",
-      hypothesis:
-        object.payload.kind === "experiment"
-          ? (object.payload.hypothesis ?? "To be specified")
-          : "To be specified",
-      type: "Custom" as const,
-      status: "Planned" as const,
-      command: "Not configured",
-      environment: "Not captured",
-      claimIds: relationships
-        .filter(
-          (relationship) =>
-            relationship.fromObjectId === object.id &&
-            relationship.type === "tests" &&
-            objectsById.get(relationship.toObjectId)?.type === "claim",
-        )
-        .map((relationship) => relationship.toObjectId),
-      dataset: "Not linked",
-      limitations: [],
-      nextStep: "Complete configuration",
-      runIds: runs
-        .filter((run) => run.experimentId === object.id)
-        .map((run) => run.id),
-      updatedAt: object.updatedAt,
-    }));
+    .map((object) => {
+      const lineage = lineageByExperimentId.get(object.id);
+      const latestDefinition = lineage?.definitions.at(-1);
+      const experimentRuns = runs.filter(
+        (run) => run.experimentId === object.id,
+      );
+      const configuredType = latestDefinition?.configuration.experimentType;
+      const validTypes = new Set([
+        "Training run",
+        "Simulation",
+        "Statistical analysis",
+        "Parameter sweep",
+        "Benchmark",
+        "Reproduction attempt",
+        "Notebook analysis",
+        "Data pipeline",
+        "Ablation",
+        "Custom",
+      ]);
+      return {
+        id: object.id,
+        name: object.title,
+        goal:
+          latestDefinition?.objective ||
+          object.description ||
+          "Define the research goal.",
+        hypothesis:
+          latestDefinition?.hypothesis ??
+          (object.payload.kind === "experiment"
+            ? (object.payload.hypothesis ?? "To be specified")
+            : "To be specified"),
+        type:
+          typeof configuredType === "string" && validTypes.has(configuredType)
+            ? (configuredType as Experiment["type"])
+            : ("Custom" as const),
+        status: experimentRuns.some((run) => run.status === "Running")
+          ? ("Running" as const)
+          : experimentRuns.some((run) => run.status === "Failed")
+            ? ("Failed" as const)
+            : experimentRuns.length > 0 &&
+                experimentRuns.every((run) => run.status === "Complete")
+              ? ("Complete" as const)
+              : ("Planned" as const),
+        command: "Not configured",
+        environment: lineage ? "Inputs captured per run" : "Not captured",
+        claimIds: relationships
+          .filter(
+            (relationship) =>
+              relationship.fromObjectId === object.id &&
+              relationship.type === "tests" &&
+              objectsById.get(relationship.toObjectId)?.type === "claim",
+          )
+          .map((relationship) => relationship.toObjectId),
+        dataset:
+          latestDefinition?.datasets
+            .map((dataset) => `${dataset.id}@${dataset.version}`)
+            .join(", ") || "Not linked",
+        limitations: [],
+        nextStep: experimentRuns.length ? "Review run lineage" : "Record a run",
+        runIds: experimentRuns.map((run) => run.id),
+        updatedAt: latestDefinition?.createdAt ?? object.updatedAt,
+      };
+    });
+  const artifacts = experimentLineages.flatMap((lineage) =>
+    lineage.runs.flatMap((run) =>
+      run.artifacts.map((artifact) => ({
+        id: artifact.id,
+        name: artifact.title,
+        kind:
+          artifact.kind === "figure"
+            ? ("Figure" as const)
+            : artifact.kind === "table"
+              ? ("Table" as const)
+              : ("Output" as const),
+        path: artifact.path,
+        preview:
+          artifact.description ||
+          `${artifact.mediaType} generated by ${artifact.generatorPath ?? "an unrecorded generator"}.`,
+        sourceData:
+          run.datasets
+            .map((dataset) => `${dataset.id}@${dataset.version}`)
+            .join(", ") || "No dataset reference",
+        generator: artifact.generatorPath ?? "Not recorded",
+        experimentId: lineage.experiment.id,
+        runId: run.id,
+        commit: run.commitSha,
+        claimIds: [],
+        regeneration:
+          artifact.state === "stale"
+            ? ("Stale" as const)
+            : artifact.generatorPath
+              ? ("Ready" as const)
+              : ("Manual" as const),
+        staleReasons: artifact.staleReasons.map((reason) => {
+          if (reason.kind === "experiment-definition") {
+            return "The experiment definition changed after this output was generated.";
+          }
+          if (reason.kind === "git-commit") {
+            return "The current Git commit differs from the captured run commit.";
+          }
+          if (reason.kind === "configuration") {
+            return "The current run configuration differs from the captured configuration.";
+          }
+          if (reason.kind === "datasets") {
+            return "One or more dataset versions differ from the captured inputs.";
+          }
+          return "Generating code differs from the captured code snapshot.";
+        }),
+        hash: artifact.contentHash,
+        updatedAt: artifact.checkedAt,
+      })),
+    ),
+  );
 
   return {
     ...fixtureData,
     runs,
     notebooks: [],
     code: [],
-    artifacts: [],
+    artifacts,
     findings: [],
     audits: [],
     integrations: [],
@@ -828,6 +955,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
       await apiClient.ensureProject(project);
       const [
         researchData,
+        experimentLineages,
         lineageSuggestions,
         decisionBriefs,
         preregistrations,
@@ -836,6 +964,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
         claimCostList,
       ] = await Promise.all([
         apiClient.fetchResearchData(projectId),
+        apiClient.fetchExperimentLineages(projectId).catch(() => []),
         // Lineage reconstruction is additive. Older or temporarily unavailable
         // APIs must not prevent hydration of the canonical research graph.
         apiClient.fetchLineageSuggestions(projectId).catch(() => []),
@@ -850,7 +979,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
       if (get().activeProjectId !== projectId) return false;
       set((state) => ({
         data: hydrateAgentSessionLayouts(
-          mapResearchData(state.data, researchData),
+          mapResearchData(state.data, researchData, experimentLineages),
           state.agentSessionLayouts,
         ),
         fixtureMode: "empty",
