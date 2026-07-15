@@ -106,17 +106,20 @@ export const projectServices: ClyServices = {
   experiments: {
     async create(input) {
       const projectId = await ensureActiveProject();
-      const object = await apiClient.createObject(projectId, {
-        type: "experiment",
+      const object = await apiClient.createExperiment(projectId, {
         title: input.name,
         description: input.goal,
-        payload: { kind: "experiment", hypothesis: "To be specified" },
+        definition: {
+          hypothesis: input.hypothesis?.trim() || "To be specified",
+          objective: input.goal,
+          configuration: { experimentType: input.type },
+        },
       });
       const experiment: Experiment = {
         id: object.id,
         name: input.name,
         goal: input.goal,
-        hypothesis: "To be specified",
+        hypothesis: input.hypothesis?.trim() || "To be specified",
         type: input.type,
         status: "Planned",
         command: "Not configured",
@@ -126,7 +129,7 @@ export const projectServices: ClyServices = {
         limitations: [],
         nextStep: "Complete configuration",
         runIds: [],
-        updatedAt: object.updatedAt,
+        updatedAt: object.definition.createdAt,
       };
       stateForProject(projectId)?.addExperiment(experiment);
       return experiment;
@@ -145,19 +148,19 @@ export const projectServices: ClyServices = {
         updatedAt: isoNow(),
       };
       const projectId = await ensureActiveProject();
-      const object = await apiClient.createObject(projectId, {
-        type: "experiment",
+      const object = await apiClient.createExperiment(projectId, {
         title: duplicate.name,
         description: duplicate.goal,
-        payload: {
-          kind: "experiment",
+        definition: {
           hypothesis: duplicate.hypothesis,
+          objective: duplicate.goal,
+          configuration: { experimentType: duplicate.type },
         },
       });
       const persistedDuplicate = {
         ...duplicate,
         id: object.id,
-        updatedAt: object.updatedAt,
+        updatedAt: object.definition.createdAt,
       };
       stateForProject(projectId)?.addExperiment(persistedDuplicate);
       return persistedDuplicate;
