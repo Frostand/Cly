@@ -1,9 +1,7 @@
-import { contextBridge, ipcRenderer } from "electron";
+const electron = require("electron");
+const { contextBridge, ipcRenderer } = electron.default ?? electron;
 
-const apiSessionToken =
-  process.env.NODE_ENV === "development"
-    ? ipcRenderer.sendSync("api:get-session-token")
-    : undefined;
+const apiSessionToken = ipcRenderer.sendSync("api:get-session-token");
 
 const BASE_COLORS = new Set(["neutral", "slate", "gray", "zinc", "stone"]);
 const ACCENT_COLORS = new Set([

@@ -207,7 +207,6 @@ const titleFor = (entity: Record<string, unknown>) =>
   );
 
 export function Inspector() {
-  const open = useClyStore((s) => s.inspectorOpen);
   const activeScreen = useClyStore((s) => s.activeScreen);
   const selectedId = useClyStore((s) => s.selectedId);
   const toggle = useClyStore((s) => s.toggleInspector);
@@ -224,7 +223,6 @@ export function Inspector() {
     <aside
       className="cly-inspector"
       aria-label="Contextual inspector"
-      aria-hidden={!open}
       data-testid="inspector"
     >
       <div className="cly-inspector-inner">
@@ -234,7 +232,10 @@ export function Inspector() {
             variant="ghost"
             iconOnly
             aria-label="Close inspector"
-            onClick={toggle}
+            onClick={() => {
+              toggle();
+              document.getElementById("main-workspace")?.focus();
+            }}
           >
             <PanelRightClose size={14} />
           </Button>

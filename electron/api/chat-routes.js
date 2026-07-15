@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { promises as fs, realpathSync } from "node:fs";
 import {
   getStateDatabase,
   resolvePersistedProjectPath,
@@ -89,13 +89,24 @@ const validateCursorReady = async () => {
 };
 
 const resolveEvaluationProjectId = (database, projectId, projectPath) => {
-  if (projectId) return projectId;
-  const row = database
-    .prepare(
-      "SELECT id FROM projects WHERE path = ? OR normalized_path = ? LIMIT 1",
-    )
-    .get(projectPath, projectPath);
-  return row?.id ?? null;
+  const row = projectId
+    ? database
+        .prepare("SELECT id, path FROM projects WHERE id = ? LIMIT 1")
+        .get(projectId)
+    : database
+        .prepare(
+          "SELECT id, path FROM projects WHERE path = ? OR normalized_path = ? LIMIT 1",
+        )
+        .get(projectPath, projectPath);
+  if (!row?.id || !row.path) {
+    return null;
+  }
+
+  try {
+    return realpathSync(row.path) === realpathSync(projectPath) ? row.id : null;
+  } catch {
+    return null;
+  }
 };
 
 const evaluateProviderTransmission = (
@@ -109,26 +120,32 @@ const evaluateProviderTransmission = (
   );
   if (!resolvedProjectId) {
     return {
-      decision: "block",
-      alerts: [
-        {
-          rationale:
-            "Cly could not identify the project for research-data obligation evaluation.",
-        },
-      ],
+      evaluation: {
+        decision: "block",
+        alerts: [
+          {
+            rationale:
+              "Cly could not identify the project for research-data obligation evaluation.",
+          },
+        ],
+      },
+      projectId: null,
     };
   }
-  return obligationService.safeEvaluateOperation(resolvedProjectId, {
-    kind: "provider-transmission",
-    integration: "agent-chat",
-    objectIds: [],
-    purpose: "research-assistance",
-    collaborators: [],
-    provider,
-    residency: null,
-    license: null,
-    external: true,
-  });
+  return {
+    evaluation: obligationService.safeEvaluateOperation(resolvedProjectId, {
+      kind: "provider-transmission",
+      integration: "agent-chat",
+      objectIds: [],
+      purpose: "research-assistance",
+      collaborators: [],
+      provider,
+      residency: null,
+      license: null,
+      external: true,
+    }),
+    projectId: resolvedProjectId,
+  };
 };
 
 const blockedTransmissionResponse = (c, evaluation) =>
@@ -171,7 +188,7 @@ export const registerChatRoutes = (
       return c.text(projectPathError.message, projectPathError.status);
     }
     const database = getDatabase();
-    const evaluation = evaluateProviderTransmission(
+    const transmission = evaluateProviderTransmission(
       {
         projectId,
         projectPath,
@@ -179,8 +196,8 @@ export const registerChatRoutes = (
       },
       { database, obligationService: getObligationService(database) },
     );
-    if (evaluation.decision !== "allow") {
-      return blockedTransmissionResponse(c, evaluation);
+    if (transmission.evaluation.decision !== "allow") {
+      return blockedTransmissionResponse(c, transmission.evaluation);
     }
 
     if (provider === "openai") {
@@ -281,7 +298,7 @@ export const registerChatRoutes = (
     }
 
     const database = getDatabase();
-    const evaluation = evaluateProviderTransmission(
+    const transmission = evaluateProviderTransmission(
       {
         projectId,
         projectPath: resolvedProjectPath,
@@ -289,8 +306,8 @@ export const registerChatRoutes = (
       },
       { database, obligationService: getObligationService(database) },
     );
-    if (evaluation.decision !== "allow") {
-      return blockedTransmissionResponse(c, evaluation);
+    if (transmission.evaluation.decision !== "allow") {
+      return blockedTransmissionResponse(c, transmission.evaluation);
     }
 
     if (provider === "openai") {
@@ -306,7 +323,7 @@ export const registerChatRoutes = (
         messages,
         model,
         projectReferencesPrompt,
-        projectId,
+        projectId: transmission.projectId,
         projectPath: resolvedProjectPath,
         modelSpeed,
         reasoningEffort,
@@ -327,7 +344,7 @@ export const registerChatRoutes = (
         messages,
         model,
         projectReferencesPrompt,
-        projectId,
+        projectId: transmission.projectId,
         projectPath: resolvedProjectPath,
         responseMessageMetadata,
       });
@@ -366,7 +383,7 @@ export const registerChatRoutes = (
       messages,
       model,
       projectReferencesPrompt,
-      projectId,
+      projectId: transmission.projectId,
       projectPath: resolvedProjectPath,
       reasoningEffort,
       responseMessageMetadata,

@@ -214,6 +214,15 @@ export function ClyAppShell() {
         return;
       }
       if (event.key === "Escape") {
+        // Radix dialogs own Escape while they are open. Letting the shell also
+        // handle the same key clears the underlying route selection and steals
+        // focus before Radix can restore it to the dialog trigger.
+        if (
+          event.defaultPrevented ||
+          document.querySelector('[role="dialog"][data-state="open"]')
+        ) {
+          return;
+        }
         const openDetails =
           document.querySelector<HTMLDetailsElement>("details[open]");
         if (openDetails) {
@@ -224,7 +233,12 @@ export function ClyAppShell() {
         if (state.commandPaletteOpen) state.setCommandPaletteOpen(false);
         else if (state.projectSwitcherOpen) state.setProjectSwitcherOpen(false);
         else if (state.fixtureSwitcherOpen) state.setFixtureSwitcherOpen(false);
-        else state.setSelected(null);
+        else {
+          if (state.selectedId) {
+            document.getElementById("main-workspace")?.focus();
+          }
+          state.setSelected(null);
+        }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -292,7 +306,9 @@ export function ClyAppShell() {
             </div>
             <ActivityDrawer />
           </section>
-          {activeScreen !== "agents" && selectedId ? <Inspector /> : null}
+          {activeScreen !== "agents" && inspectorOpen && selectedId ? (
+            <Inspector />
+          ) : null}
         </div>
         <CommandPalette />
         <Toasts />

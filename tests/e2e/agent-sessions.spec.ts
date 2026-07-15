@@ -122,6 +122,78 @@ test("runs the complete fixture-backed Agent Sessions workflow", async ({
   await expect(page.getByText("approved")).toBeVisible();
 });
 
+test("keeps chat and delegated-agent panes independently scrollable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1180, height: 720 });
+  await page
+    .getByRole("article", { name: /Audit primary claim evidence/ })
+    .getByRole("button", { name: /Open chat/ })
+    .click();
+
+  const transcript = page.locator(".agent-transcript");
+  const transcriptMetrics = await transcript.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(transcriptMetrics.scrollHeight).toBeGreaterThan(
+    transcriptMetrics.clientHeight,
+  );
+  await transcript.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect
+    .poll(() => transcript.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+
+  await page.getByRole("tab", { name: "Agents" }).click();
+  const separator = page.getByRole("separator", {
+    name: "Resize chat and workbench",
+  });
+  await separator.focus();
+  await separator.press("ArrowRight");
+
+  const grid = page.locator(".agent-agent-grid");
+  const gridMetrics = await grid.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(gridMetrics.scrollHeight).toBeGreaterThan(gridMetrics.clientHeight);
+  expect(gridMetrics.scrollWidth).toBeLessThanOrEqual(gridMetrics.clientWidth);
+  await grid.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect
+    .poll(() => grid.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+
+  const panesFit = await page.locator(".agent-pane").evaluateAll((panes) => {
+    const gridRect = document
+      .querySelector(".agent-agent-grid")
+      ?.getBoundingClientRect();
+    return panes.every((pane) => {
+      const rect = pane.getBoundingClientRect();
+      return (
+        !!gridRect &&
+        rect.left >= gridRect.left &&
+        rect.right <= gridRect.right + 1
+      );
+    });
+  });
+  expect(panesFit).toBe(true);
+  const paneWidths = await page
+    .locator(".agent-pane")
+    .evaluateAll((panes) =>
+      panes.map((pane) => pane.getBoundingClientRect().width),
+    );
+  expect(Math.min(...paneWidths)).toBeGreaterThanOrEqual(270);
+
+  await page.getByTestId("toggle-sidebar").click();
+  await expect(page.locator(".cly-sidebar-group-label")).toHaveCount(0);
+});
+
 test("captures Agent Sessions visual regression fixtures", async ({ page }) => {
   test.setTimeout(60_000);
   const sizes = [

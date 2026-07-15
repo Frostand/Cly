@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureRepository } from "../fixtures/repository";
@@ -63,19 +63,20 @@ describe("Source Manager literature import", () => {
 
     await user.click(screen.getByRole("button", { name: "Import source" }));
     expect(screen.getByLabelText("Source title")).toHaveFocus();
-    await user.type(
-      screen.getByLabelText("Source title"),
-      "Reliable calibration",
-    );
-    await user.type(
-      screen.getByLabelText("Authors"),
-      "A. Researcher; B. Reviewer",
-    );
-    await user.type(screen.getByLabelText("DOI"), "10.1000/calibration");
-    await user.type(
-      screen.getByLabelText("Abstract"),
-      "We evaluate calibration. Coverage falls under compound shift.",
-    );
+    fireEvent.change(screen.getByLabelText("Source title"), {
+      target: { value: "Reliable calibration" },
+    });
+    fireEvent.change(screen.getByLabelText("Authors"), {
+      target: { value: "A. Researcher; B. Reviewer" },
+    });
+    fireEvent.change(screen.getByLabelText("DOI"), {
+      target: { value: "10.1000/calibration" },
+    });
+    fireEvent.change(screen.getByLabelText("Abstract"), {
+      target: {
+        value: "We evaluate calibration. Coverage falls under compound shift.",
+      },
+    });
     await waitFor(() =>
       expect(screen.getByLabelText("Reading list")).toHaveTextContent(
         "Core methods (2)",

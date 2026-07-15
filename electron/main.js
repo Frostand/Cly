@@ -341,7 +341,7 @@ async function createMainWindow() {
       contextIsolation: true,
       additionalArguments: [getThemePreferencePreloadArgument()],
       nodeIntegration: false,
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,
       spellcheck: false,
       webviewTag: true,
@@ -351,6 +351,10 @@ async function createMainWindow() {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
+  });
+
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error(`Failed to load preload script ${preloadPath}:`, error);
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

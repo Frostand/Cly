@@ -85,9 +85,6 @@ export default defineConfig(({ command, mode }) => ({
       "/api": {
         target: `http://127.0.0.1:${apiServerPort}`,
         changeOrigin: true,
-        headers: process.env.ELECTRON_API_TOKEN
-          ? { "x-cly-api-token": process.env.ELECTRON_API_TOKEN }
-          : undefined,
       },
     },
   },

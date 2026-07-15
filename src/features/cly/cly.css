@@ -157,6 +157,32 @@
 }
 
 @layer v3 {
+  .cly-shell[data-agent-mode="chat"] .cly-route-transition {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .agent-chat-pane,
+  .agent-workbench {
+    height: 100%;
+  }
+  .agent-agents-tab {
+    container-type: inline-size;
+  }
+  .agent-agent-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    grid-auto-rows: max-content;
+    align-content: start;
+    scrollbar-gutter: stable;
+  }
+  @container (max-width: 560px) {
+    .agent-surface-toolbar > div:first-child > span {
+      display: none;
+    }
+    .agent-agent-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
   .cly-title-actions .cly-btn-primary {
     white-space: nowrap;
   }

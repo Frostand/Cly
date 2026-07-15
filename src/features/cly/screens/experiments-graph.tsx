@@ -663,17 +663,29 @@ export function GraphScreen() {
 
   const createLink = async () => {
     if (nodes.length < 2) return;
-    const edge = await projectServices.graph.createRelationship({
-      source:
-        selectedId && nodes.some((node) => node.id === selectedId)
-          ? selectedId
-          : nodes[0].id,
-      target: nodes.find((node) => node.id !== selectedId)?.id ?? nodes[1].id,
-      relation: "linked manually",
-      confidence: null,
-      approved: false,
-    });
-    notify("Relationship created", `${edge.source} → ${edge.target}`);
+    const source =
+      selectedId && nodes.some((node) => node.id === selectedId)
+        ? selectedId
+        : nodes[0].id;
+    const target = nodes.find((node) => node.id !== source)?.id;
+    if (!target) return;
+    try {
+      const edge = await projectServices.graph.createRelationship({
+        source,
+        target,
+        relation: "linked manually",
+        confidence: null,
+        approved: false,
+      });
+      notify("Relationship created", `${edge.source} → ${edge.target}`);
+    } catch (error) {
+      notify(
+        "Relationship was not created",
+        error instanceof Error
+          ? error.message
+          : "The relationship could not be saved.",
+      );
+    }
   };
 
   const runLineageScan = async () => {
@@ -746,7 +758,10 @@ export function GraphScreen() {
               onChange={setView}
               label="Graph view"
             />
-            <Button onClick={() => void createLink()}>
+            <Button
+              disabled={nodes.length < 2}
+              onClick={() => void createLink()}
+            >
               <Link2 size={13} /> New relationship
             </Button>
             <ClyMenu

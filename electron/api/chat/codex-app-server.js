@@ -375,7 +375,9 @@ export const streamCodexAppServerResponse = ({
           if (child && !child.killed) {
             child.kill("SIGTERM");
           }
-          preparedAttachments?.cleanup?.();
+          const attachments = preparedAttachments;
+          preparedAttachments = null;
+          attachments?.cleanup?.();
           for (const [, pending] of pendingRequests) {
             pending.reject(
               new Error("Codex app-server request was cancelled."),
@@ -936,11 +938,14 @@ export const streamCodexAppServerResponse = ({
         };
 
         const handleAbort = () => {
-          child?.kill("SIGTERM");
           finish(resolve);
         };
 
         abortSignal?.addEventListener("abort", handleAbort, { once: true });
+        if (abortSignal?.aborted) {
+          handleAbort();
+          return;
+        }
         writer.write({
           messageMetadata: responseMessageMetadata,
           type: "message-metadata",
@@ -948,6 +953,19 @@ export const streamCodexAppServerResponse = ({
 
         void resolveCodexCliLaunch()
           .then(async (launch) => {
+            if (finished || abortSignal?.aborted) {
+              return;
+            }
+
+            const attachments = await prepareCodexPromptAttachments(
+              getLatestUserMessage(messages),
+            );
+            if (finished || abortSignal?.aborted) {
+              attachments?.cleanup?.();
+              return;
+            }
+            preparedAttachments = attachments;
+
             child = spawn(
               launch.command,
               [
@@ -985,9 +1003,6 @@ export const streamCodexAppServerResponse = ({
               finish(() => reject(new Error(detail)));
             });
 
-            preparedAttachments = await prepareCodexPromptAttachments(
-              getLatestUserMessage(messages),
-            );
             const fullPrompt = buildCodexConversationPrompt({
               currentTurnAttachments: preparedAttachments?.promptText ?? null,
               currentTurnProjectReferences: projectReferencesPrompt,
