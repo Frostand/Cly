@@ -1,3 +1,4 @@
+import type { GroundedLiteratureSummary } from "../../research/domain/research-types";
 import type { AgentSession } from "../agent-sessions/types";
 
 export type ScreenId =
@@ -110,6 +111,7 @@ export interface Source {
   linkedClaimIds: string[];
   linkedExperimentIds: string[];
   inNotebookBundle: boolean;
+  groundedSummary?: GroundedLiteratureSummary;
   path: string;
   updatedAt: string;
   provenance?: {

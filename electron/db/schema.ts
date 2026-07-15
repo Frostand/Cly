@@ -223,6 +223,57 @@ export const researchObjects = sqliteTable(
   ],
 );
 
+export const literatureReadingLists = sqliteTable(
+  "literature_reading_lists",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    description: text("description").notNull().default(""),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("literature_reading_lists_project_name_unique").on(
+      table.projectId,
+      table.normalizedName,
+    ),
+    index("idx_literature_reading_lists_project").on(
+      table.projectId,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const literatureReadingListSources = sqliteTable(
+  "literature_reading_list_sources",
+  {
+    readingListId: text("reading_list_id")
+      .notNull()
+      .references(() => literatureReadingLists.id, { onDelete: "cascade" }),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    addedAt: text("added_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("literature_reading_list_sources_list_source_unique").on(
+      table.readingListId,
+      table.sourceId,
+    ),
+    index("idx_literature_reading_list_sources_project_source").on(
+      table.projectId,
+      table.sourceId,
+    ),
+  ],
+);
+
 export const researchRelationships = sqliteTable(
   "research_relationships",
   {

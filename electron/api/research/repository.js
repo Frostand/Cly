@@ -25,7 +25,35 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
     providerId: z.string().trim().min(1).optional(),
     abstract: z.string().trim().min(1).max(20_000).optional(),
     year: z.number().int().min(1000).max(9999).optional(),
+    journal: z.string().trim().min(1).max(500).optional(),
+    tags: z.array(z.string().trim().min(1).max(200)).max(100).optional(),
     provider: z.string().trim().min(1).optional(),
+    normalizedKey: z.string().trim().min(1).max(5_000).optional(),
+    importMethod: z.enum(["metadata", "bibtex"]).optional(),
+    importedAt: z.iso.datetime().optional(),
+    groundedSummary: z
+      .object({
+        text: z.string().trim().min(1).max(20_000),
+        method: z.literal("extractive_abstract_v1"),
+        generatedAt: z.iso.datetime(),
+        claims: z
+          .array(
+            z.object({
+              text: z.string().trim().min(1).max(10_000),
+              evidence: z
+                .array(
+                  z.object({
+                    field: z.literal("abstract"),
+                    locator: z.string().trim().min(1).max(200),
+                    quote: z.string().trim().min(1).max(10_000),
+                  }),
+                )
+                .min(1),
+            }),
+          )
+          .min(1),
+      })
+      .optional(),
     query: z.string().trim().min(1).max(2_000).optional(),
     rankingScore: z.number().finite().min(0).max(1).optional(),
     rankingMethod: z.string().trim().min(1).max(200).optional(),

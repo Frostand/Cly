@@ -394,10 +394,14 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
       payload.authors?.join(", ") || payload.citation || "Unknown authors",
     year: payload.year ?? new Date(object.createdAt).getFullYear(),
     type: sourceType[payload.sourceType ?? "paper"],
-    status: "Needs metadata",
+    status: payload.status === "resolved" ? "Queued" : "Needs metadata",
     relevance: "Medium",
     confidence: 0,
-    summary: object.description || "Awaiting extraction.",
+    summary:
+      payload.groundedSummary?.text ||
+      object.description ||
+      payload.abstract ||
+      "Awaiting extraction.",
     url: payload.url,
     doi: payload.doi,
     providerId: payload.providerId,
@@ -405,10 +409,11 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
     methods: payload.methods ?? [],
     findings: payload.findings ?? [],
     limitations: payload.limitations ?? [],
-    tags: [],
+    tags: payload.tags ?? [],
     linkedClaimIds: [],
     linkedExperimentIds: [],
     inNotebookBundle: false,
+    groundedSummary: payload.groundedSummary,
     path: `sources/${object.id}`,
     updatedAt: object.updatedAt,
     provenance:

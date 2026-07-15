@@ -102,4 +102,82 @@ describe("literature routes", () => {
     );
     expect(response.status).toBe(429);
   });
+
+  it("parses BibTeX imports and returns duplicate accounting", async () => {
+    const importRecords = vi.fn().mockReturnValue({
+      duplicateCount: 0,
+      importedCount: 1,
+      results: [{ duplicate: false, source: { id: "source-1" } }],
+    });
+    const app = new Hono();
+    registerLiteratureRoutes(app, {
+      getLiteratureRepository: () => ({ importRecords }),
+      getRepository: () => ({
+        getProject: vi.fn(),
+        listProject: vi.fn(),
+      }),
+    });
+
+    const response = await app.request(
+      "/api/projects/project-1/literature/imports",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          format: "bibtex",
+          content: "@article{paper, title={Grounded synthesis}, year={2026}}",
+          readingListIds: ["list-1"],
+        }),
+      },
+    );
+
+    expect(response.status).toBe(201);
+    expect(importRecords).toHaveBeenCalledWith(
+      "project-1",
+      [expect.objectContaining({ title: "Grounded synthesis", year: "2026" })],
+      { importMethod: "bibtex", readingListIds: ["list-1"] },
+    );
+    await expect(response.json()).resolves.toMatchObject({ importedCount: 1 });
+  });
+
+  it("creates and lists project-scoped reading lists", async () => {
+    const createReadingList = vi.fn().mockReturnValue({
+      created: true,
+      readingList: { id: "list-1", name: "Core methods" },
+    });
+    const listReadingLists = vi
+      .fn()
+      .mockReturnValue([{ id: "list-1", name: "Core methods" }]);
+    const app = new Hono();
+    registerLiteratureRoutes(app, {
+      getLiteratureRepository: () => ({
+        createReadingList,
+        listReadingLists,
+      }),
+      getRepository: () => ({
+        getProject: vi.fn(),
+        listProject: vi.fn(),
+      }),
+    });
+
+    const created = await app.request(
+      "/api/projects/project-1/literature/reading-lists",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Core methods" }),
+      },
+    );
+    const listed = await app.request(
+      "/api/projects/project-1/literature/reading-lists",
+    );
+
+    expect(created.status).toBe(201);
+    expect(listed.status).toBe(200);
+    expect(createReadingList).toHaveBeenCalledWith("project-1", {
+      name: "Core methods",
+      description: "",
+    });
+    expect(listReadingLists).toHaveBeenCalledWith("project-1");
+  });
 });
