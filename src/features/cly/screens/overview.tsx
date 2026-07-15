@@ -394,10 +394,12 @@ export function OverviewScreen() {
                   </div>
                 </Panel>
               ) : (
-                <EmptyState
-                  title="No recommendations"
-                  description="Cly will derive next steps as research objects and risks are added."
-                />
+                <div className="cly-overview-empty">
+                  <EmptyState
+                    title="No recommendations yet"
+                    description="Cly will surface the next best action as evidence and risks are added."
+                  />
+                </div>
               )}
             </Section>
 

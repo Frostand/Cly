@@ -713,7 +713,7 @@ export function SettingsScreen() {
               <div className="cly-field">
                 <span className="cly-muted cly-small">Color theme</span>
                 <Segmented
-                  value={(theme ?? "dark") as "dark" | "light" | "system"}
+                  value={(theme ?? "light") as "dark" | "light" | "system"}
                   options={["dark", "light", "system"] as const}
                   onChange={setTheme}
                   label="Color theme"
