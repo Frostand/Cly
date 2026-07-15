@@ -562,6 +562,7 @@ describe("Cly UI store", () => {
           { status: 200 },
         ),
       )
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
       .mockResolvedValueOnce(
         new Response("Lineage service unavailable", { status: 503 }),
       );
@@ -574,7 +575,7 @@ describe("Cly UI store", () => {
     ]);
     expect(useClyStore.getState().lineageSuggestions).toEqual([]);
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      4,
       "/api/projects/project-cly/lineage-suggestions",
       expect.any(Object),
     );
@@ -793,12 +794,22 @@ describe("Cly UI store", () => {
           JSON.stringify({
             id: "persisted-experiment",
             projectId: "project-cly",
-            type: "experiment",
             title: "Persisted experiment",
             description: "Test persistence",
-            payload: { kind: "experiment", hypothesis: "To be specified" },
-            createdAt: "2026-07-12T00:00:00.000Z",
-            updatedAt: "2026-07-12T00:00:00.000Z",
+            definition: {
+              id: "definition-1",
+              projectId: "project-cly",
+              experimentId: "persisted-experiment",
+              version: 1,
+              hypothesis: "To be specified",
+              objective: "Test persistence",
+              configuration: { experimentType: "Custom" },
+              datasets: [],
+              declaredMetrics: [],
+              definitionHash: "a".repeat(64),
+              provenanceEventId: "event-1",
+              createdAt: "2026-07-12T00:00:00.000Z",
+            },
           }),
           { status: 201 },
         ),
@@ -827,7 +838,7 @@ describe("Cly UI store", () => {
       "/api/projects/project-cly/research/objects",
     );
     expect(fetchMock.mock.calls[3]?.[0]).toBe(
-      "/api/projects/project-cly/research/objects",
+      "/api/projects/project-cly/experiments",
     );
   });
 

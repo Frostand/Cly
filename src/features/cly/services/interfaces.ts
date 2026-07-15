@@ -34,7 +34,9 @@ export interface AgentService {
 
 export interface ExperimentService {
   create(
-    input: Pick<Experiment, "name" | "goal" | "type">,
+    input: Pick<Experiment, "name" | "goal" | "type"> & {
+      hypothesis?: string;
+    },
   ): Promise<Experiment>;
   duplicate(id: string): Promise<Experiment>;
 }
