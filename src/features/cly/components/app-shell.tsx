@@ -29,6 +29,7 @@ import {
   ModelsAgentsScreen,
   SettingsScreen,
 } from "../screens/system";
+import { isClyExplicitDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
 import { Inspector } from "./inspector";
@@ -152,9 +153,9 @@ export function ClyAppShell() {
   useEffect(() => {
     // main.tsx installs authenticated API fetch before React mounts. Hydrating
     // here avoids firing the request while static imports are still loading.
-    const explicitDemoRuntime =
-      import.meta.env.DEV && import.meta.env.VITE_CLY_DEMO_MODE === "1";
-    if (!explicitDemoRuntime) {
+    if (isClyExplicitDemoRuntime) {
+      useClyStore.getState().setFixtureMode("active");
+    } else {
       void useClyStore.getState().loadFromApi();
     }
   }, []);

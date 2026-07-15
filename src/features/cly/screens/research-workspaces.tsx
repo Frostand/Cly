@@ -71,8 +71,10 @@ import {
   type LiteratureReadingList,
   type ReviewerCapsule,
 } from "../services/api-client";
+import { capabilityUnavailableMessage } from "../services/capabilities";
 import { desktopLiteratureService } from "../services/literature-service";
-import { mockServices } from "../services/mock-services";
+import { projectServices } from "../services/project-services";
+import { isClyDemoRuntime } from "../services/runtime";
 import { claimStatusTone, useClyStore } from "../store/cly-store";
 
 const noInheritedRestrictions: InheritedRestriction[] = [];
@@ -251,7 +253,7 @@ export function SourcesScreen() {
         );
         return;
       }
-      const source = await mockServices.sources.create({
+      const source = await projectServices.sources.create({
         title: title.trim() || "Imported source",
         type: importType,
       });
@@ -281,6 +283,8 @@ export function SourcesScreen() {
         actions={
           <>
             <Button
+              disabled={!isClyDemoRuntime}
+              title={capabilityUnavailableMessage("sources.folder-import")}
               onClick={() =>
                 notify(
                   "Folder import preview",
@@ -392,10 +396,11 @@ export function SourcesScreen() {
       >
         <div className="cly-row">
           <Button
-            disabled={!selectedId}
+            disabled={!selectedId || !isClyDemoRuntime}
+            title={capabilityUnavailableMessage("exports.notebook-bundle")}
             onClick={() =>
               selectedId &&
-              void mockServices.sources
+              void projectServices.sources
                 .addToNotebookBundle(selectedId)
                 .then(() => notify("Added to NotebookLM bundle"))
             }
@@ -407,7 +412,7 @@ export function SourcesScreen() {
             onClick={() => {
               const claim = claims[0];
               if (!selectedId || !claim) return;
-              void mockServices.sources
+              void projectServices.sources
                 .linkClaim(selectedId, claim.id)
                 .then(() =>
                   notify(
@@ -428,10 +433,11 @@ export function SourcesScreen() {
             <Link2 size={13} /> Link to claim
           </Button>
           <Button
-            disabled={!selectedId}
+            disabled={!selectedId || !isClyDemoRuntime}
+            title={capabilityUnavailableMessage("sources.deduplicate")}
             onClick={() => {
               if (!selectedId) return;
-              void mockServices.sources
+              void projectServices.sources
                 .enrich(selectedId)
                 .then(() =>
                   notify(
@@ -463,8 +469,9 @@ export function SourcesScreen() {
             <Merge size={13} /> Merge duplicates
           </Button>
           <Button
-            disabled={!selectedId}
+            disabled={!selectedId || !isClyDemoRuntime}
             variant="danger"
+            title={capabilityUnavailableMessage("sources.archive")}
             onClick={() =>
               notify(
                 "Source archived",
@@ -931,7 +938,7 @@ export function LiteratureScreen() {
 
   const saveResult = async (result: LiteratureSearchResult) => {
     try {
-      const source = await mockServices.sources.createFromSearch(result);
+      const source = await projectServices.sources.createFromSearch(result);
       setSelected(source.id);
       notify(
         "Paper saved",
@@ -1505,6 +1512,8 @@ function NotebookLmWorkspace({
             </Section>
             <div className="cly-row" style={{ marginTop: 12 }}>
               <Button
+                disabled={!isClyDemoRuntime}
+                title={capabilityUnavailableMessage("exports.notebook-bundle")}
                 onClick={() =>
                   notify(
                     "Bundle preview opened",
@@ -1515,6 +1524,8 @@ function NotebookLmWorkspace({
                 <FileText size={13} /> Preview bundle
               </Button>
               <Button
+                disabled={!isClyDemoRuntime}
+                title={capabilityUnavailableMessage("exports.notebook-bundle")}
                 onClick={() =>
                   notify(
                     "Source manifest generated",
@@ -1526,6 +1537,8 @@ function NotebookLmWorkspace({
               </Button>
               <Button
                 variant="primary"
+                disabled={!isClyDemoRuntime}
+                title={capabilityUnavailableMessage("exports.notebook-bundle")}
                 onClick={() =>
                   notify(
                     "NotebookLM link opened",
@@ -1579,7 +1592,8 @@ function NotebookLmWorkspace({
           <Button
             variant="primary"
             style={{ marginTop: 9 }}
-            disabled={!answer.trim()}
+            disabled={!answer.trim() || !isClyDemoRuntime}
+            title={capabilityUnavailableMessage("exports.notebook-bundle")}
             onClick={() => {
               setImportedAnswers([answer.trim(), ...importedAnswers]);
               setAnswer("");
@@ -1660,7 +1674,7 @@ export function NotebooksScreen() {
         .includes(query.toLowerCase()),
   );
   const importNotebook = async () => {
-    const notebook = await mockServices.notebooks.importMock(name);
+    const notebook = await projectServices.notebooks.importMock(name);
     setImportOpen(false);
     setSelected(notebook.id);
     notify(
@@ -1675,7 +1689,12 @@ export function NotebooksScreen() {
         title="Notebook Scanner"
         description="Find execution, output, and reproducibility issues."
         actions={
-          <Button variant="primary" onClick={() => setImportOpen(true)}>
+          <Button
+            variant="primary"
+            disabled={!isClyDemoRuntime}
+            title={capabilityUnavailableMessage("notebooks.import")}
+            onClick={() => setImportOpen(true)}
+          >
             <Upload size={13} /> Import notebook
           </Button>
         }
@@ -1683,9 +1702,18 @@ export function NotebooksScreen() {
       {notebooks.length === 0 ? (
         <EmptyState
           title="No notebooks discovered"
-          description="Import a notebook to inspect its execution and outputs."
+          description={
+            isClyDemoRuntime
+              ? "Import a notebook to inspect its execution and outputs."
+              : capabilityUnavailableMessage("notebooks.import")
+          }
           action={
-            <Button variant="primary" onClick={() => setImportOpen(true)}>
+            <Button
+              variant="primary"
+              disabled={!isClyDemoRuntime}
+              title={capabilityUnavailableMessage("notebooks.import")}
+              onClick={() => setImportOpen(true)}
+            >
               Import notebook
             </Button>
           }
@@ -1799,6 +1827,8 @@ export function NotebooksScreen() {
                   <Section title="Notebook actions">
                     <div className="cly-grid-2">
                       <Button
+                        disabled={!isClyDemoRuntime}
+                        title={capabilityUnavailableMessage("notebooks.import")}
                         onClick={() =>
                           notify(
                             "Notebook summary ready",
@@ -1809,6 +1839,8 @@ export function NotebooksScreen() {
                         <Sparkles size={12} /> Summarize
                       </Button>
                       <Button
+                        disabled={!isClyDemoRuntime}
+                        title={capabilityUnavailableMessage("notebooks.import")}
                         onClick={() =>
                           notify(
                             "Outputs extracted",
@@ -1819,6 +1851,8 @@ export function NotebooksScreen() {
                         <Download size={12} /> Extract
                       </Button>
                       <Button
+                        disabled={!isClyDemoRuntime}
+                        title={capabilityUnavailableMessage("notebooks.import")}
                         onClick={() =>
                           notify(
                             "Notebook marked canonical",
@@ -1829,6 +1863,8 @@ export function NotebooksScreen() {
                         <Check size={12} /> Canonical
                       </Button>
                       <Button
+                        disabled={!isClyDemoRuntime}
+                        title={capabilityUnavailableMessage("notebooks.import")}
                         onClick={() =>
                           notify(
                             "Reproducibility task created",
@@ -1850,7 +1886,7 @@ export function NotebooksScreen() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         title="Import notebook"
-        description="Choose a fixture notebook name. Cly will simulate a safe static scan; it will not execute cells."
+        description={capabilityUnavailableMessage("notebooks.import")}
         footer={
           <>
             <Button onClick={() => setImportOpen(false)}>Cancel</Button>
@@ -1913,8 +1949,12 @@ export function CodeLinkerScreen() {
       {code.length === 0 ? (
         <EmptyState
           title="No code artifacts indexed"
-          description="Scan project files to begin linking research meaning."
-          action={<Button>Simulate scan</Button>}
+          description={capabilityUnavailableMessage("code.scan")}
+          action={
+            <Button disabled title={capabilityUnavailableMessage("code.scan")}>
+              Scan project
+            </Button>
+          }
         />
       ) : (
         <div
@@ -2105,7 +2145,7 @@ export function ClaimsScreen() {
   const create = async () => {
     if (!text.trim()) return;
     try {
-      const claim = await mockServices.claims.create(text.trim());
+      const claim = await projectServices.claims.create(text.trim());
       setCreateOpen(false);
       setText("");
       setSelected(claim.id);
@@ -2171,7 +2211,8 @@ export function ClaimsScreen() {
               ))}
             </select>
             <Button
-              disabled={!selected}
+              disabled={!selected || !isClyDemoRuntime}
+              title={capabilityUnavailableMessage("agents.execute")}
               onClick={() =>
                 notify(
                   "Adversarial review preview",
@@ -2691,7 +2732,7 @@ function ClaimDetail({
               value={claim.status}
               onChange={(event) => {
                 const status = event.target.value as ClaimStatus;
-                void mockServices.claims
+                void projectServices.claims
                   .setStatus(claim.id, status)
                   .catch((error) =>
                     notify(
@@ -2888,6 +2929,8 @@ function ClaimDetail({
           <h3>{claim.nextExperiment}</h3>
           <Button
             variant="primary"
+            disabled={!isClyDemoRuntime}
+            title={capabilityUnavailableMessage("claims.secondary-actions")}
             onClick={() =>
               notify(
                 "Experiment proposal created",
@@ -2902,9 +2945,15 @@ function ClaimDetail({
           <div className="cly-inspector-label">Claim actions</div>
           <div className="cly-stack">
             <Button
+              disabled={data.experiments.length === 0}
+              title={
+                data.experiments.length === 0
+                  ? "Create an experiment before linking evidence."
+                  : undefined
+              }
               onClick={() =>
-                void mockServices.claims
-                  .linkExperiment(claim.id, "exp-01")
+                void projectServices.claims
+                  .linkExperiment(claim.id, data.experiments[0].id)
                   .then(() =>
                     notify(
                       "Experiment linked",
@@ -2916,6 +2965,8 @@ function ClaimDetail({
               <Link2 size={13} /> Link evidence
             </Button>
             <Button
+              disabled={!isClyDemoRuntime}
+              title={capabilityUnavailableMessage("claims.secondary-actions")}
               onClick={() =>
                 notify(
                   "Contradiction recorded",
@@ -2926,6 +2977,8 @@ function ClaimDetail({
               <X size={13} /> Add contradiction
             </Button>
             <Button
+              disabled={!isClyDemoRuntime}
+              title={capabilityUnavailableMessage("claims.secondary-actions")}
               onClick={() =>
                 notify(
                   "Claim report exported",
@@ -2935,14 +2988,7 @@ function ClaimDetail({
             >
               <Download size={13} /> Export claim report
             </Button>
-            <Button
-              onClick={() =>
-                notify(
-                  "Graph path focused",
-                  "The claim neighborhood is now focused in the graph preview.",
-                )
-              }
-            >
+            <Button onClick={() => setScreen("graph")}>
               <ArrowRight size={13} /> Trace in graph
             </Button>
           </div>

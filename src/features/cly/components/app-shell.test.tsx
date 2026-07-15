@@ -61,14 +61,14 @@ describe("Cly application shell", () => {
     );
 
     render(<ClyAppShell />);
-    await user.click(screen.getByRole("button", { name: "Import source" }));
+    await user.click(screen.getByRole("button", { name: "Add source" }));
     await user.type(screen.getByLabelText("Source title"), "Unsaved paper");
-    await user.click(screen.getByRole("button", { name: "Import and scan" }));
+    await user.click(screen.getByRole("button", { name: "Save source" }));
 
     await waitFor(() =>
       expect(screen.getByText("Source was not saved")).toBeVisible(),
     );
-    expect(screen.getByRole("dialog", { name: "Import source" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "Add source" })).toBeVisible();
     expect(screen.getByLabelText("Source title")).toHaveValue("Unsaved paper");
     expect(screen.queryByText("Source imported")).not.toBeInTheDocument();
   });

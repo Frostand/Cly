@@ -6,6 +6,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { InheritedRestriction } from "../domain/obligations";
+import { capabilityUnavailableMessage } from "../services/capabilities";
+import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { InheritedRestrictions } from "./inherited-restrictions";
 import { screenLabels } from "./navigation";
@@ -275,17 +277,12 @@ export function Inspector() {
               <div className="cly-inspector-section">
                 <div className="cly-inspector-label">Research links</div>
                 <div className="cly-stack">
-                  <Button
-                    onClick={() =>
-                      notify(
-                        "Evidence path focused",
-                        `Cly traced the linked neighborhood for ${titleFor(selection.entity)}.`,
-                      )
-                    }
-                  >
+                  <Button onClick={() => setScreen("graph")}>
                     <Link2 size={13} /> Trace linked objects
                   </Button>
                   <Button
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage("context.edit")}
                     onClick={() =>
                       notify(
                         "Added to context",
@@ -296,6 +293,8 @@ export function Inspector() {
                     <Pin size={13} /> Add to context
                   </Button>
                   <Button
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage("agents.execute")}
                     onClick={() =>
                       notify(
                         "Agent action preview",
@@ -307,6 +306,10 @@ export function Inspector() {
                   </Button>
                   <Button
                     variant="ghost"
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage(
+                      "integrations.configure",
+                    )}
                     onClick={() =>
                       notify(
                         "External open unavailable",

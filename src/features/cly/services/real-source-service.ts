@@ -2,7 +2,7 @@
  * Real SourceService backed by the research repository (SQLite/Drizzle).
  *
  * This is the first Phase 2 backend service. It implements the same
- * SourceService interface as mock-services.ts but persists to SQLite
+ * SourceService interface backed by the persisted research API.
  * through the existing research repository.
  *
  * Usage:
