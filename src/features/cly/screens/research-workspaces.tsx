@@ -66,7 +66,11 @@ import type {
   ObligationOperation,
 } from "../domain/obligations";
 import type { Claim, ClaimStatus, Source } from "../domain/types";
-import { apiClient, type ReviewerCapsule } from "../services/api-client";
+import {
+  apiClient,
+  type LiteratureReadingList,
+  type ReviewerCapsule,
+} from "../services/api-client";
 import { capabilityUnavailableMessage } from "../services/capabilities";
 import { desktopLiteratureService } from "../services/literature-service";
 import { projectServices } from "../services/project-services";
@@ -76,19 +80,36 @@ import { claimStatusTone, useClyStore } from "../store/cly-store";
 const noInheritedRestrictions: InheritedRestriction[] = [];
 
 export function SourcesScreen() {
+  const activeProject = useClyStore((s) =>
+    s.data.projects.find((project) => project.id === s.activeProjectId),
+  );
   const sources = useClyStore((s) => s.data.sources);
   const claims = useClyStore((s) => s.data.claims);
   const selectedId = useClyStore((s) => s.selectedId);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
+  const loadFromApi = useClyStore((s) => s.loadFromApi);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("All");
   const [sort, setSort] = useState<"Relevance" | "Newest" | "Title">(
     "Relevance",
   );
   const [importOpen, setImportOpen] = useState(false);
+  const [importFormat, setImportFormat] = useState<"metadata" | "bibtex">(
+    "metadata",
+  );
   const [title, setTitle] = useState("");
+  const [authors, setAuthors] = useState("");
+  const [year, setYear] = useState("");
+  const [doi, setDoi] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceAbstract, setSourceAbstract] = useState("");
+  const [bibtex, setBibtex] = useState("");
   const [importType, setImportType] = useState<Source["type"]>("Paper");
+  const [readingLists, setReadingLists] = useState<LiteratureReadingList[]>([]);
+  const [readingListId, setReadingListId] = useState("");
+  const [newReadingListName, setNewReadingListName] = useState("");
+  const [importing, setImporting] = useState(false);
   const relevanceRank = { Core: 0, High: 1, Medium: 2, Low: 3 };
   const filtered = sources
     .filter(
@@ -146,27 +167,110 @@ export function SourcesScreen() {
         accessorFn: (row) =>
           `${row.linkedClaimIds.length} claims · ${row.linkedExperimentIds.length} exp.`,
       },
+      {
+        id: "grounding",
+        header: "Grounding",
+        accessorFn: (row) => row.groundedSummary?.claims.length ?? 0,
+        cell: ({ row }) =>
+          row.original.groundedSummary
+            ? `${row.original.groundedSummary.claims.length} cited sentence${row.original.groundedSummary.claims.length === 1 ? "" : "s"}`
+            : "—",
+      },
     ],
     [],
   );
 
+  const openImport = (format: "metadata" | "bibtex" = "metadata") => {
+    setImportFormat(format);
+    setImportType("Paper");
+    setImportOpen(true);
+    if (activeProject) {
+      void apiClient
+        .fetchReadingLists(activeProject.id)
+        .then(setReadingLists)
+        .catch(() => setReadingLists([]));
+    }
+  };
+
+  const resetImport = () => {
+    setTitle("");
+    setAuthors("");
+    setYear("");
+    setDoi("");
+    setSourceUrl("");
+    setSourceAbstract("");
+    setBibtex("");
+    setImportType("Paper");
+    setReadingListId("");
+    setNewReadingListName("");
+  };
+
   const importSource = async () => {
+    setImporting(true);
     try {
+      if (importType === "Paper") {
+        if (!activeProject) throw new Error("Select a research project first.");
+        let selectedReadingListId = readingListId;
+        if (readingListId === "new") {
+          const readingList = await apiClient.createReadingList(
+            activeProject.id,
+            newReadingListName,
+          );
+          selectedReadingListId = readingList.id;
+        }
+        const readingListIds = selectedReadingListId
+          ? [selectedReadingListId]
+          : [];
+        const result = await apiClient.importLiteratureMetadata(
+          activeProject.id,
+          importFormat === "bibtex"
+            ? { format: "bibtex", content: bibtex, readingListIds }
+            : {
+                format: "metadata",
+                records: [
+                  {
+                    title,
+                    authors,
+                    year: year || undefined,
+                    doi: doi || undefined,
+                    url: sourceUrl || undefined,
+                    abstract: sourceAbstract || undefined,
+                  },
+                ],
+                readingListIds,
+              },
+        );
+        await loadFromApi(activeProject.id);
+        const source = result.results[0]?.source;
+        if (source) setSelected(source.id);
+        setImportOpen(false);
+        resetImport();
+        notify(
+          result.duplicateCount ? "Duplicate source found" : "Paper imported",
+          result.duplicateCount
+            ? `Matched the existing source by ${result.results[0]?.matchedBy ?? "normalized metadata"}; no duplicate record was created.`
+            : `${result.importedCount} normalized source record${result.importedCount === 1 ? "" : "s"} saved with grounded abstract evidence.`,
+        );
+        return;
+      }
       const source = await projectServices.sources.create({
         title: title.trim() || "Imported source",
         type: importType,
       });
       setImportOpen(false);
-      setTitle("");
-      setImportType("Paper");
+      resetImport();
       setSelected(source.id);
       notify(
-        "Source record saved",
-        "The source metadata was persisted to the active project.",
+        "Source imported",
+        "The source record was saved and is ready for metadata review.",
       );
-    } catch {
-      // addSource already reports the persistence error. Keep the dialog open
-      // so the user's input is not lost and never show a success state.
+    } catch (error) {
+      notify(
+        "Source was not saved",
+        error instanceof Error ? error.message : "Unable to import source.",
+      );
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -190,8 +294,8 @@ export function SourcesScreen() {
             >
               <FolderInput size={13} /> Import folder
             </Button>
-            <Button variant="primary" onClick={() => setImportOpen(true)}>
-              <Plus size={13} /> Add source
+            <Button variant="primary" onClick={() => openImport()}>
+              <Upload size={13} /> Import source
             </Button>
           </>
         }
@@ -254,28 +358,10 @@ export function SourcesScreen() {
             <option>Newest</option>
             <option>Title</option>
           </select>
-          <Button
-            disabled={!isClyDemoRuntime}
-            title={capabilityUnavailableMessage("sources.bibtex-import")}
-            onClick={() =>
-              notify(
-                "BibTeX import",
-                "The prototype parsed 24 fixture records and found two possible duplicates.",
-              )
-            }
-          >
+          <Button onClick={() => openImport("bibtex")}>
             <FileInput size={13} /> BibTeX
           </Button>
-          <Button
-            disabled={!isClyDemoRuntime}
-            title={capabilityUnavailableMessage("sources.url-import")}
-            onClick={() =>
-              notify(
-                "URL source form",
-                "A URL entry form would validate metadata without fetching in this UI-only phase.",
-              )
-            }
-          >
+          <Button onClick={() => openImport("metadata")}>
             <Link2 size={13} /> Add URL
           </Button>
         </div>
@@ -284,8 +370,8 @@ export function SourcesScreen() {
             title="No sources in this project"
             description="Import a paper, note, dataset, or URL."
             action={
-              <Button variant="primary" onClick={() => setImportOpen(true)}>
-                Add source
+              <Button variant="primary" onClick={() => openImport()}>
+                Import source
               </Button>
             }
           />
@@ -400,36 +486,41 @@ export function SourcesScreen() {
       <Dialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        title="Add source"
-        description="Create a durable source record in the active project. Add a URL or citation through metadata enrichment after saving."
+        title="Import source"
+        description="Normalize paper metadata, detect duplicates, and preserve grounded abstract evidence."
         footer={
           <>
             <Button onClick={() => setImportOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => void importSource()}>
-              Save source
+            <Button
+              variant="primary"
+              disabled={
+                importing ||
+                (importType === "Paper" &&
+                  (importFormat === "bibtex"
+                    ? !bibtex.trim()
+                    : !title.trim())) ||
+                (importType === "Paper" &&
+                  readingListId === "new" &&
+                  !newReadingListName.trim())
+              }
+              onClick={() => void importSource()}
+            >
+              {importing ? "Importing…" : "Import and scan"}
             </Button>
           </>
         }
       >
         <div className="cly-field">
-          <label htmlFor="source-title">Source title</label>
-          <input
-            className="cly-input"
-            id="source-title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Paper, dataset, documentation, or note"
-          />
-        </div>
-        <div className="cly-field" style={{ marginTop: 12 }}>
           <label htmlFor="source-type">Source type</label>
           <select
             id="source-type"
             className="cly-select"
             value={importType}
-            onChange={(event) =>
-              setImportType(event.target.value as Source["type"])
-            }
+            onChange={(event) => {
+              const nextType = event.target.value as Source["type"];
+              setImportType(nextType);
+              if (nextType !== "Paper") setReadingListId("");
+            }}
           >
             <option>Paper</option>
             <option>Dataset</option>
@@ -438,11 +529,148 @@ export function SourcesScreen() {
             <option>Webpage</option>
           </select>
         </div>
-        <div className="cly-callout" style={{ marginTop: 12 }}>
-          This form stores source metadata. File parsing, URL fetching, and bulk
-          import remain unavailable until their approval and provenance flows
-          are implemented.
-        </div>
+        {importType !== "Paper" || importFormat === "metadata" ? (
+          <div className="cly-field" style={{ marginTop: 12 }}>
+            <label htmlFor="source-title">Source title</label>
+            <input
+              className="cly-input"
+              id="source-title"
+              autoFocus
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Paper, dataset, documentation, or note"
+            />
+          </div>
+        ) : null}
+        {importType === "Paper" ? (
+          <>
+            <div className="cly-field" style={{ marginTop: 12 }}>
+              <label htmlFor="source-import-format">Metadata format</label>
+              <select
+                id="source-import-format"
+                className="cly-select"
+                value={importFormat}
+                onChange={(event) =>
+                  setImportFormat(event.target.value as "metadata" | "bibtex")
+                }
+              >
+                <option value="metadata">Paper metadata</option>
+                <option value="bibtex">BibTeX</option>
+              </select>
+            </div>
+            {importFormat === "bibtex" ? (
+              <div className="cly-field" style={{ marginTop: 12 }}>
+                <label htmlFor="source-bibtex">BibTeX records</label>
+                <textarea
+                  className="cly-textarea"
+                  id="source-bibtex"
+                  rows={9}
+                  value={bibtex}
+                  onChange={(event) => setBibtex(event.target.value)}
+                  placeholder="@article{key, title = {…}, author = {…}, year = {2026}}"
+                />
+              </div>
+            ) : (
+              <>
+                <div className="cly-field" style={{ marginTop: 12 }}>
+                  <label htmlFor="source-authors">Authors</label>
+                  <input
+                    className="cly-input"
+                    id="source-authors"
+                    value={authors}
+                    onChange={(event) => setAuthors(event.target.value)}
+                    placeholder="Author One; Author Two"
+                  />
+                </div>
+                <div className="cly-row" style={{ marginTop: 12 }}>
+                  <div className="cly-field" style={{ flex: 1 }}>
+                    <label htmlFor="source-year">Year</label>
+                    <input
+                      className="cly-input"
+                      id="source-year"
+                      inputMode="numeric"
+                      value={year}
+                      onChange={(event) => setYear(event.target.value)}
+                      placeholder="2026"
+                    />
+                  </div>
+                  <div className="cly-field" style={{ flex: 2 }}>
+                    <label htmlFor="source-doi">DOI</label>
+                    <input
+                      className="cly-input"
+                      id="source-doi"
+                      value={doi}
+                      onChange={(event) => setDoi(event.target.value)}
+                      placeholder="10.1234/example"
+                    />
+                  </div>
+                </div>
+                <div className="cly-field" style={{ marginTop: 12 }}>
+                  <label htmlFor="source-url">Canonical URL</label>
+                  <input
+                    className="cly-input"
+                    id="source-url"
+                    type="url"
+                    value={sourceUrl}
+                    onChange={(event) => setSourceUrl(event.target.value)}
+                    placeholder="https://doi.org/…"
+                  />
+                </div>
+                <div className="cly-field" style={{ marginTop: 12 }}>
+                  <label htmlFor="source-abstract">Abstract</label>
+                  <textarea
+                    className="cly-textarea"
+                    id="source-abstract"
+                    rows={3}
+                    value={sourceAbstract}
+                    onChange={(event) => setSourceAbstract(event.target.value)}
+                    placeholder="Used to create an extractive summary with sentence-level evidence."
+                  />
+                </div>
+              </>
+            )}
+            <div className="cly-field" style={{ marginTop: 12 }}>
+              <label htmlFor="source-reading-list">Reading list</label>
+              <select
+                id="source-reading-list"
+                className="cly-select"
+                value={readingListId}
+                onChange={(event) => setReadingListId(event.target.value)}
+              >
+                <option value="">No reading list</option>
+                {readingLists.map((list) => (
+                  <option key={list.id} value={list.id}>
+                    {list.name} ({list.sourceCount})
+                  </option>
+                ))}
+                <option value="new">Create a new reading list…</option>
+              </select>
+            </div>
+            {readingListId === "new" ? (
+              <div className="cly-field" style={{ marginTop: 12 }}>
+                <label htmlFor="source-new-reading-list">New list name</label>
+                <input
+                  className="cly-input"
+                  id="source-new-reading-list"
+                  value={newReadingListName}
+                  onChange={(event) =>
+                    setNewReadingListName(event.target.value)
+                  }
+                  placeholder="Methods to review"
+                />
+              </div>
+            ) : null}
+            <div className="cly-callout" style={{ marginTop: 12 }}>
+              Exact identifier matches reuse the existing source. Abstract
+              summaries retain sentence-level evidence.
+            </div>
+          </>
+        ) : (
+          <div className="cly-callout" style={{ marginTop: 12 }}>
+            This source type is saved as a metadata placeholder for later
+            extraction.
+          </div>
+        )}
       </Dialog>
     </div>
   );

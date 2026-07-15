@@ -26,26 +26,55 @@ function toClySource(row: {
   updatedAt: string;
 }): Source {
   const payload = row.payload as unknown as SourcePayload;
+  const typeBySourceType = {
+    dataset: "Dataset",
+    documentation: "Documentation",
+    note: "Lab note",
+    paper: "Paper",
+    webpage: "Webpage",
+  } as const;
   return {
     id: row.id,
     title: row.title,
     authors:
       payload.authors?.join(", ") ?? payload.citation ?? "Unknown authors",
-    year: new Date(row.createdAt).getFullYear(),
-    type: "Paper",
-    status: "Needs metadata",
+    year: payload.year ?? new Date(row.createdAt).getFullYear(),
+    type: typeBySourceType[payload.sourceType ?? "paper"],
+    status: payload.status === "resolved" ? "Queued" : "Needs metadata",
     relevance: "Medium",
     confidence: 0,
-    summary: row.description || "Awaiting extraction.",
-    methods: [],
-    findings: [],
-    limitations: [],
-    tags: [],
+    summary:
+      payload.groundedSummary?.text ||
+      row.description ||
+      payload.abstract ||
+      "Awaiting extraction.",
+    url: payload.url,
+    doi: payload.doi,
+    providerId: payload.providerId,
+    provider: payload.provider,
+    methods: payload.methods ?? [],
+    findings: payload.findings ?? [],
+    limitations: payload.limitations ?? [],
+    tags: payload.tags ?? [],
     linkedClaimIds: [],
     linkedExperimentIds: [],
     inNotebookBundle: false,
+    groundedSummary: payload.groundedSummary,
     path: `sources/${row.id}`,
     updatedAt: row.updatedAt,
+    provenance:
+      payload.provider && payload.query && payload.rankingExplanation
+        ? {
+            provider: payload.provider,
+            query: payload.query,
+            score: payload.rankingScore ?? 0,
+            method: payload.rankingMethod ?? "unknown",
+            model: payload.rankingModel,
+            components: payload.rankingComponents,
+            explanation: payload.rankingExplanation,
+            retrievedAt: payload.retrievedAt ?? row.createdAt,
+          }
+        : undefined,
   };
 }
 

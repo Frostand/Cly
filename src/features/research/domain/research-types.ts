@@ -26,7 +26,13 @@ export interface SourcePayload {
   providerId?: string;
   abstract?: string;
   year?: number;
+  journal?: string;
+  tags?: string[];
   provider?: string;
+  normalizedKey?: string;
+  importMethod?: "metadata" | "bibtex";
+  importedAt?: string;
+  groundedSummary?: GroundedLiteratureSummary;
   query?: string;
   rankingScore?: number;
   rankingMethod?: string;
@@ -40,6 +46,20 @@ export interface SourcePayload {
   limitations?: string[];
   enrichmentMethod?: string;
   enrichedAt?: string;
+}
+
+export interface GroundedLiteratureSummary {
+  text: string;
+  method: "extractive_abstract_v1";
+  generatedAt: string;
+  claims: Array<{
+    text: string;
+    evidence: Array<{
+      field: "abstract";
+      locator: string;
+      quote: string;
+    }>;
+  }>;
 }
 
 export interface ClaimPayload {

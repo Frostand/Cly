@@ -60,7 +60,12 @@ test("completes and recovers the production evidence loop with demos disabled", 
     });
     await claimDialog.getByRole("textbox", { name: "Claim" }).fill(claimTitle);
     await claimDialog.getByRole("button", { name: "Create claim" }).click();
-    await expect(window.getByText(claimTitle, { exact: true })).toBeVisible();
+    await expect(
+      window
+        .locator("#main-workspace")
+        .getByText(claimTitle, { exact: true })
+        .first(),
+    ).toBeVisible();
 
     await window.getByTestId("nav-experiments").click();
     await window
@@ -80,16 +85,22 @@ test("completes and recovers the production evidence loop with demos disabled", 
     await expect(window.getByText("Experiment created")).toBeVisible();
 
     await window.getByTestId("nav-claims").click();
-    await window.getByText(claimTitle, { exact: true }).click();
+    await window
+      .locator("#main-workspace")
+      .getByText(claimTitle, { exact: true })
+      .first()
+      .click();
     await window.getByRole("radio", { name: "Detail" }).click();
     await window.getByRole("button", { name: "Link evidence" }).click();
     await expect(window.getByText("Experiment linked")).toBeVisible();
 
     await window.getByTestId("nav-sources").click();
-    await window.getByRole("button", { name: "Add source" }).first().click();
-    const sourceDialog = window.getByRole("dialog", { name: "Add source" });
+    await window.getByRole("button", { name: "Import source" }).first().click();
+    const sourceDialog = window.getByRole("dialog", {
+      name: "Import source",
+    });
     await sourceDialog.getByLabel("Source title").fill(sourceTitle);
-    await sourceDialog.getByRole("button", { name: "Save source" }).click();
+    await sourceDialog.getByRole("button", { name: "Import and scan" }).click();
     const sourceRecord = window
       .locator("#main-workspace")
       .getByText(sourceTitle, { exact: true })
@@ -107,7 +118,12 @@ test("completes and recovers the production evidence loop with demos disabled", 
 
     await window.getByTestId("nav-claims").click();
     await window.getByPlaceholder("Search claims…").fill(claimTitle);
-    await expect(window.getByText(claimTitle, { exact: true })).toBeVisible();
+    await expect(
+      window
+        .locator("#main-workspace")
+        .getByText(claimTitle, { exact: true })
+        .first(),
+    ).toBeVisible();
 
     await window.getByTestId("nav-experiments").click();
     await window

@@ -98,6 +98,27 @@ export interface CrossEncoderReranking {
   errorKind?: string;
 }
 
+export interface LiteratureReadingList {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  sourceCount: number;
+  sourceIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LiteratureImportResult {
+  importedCount: number;
+  duplicateCount: number;
+  results: Array<{
+    duplicate: boolean;
+    matchedBy: "doi" | "provider-id" | "url" | "title-year" | null;
+    source: ResearchObject;
+  }>;
+}
+
 export interface LineageScanResult {
   projectId: string;
   suggestions: LineageSuggestion[];
@@ -556,5 +577,65 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify({ query, limit }),
     });
+  },
+
+  importLiteratureMetadata(
+    projectId: string,
+    input:
+      | {
+          format: "metadata";
+          records: Array<{
+            title: string;
+            authors?: string | string[];
+            abstract?: string;
+            citation?: string;
+            doi?: string;
+            journal?: string;
+            url?: string;
+            year?: number | string;
+          }>;
+          readingListIds?: string[];
+        }
+      | {
+          format: "bibtex";
+          content: string;
+          readingListIds?: string[];
+        },
+  ) {
+    return request<LiteratureImportResult>(
+      `/api/projects/${encodeURIComponent(projectId)}/literature/imports`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  fetchReadingLists(projectId: string) {
+    return request<LiteratureReadingList[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/literature/reading-lists`,
+    );
+  },
+
+  createReadingList(projectId: string, name: string, description = "") {
+    return request<LiteratureReadingList>(
+      `/api/projects/${encodeURIComponent(projectId)}/literature/reading-lists`,
+      { method: "POST", body: JSON.stringify({ name, description }) },
+    );
+  },
+
+  addSourceToReadingList(projectId: string, listId: string, sourceId: string) {
+    return request<{ added: boolean; readingList: LiteratureReadingList }>(
+      `/api/projects/${encodeURIComponent(projectId)}/literature/reading-lists/${encodeURIComponent(listId)}/sources/${encodeURIComponent(sourceId)}`,
+      { method: "PUT" },
+    );
+  },
+
+  removeSourceFromReadingList(
+    projectId: string,
+    listId: string,
+    sourceId: string,
+  ) {
+    return request<{ removed: boolean }>(
+      `/api/projects/${encodeURIComponent(projectId)}/literature/reading-lists/${encodeURIComponent(listId)}/sources/${encodeURIComponent(sourceId)}`,
+      { method: "DELETE" },
+    );
   },
 };
