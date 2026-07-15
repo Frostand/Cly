@@ -1,6 +1,9 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  define: {
+    __CLY_INCLUDE_DEMOS__: "true",
+  },
   test: {
     environment: "jsdom",
     globals: true,

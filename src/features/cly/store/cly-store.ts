@@ -1,8 +1,4 @@
 import { create } from "zustand";
-import {
-  createNewAgentSession,
-  workbenchFixtureTabs,
-} from "../agent-sessions/fixtures";
 import type {
   AgentIdentity,
   AgentMessage,
@@ -59,16 +55,16 @@ import type {
   Source,
 } from "../domain/types";
 import {
-  createCostLedgerFixture,
-  emptyCostLedger,
-} from "../fixtures/cost-ledger";
-import { createFixtureRepository } from "../fixtures/repository";
-import {
   type AwsCurImportResult,
   apiClient,
   type ManualCostEntryInput,
   type ResearchData,
 } from "../services/api-client";
+import { CapabilityUnavailableError } from "../services/capabilities";
+import {
+  createProductionRepository,
+  emptyCostLedger,
+} from "./production-repository";
 
 export interface ToastMessage {
   id: string;
@@ -295,11 +291,22 @@ const explicitDemoMode =
     demoFlag: import.meta.env.VITE_CLY_DEMO_MODE,
     development: import.meta.env.DEV,
   }) === "active";
+const testRuntime = import.meta.env.MODE === "test";
+const demoFixtureRuntime = explicitDemoMode || testRuntime;
 const uiStorageKey = explicitDemoMode ? "cly-demo-ui" : "cly-prototype-ui";
 const initialFixtureMode = resolveInitialFixtureMode({
   demoFlag: import.meta.env.VITE_CLY_DEMO_MODE,
   development: import.meta.env.DEV,
 });
+let createDemoAgentSession:
+  | ((input: NewAgentSessionInput) => AgentSession)
+  | null = null;
+let createDemoWorkbenchTabs: (() => WorkbenchTab[]) | null = null;
+if (__CLY_INCLUDE_DEMOS__ && testRuntime) {
+  const agentFixtureModule = await import("../agent-sessions/fixtures");
+  createDemoAgentSession = agentFixtureModule.createNewAgentSession;
+  createDemoWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
+}
 
 const persistUi = (partial: Record<string, unknown>) => {
   try {
@@ -368,10 +375,13 @@ const snapshotAgentSessionLayouts = (sessions: AgentSession[]) =>
   ) as ClyState["agentSessionLayouts"];
 
 const initialData = hydrateAgentSessionLayouts(
-  createFixtureRepository(initialFixtureMode),
+  createProductionRepository(),
   saved.agentSessionLayouts,
 );
-const initialCosts = createCostLedgerFixture(initialFixtureMode, initialData);
+const initialCosts = {
+  ledger: emptyCostLedger(),
+  claimCosts: {},
+};
 const savedAgentSessionIsValid = saved.selectedAgentSessionId
   ? initialData.agentSessions.some(
       (session) => session.id === saved.selectedAgentSessionId,
@@ -468,7 +478,7 @@ const entityTypeFromResearchObject: Record<ResearchObject["type"], EntityType> =
  * owns. Only the project catalog survives hydration.
  */
 const mapResearchData = (
-  fixtureData: ClyRepositoryData,
+  baseData: ClyRepositoryData,
   researchData: ResearchData,
 ): ClyRepositoryData => {
   const objectsById = new Map(
@@ -593,7 +603,7 @@ const mapResearchData = (
     }));
 
   return {
-    ...fixtureData,
+    ...baseData,
     runs,
     notebooks: [],
     code: [],
@@ -769,29 +779,52 @@ export const useClyStore = create<ClyState>((set, get) => ({
     void get().loadFromApi(activeProjectId);
   },
   setFixtureMode: (fixtureMode) => {
-    const data = createFixtureRepository(fixtureMode);
-    const costs = createCostLedgerFixture(fixtureMode, data);
-    set({
-      data,
-      fixtureMode,
-      selectedId: null,
-      agentSessionsMode: "overview",
-      selectedAgentSessionId: null,
-      selectedOverviewSessionId: null,
-      lineageSuggestions: [],
-      lineageMeasurement: null,
-      decisionBriefs: [],
-      decisionBriefsLoading: false,
-      decisionBriefsError: null,
-      preregistrations: [],
-      preregistrationsLoading: false,
-      preregistrationsError: null,
-      costLedger: costs.ledger,
-      claimCosts: costs.claimCosts,
-      costsLoading: false,
-      costsError: null,
-      selectedCostEntryId: costs.ledger.entries[0]?.id ?? null,
-      fixtureSwitcherOpen: false,
+    if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
+    if (fixtureMode === "empty") {
+      const data = createProductionRepository(get().data.projects);
+      const costs = emptyCostLedger();
+      set({
+        data,
+        fixtureMode,
+        selectedId: null,
+        costLedger: costs,
+        claimCosts: {},
+        selectedCostEntryId: null,
+        fixtureSwitcherOpen: false,
+      });
+      return;
+    }
+    void Promise.all([
+      import("../fixtures/repository"),
+      import("../fixtures/cost-ledger"),
+      import("../agent-sessions/fixtures"),
+    ]).then(([repositoryModule, costModule, agentFixtureModule]) => {
+      createDemoAgentSession = agentFixtureModule.createNewAgentSession;
+      createDemoWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
+      const data = repositoryModule.createFixtureRepository(fixtureMode);
+      const costs = costModule.createCostLedgerFixture(fixtureMode, data);
+      set({
+        data,
+        fixtureMode,
+        selectedId: null,
+        agentSessionsMode: "overview",
+        selectedAgentSessionId: null,
+        selectedOverviewSessionId: null,
+        lineageSuggestions: [],
+        lineageMeasurement: null,
+        decisionBriefs: [],
+        decisionBriefsLoading: false,
+        decisionBriefsError: null,
+        preregistrations: [],
+        preregistrationsLoading: false,
+        preregistrationsError: null,
+        costLedger: costs.ledger,
+        claimCosts: costs.claimCosts,
+        costsLoading: false,
+        costsError: null,
+        selectedCostEntryId: costs.ledger.entries[0]?.id ?? null,
+        fixtureSwitcherOpen: false,
+      });
     });
   },
   toggleSidebar: () =>
@@ -885,8 +918,16 @@ export const useClyStore = create<ClyState>((set, get) => ({
         selectedId: null,
       }));
       return true;
-    } catch {
-      // Keep the fixture repository intact when the Electron API is unavailable.
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Research data could not load.";
+      console.error("[cly:research-hydration-failed]", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        operation: "hydrate-project-research",
+      });
+      get().notify("Research data could not load", message);
       return false;
     }
   },
@@ -1593,7 +1634,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
   setAgentConfigurationId: (agentConfigurationId) =>
     set({ agentConfigurationId }),
   createAgentSession: (input, open) => {
-    const session = createNewAgentSession(input);
+    if (!demoFixtureRuntime || !createDemoAgentSession)
+      throw new CapabilityUnavailableError("agents.execute");
+    const session = createDemoAgentSession(input);
     set((state) => ({
       data: {
         ...state.data,
@@ -1638,7 +1681,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
       updatedAt: "Just now",
     })),
   openWorkbenchTab: (sessionId, type) => {
-    const template = workbenchFixtureTabs().find((tab) => tab.type === type);
+    if (!demoFixtureRuntime || !createDemoWorkbenchTabs)
+      throw new CapabilityUnavailableError("agents.workbench");
+    const template = createDemoWorkbenchTabs().find((tab) => tab.type === type);
     if (!template) return;
     get().updateAgentSession(sessionId, (session) => {
       const existing = session.workbenchTabs.find((tab) => tab.type === type);

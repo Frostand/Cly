@@ -29,7 +29,9 @@ import { ClySplitPane } from "../components/toolkit";
 import { type BudgetSegment, TokenBudgetBar } from "../components/visuals";
 import { calculateContextBudget } from "../domain/logic";
 import type { ContextItem } from "../domain/types";
-import { mockServices } from "../services/mock-services";
+import { capabilityUnavailableMessage } from "../services/capabilities";
+import { projectServices } from "../services/project-services";
+import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 
 const modelOptions = [
@@ -122,6 +124,8 @@ export function ContextScreen() {
             />
             <Button
               variant="primary"
+              disabled={!isClyDemoRuntime}
+              title={capabilityUnavailableMessage("context.edit")}
               onClick={() =>
                 notify(
                   "Context pack saved",
@@ -138,7 +142,15 @@ export function ContextScreen() {
         <EmptyState
           title="No context objects"
           description="Add research objects to build a context pack."
-          action={<Button variant="primary">Add custom note</Button>}
+          action={
+            <Button
+              variant="primary"
+              disabled={!isClyDemoRuntime}
+              title={capabilityUnavailableMessage("context.edit")}
+            >
+              Add custom note
+            </Button>
+          }
         />
       ) : (
         <ClySplitPane
@@ -173,12 +185,14 @@ export function ContextScreen() {
                         <Toggle
                           pressed={item.included}
                           onChange={(included) =>
-                            void mockServices.context.setIncluded(
+                            void projectServices.context.setIncluded(
                               item.id,
                               included,
                             )
                           }
                           label={`${item.included ? "Exclude" : "Include"} ${item.name}`}
+                          disabled={!isClyDemoRuntime}
+                          reason={capabilityUnavailableMessage("context.edit")}
                         />
                         <button
                           type="button"
@@ -201,8 +215,10 @@ export function ContextScreen() {
                         <button
                           className="cly-btn"
                           type="button"
+                          disabled={!isClyDemoRuntime}
+                          title={capabilityUnavailableMessage("context.edit")}
                           onClick={() =>
-                            void mockServices.context.setRepresentation(
+                            void projectServices.context.setRepresentation(
                               item.id,
                               item.representation === "Raw" ? "Summary" : "Raw",
                             )
@@ -223,8 +239,10 @@ export function ContextScreen() {
                           variant="ghost"
                           iconOnly
                           aria-label={`${item.pinned ? "Unpin" : "Pin"} ${item.name}`}
+                          disabled={!isClyDemoRuntime}
+                          title={capabilityUnavailableMessage("context.edit")}
                           onClick={() =>
-                            void mockServices.context.setPinned(
+                            void projectServices.context.setPinned(
                               item.id,
                               !item.pinned,
                             )
@@ -315,6 +333,8 @@ export function ContextScreen() {
                         </span>
                         <Button
                           onClick={() => applyPack(pack.itemIds, pack.name)}
+                          disabled={!isClyDemoRuntime}
+                          title={capabilityUnavailableMessage("context.edit")}
                         >
                           Apply
                         </Button>
@@ -406,6 +426,8 @@ export function ContextScreen() {
                         <Button
                           variant="ghost"
                           iconOnly
+                          disabled={!isClyDemoRuntime}
+                          title={capabilityUnavailableMessage("context.edit")}
                           onClick={() => move(item, -1)}
                           aria-label={`Move ${item.name} up`}
                         >
@@ -414,6 +436,8 @@ export function ContextScreen() {
                         <Button
                           variant="ghost"
                           iconOnly
+                          disabled={!isClyDemoRuntime}
+                          title={capabilityUnavailableMessage("context.edit")}
                           onClick={() => move(item, 1)}
                           aria-label={`Move ${item.name} down`}
                         >
@@ -431,6 +455,8 @@ export function ContextScreen() {
               >
                 <div className="cly-grid-2">
                   <Button
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage("context.edit")}
                     onClick={() =>
                       notify(
                         "Preview opened",
@@ -441,6 +467,8 @@ export function ContextScreen() {
                     <Eye size={13} /> Preview
                   </Button>
                   <Button
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage("context.edit")}
                     onClick={() =>
                       notify(
                         "Context compressed",
@@ -451,6 +479,8 @@ export function ContextScreen() {
                     <Sparkles size={13} /> Compress
                   </Button>
                   <Button
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage("context.edit")}
                     onClick={() =>
                       notify(
                         "Original restored",
@@ -461,6 +491,8 @@ export function ContextScreen() {
                     <RotateCcw size={13} /> Restore
                   </Button>
                   <Button
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage("context.edit")}
                     onClick={() =>
                       notify(
                         "Context branched",
@@ -471,6 +503,8 @@ export function ContextScreen() {
                     <GitBranch size={13} /> Branch
                   </Button>
                   <Button
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage("context.edit")}
                     onClick={() =>
                       notify(
                         "Item archived",
@@ -482,6 +516,8 @@ export function ContextScreen() {
                   </Button>
                   <Button
                     variant="danger"
+                    disabled={!isClyDemoRuntime}
+                    title={capabilityUnavailableMessage("context.edit")}
                     onClick={() =>
                       notify(
                         "Forget requires confirmation",

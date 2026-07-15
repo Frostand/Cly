@@ -1,0 +1,272 @@
+[
+  {
+    "id": "claims.create",
+    "route": "claims",
+    "action": "Create a claim",
+    "state": "production",
+    "service": "projectServices.claims.create",
+    "api": "POST /api/projects/:projectId/research/objects",
+    "test": "src/features/cly/store/cly-store.test.ts",
+    "reason": null
+  },
+  {
+    "id": "claims.review-status",
+    "route": "claims",
+    "action": "Change claim review status",
+    "state": "production",
+    "service": "projectServices.claims.setStatus",
+    "api": "PATCH /api/projects/:projectId/research/claims/:claimId",
+    "test": "electron/api/research/repository.test.ts",
+    "reason": null
+  },
+  {
+    "id": "claims.link-experiment",
+    "route": "claims",
+    "action": "Link a claim to an experiment",
+    "state": "production",
+    "service": "projectServices.claims.linkExperiment",
+    "api": "POST /api/projects/:projectId/research/relationships",
+    "test": "src/features/cly/store/cly-store.test.ts",
+    "reason": null
+  },
+  {
+    "id": "experiments.create",
+    "route": "experiments",
+    "action": "Create or duplicate an experiment",
+    "state": "production",
+    "service": "projectServices.experiments",
+    "api": "POST /api/projects/:projectId/research/objects",
+    "test": "src/features/cly/store/cly-store.test.ts",
+    "reason": null
+  },
+  {
+    "id": "sources.create",
+    "route": "sources",
+    "action": "Create or import source metadata",
+    "state": "production",
+    "service": "projectServices.sources.create",
+    "api": "POST /api/projects/:projectId/research/objects",
+    "test": "src/features/cly/store/cly-store.test.ts",
+    "reason": null
+  },
+  {
+    "id": "sources.folder-import",
+    "route": "sources",
+    "action": "Import a folder of source files",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Folder import is unavailable until file discovery, extraction, and provenance are persisted."
+  },
+  {
+    "id": "sources.archive",
+    "route": "sources",
+    "action": "Archive a source",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Source archival is unavailable until deletion policy and provenance behavior are implemented."
+  },
+  {
+    "id": "sources.bibtex-import",
+    "route": "sources",
+    "action": "Import a BibTeX file",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "BibTeX import is unavailable until file parsing, duplicate review, and provenance are persisted."
+  },
+  {
+    "id": "sources.url-import",
+    "route": "sources",
+    "action": "Import source metadata from a URL",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "URL metadata import is unavailable until network approval, extraction, and provenance are implemented."
+  },
+  {
+    "id": "sources.deduplicate",
+    "route": "sources",
+    "action": "Merge duplicate sources",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Source merging is unavailable until duplicate review and reversible provenance are implemented."
+  },
+  {
+    "id": "sources.search-import",
+    "route": "literature",
+    "action": "Save a literature result",
+    "state": "production",
+    "service": "projectServices.sources.createFromSearch",
+    "api": "POST /api/projects/:projectId/research/objects",
+    "test": "src/features/cly/store/cly-store.test.ts",
+    "reason": null
+  },
+  {
+    "id": "sources.enrich",
+    "route": "sources",
+    "action": "Persist extracted source metadata",
+    "state": "production",
+    "service": "projectServices.sources.enrich",
+    "api": "PATCH /api/projects/:projectId/research/objects/:objectId",
+    "test": "electron/api/research/repository.test.ts",
+    "reason": null
+  },
+  {
+    "id": "sources.link-claim",
+    "route": "sources",
+    "action": "Link a source to a claim",
+    "state": "production",
+    "service": "projectServices.sources.linkClaim",
+    "api": "POST /api/projects/:projectId/research/relationships",
+    "test": "electron/api/research/repository.test.ts",
+    "reason": null
+  },
+  {
+    "id": "graph.relationships",
+    "route": "research-graph",
+    "action": "Create and review a relationship",
+    "state": "production",
+    "service": "projectServices.graph",
+    "api": "POST/PATCH /api/projects/:projectId/research/relationships",
+    "test": "electron/api/research/repository.test.ts",
+    "reason": null
+  },
+  {
+    "id": "context.edit",
+    "route": "context",
+    "action": "Edit context inclusion, pinning, and representation",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Context editing is unavailable until project-scoped context manifests are persisted with provenance."
+  },
+  {
+    "id": "notebooks.import",
+    "route": "notebooks",
+    "action": "Import and scan a notebook",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Notebook import is unavailable until static scans are persisted and recoverable."
+  },
+  {
+    "id": "code.scan",
+    "route": "code",
+    "action": "Scan project code artifacts",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Code scanning is unavailable until filesystem approval, indexed results, and provenance are persisted."
+  },
+  {
+    "id": "claims.secondary-actions",
+    "route": "claims",
+    "action": "Generate experiments, add contradictions, or export claim reports",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "This claim action is unavailable until its result and provenance are persisted."
+  },
+  {
+    "id": "reproducibility.audit",
+    "route": "reproducibility",
+    "action": "Run or resolve a reproducibility audit",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Reproducibility audits are unavailable until audit findings have a durable local service."
+  },
+  {
+    "id": "planner.update",
+    "route": "next-steps",
+    "action": "Accept, defer, dismiss, or start a next step",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Next-step updates are unavailable until the project planner is persisted."
+  },
+  {
+    "id": "decisions.create",
+    "route": "decisions",
+    "action": "Create or supersede a research decision",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Research decisions are unavailable until their history and provenance are persisted."
+  },
+  {
+    "id": "integrations.configure",
+    "route": "integrations",
+    "action": "Connect or disconnect an integration",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Integration setup is unavailable until provider credentials and approval flows are implemented."
+  },
+  {
+    "id": "agents.configure",
+    "route": "models-agents",
+    "action": "Save an agent preset",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Agent presets are unavailable until they are project-scoped and persisted."
+  },
+  {
+    "id": "agents.execute",
+    "route": "agent-sessions",
+    "action": "Start, pause, stop, or approve an agent session",
+    "state": "read-only-preview",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Agent Sessions is a read-only preview until a durable runtime and explicit approval service are connected."
+  },
+  {
+    "id": "agents.workbench",
+    "route": "agent-sessions",
+    "action": "Use browser, terminal, diff, and live-file workbench tabs",
+    "state": "read-only-preview",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Workbench content is preview-only and does not represent a live process."
+  },
+  {
+    "id": "exports.notebook-bundle",
+    "route": "literature",
+    "action": "Export a NotebookLM bundle",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Notebook bundles are unavailable until generated files pass obligation approval and are written durably."
+  },
+  {
+    "id": "fixtures.select",
+    "route": "settings",
+    "action": "Select deterministic fixture state",
+    "state": "demo-only",
+    "service": null,
+    "api": null,
+    "test": "tests/e2e/visual-system.spec.ts",
+    "reason": "Fixture controls are available only in explicit development demo mode."
+  }
+]
