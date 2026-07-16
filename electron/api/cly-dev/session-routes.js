@@ -1,4 +1,9 @@
 import { getStateDatabase } from "../../persisted-state.js";
+import {
+  clyDevCancellationRequestSchema,
+  clyDevExecutionRequestSchema,
+} from "./runtime/execution-request-schema.js";
+import { createProductionClyDevRuntime } from "./runtime/production-composition.js";
 import { createClyDevSessionRepository } from "./session-repository.js";
 import {
   clyDevContextManifestInputSchema,
@@ -13,7 +18,16 @@ import {
 
 async function parseBody(c, schema) {
   try {
-    const parsed = schema.safeParse(await c.req.json());
+    const value = await c.req.json();
+    if (value?.type === "context.manifest.recorded") {
+      return {
+        error: c.text(
+          "context.manifest.recorded is runtime-internal and cannot be appended through the public event route.",
+          400,
+        ),
+      };
+    }
+    const parsed = schema.safeParse(value);
     return parsed.success
       ? { data: parsed.data }
       : { error: c.text(parsed.error.message, 400) };
@@ -37,10 +51,76 @@ const respond = (c, operation, successStatus = 200) => {
 export function registerClyDevSessionRoutes(
   app,
   {
-    getRepository = () =>
-      createClyDevSessionRepository({ db: getStateDatabase() }),
+    getDatabase = getStateDatabase,
+    getRepository = () => createClyDevSessionRepository({ db: getDatabase() }),
+    getRuntime,
+    runner,
+    executeTool,
+    durableToolEffects,
+    now,
   } = {},
 ) {
+  let productionRuntime;
+  const resolveRuntime = () => {
+    if (getRuntime) return getRuntime();
+    if (!productionRuntime) {
+      productionRuntime = createProductionClyDevRuntime({
+        db: getDatabase(),
+        runner,
+        executeTool,
+        durableToolEffects,
+        now,
+      });
+    }
+    return productionRuntime;
+  };
+  const executeRequest = (operation) => async (c) => {
+    const body = await parseBody(c, clyDevExecutionRequestSchema);
+    if (body.error) return body.error;
+    try {
+      const result = await resolveRuntime()[operation]({
+        ...body.data,
+        projectId: c.req.param("projectId"),
+        sessionId: c.req.param("sessionId"),
+        signal: c.req.raw.signal,
+      });
+      return c.json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Cly Dev execution failed.";
+      return c.text(message, /not found/i.test(message) ? 404 : 400);
+    }
+  };
+
+  app.post(
+    "/api/projects/:projectId/cly-dev/sessions/:sessionId/execute",
+    executeRequest("execute"),
+  );
+  app.post(
+    "/api/projects/:projectId/cly-dev/sessions/:sessionId/resume",
+    executeRequest("resume"),
+  );
+  app.post(
+    "/api/projects/:projectId/cly-dev/sessions/:sessionId/cancel",
+    async (c) => {
+      const body = await parseBody(c, clyDevCancellationRequestSchema);
+      if (body.error) return body.error;
+      try {
+        await resolveRuntime().cancel({
+          projectId: c.req.param("projectId"),
+          sessionId: c.req.param("sessionId"),
+          requestId: body.data.requestId,
+        });
+        return c.json({ status: "cancellation_requested" });
+      } catch (error) {
+        return c.text(
+          error instanceof Error ? error.message : "Cancellation failed.",
+          400,
+        );
+      }
+    },
+  );
+
   app.get("/api/projects/:projectId/cly-dev/workspaces", (c) =>
     respond(c, () => getRepository().listWorkspaces(c.req.param("projectId"))),
   );

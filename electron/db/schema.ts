@@ -1434,6 +1434,52 @@ export const clyDevApprovals = sqliteTable(
   ],
 );
 
+export const clyDevToolEffects = sqliteTable(
+  "cly_dev_tool_effects",
+  {
+    stableExecutionKey: text("stable_execution_key").primaryKey(),
+    projectId: text("project_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    requestId: text("request_id").notNull(),
+    toolCallId: text("tool_call_id").notNull(),
+    status: text("status").notNull(),
+    resultJson: text("result_json"),
+    errorJson: text("error_json"),
+    claimedAt: text("claimed_at").notNull(),
+    completedAt: text("completed_at"),
+    failedAt: text("failed_at"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.sessionId, table.projectId],
+      foreignColumns: [clyDevSessions.id, clyDevSessions.projectId],
+      name: "cly_dev_tool_effects_session_project_fk",
+    }).onDelete("cascade"),
+    check(
+      "cly_dev_tool_effects_status",
+      sql`${table.status} IN ('claimed', 'completed', 'failed')`,
+    ),
+    check(
+      "cly_dev_tool_effects_result_json",
+      sql`${table.resultJson} IS NULL OR json_valid(${table.resultJson})`,
+    ),
+    check(
+      "cly_dev_tool_effects_error_json",
+      sql`${table.errorJson} IS NULL OR json_valid(${table.errorJson})`,
+    ),
+    check(
+      "cly_dev_tool_effects_lifecycle",
+      sql`(${table.status} = 'claimed' AND ${table.resultJson} IS NULL AND ${table.errorJson} IS NULL AND ${table.completedAt} IS NULL AND ${table.failedAt} IS NULL) OR (${table.status} = 'completed' AND ${table.resultJson} IS NOT NULL AND ${table.errorJson} IS NULL AND ${table.completedAt} IS NOT NULL AND ${table.failedAt} IS NULL) OR (${table.status} = 'failed' AND ${table.resultJson} IS NULL AND ${table.errorJson} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.failedAt} IS NOT NULL)`,
+    ),
+    index("idx_cly_dev_tool_effects_project_session_status").on(
+      table.projectId,
+      table.sessionId,
+      table.status,
+      table.claimedAt,
+    ),
+  ],
+);
+
 export const clyDevHandoffs = sqliteTable(
   "cly_dev_handoffs",
   {

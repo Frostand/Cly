@@ -209,7 +209,7 @@ describe("persisted research storage", () => {
     expectAgentContextDatabaseContract(database);
   });
 
-  it("applies reserved migration 0014 after an existing database through 0015", () => {
+  it("applies reserved migration 0014 and later migrations after a database through 0015", () => {
     const databasePath = createDatabasePath();
     getStateDatabase(databasePath);
     closePersistedStateDatabase();
@@ -244,7 +244,14 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784142000000 });
+    ).toEqual({ createdAt: 1784145600000 });
+    expect(
+      upgraded
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cly_dev_tool_effects'",
+        )
+        .get(),
+    ).toEqual({ name: "cly_dev_tool_effects" });
     expectAgentContextDatabaseContract(upgraded);
   });
 

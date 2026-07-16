@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { clyDevEventInputSchema } from "../session-schema.js";
+import { clyDevInternalEventInputSchema } from "../session-schema.js";
 import { createApprovalGate } from "./approval-gate.js";
 import {
   createClyDevExecutionRuntime,
@@ -193,7 +193,7 @@ const createHarness = ({
     Promise<{ executed: boolean; result: unknown }>
   >();
   const appendEvent = vi.fn(async (_projectId, _sessionId, event) => {
-    clyDevEventInputSchema.parse(event);
+    clyDevInternalEventInputSchema.parse(event);
     const duplicate = events.find(
       (item) => item.idempotencyKey === event.idempotencyKey,
     );

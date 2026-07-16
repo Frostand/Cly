@@ -559,6 +559,7 @@ export function createClyDevExecutionRuntime(options = {}) {
             }
             if (
               approvalRecord &&
+              approvalRecord.resolutionRecorded !== true &&
               ["approved", "rejected", "canceled"].includes(
                 approvalRecord.state,
               )

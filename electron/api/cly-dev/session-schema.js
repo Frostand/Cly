@@ -384,7 +384,7 @@ const transferableManifestEventSchema = z
   })
   .strict();
 
-export const clyDevEventInputSchema = z.discriminatedUnion("type", [
+const publicEventSchemas = [
   localEvent("message.recorded", messagePayload),
   localEvent("summary.recorded", summaryPayload),
   localEvent("plan.recorded", planPayload),
@@ -404,6 +404,15 @@ export const clyDevEventInputSchema = z.discriminatedUnion("type", [
   ),
   localEvent("session.interrupted", recoveryPayload),
   localEvent("session.resumable", recoveryPayload),
+];
+
+export const clyDevEventInputSchema = z.discriminatedUnion(
+  "type",
+  publicEventSchemas,
+);
+
+export const clyDevInternalEventInputSchema = z.discriminatedUnion("type", [
+  ...publicEventSchemas,
   transferableManifestEventSchema,
 ]);
 

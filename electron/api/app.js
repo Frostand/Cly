@@ -44,6 +44,7 @@ export function createApiApp(
     allowedRendererOrigin,
     maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
     maxConcurrentRequests = DEFAULT_MAX_CONCURRENT_REQUESTS,
+    clyDev,
     registerAdditionalRoutes,
   } = {},
 ) {
@@ -98,7 +99,7 @@ export function createApiApp(
 
   registerToolApprovalRoutes(guardedApp);
   registerAgentConfigurationRoutes(guardedApp);
-  registerClyDevSessionRoutes(guardedApp);
+  registerClyDevSessionRoutes(guardedApp, clyDev);
   registerProviderRoutes(guardedApp);
   registerChatRoutes(guardedApp);
   registerLiteratureRoutes(guardedApp);

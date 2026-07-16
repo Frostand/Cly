@@ -15,6 +15,7 @@ import { createClyDevSessionRepository } from "./session-repository.js";
 import {
   clyDevContextManifestInputSchema,
   clyDevEventInputSchema,
+  clyDevInternalEventInputSchema,
   clyDevWorkspaceInputSchema,
 } from "./session-schema.js";
 
@@ -545,9 +546,17 @@ describe("ClyDevSessionRepository", () => {
         transferability: "transferable",
         payload: { manifestId: "manifest-1" },
       }),
+    ).toThrow();
+    expect(() =>
+      clyDevInternalEventInputSchema.parse({
+        ...common,
+        type: "context.manifest.recorded",
+        transferability: "transferable",
+        payload: { manifestId: "manifest-1" },
+      }),
     ).not.toThrow();
     expect(() =>
-      clyDevEventInputSchema.parse({
+      clyDevInternalEventInputSchema.parse({
         ...common,
         type: "context.manifest.recorded",
         transferability: "transferable",

@@ -4,7 +4,7 @@ import {
   CLY_DEV_PAYLOAD_VERSION,
   CLY_DEV_SCHEMA_VERSION,
   clyDevContextManifestInputSchema,
-  clyDevEventInputSchema,
+  clyDevInternalEventInputSchema,
   clyDevSessionAggregateInputSchema,
   clyDevSessionInputSchema,
   clyDevSessionStates,
@@ -499,7 +499,7 @@ export function createClyDevSessionRepository({
       };
     },
     appendEvent(projectId, sessionId, rawEvent, { outboundContext } = {}) {
-      const event = clyDevEventInputSchema.parse(rawEvent);
+      const event = clyDevInternalEventInputSchema.parse(rawEvent);
       return transaction(db, () => {
         const sessionRow = findSession(db, projectId, sessionId);
         if (
