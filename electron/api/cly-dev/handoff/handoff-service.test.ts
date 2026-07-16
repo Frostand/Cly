@@ -188,6 +188,20 @@ describe("Cly Dev handoff service", () => {
     }
   });
 
+  it("rejects lowercase and one-character environment assignments in commands", async () => {
+    const { service } = setup();
+    for (const command of [
+      "debug=secret pnpm vitest",
+      "X=secret ./run-tests",
+    ]) {
+      const payload = validEnvelope().payload;
+      payload.tests[0].command = command;
+      await expect(
+        service.exportHandoff({ projectId: "project-1", payload }),
+      ).rejects.toThrow(/environment|restricted/i);
+    }
+  });
+
   it("requires a nonempty existing project and every applicable inspector", async () => {
     const db = openDatabase();
     db.prepare("INSERT INTO projects (id) VALUES (?)").run("project-1");

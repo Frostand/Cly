@@ -193,4 +193,29 @@ describe("Cly Dev handoff schema", () => {
     envelope.integrity.digest = hashHandoffPayload(envelope.payload);
     expect(clyDevHandoffEnvelopeSchema.parse(envelope)).toEqual(envelope);
   });
+
+  it.each([
+    "debug=secret pnpm vitest",
+    "X=secret pnpm vitest",
+    "export debug=secret",
+    "prepare; debug=secret pnpm vitest",
+    "prepare && X=secret ./run-tests",
+  ])("rejects POSIX environment assignment in shell context: %s", (text) => {
+    const envelope = fixture("valid-v1.json");
+    envelope.payload.constraints.push(text);
+    envelope.integrity.digest = hashHandoffPayload(envelope.payload);
+    expect(() => clyDevHandoffEnvelopeSchema.parse(envelope)).toThrow(
+      /environment|restricted/i,
+    );
+  });
+
+  it("rejects assignments in command fields independent of identifier shape", () => {
+    const envelope = fixture("valid-v1.json");
+    envelope.payload.tests[0].command = "debug=secret custom-runner";
+    envelope.payload.permissions.commands.push("X=secret ./run-tests");
+    envelope.integrity.digest = hashHandoffPayload(envelope.payload);
+    expect(() => clyDevHandoffEnvelopeSchema.parse(envelope)).toThrow(
+      /environment|restricted/i,
+    );
+  });
 });

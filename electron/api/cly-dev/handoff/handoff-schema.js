@@ -71,9 +71,36 @@ const containsCredentialValue = (value) =>
       value,
     ) ||
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(value));
-const containsEnvironmentAssignment = (value) =>
-  typeof value === "string" &&
-  /(?:^|[\s;&|])(?:export\s+)?[A-Z][A-Z0-9_]{1,}\s*=\s*[^\s;&|]+/.test(value);
+const posixAssignment = String.raw`[A-Za-z_][A-Za-z0-9_]*\s*=\s*[^\s;&|]+`;
+const commandFieldPath = /\.(?:command|commands)(?:\.|$)/;
+const containsEnvironmentAssignment = (value, location) => {
+  if (typeof value !== "string") return false;
+  const assignmentInCommandField = new RegExp(
+    String.raw`(?:^|\s|&&|\|\||[;|])\s*${posixAssignment}`,
+  );
+  if (commandFieldPath.test(location) && assignmentInCommandField.test(value)) {
+    return true;
+  }
+  const assignmentBeforeCommand = new RegExp(
+    String.raw`^\s*${posixAssignment}\s+\S+`,
+  );
+  const exportedAssignment = new RegExp(
+    String.raw`(?:^|&&|\|\||[;|])\s*export\s+${posixAssignment}(?:\s|$)`,
+  );
+  const assignmentAfterSeparator = new RegExp(
+    String.raw`(?:&&|\|\||[;|])\s*${posixAssignment}(?:\s|$)`,
+  );
+  const assignmentBeforeKnownExecutable = new RegExp(
+    String.raw`(?:^|\s)${posixAssignment}\s+(?:pnpm|npm|npx|yarn|bun|node|tsx|tsc|vitest|jest|python3?|bash|sh|zsh|git|make|cargo|go|ruby|java|mvn|gradle|dotnet|pytest|\.\.?\/)\S*\b`,
+    "i",
+  );
+  return (
+    assignmentBeforeCommand.test(value) ||
+    exportedAssignment.test(value) ||
+    assignmentAfterSeparator.test(value) ||
+    assignmentBeforeKnownExecutable.test(value)
+  );
+};
 const containsEmbeddedMachinePath = (value) =>
   typeof value === "string" &&
   (/(?:^|[\s"'`=:(])\/(?!\/)(?!(?:api|v\d+|assets|static)(?:\/|$))(?:[^/\s"'`]+\/)+[^\s"'`]*/i.test(
@@ -95,7 +122,7 @@ export function findRestrictedHandoffData(
   if (containsCredentialValue(value)) {
     return { path: location, reason: "credential or secret value" };
   }
-  if (containsEnvironmentAssignment(value)) {
+  if (containsEnvironmentAssignment(value, location)) {
     return { path: location, reason: "environment assignment" };
   }
   if (containsEmbeddedMachinePath(value)) {
