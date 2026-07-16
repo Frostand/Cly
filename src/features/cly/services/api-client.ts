@@ -3,6 +3,11 @@ import type {
   ExperimentDefinitionVersion,
   ExperimentLineage,
 } from "../../research/contracts/experiment-provenance";
+import type {
+  AgentConfiguration,
+  AgentConfigurationEstimate,
+  AgentConfigurationInput,
+} from "../agent-sessions/types";
 import type { LiteraturePaper } from "../domain/literature-search";
 import type {
   DatasetObligation,
@@ -214,6 +219,62 @@ export const apiClient = {
         },
       }),
     });
+  },
+
+  fetchAgentConfigurations(projectId: string) {
+    return request<AgentConfiguration[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations`,
+    );
+  },
+
+  createAgentConfiguration(projectId: string, input: AgentConfigurationInput) {
+    return request<AgentConfiguration>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  updateAgentConfiguration(
+    projectId: string,
+    configurationId: string,
+    expectedRevision: number,
+    input: AgentConfigurationInput,
+  ) {
+    return request<AgentConfiguration>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations/${encodeURIComponent(configurationId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ ...input, expectedRevision }),
+      },
+    );
+  },
+
+  removeAgentConfiguration(
+    projectId: string,
+    configurationId: string,
+    expectedRevision: number,
+  ) {
+    return request<{ id: string; revision: number }>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations/${encodeURIComponent(configurationId)}`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ expectedRevision }),
+      },
+    );
+  },
+
+  estimateAgentConfiguration(
+    projectId: string,
+    configurationId: string,
+    configuration?: AgentConfigurationInput,
+  ) {
+    return request<AgentConfigurationEstimate>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations/${encodeURIComponent(configurationId)}/estimate`,
+      {
+        method: "POST",
+        body: JSON.stringify(configuration ? { configuration } : {}),
+      },
+    );
   },
 
   fetchResearchData(projectId: string) {

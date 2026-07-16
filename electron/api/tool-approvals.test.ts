@@ -40,7 +40,13 @@ describe("tool approval broker", () => {
       projectId: "project-1",
       runId: "run-1",
     });
-    await expect(pending).resolves.toMatchObject({ approved: true });
+    await expect(pending).resolves.toMatchObject({
+      actionHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      approved: true,
+      expiresAt: expect.any(Number),
+      projectId: "project-1",
+      runId: "run-1",
+    });
   });
 
   it("expires unanswered approvals closed", async () => {

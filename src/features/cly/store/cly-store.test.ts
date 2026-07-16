@@ -196,6 +196,173 @@ describe("Cly UI store", () => {
     });
   });
 
+  it("preserves loaded agent configurations when optional hydration is unavailable", async () => {
+    const existingConfiguration = {
+      id: "configuration-1",
+      projectId: "project-cly",
+      name: "Existing configuration",
+      maxParallel: 1,
+      maxTotalBudget: {
+        maxInputTokens: 100,
+        maxOutputTokens: 50,
+        maxCostMinorUnits: 10,
+        maxRuntimeMs: 1_000,
+      },
+      partialFailurePolicy: "continue" as const,
+      roles: [
+        {
+          id: "implementation",
+          role: "implementation" as const,
+          instanceCount: 1,
+          maxParallel: 1,
+          provider: "openai",
+          model: "gpt-5",
+          reasoningLevel: "medium" as const,
+          budget: {
+            maxInputTokens: 100,
+            maxOutputTokens: 50,
+            maxCostMinorUnits: 10,
+            maxRuntimeMs: 1_000,
+          },
+          allowedTools: ["readFile"],
+          allowedContextSources: ["project"],
+          allowedFileGlobs: ["**/*"],
+          permissions: {
+            canReadFiles: true,
+            canWriteFiles: false,
+            canRunCommands: false,
+            canAccessNetwork: false,
+            requiresApprovalForWrite: true,
+            requiresApprovalForNetwork: true,
+          },
+          approvalCheckpoints: [],
+        },
+      ],
+      revision: 1,
+      createdAt: "2026-07-15T00:00:00.000Z",
+      updatedAt: "2026-07-15T00:00:00.000Z",
+    };
+    useClyStore.setState((state) => ({
+      data: {
+        ...state.data,
+        agentConfigurations: [existingConfiguration],
+      },
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.endsWith("/research") && init?.method === "PUT") {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: "project-cly",
+                name: "Project",
+                path: "/project",
+                metadata: {},
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.endsWith("/research")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ objects: [], relationships: [] })),
+          );
+        }
+        return Promise.resolve(new Response("Unavailable", { status: 503 }));
+      }),
+    );
+
+    await expect(useClyStore.getState().loadFromApi()).resolves.toBe(true);
+
+    expect(useClyStore.getState().data.agentConfigurations).toEqual([
+      existingConfiguration,
+    ]);
+  });
+
+  it("clears prior-project configurations when the next project fetch fails", async () => {
+    const existingConfiguration = {
+      id: "configuration-a",
+      projectId: "project-cly",
+      name: "Project A configuration",
+      maxParallel: 1,
+      maxTotalBudget: {
+        maxInputTokens: 100,
+        maxOutputTokens: 50,
+        maxCostMinorUnits: 10,
+        maxRuntimeMs: 1_000,
+      },
+      partialFailurePolicy: "continue" as const,
+      roles: [
+        {
+          id: "implementation",
+          role: "implementation" as const,
+          instanceCount: 1,
+          maxParallel: 1,
+          provider: "openai",
+          model: "gpt-5",
+          reasoningLevel: "medium" as const,
+          budget: {
+            maxInputTokens: 100,
+            maxOutputTokens: 50,
+            maxCostMinorUnits: 10,
+            maxRuntimeMs: 1_000,
+          },
+          allowedTools: ["readFile"],
+          allowedContextSources: ["project"],
+          allowedFileGlobs: ["**/*"],
+          permissions: {
+            canReadFiles: true,
+            canWriteFiles: false,
+            canRunCommands: false,
+            canAccessNetwork: false,
+            requiresApprovalForWrite: true,
+            requiresApprovalForNetwork: true,
+          },
+          approvalCheckpoints: [],
+        },
+      ],
+      revision: 1,
+      createdAt: "2026-07-15T00:00:00.000Z",
+      updatedAt: "2026-07-15T00:00:00.000Z",
+    };
+    useClyStore.setState((state) => ({
+      data: { ...state.data, agentConfigurations: [existingConfiguration] },
+    }));
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith("/research") && init?.method === "PUT") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "project-cells",
+              name: "Cells",
+              path: "/cells",
+              metadata: {},
+            }),
+          ),
+        );
+      }
+      if (url.endsWith("/research")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ objects: [], relationships: [] })),
+        );
+      }
+      return Promise.resolve(new Response("Unavailable", { status: 503 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    useClyStore.getState().setActiveProject("project-cells");
+
+    expect(useClyStore.getState().data.agentConfigurations).toEqual([]);
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/projects/project-cells/agent-configurations",
+        expect.any(Object),
+      ),
+    );
+    expect(useClyStore.getState().data.agentConfigurations).toEqual([]);
+  });
+
   it("persists integer manual costs before refreshing project-scoped totals", async () => {
     const current = useClyStore.getState().costLedger.entries[0];
     const created = {
@@ -575,6 +742,7 @@ describe("Cly UI store", () => {
         ),
       )
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
       .mockResolvedValueOnce(
         new Response("Lineage service unavailable", { status: 503 }),
       );
@@ -587,7 +755,7 @@ describe("Cly UI store", () => {
     ]);
     expect(useClyStore.getState().lineageSuggestions).toEqual([]);
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       "/api/projects/project-cly/lineage-suggestions",
       expect.any(Object),
     );
