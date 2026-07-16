@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Button, EmptyState, PageHeader } from "../components/primitives";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
+import { DeviceSyncPanel } from "./device-sync-panel";
 import { productionAgentSessionServices } from "./production-services";
 import { ResumeTaskDialog } from "./resume-task-dialog";
 
@@ -47,9 +48,12 @@ function ProductionAgentSessionsScreen() {
         title="Agent Sessions"
         description="Durable local sessions, ordered events, and explicit restart recovery."
         actions={
-          <Button onClick={() => setResumeOpen(true)}>
-            <Laptop size={13} aria-hidden="true" /> Resume on this machine
-          </Button>
+          <>
+            <DeviceSyncPanel projectId={projectId} />
+            <Button onClick={() => setResumeOpen(true)}>
+              <Laptop size={13} aria-hidden="true" /> Resume on this machine
+            </Button>
+          </>
         }
       />
       {loading && sessions.length === 0 ? (

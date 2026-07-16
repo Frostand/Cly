@@ -269,10 +269,25 @@ const eventBase = {
   idempotencyKey: idSchema,
   occurredAt: z.iso.datetime(),
   actor: actorSchema,
-  transferability: z.enum(["local-only", "transferable"]),
 };
 const localEvent = (type, payload) =>
-  z.object({ ...eventBase, type: z.literal(type), payload }).strict();
+  z
+    .object({
+      ...eventBase,
+      type: z.literal(type),
+      transferability: z.literal("local-only"),
+      payload,
+    })
+    .strict();
+const syncableEvent = (type, payload) =>
+  z
+    .object({
+      ...eventBase,
+      type: z.literal(type),
+      transferability: z.enum(["local-only", "transferable"]),
+      payload,
+    })
+    .strict();
 
 const messagePayload = z
   .object({
@@ -386,20 +401,20 @@ const transferableManifestEventSchema = z
   .strict();
 
 export const clyDevEventInputSchema = z.discriminatedUnion("type", [
-  localEvent("message.recorded", messagePayload),
-  localEvent("summary.recorded", summaryPayload),
-  localEvent("plan.recorded", planPayload),
-  localEvent("progress.recorded", progressPayload),
+  syncableEvent("message.recorded", messagePayload),
+  syncableEvent("summary.recorded", summaryPayload),
+  syncableEvent("plan.recorded", planPayload),
+  syncableEvent("progress.recorded", progressPayload),
   localEvent("tool.recorded", toolPayload),
-  localEvent("decision.recorded", decisionPayload),
+  syncableEvent("decision.recorded", decisionPayload),
   localEvent("cost.recorded", costPayload),
   localEvent("diff.recorded", diffPayload),
   localEvent("test.recorded", testPayload),
   localEvent("failure.recorded", failurePayload),
-  localEvent("remaining_work.recorded", remainingWorkPayload),
-  localEvent("approval.requested", approvalRequestPayload),
-  localEvent("approval.resolved", approvalResolvedPayload),
-  localEvent(
+  syncableEvent("remaining_work.recorded", remainingWorkPayload),
+  syncableEvent("approval.requested", approvalRequestPayload),
+  syncableEvent("approval.resolved", approvalResolvedPayload),
+  syncableEvent(
     "session.state.changed",
     z.object({ state: clyDevSessionStateSchema }).strict(),
   ),
