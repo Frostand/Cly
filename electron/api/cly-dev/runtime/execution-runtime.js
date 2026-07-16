@@ -875,6 +875,19 @@ export function createClyDevExecutionRuntime(options = {}) {
                 `${resultKey}:unsupported`,
               );
             }
+            if (!declaredToolNames.has(event.tool)) {
+              const undeclared = new RuntimeError(
+                "TOOL_NOT_DECLARED",
+                `The provider attempted to invoke undeclared tool ${event.tool}.`,
+              );
+              await provider.cancel(scopedProviderExecutionId);
+              controller.abort();
+              return appendFailure(
+                request,
+                normalizedRuntimeError(provider, undeclared),
+                `${resultKey}:undeclared`,
+              );
+            }
             const approval = await getApproval(
               request.approvals,
               event.toolCallId,

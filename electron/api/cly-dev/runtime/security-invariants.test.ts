@@ -58,6 +58,7 @@ const request = {
   prompt: "Implement it",
   model: "mock-model",
 };
+const writeFileRequest = { ...request, tools: [{ name: "writeFile" }] };
 
 const createStrictAppender = () => {
   const events: Array<Record<string, unknown>> = [];
@@ -258,7 +259,7 @@ describe("reviewed Cly Dev security invariants", () => {
       now: () => now,
     });
 
-    const first = await runtime.execute(request);
+    const first = await runtime.execute(writeFileRequest);
     expect(first).toMatchObject({ status: "awaiting_approval" });
     decisions.set(first.approval.approvalId, {
       ...first.approval,
@@ -268,7 +269,7 @@ describe("reviewed Cly Dev security invariants", () => {
     now = laterTime;
     await expect(
       runtime.resume({
-        ...request,
+        ...writeFileRequest,
         approvals: { "call-1": { approvalId: first.approval.approvalId } },
       }),
     ).resolves.toMatchObject({ status: "completed" });
@@ -312,7 +313,9 @@ describe("reviewed Cly Dev security invariants", () => {
     };
 
     const missing = makeRuntime(undefined);
-    await expect(missing.runtime.execute(request)).resolves.toMatchObject({
+    await expect(
+      missing.runtime.execute(writeFileRequest),
+    ).resolves.toMatchObject({
       status: "failed",
       error: { code: "DURABLE_EFFECT_STORE_REQUIRED" },
     });
@@ -320,8 +323,8 @@ describe("reviewed Cly Dev security invariants", () => {
 
     const atomic = makeRuntime(createAtomicEffects());
     await Promise.all([
-      atomic.runtime.execute(request),
-      atomic.runtime.execute(request),
+      atomic.runtime.execute(writeFileRequest),
+      atomic.runtime.execute(writeFileRequest),
     ]);
     expect(atomic.executeTool).toHaveBeenCalledTimes(1);
   });
@@ -505,7 +508,7 @@ describe("reviewed Cly Dev security invariants", () => {
     });
     await expect(
       runtime.execute({
-        ...request,
+        ...writeFileRequest,
         projectPolicy: { categories: { file_write: "allow" } },
       }),
     ).resolves.toMatchObject({

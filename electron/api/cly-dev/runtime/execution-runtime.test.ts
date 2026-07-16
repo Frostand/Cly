@@ -555,6 +555,33 @@ describe("Cly Dev durable execution runtime", () => {
     expect(harness.durableToolEffects.executeOnce).not.toHaveBeenCalled();
   });
 
+  it("fails closed when a streamed tool call is outside the request declaration", async () => {
+    const providerCancel = vi.fn();
+    const harness = createHarness({
+      providerOptions: { onCancel: providerCancel },
+      script: [
+        {
+          type: "tool_call",
+          ...call("writeFile", {
+            filePath: "stream-undeclared.txt",
+            content: "no",
+          }),
+        },
+        { type: "completed" },
+      ],
+    });
+
+    await expect(
+      harness.runtime.execute(withTools(harness.request, "readFile")),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "TOOL_NOT_DECLARED" },
+    });
+    expect(providerCancel).toHaveBeenCalledOnce();
+    expect(harness.executeTool).not.toHaveBeenCalled();
+    expect(harness.durableToolEffects.executeOnce).not.toHaveBeenCalled();
+  });
+
   it.each([
     [{ authentication: { status: "unavailable" } }, "PROVIDER_UNAVAILABLE"],
     [{ authentication: { status: "expired" } }, "AUTHENTICATION_EXPIRED"],
@@ -729,7 +756,7 @@ describe("Cly Dev durable execution runtime", () => {
     });
 
     const first = await harness.runtime.execute({
-      ...harness.request,
+      ...withTools(harness.request, "writeFile"),
       budget: { maxInputTokens: 10 },
     });
     expect(first).toMatchObject({ status: "awaiting_approval" });
@@ -741,7 +768,7 @@ describe("Cly Dev durable execution runtime", () => {
 
     await expect(
       harness.runtime.resume({
-        ...harness.request,
+        ...withTools(harness.request, "writeFile"),
         budget: { maxInputTokens: 10 },
         approvals: {
           [toolCall.toolCallId]: {
