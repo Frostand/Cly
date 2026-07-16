@@ -263,12 +263,13 @@ const actorSchema = z
   .object({ kind: z.enum(["user", "agent", "tool", "system"]), id: idSchema })
   .strict();
 const eventBase = {
+  id: idSchema.optional(),
   schemaVersion: versionSchema,
   payloadVersion: z.literal(CLY_DEV_PAYLOAD_VERSION),
   idempotencyKey: idSchema,
   occurredAt: z.iso.datetime(),
   actor: actorSchema,
-  transferability: z.literal("local-only"),
+  transferability: z.enum(["local-only", "transferable"]),
 };
 const localEvent = (type, payload) =>
   z.object({ ...eventBase, type: z.literal(type), payload }).strict();
