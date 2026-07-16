@@ -355,6 +355,18 @@ interface CommandAction {
   run: () => void | Promise<void>;
 }
 
+function focusAgentAction(action: string, activate = false) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLButtonElement>(
+        `[data-cly-agent-action="${action}"]`,
+      );
+      target?.focus();
+      if (activate) target?.click();
+    });
+  });
+}
+
 export function CommandPalette() {
   const open = useClyStore((s) => s.commandPaletteOpen);
   const setOpen = useClyStore((s) => s.setCommandPaletteOpen);
@@ -378,11 +390,18 @@ export function CommandPalette() {
     return [
       ...navigation,
       {
+        id: "project-switcher",
+        label: "Switch project",
+        group: "Navigate",
+        icon: CommandIcon,
+        shortcut: "⌘⇧O",
+        run: () => useClyStore.getState().setProjectSwitcherOpen(true),
+      },
+      {
         id: "agent-overview",
         label: "Show Agent Sessions Overview",
         group: "Navigate",
         icon: CommandIcon,
-        shortcut: "⌘⇧O",
         run: () => useClyStore.getState().setAgentSessionsMode("overview"),
       },
       {
@@ -406,6 +425,124 @@ export function CommandPalette() {
             state.data.agentSessions[0]?.id;
           if (sessionId) state.openAgentSession(sessionId);
           else state.setAgentSessionsMode("chat");
+        },
+      },
+      {
+        id: "open-pending-agent-approval",
+        label: "Open Pending Agent Approval",
+        group: "Research",
+        icon: Sparkles,
+        run: () => {
+          const state = useClyStore.getState();
+          const session = state.data.agentSessions.find((item) =>
+            item.approvals.some((approval) => approval.state === "pending"),
+          );
+          if (!session) {
+            state.notify("No pending approvals");
+            return;
+          }
+          state.openAgentSession(session.id);
+          focusAgentAction("approve");
+        },
+      },
+      {
+        id: "inspect-current-agent-tests",
+        label: "Inspect Current Session Tests",
+        group: "View",
+        icon: CommandIcon,
+        run: () => focusAgentAction("inspect-tests", true),
+      },
+      {
+        id: "inspect-current-agent-diff",
+        label: "Inspect Current Session Diff",
+        group: "View",
+        icon: CommandIcon,
+        run: () => focusAgentAction("inspect-diff", true),
+      },
+      {
+        id: "use-agent-only-mode",
+        label: "Use Agent-only Mode",
+        group: "View",
+        icon: CommandIcon,
+        run: () => {
+          const state = useClyStore.getState();
+          if (state.selectedAgentSessionId)
+            state.updateAgentSession(
+              state.selectedAgentSessionId,
+              (session) => ({
+                ...session,
+                workspaceMode: "agent-only",
+              }),
+            );
+        },
+      },
+      {
+        id: "use-inline-workspace",
+        label: "Use Inline Workspace",
+        group: "View",
+        icon: CommandIcon,
+        run: () => {
+          const state = useClyStore.getState();
+          if (state.selectedAgentSessionId)
+            state.updateAgentSession(
+              state.selectedAgentSessionId,
+              (session) => ({
+                ...session,
+                workspaceMode: "inline-workspace",
+              }),
+            );
+        },
+      },
+      {
+        id: "detach-workspace-intent",
+        label: "Detach Workspace (Prototype Intent)",
+        group: "View",
+        icon: CommandIcon,
+        run: () => {
+          const state = useClyStore.getState();
+          if (state.selectedAgentSessionId)
+            state.updateAgentSession(
+              state.selectedAgentSessionId,
+              (session) => ({
+                ...session,
+                workspaceMode: "detached-workspace",
+              }),
+            );
+        },
+      },
+      {
+        id: "reattach-workspace-intent",
+        label: "Reattach Workspace (Prototype Intent)",
+        group: "View",
+        icon: CommandIcon,
+        run: () => {
+          const state = useClyStore.getState();
+          if (state.selectedAgentSessionId)
+            state.updateAgentSession(
+              state.selectedAgentSessionId,
+              (session) => ({
+                ...session,
+                workspaceMode: "inline-workspace",
+              }),
+            );
+        },
+      },
+      {
+        id: "open-interrupted-agent-task",
+        label: "Open Interrupted Task to Resume",
+        group: "Research",
+        icon: Sparkles,
+        run: () => {
+          const state = useClyStore.getState();
+          const session = state.data.agentSessions.find(
+            (item) => item.taskState === "interrupted-resumable",
+          );
+          if (!session) {
+            state.notify("No interrupted task");
+            return;
+          }
+          state.openAgentSession(session.id);
+          focusAgentAction("resume-task");
         },
       },
       {
@@ -495,7 +632,7 @@ export function CommandPalette() {
       },
       {
         id: "stop-current-agent-session",
-        label: "Stop Current Agent Session",
+        label: "Review Stop Current Agent Session",
         group: "Research",
         icon: CommandIcon,
         disabled: !isClyDemoRuntime,
@@ -503,7 +640,10 @@ export function CommandPalette() {
         run: () => {
           const state = useClyStore.getState();
           if (state.selectedAgentSessionId)
-            state.stopAgentSession(state.selectedAgentSessionId);
+            state.setAgentDestructiveConfirmation({
+              sessionId: state.selectedAgentSessionId,
+              action: "stop",
+            });
         },
       },
       {

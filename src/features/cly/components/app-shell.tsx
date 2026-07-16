@@ -170,7 +170,7 @@ export function ClyAppShell() {
       }
       if (meta && event.shiftKey && event.key.toLowerCase() === "o") {
         event.preventDefault();
-        useClyStore.getState().setAgentSessionsMode("overview");
+        useClyStore.getState().setProjectSwitcherOpen(true);
         return;
       }
       if (meta && event.shiftKey && event.key.toLowerCase() === "c") {

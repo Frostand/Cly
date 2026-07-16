@@ -8,7 +8,6 @@
 | Cmd/Ctrl N | New claim from native menu |
 | Cmd/Ctrl 1 | Overview |
 | Cmd/Ctrl 2 | Agent Sessions |
-| Cmd/Ctrl Shift O | Agent Sessions Overview |
 | Cmd/Ctrl Shift C | Agent Sessions Chat |
 | Cmd/Ctrl Enter | Send Orchestrator message |
 | Cmd/Ctrl Shift T | New workbench tab |

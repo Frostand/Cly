@@ -1,5 +1,48 @@
 export type AgentSessionsMode = "overview" | "chat";
 
+export interface ClyDevTaskIdentity {
+  project: { id: string; name: string };
+  repository: { name: string; remote?: string };
+  workspace: { branch: string; worktree?: string; commit?: string };
+  machine: { id: string; name: string };
+  provider: {
+    id: string;
+    model: string;
+    reasoningLevel: "low" | "medium" | "high";
+  };
+  budget: {
+    usedTokens: number;
+    maxTokens: number;
+    usedCostMinorUnits: number;
+    maxCostMinorUnits: number;
+  };
+  objective: { title: string; issueId?: string };
+  researchImpact: {
+    summary: string;
+    objectIds: string[];
+    risk: "low" | "medium" | "high";
+  };
+}
+
+export type ClyDevWorkspaceMode =
+  | "agent-only"
+  | "inline-workspace"
+  | "detached-workspace"
+  | "external-editor";
+
+export type ClyDevTaskState =
+  | "first-run"
+  | "empty"
+  | "loading"
+  | "streaming"
+  | "awaiting-approval"
+  | "failed"
+  | "canceled"
+  | "interrupted-resumable"
+  | "unsupported";
+
+export type ClyDevConnectionState = "connected" | "offline" | "reconnecting";
+
 export type AgentRole =
   | "orchestrator"
   | "implementation"
@@ -281,6 +324,9 @@ export interface AgentSession {
   projectId: string;
   title: string;
   objective: string;
+  identity: ClyDevTaskIdentity;
+  workspaceMode: ClyDevWorkspaceMode;
+  taskState: ClyDevTaskState;
   orchestrator: AgentIdentity;
   delegatedAgents: AgentIdentity[];
   tasks: AgentTask[];
@@ -303,7 +349,7 @@ export interface AgentSession {
   workbenchWidth: number;
   draft: string;
   usageEstimate: string;
-  connectionState: "connected" | "offline" | "reconnecting";
+  connectionState: ClyDevConnectionState;
   approvals: AgentApproval[];
   artifacts: string[];
   relatedResearchObject: string;

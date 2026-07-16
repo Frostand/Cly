@@ -46,11 +46,6 @@ export function DemoAgentSessionsScreen() {
     const handleKeyDown = (event: KeyboardEvent) => {
       const meta = event.metaKey || event.ctrlKey;
       if (!meta) return;
-      if (event.shiftKey && event.key.toLowerCase() === "o") {
-        event.preventDefault();
-        setMode("overview");
-        return;
-      }
       if (event.shiftKey && event.key.toLowerCase() === "c") {
         event.preventDefault();
         setMode("chat");

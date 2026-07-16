@@ -118,6 +118,10 @@ interface ClyState {
   agentSessionSearch: string;
   newAgentSessionOpen: boolean;
   agentConfigurationId: string | null;
+  agentDestructiveConfirmation: {
+    sessionId: string;
+    action: "stop" | "archive";
+  } | null;
   agentSessionLayouts: Record<
     string,
     Pick<
@@ -128,6 +132,7 @@ interface ClyState {
       | "workbenchMaximized"
       | "workbenchWidth"
       | "draft"
+      | "workspaceMode"
     >
   >;
   setScreen: (screen: ScreenId) => void;
@@ -252,6 +257,12 @@ interface ClyState {
   setAgentSessionSearch: (search: string) => void;
   setNewAgentSessionOpen: (open: boolean) => void;
   setAgentConfigurationId: (id: string | null) => void;
+  setAgentDestructiveConfirmation: (
+    confirmation: {
+      sessionId: string;
+      action: "stop" | "archive";
+    } | null,
+  ) => void;
   createAgentSession: (input: NewAgentSessionInput, open: boolean) => string;
   updateAgentSession: (
     id: string,
@@ -379,6 +390,7 @@ const snapshotAgentSessionLayouts = (sessions: AgentSession[]) =>
         workbenchMaximized: session.workbenchMaximized,
         workbenchWidth: session.workbenchWidth,
         draft: session.draft,
+        workspaceMode: session.workspaceMode,
       },
     ]),
   ) as ClyState["agentSessionLayouts"];
@@ -860,6 +872,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
   agentSessionSearch: "",
   newAgentSessionOpen: false,
   agentConfigurationId: null,
+  agentDestructiveConfirmation: null,
   agentSessionLayouts: saved.agentSessionLayouts ?? {},
 
   setScreen: (activeScreen) => {
@@ -921,6 +934,10 @@ export const useClyStore = create<ClyState>((set, get) => ({
   },
   setFixtureMode: (fixtureMode) => {
     if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
+    const beforeHydration = get();
+    const restoreSavedSession =
+      beforeHydration.fixtureMode === fixtureMode &&
+      beforeHydration.data.agentSessions.length === 0;
     const closeFixtureSwitcherWhenReady = get().fixtureSwitcherOpen;
     if (fixtureMode === "empty") {
       const data = createProductionRepository(get().data.projects);
@@ -945,15 +962,33 @@ export const useClyStore = create<ClyState>((set, get) => ({
     ]).then(([repositoryModule, costModule, agentFixtureModule]) => {
       createDemoAgentSession = agentFixtureModule.createNewAgentSession;
       createDemoWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
-      const data = repositoryModule.createFixtureRepository(fixtureMode);
+      const data = hydrateAgentSessionLayouts(
+        repositoryModule.createFixtureRepository(fixtureMode),
+        get().agentSessionLayouts,
+      );
       const costs = costModule.createCostLedgerFixture(fixtureMode, data);
       set((state) => ({
         data,
         fixtureMode,
         selectedId: null,
-        agentSessionsMode: "overview",
-        selectedAgentSessionId: null,
-        selectedOverviewSessionId: null,
+        agentSessionsMode:
+          restoreSavedSession &&
+          saved.agentSessionsMode === "chat" &&
+          data.agentSessions.some(
+            (session) => session.id === saved.selectedAgentSessionId,
+          )
+            ? "chat"
+            : "overview",
+        selectedAgentSessionId:
+          restoreSavedSession &&
+          data.agentSessions.some(
+            (session) => session.id === saved.selectedAgentSessionId,
+          )
+            ? (saved.selectedAgentSessionId ?? null)
+            : null,
+        selectedOverviewSessionId: restoreSavedSession
+          ? (saved.selectedOverviewSessionId ?? null)
+          : null,
         lineageSuggestions: [],
         lineageMeasurement: null,
         decisionBriefs: [],
@@ -1807,6 +1842,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
   setNewAgentSessionOpen: (newAgentSessionOpen) => set({ newAgentSessionOpen }),
   setAgentConfigurationId: (agentConfigurationId) =>
     set({ agentConfigurationId }),
+  setAgentDestructiveConfirmation: (agentDestructiveConfirmation) =>
+    set({ agentDestructiveConfirmation }),
   createAgentSession: (input, open) => {
     if (!demoFixtureRuntime || !createDemoAgentSession)
       throw new CapabilityUnavailableError("agents.execute");
