@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { verifyNormalizedOutboundContext } from "./runtime/outbound-context.js";
 import {
   CLY_DEV_PAYLOAD_VERSION,
   CLY_DEV_SCHEMA_VERSION,
@@ -497,7 +498,7 @@ export function createClyDevSessionRepository({
         nextOffset: hasMore ? boundedOffset + boundedLimit : null,
       };
     },
-    appendEvent(projectId, sessionId, rawEvent) {
+    appendEvent(projectId, sessionId, rawEvent, { outboundContext } = {}) {
       const event = clyDevEventInputSchema.parse(rawEvent);
       return transaction(db, () => {
         const sessionRow = findSession(db, projectId, sessionId);
@@ -543,10 +544,17 @@ export function createClyDevSessionRepository({
         const sequence = projection.last_sequence + 1;
         const recordedAt = now();
         const id = randomUUID();
-        const outbound =
-          event.type === "context.manifest.recorded"
-            ? buildOutboundContext(db, projectId, sessionId)
-            : null;
+        let outbound = null;
+        if (event.type === "context.manifest.recorded") {
+          if (outboundContext === undefined) {
+            throw new Error(
+              "Provider-egress context events require a normalized outbound context.",
+            );
+          }
+          outbound = verifyNormalizedOutboundContext(outboundContext, {
+            manifestId: sessionRow.context_manifest_id,
+          });
+        }
         db.prepare(
           `INSERT INTO cly_dev_session_events
            (id, project_id, session_id, schema_version, payload_version, sequence,

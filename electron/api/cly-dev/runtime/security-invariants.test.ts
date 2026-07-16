@@ -131,6 +131,61 @@ describe("reviewed Cly Dev security invariants", () => {
     expect(summary).not.toContain("aaaa");
   });
 
+  it("removes note entries and rebuilds provider bytes from retained typed entries", async () => {
+    const sourceEnvelope = structuredClone(contextEnvelope);
+    sourceEnvelope.manifest.summary =
+      "Arbitrary durable source summary that must not egress";
+    sourceEnvelope.manifest.entries = [
+      { kind: "note", title: "file:///Users/alice/private.txt" },
+      { kind: "note", title: "glpat-1234567890abcdef" },
+      { kind: "note", title: "hf_1234567890abcdef" },
+      { kind: "note", title: "ya29.a0AfH6SMBprivate" },
+      {
+        kind: "commit",
+        commitSha: "a".repeat(40),
+      },
+    ];
+    let providerRequest: Record<string, unknown> | undefined;
+    const strict = createStrictAppender();
+    const runtime = createClyDevExecutionRuntime({
+      provider: createDeterministicMockProvider((received) => {
+        providerRequest = received;
+        return [{ type: "completed" }];
+      }),
+      appendEvent: strict.appendEvent,
+      buildOutboundContext: async () => outboundFor(sourceEnvelope),
+      approvalGate: createApprovalGate({ projectPolicy: { default: "deny" } }),
+      executeTool: vi.fn(),
+      durableToolEffects: createAtomicEffects(),
+      now: () => initialTime,
+    });
+
+    await expect(runtime.execute(request)).resolves.toMatchObject({
+      status: "completed",
+    });
+    expect(providerRequest?.context).toMatchObject({
+      manifest: {
+        summary: deriveTransferableContextSummary([
+          { kind: "commit", commitSha: "a".repeat(40) },
+        ]),
+        entries: [{ kind: "commit", commitSha: "a".repeat(40) }],
+      },
+    });
+    const outboundBytes = String(providerRequest?.contextBytes);
+    for (const restricted of [
+      "file://",
+      "glpat-",
+      "hf_",
+      "ya29.",
+      "Arbitrary durable source summary",
+    ]) {
+      expect(outboundBytes).not.toContain(restricted);
+    }
+    expect(providerRequest?.contextHash).toBe(
+      createHash("sha256").update(outboundBytes).digest("hex"),
+    );
+  });
+
   it("loads approval state and immutable scope from an authoritative resolver", async () => {
     let now = initialTime;
     const stored = new Map<string, Record<string, unknown>>();
@@ -273,60 +328,18 @@ describe("reviewed Cly Dev security invariants", () => {
 
   it.each([
     ["secret field", { manifest: { secret: "sk-private" } }],
-    ["absolute path", { manifest: { summary: "/Users/alice/private.txt" } }],
     [
-      "embedded Unix absolute path",
-      { manifest: { summary: "Failure at /Users/alice/private.txt" } },
-    ],
-    [
-      "embedded Windows absolute path",
+      "restricted retained typed identifier",
       {
         manifest: {
-          summary: String.raw`Failure at C:\Users\alice\private.txt`,
+          entries: [
+            {
+              kind: "research_object",
+              researchObjectId: "glpat-1234567890abcdef",
+            },
+          ],
         },
       },
-    ],
-    [
-      "credential prose",
-      { manifest: { summary: "credential is sk-private-value" } },
-    ],
-    [
-      "authorization material",
-      { manifest: { summary: "Authorization: Basic dXNlcjpwYXNz" } },
-    ],
-    [
-      "known provider token",
-      {
-        manifest: { summary: "Observed token ghp_1234567890abcdefghijklmnop" },
-      },
-    ],
-    [
-      "private key material",
-      { manifest: { summary: "-----BEGIN OPENSSH PRIVATE KEY-----" } },
-    ],
-    [
-      "file URL in supplied summary",
-      { manifest: { summary: "Failure at file:///Users/alice/private.txt" } },
-    ],
-    [
-      "punctuation-adjacent path in supplied summary",
-      { manifest: { summary: "Failure;/Users/alice/private.txt" } },
-    ],
-    [
-      "GitLab token in supplied summary",
-      { manifest: { summary: "Observed glpat-1234567890abcdef" } },
-    ],
-    [
-      "Hugging Face token in supplied summary",
-      { manifest: { summary: "Observed hf_1234567890abcdef" } },
-    ],
-    [
-      "OAuth token in supplied summary",
-      { manifest: { summary: "Observed ya29.a0AfH6SMBprivate" } },
-    ],
-    [
-      "benign arbitrary supplied summary",
-      { manifest: { summary: "A user-controlled sentence" } },
     ],
     ["environment value", { manifest: { environmentValue: "private" } }],
     ["process cache", { process: { cache: "private" } }],
@@ -362,6 +375,48 @@ describe("reviewed Cly Dev security invariants", () => {
     expect(
       strict.events.some((event) => event.type === "context.manifest.recorded"),
     ).toBe(false);
+  });
+
+  it.each([
+    ["absolute path", "/Users/alice/private.txt"],
+    ["embedded Unix absolute path", "Failure at /Users/alice/private.txt"],
+    [
+      "embedded Windows absolute path",
+      String.raw`Failure at C:\Users\alice\private.txt`,
+    ],
+    ["credential prose", "credential is sk-private-value"],
+    ["authorization material", "Authorization: Basic dXNlcjpwYXNz"],
+    ["known provider token", "Observed token ghp_1234567890abcdefghijklmnop"],
+    ["private key material", "-----BEGIN OPENSSH PRIVATE KEY-----"],
+    ["file URL", "Failure at file:///Users/alice/private.txt"],
+    ["punctuation-adjacent path", "Failure;/Users/alice/private.txt"],
+    ["GitLab token", "Observed glpat-1234567890abcdef"],
+    ["Hugging Face token", "Observed hf_1234567890abcdef"],
+    ["OAuth token", "Observed ya29.a0AfH6SMBprivate"],
+    ["benign arbitrary prose", "A user-controlled sentence"],
+  ])("replaces source summary containing %s", async (_label, sourceSummary) => {
+    const envelope = structuredClone(contextEnvelope);
+    envelope.manifest.summary = sourceSummary;
+    let providerRequest: Record<string, unknown> | undefined;
+    const runtime = createClyDevExecutionRuntime({
+      provider: createDeterministicMockProvider((received) => {
+        providerRequest = received;
+        return [{ type: "completed" }];
+      }),
+      appendEvent: createStrictAppender().appendEvent,
+      buildOutboundContext: async () => outboundFor(envelope),
+      approvalGate: createApprovalGate({ projectPolicy: { default: "deny" } }),
+      executeTool: vi.fn(),
+      durableToolEffects: createAtomicEffects(),
+      now: () => initialTime,
+    });
+    await expect(runtime.execute(request)).resolves.toMatchObject({
+      status: "completed",
+    });
+    expect(providerRequest?.context).toMatchObject({
+      manifest: { summary: deriveTransferableContextSummary([]) },
+    });
+    expect(String(providerRequest?.contextBytes)).not.toContain(sourceSummary);
   });
 
   it("fails closed on missing capabilities, unknown model, and unsupported versions", async () => {

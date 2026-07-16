@@ -1,79 +1,9 @@
 import { createHash } from "node:crypto";
-import { z } from "zod";
-import {
-  clyDevContextManifestInputSchema,
-  commitIdentitySchema,
-  machineIdentitySchema,
-  providerIdentitySchema,
-  repositoryIdentitySchema,
-  worktreeIdentitySchema,
-} from "../session-schema.js";
+import { normalizeDurableOutboundContext } from "./outbound-context.js";
+
+export { deriveTransferableContextSummary } from "./outbound-context.js";
 
 const VERSION = 1;
-const TRANSFERABLE_CONTEXT_KINDS = [
-  "research_object",
-  "repository_file",
-  "commit",
-  "note",
-];
-
-export const deriveTransferableContextSummary = (entries) => {
-  if (!Array.isArray(entries)) {
-    throw new TypeError("Transferable context entries must be an array.");
-  }
-  const counts = Object.fromEntries(
-    TRANSFERABLE_CONTEXT_KINDS.map((kind) => [kind, 0]),
-  );
-  for (const entry of entries) {
-    if (!entry || !TRANSFERABLE_CONTEXT_KINDS.includes(entry.kind)) {
-      throw new TypeError(
-        "Transferable context contains an unknown entry kind.",
-      );
-    }
-    counts[entry.kind] += 1;
-  }
-  return `Cly Dev transferable context v1: entries=${entries.length}; research_object=${counts.research_object}; repository_file=${counts.repository_file}; commit=${counts.commit}; note=${counts.note}.`;
-};
-
-const idSchema = z.string().trim().min(1).max(500);
-const transferableShape =
-  clyDevContextManifestInputSchema.shape.transferable.shape;
-const outboundContextSchema = z
-  .object({
-    schemaVersion: z.literal(VERSION),
-    kind: z.literal("cly.context_manifest"),
-    manifest: z
-      .object({
-        id: idSchema,
-        schemaVersion: z.literal(VERSION),
-        summary: transferableShape.summary,
-        entries: transferableShape.entries,
-      })
-      .strict(),
-    provenance: z
-      .object({
-        repository: repositoryIdentitySchema,
-        worktree: worktreeIdentitySchema,
-        commit: commitIdentitySchema,
-        machine: machineIdentitySchema,
-        provider: providerIdentitySchema,
-        research: z.object({ objectIds: z.array(idSchema) }).strict(),
-      })
-      .strict(),
-  })
-  .strict();
-const forbiddenContextKey =
-  /(?:password|secret|token|credential|api[_-]?key|environment(?:value|values)|absolute(?:path|paths)|cache|dataset|process|terminal|local[_-]?only|providerconfig)/i;
-const forbiddenContextStrings = [
-  /(?:^|[\s("'`[{=:,])\/(?!\/)(?:[^/\s"'<>]+\/)*[^/\s"'<>]+/i,
-  /(?:^|[\s("'`[{=,])(?:[a-z]:[\\/]|\\\\)[^\s"'<>]+/i,
-  /-----BEGIN [^-]*(?:PRIVATE|SECRET) KEY-----/i,
-  /\bauthorization\s*[:=]\s*(?:(?:bearer|basic)\s+)?\S+/i,
-  /\b(?:bearer|basic)\s+[a-z0-9+/._~=-]{4,}/i,
-  /\b(?:sk-(?:ant-)?[a-z0-9_-]{6,}|gh[pousr]_[a-z0-9]{10,}|github_pat_[a-z0-9_]{10,}|akia[0-9a-z]{16}|aiza[0-9a-z_-]{20,}|xox[baprs]-[a-z0-9-]{8,}|npm_[a-z0-9]{10,}|eyj[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,})\b/i,
-  /\b(?:api[_ -]?key|access[_ -]?key|credential|secret|token|password|auth(?:entication)?)\b\s*(?::|=|\bis\b|\bwas\b|\bvalue\b|\bof\b)\s*["']?\S+/i,
-  /\b(?:openai|anthropic|github|gitlab|aws|azure|google|slack|npm)\s+(?:api\s+)?(?:key|token|credential|secret)\s*(?::|=|\bis\b)\s*["']?\S+/i,
-];
 const CAPABILITY_FIELDS = [
   "streaming",
   "reasoning",
@@ -101,97 +31,28 @@ const localEvent = ({ key, type, payload, actor, now }) => ({
   payload,
 });
 
-const bytesOf = (value) => {
-  if (Buffer.isBuffer(value)) return value;
-  if (value instanceof Uint8Array) return Buffer.from(value);
-  return Buffer.from(String(value ?? ""));
-};
-
-const digest = (value) =>
-  createHash("sha256").update(bytesOf(value)).digest("hex");
-
-const normalizeOutbound = (outbound) => {
-  const preview = outbound?.preview ?? outbound?.envelope;
-  const egress = outbound?.egress ?? outbound?.envelope;
-  const previewBytes =
-    outbound?.previewBytes ?? outbound?.bytes ?? JSON.stringify(preview);
-  const egressBytes =
-    outbound?.egressBytes ?? outbound?.bytes ?? JSON.stringify(egress);
-  const previewSha256 =
-    outbound?.previewSha256 ?? outbound?.sha256 ?? digest(previewBytes);
-  const egressSha256 =
-    outbound?.egressSha256 ?? outbound?.sha256 ?? digest(egressBytes);
-  return {
-    preview,
-    egress,
-    previewBytes,
-    egressBytes,
-    previewSha256,
-    egressSha256,
-  };
-};
-
-const hasForbiddenContextMaterial = (value) => {
-  if (typeof value === "string") {
-    return forbiddenContextStrings.some((pattern) => pattern.test(value));
-  }
-  if (Array.isArray(value)) return value.some(hasForbiddenContextMaterial);
-  if (!value || typeof value !== "object") return false;
-  return Object.entries(value).some(
-    ([key, child]) =>
-      forbiddenContextKey.test(key) || hasForbiddenContextMaterial(child),
-  );
-};
-
-const assertExactOutbound = (outbound) => {
-  const normalized = normalizeOutbound(outbound);
-  const equalBytes = bytesOf(normalized.previewBytes).equals(
-    bytesOf(normalized.egressBytes),
-  );
-  const equalObjects =
-    JSON.stringify(normalized.preview) === JSON.stringify(normalized.egress);
-  const validHashes =
-    normalized.previewSha256 === normalized.egressSha256 &&
-    normalized.previewSha256 === digest(normalized.previewBytes) &&
-    normalized.egressSha256 === digest(normalized.egressBytes);
-  if (!equalBytes || !equalObjects || !validHashes) {
-    throw new RuntimeError(
-      "CONTEXT_EGRESS_MISMATCH",
-      "The context preview is not byte-for-byte identical to provider egress.",
-    );
-  }
-  let parsedBytes;
-  const egressText = bytesOf(normalized.egressBytes).toString("utf8");
+const normalizeOutboundContext = (outbound) => {
+  const sourceEnvelope =
+    outbound?.egress ?? outbound?.envelope ?? outbound?.preview;
+  let normalized;
   try {
-    parsedBytes = JSON.parse(egressText);
+    normalized = normalizeDurableOutboundContext(sourceEnvelope);
   } catch (error) {
     throw new RuntimeError(
       "INVALID_OUTBOUND_CONTEXT",
-      "Outbound context bytes must be valid JSON.",
+      "Durable context cannot be normalized for provider egress.",
       false,
       error,
     );
   }
-  const bytesDescribeExactObject =
-    egressText === JSON.stringify(normalized.egress) &&
-    egressText === JSON.stringify(parsedBytes);
-  const parsed = outboundContextSchema.safeParse(parsedBytes);
-  const hasDerivedSummary =
-    parsed.success &&
-    parsed.data.manifest.summary ===
-      deriveTransferableContextSummary(parsed.data.manifest.entries);
-  if (
-    !bytesDescribeExactObject ||
-    !parsed.success ||
-    !hasDerivedSummary ||
-    hasForbiddenContextMaterial(parsedBytes)
-  ) {
-    throw new RuntimeError(
-      "INVALID_OUTBOUND_CONTEXT",
-      "Outbound context is not a strict transferable Cly Dev context envelope.",
-    );
-  }
-  return { ...normalized, egress: parsed.data, preview: parsed.data };
+  return {
+    preview: normalized.envelope,
+    egress: normalized.envelope,
+    previewBytes: normalized.bytes,
+    egressBytes: normalized.bytes,
+    previewSha256: normalized.sha256,
+    egressSha256: normalized.sha256,
+  };
 };
 
 const validateRequestVersion = (request) => {
@@ -336,8 +197,8 @@ export function createClyDevExecutionRuntime(options = {}) {
     throw new Error("An injected Cly Dev tool executor is required.");
   }
 
-  const append = (request, event) =>
-    appendEvent(request.projectId, request.sessionId, event);
+  const append = (request, event, eventOptions) =>
+    appendEvent(request.projectId, request.sessionId, event, eventOptions);
   const key = (request, suffix) =>
     `cly-dev:${request.projectId}:${request.sessionId}:${request.requestId}:${suffix}`;
   const actor = (kind, id) => ({ kind, id });
@@ -447,7 +308,7 @@ export function createClyDevExecutionRuntime(options = {}) {
       let outbound;
       let providerCapabilities;
       try {
-        outbound = assertExactOutbound(
+        outbound = normalizeOutboundContext(
           await buildOutboundContext(request.projectId, request.sessionId),
         );
       } catch (error) {
@@ -458,16 +319,20 @@ export function createClyDevExecutionRuntime(options = {}) {
         );
       }
 
-      await append(request, {
-        schemaVersion: VERSION,
-        payloadVersion: VERSION,
-        idempotencyKey: key(request, "context"),
-        type: "context.manifest.recorded",
-        transferability: "transferable",
-        occurredAt: now(),
-        actor: actor("system", "cly-dev-runtime"),
-        payload: { manifestId: outbound.egress.manifest.id },
-      });
+      await append(
+        request,
+        {
+          schemaVersion: VERSION,
+          payloadVersion: VERSION,
+          idempotencyKey: key(request, "context"),
+          type: "context.manifest.recorded",
+          transferability: "transferable",
+          occurredAt: now(),
+          actor: actor("system", "cly-dev-runtime"),
+          payload: { manifestId: outbound.egress.manifest.id },
+        },
+        { outboundContext: outbound.egress },
+      );
 
       try {
         const authentication = await provider.getAuthentication();

@@ -308,21 +308,29 @@ describe("Cly Dev durable execution runtime", () => {
     expect(harness.events[1].payload.manifestId).toBe("manifest-1");
   });
 
-  it("refuses context when preview and actual egress are not exactly equal", async () => {
+  it("rebuilds canonical context instead of trusting source bytes or digests", async () => {
+    let providerRequest: Record<string, unknown> | undefined;
     const harness = createHarness({
-      customOutbound: { ...outbound, egressBytes: `${contextBytes} ` },
+      script: (received) => {
+        providerRequest = received;
+        return [{ type: "completed" }];
+      },
+      customOutbound: {
+        ...outbound,
+        previewBytes: "tampered-preview",
+        egressBytes: "tampered-egress",
+        previewSha256: "0".repeat(64),
+        egressSha256: "f".repeat(64),
+      },
     });
     await expect(
       harness.runtime.execute(harness.request),
-    ).resolves.toMatchObject({
-      status: "failed",
-      error: { code: "CONTEXT_EGRESS_MISMATCH" },
+    ).resolves.toMatchObject({ status: "completed" });
+    expect(providerRequest).toMatchObject({
+      context: context,
+      contextBytes,
+      contextHash,
     });
-    expect(harness.events.map((event) => event.type)).toEqual([
-      "message.recorded",
-      "failure.recorded",
-      "session.state.changed",
-    ]);
   });
 
   it("requests approval, executes only after exact approval, and saves a stable result", async () => {
