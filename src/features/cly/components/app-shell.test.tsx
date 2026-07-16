@@ -374,6 +374,46 @@ describe("Cly application shell", () => {
     ).toBeVisible();
   });
 
+  it("opens a real session flow from the Cly Dev primary action", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByTestId("product-dev"));
+    const devWorkspace = document.querySelector(
+      ".cly-route-dev",
+    ) as HTMLElement;
+    await user.click(
+      within(devWorkspace).getByRole("button", { name: "New session" }),
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "New agent session" }),
+    ).toBeVisible();
+    expect(useClyStore.getState()).toMatchObject({
+      activeProduct: "dev",
+      activeScreen: "agents",
+      agentSessionsMode: "overview",
+    });
+  });
+
+  it("opens handoff details instead of using a toast-only action", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByTestId("product-dev"));
+    await user.click(screen.getByRole("button", { name: "Prepare handoff" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Handoff summary" });
+    expect(dialog).toBeVisible();
+    expect(
+      within(dialog).getByText("Neural surrogate reliability"),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByRole("button", { name: "Copy summary" }),
+    ).toBeEnabled();
+    expect(screen.queryByText("Handoff prepared")).not.toBeInTheDocument();
+  });
+
   it("opens the command palette and executes navigation", async () => {
     const user = userEvent.setup();
     render(<ClyAppShell />);

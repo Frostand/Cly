@@ -470,6 +470,8 @@ export function SessionHeader({ session }: { session: AgentSession }) {
   const openSession = useClyStore((state) => state.openAgentSession);
   const setNewOpen = useClyStore((state) => state.setNewAgentSessionOpen);
   const setConfig = useClyStore((state) => state.setAgentConfigurationId);
+  const openTab = useClyStore((state) => state.openWorkbenchTab);
+  const updateSession = useClyStore((state) => state.updateAgentSession);
   const pause = useClyStore((state) => state.pauseAgentSession);
   const stop = useClyStore((state) => state.stopAgentSession);
   const archive = useClyStore((state) => state.archiveAgentSession);
@@ -480,6 +482,8 @@ export function SessionHeader({ session }: { session: AgentSession }) {
     (state) => state.setAgentDestructiveConfirmation,
   );
   const notify = useClyStore((state) => state.notify);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState(session.title);
   const confirmation =
     destructiveConfirmation?.sessionId === session.id
       ? destructiveConfirmation
@@ -494,6 +498,23 @@ export function SessionHeader({ session }: { session: AgentSession }) {
       notify("Session archived", "The session remains available in History.");
     }
     setDestructiveConfirmation(null);
+  };
+  const focusPendingApproval = () => {
+    const approval = document.querySelector<HTMLElement>(
+      '.agent-message-approval[data-state="pending"]',
+    );
+    approval?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    requestAnimationFrame(() =>
+      approval
+        ?.querySelector<HTMLElement>('[data-cly-agent-action="approve"]')
+        ?.focus(),
+    );
+  };
+  const saveSessionName = () => {
+    const title = renameDraft.trim();
+    if (!title) return;
+    updateSession(session.id, (current) => ({ ...current, title }));
+    setRenameOpen(false);
   };
   return (
     <>
@@ -529,9 +550,8 @@ export function SessionHeader({ session }: { session: AgentSession }) {
           </span>
           <button
             type="button"
-            onClick={() =>
-              notify("Context Composer opened", session.contextSummary)
-            }
+            onClick={() => openTab(session.id, "live-files")}
+            title="Open the files included in this context pack"
           >
             {session.activeContextPackName}
           </button>
@@ -552,12 +572,8 @@ export function SessionHeader({ session }: { session: AgentSession }) {
           ) ? (
             <Button
               className="agent-approval-inbox"
-              onClick={() =>
-                notify(
-                  "Approvals inbox",
-                  "Pending approvals are shown inline in this conversation.",
-                )
-              }
+              onClick={focusPendingApproval}
+              title="Jump to the pending approval"
             >
               <ShieldAlert size={13} />
               <span>
@@ -612,9 +628,10 @@ export function SessionHeader({ session }: { session: AgentSession }) {
               <button
                 type="button"
                 role="menuitem"
-                onClick={() =>
-                  notify("Rename session", "Fixture rename control opened.")
-                }
+                onClick={() => {
+                  setRenameDraft(session.title);
+                  setRenameOpen(true);
+                }}
               >
                 <MessageSquareText size={12} /> Rename
               </button>
@@ -648,6 +665,36 @@ export function SessionHeader({ session }: { session: AgentSession }) {
           </details>
         </div>
       </header>
+      <Dialog
+        open={renameOpen}
+        title="Rename session"
+        description="Use a short name that makes this task easy to find later."
+        onClose={() => setRenameOpen(false)}
+        footer={
+          <>
+            <Button onClick={() => setRenameOpen(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={!renameDraft.trim()}
+              onClick={saveSessionName}
+            >
+              Save name
+            </Button>
+          </>
+        }
+      >
+        <label className="cly-dialog-field">
+          <span>Session name</span>
+          <input
+            className="cly-input"
+            value={renameDraft}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") saveSessionName();
+            }}
+          />
+        </label>
+      </Dialog>
       <Dialog
         open={Boolean(confirmation)}
         title={
@@ -1063,6 +1110,7 @@ export function ChatComposer({ session }: { session: AgentSession }) {
   const setDraft = useClyStore((state) => state.setAgentSessionDraft);
   const append = useClyStore((state) => state.appendAgentMessage);
   const update = useClyStore((state) => state.updateAgentSession);
+  const openTab = useClyStore((state) => state.openWorkbenchTab);
   const notify = useClyStore((state) => state.notify);
   const [streaming, setStreaming] = useState(false);
   const [enterSends, setEnterSends] = useState(false);
@@ -1096,12 +1144,8 @@ export function ChatComposer({ session }: { session: AgentSession }) {
       <div className="agent-context-strip">
         <button
           type="button"
-          onClick={() =>
-            notify(
-              "Context Composer opened",
-              `${session.contextSummary} · ${session.activeContextPackName}`,
-            )
-          }
+          onClick={() => openTab(session.id, "live-files")}
+          title="Open the files included in this context pack"
         >
           <Sparkles size={11} />
           <strong>{session.activeContextPackName}</strong>

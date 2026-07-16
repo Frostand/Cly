@@ -285,10 +285,7 @@ export function Sidebar() {
                       aria-current={
                         activeScreen === item.id ? "page" : undefined
                       }
-                      aria-label={
-                        item.ariaLabel ??
-                        (sidebarCollapsed ? item.label : undefined)
-                      }
+                      aria-label={item.ariaLabel ?? item.label}
                       title={sidebarCollapsed ? item.label : undefined}
                       onClick={() => setScreen(item.id)}
                       key={item.id}
@@ -328,7 +325,7 @@ export function Sidebar() {
                       type="button"
                       className="cly-sidebar-item"
                       aria-current={active ? "page" : undefined}
-                      aria-label={sidebarCollapsed ? item.label : undefined}
+                      aria-label={item.label}
                       title={sidebarCollapsed ? item.label : undefined}
                       onClick={() => setDevSection(item.id)}
                       key={item.id}
