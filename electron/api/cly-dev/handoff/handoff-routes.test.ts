@@ -42,6 +42,7 @@ function setup({
   db.exec(migration("0016_cly_dev_handoffs.sql"));
   db.exec(migration("0017_cly_dev_tool_effects.sql"));
   db.exec(migration("0018_cly_dev_handoff_materialization.sql"));
+  db.exec(migration("0019_cly_dev_handoff_link_invariants.sql"));
   db.prepare("INSERT INTO projects (id) VALUES (?), (?)").run(
     "source-project",
     "target-project",
@@ -568,5 +569,47 @@ describe("Cly Dev handoff routes", () => {
 
     expect((await request(false)).status).toBe(401);
     expect((await request(true)).status).toBe(200);
+  });
+
+  it("materializes maximum source identities and current-item text with bounded events", async () => {
+    const { app, sessions } = setup();
+    const handoff = validEnvelope();
+    const maximumId = "i".repeat(500);
+    const maximumCurrentItem = "p".repeat(10_000);
+    handoff.payload.summaries[0].id = maximumId;
+    handoff.payload.plan.steps[0].id = maximumId;
+    handoff.payload.decisions[0].id = maximumId;
+    handoff.payload.remainingWork[0].id = maximumId;
+    handoff.payload.progress.currentItem = maximumCurrentItem;
+    handoff.integrity.digest = hashHandoffPayload(handoff.payload);
+
+    const response = await app.request(
+      "/api/projects/target-project/cly-dev/handoffs/import",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ envelope: handoff }),
+      },
+    );
+    expect(response.status).toBe(201);
+    const imported = await response.json();
+    const events = sessions.listEvents(
+      "target-project",
+      imported.materialized.session.id,
+      0,
+      100,
+    );
+    expect(events.every((event) => event.idempotencyKey.length <= 500)).toBe(
+      true,
+    );
+    expect(
+      events.every((event) => !event.idempotencyKey.includes(maximumId)),
+    ).toBe(true);
+    expect(
+      events.find((event) => event.type === "progress.recorded")?.payload.label,
+    ).toHaveLength(500);
+    expect(imported.materialized.actionableState.progress.currentItem).toBe(
+      maximumCurrentItem,
+    );
   });
 });

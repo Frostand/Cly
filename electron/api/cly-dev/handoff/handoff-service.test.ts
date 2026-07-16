@@ -14,6 +14,7 @@ const migration = [
   "0016_cly_dev_handoffs.sql",
   "0017_cly_dev_tool_effects.sql",
   "0018_cly_dev_handoff_materialization.sql",
+  "0019_cly_dev_handoff_link_invariants.sql",
 ]
   .map((name) =>
     readFileSync(new URL(`../../../drizzle/${name}`, import.meta.url), "utf8"),

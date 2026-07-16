@@ -54,6 +54,7 @@ describe("production renderer proxy authority boundary", () => {
       rendererProbeIntervalMs: 10,
       rendererStartupTimeoutMs: 1_000,
       rendererUrlFromEnv: undefined,
+      createClyDevHandoffDependencies: () => ({}),
     });
     await manager.start();
 

@@ -246,7 +246,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784149200000 });
+    ).toEqual({ createdAt: 1784152800000 });
     expect(
       upgraded
         .prepare(
@@ -257,7 +257,7 @@ describe("persisted research storage", () => {
     expectAgentContextDatabaseContract(upgraded);
   });
 
-  it("upgrades an already-recorded immutable 0016 handoff table through 0018", () => {
+  it("upgrades already-recorded immutable 0016 and additive 0018 handoff state through 0019", () => {
     const databasePath = createDatabasePath();
     getStateDatabase(databasePath);
     closePersistedStateDatabase();
@@ -319,8 +319,41 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784149200000 });
+    ).toEqual({ createdAt: 1784152800000 });
     expect(upgraded.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+
+    closePersistedStateDatabase();
+    const throughMaterialization = new DatabaseSync(databasePath);
+    throughMaterialization.exec(
+      "DROP TRIGGER cly_dev_handoffs_materialized_link_insert",
+    );
+    throughMaterialization.exec(
+      "DROP TRIGGER cly_dev_handoffs_materialized_link_update",
+    );
+    throughMaterialization
+      .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
+      .run(1784149200000);
+    throughMaterialization.close();
+
+    const upgradedFrom0018 = getStateDatabase(databasePath);
+    expect(
+      upgradedFrom0018
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'cly_dev_handoffs_materialized_link_%' ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
+    ).toEqual([
+      "cly_dev_handoffs_materialized_link_insert",
+      "cly_dev_handoffs_materialized_link_update",
+    ]);
+    expect(
+      upgradedFrom0018
+        .prepare(
+          "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
+        )
+        .get(),
+    ).toEqual({ createdAt: 1784152800000 });
   });
 
   it("configures a bounded wait for concurrent SQLite writers", () => {

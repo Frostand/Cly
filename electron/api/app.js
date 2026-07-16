@@ -114,8 +114,16 @@ export function createApiApp(
   return guardedApp;
 }
 
-export function startApiServer({ port, apiToken, allowedRendererOrigin }) {
-  const guardedApp = createApiApp(apiToken, { allowedRendererOrigin });
+export function startApiServer({
+  port,
+  apiToken,
+  allowedRendererOrigin,
+  clyDevHandoff,
+}) {
+  const guardedApp = createApiApp(apiToken, {
+    allowedRendererOrigin,
+    clyDevHandoff,
+  });
 
   return new Promise((resolve, reject) => {
     const server = serve(

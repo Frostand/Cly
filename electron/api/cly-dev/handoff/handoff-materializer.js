@@ -1,4 +1,19 @@
+import { createHash } from "node:crypto";
 import { getClyDevMaterializedAggregate } from "./handoff-aggregate.js";
+
+const EVENT_TEXT_LIMIT = 500;
+
+const hashedEventSuffix = (kind, sourceId) =>
+  `${kind}:${createHash("sha256").update(`${kind}\0${sourceId}`).digest("hex")}`;
+
+const boundedEventText = (value) => {
+  let bounded = value.slice(0, EVENT_TEXT_LIMIT);
+  const finalCodeUnit = bounded.charCodeAt(bounded.length - 1);
+  if (finalCodeUnit >= 0xd800 && finalCodeUnit <= 0xdbff) {
+    bounded = bounded.slice(0, -1);
+  }
+  return bounded;
+};
 
 const emptyLocalOnly = () => ({
   absolutePaths: [],
@@ -48,7 +63,11 @@ const materializeActionableEvents = (
 ) => {
   for (const summary of payload.summaries) {
     sessions.appendEvent(projectId, sessionId, {
-      ...eventBase(identity, `summary:${summary.id}`, summary.createdAt),
+      ...eventBase(
+        identity,
+        hashedEventSuffix("summary", summary.id),
+        summary.createdAt,
+      ),
       type: "summary.recorded",
       payload: { title: summary.title, sections: summary.sections },
     });
@@ -71,12 +90,18 @@ const materializeActionableEvents = (
         completed + payload.remainingWork.length,
         payload.plan.steps.length,
       ),
-      label: payload.progress.currentItem ?? payload.progress.status,
+      label: boundedEventText(
+        payload.progress.currentItem ?? payload.progress.status,
+      ),
     },
   });
   for (const decision of payload.decisions) {
     sessions.appendEvent(projectId, sessionId, {
-      ...eventBase(identity, `decision:${decision.id}`, decision.decidedAt),
+      ...eventBase(
+        identity,
+        hashedEventSuffix("decision", decision.id),
+        decision.decidedAt,
+      ),
       type: "decision.recorded",
       payload: {
         decisionId: decision.id,
