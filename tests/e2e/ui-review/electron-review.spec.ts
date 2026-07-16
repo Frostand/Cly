@@ -4,6 +4,7 @@ import { _electron as electron, expect, test } from "@playwright/test";
 import axe from "axe-core";
 
 const root = process.cwd();
+const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
 
 test("reviews the assembled Electron shell and core interaction states", async () => {
   test.setTimeout(90_000);
@@ -11,7 +12,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
     cwd: root,
   });
   const app = await electron.launch({
-    args: [path.join(root, "electron/main.js")],
+    args: [...electronArgs, path.join(root, "electron/main.js")],
     cwd: root,
     env: {
       ...process.env,
@@ -251,7 +252,7 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
     cwd: root,
   });
   let app = await electron.launch({
-    args: [path.join(root, "electron/main.js")],
+    args: [...electronArgs, path.join(root, "electron/main.js")],
     cwd: root,
     env: launchEnvironment,
   });
@@ -382,7 +383,7 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
         })
         .toBe(true);
       app = await electron.launch({
-        args: [path.join(root, "electron/main.js")],
+        args: [...electronArgs, path.join(root, "electron/main.js")],
         cwd: root,
         env: launchEnvironment,
       });
@@ -447,7 +448,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
     VITE_CLY_DEMO_MODE: "1",
   };
   let app = await electron.launch({
-    args: [path.join(root, "electron/main.js")],
+    args: [...electronArgs, path.join(root, "electron/main.js")],
     cwd: root,
     env: launchEnvironment,
   });
@@ -548,7 +549,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
       })
       .toBe(true);
     app = await electron.launch({
-      args: [path.join(root, "electron/main.js")],
+      args: [...electronArgs, path.join(root, "electron/main.js")],
       cwd: root,
       env: launchEnvironment,
     });

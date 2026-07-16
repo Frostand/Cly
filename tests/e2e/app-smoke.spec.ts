@@ -370,7 +370,7 @@ test("filters and sorts data, configures providers, and persists preferences", a
 
   await page.getByTestId("nav-models").click();
   const firstModel = page.locator(".cly-agent-model").first();
-  await firstModel.selectOption({ label: "Claude Sonnet" });
+  await firstModel.fill("Claude Sonnet");
   await expect(firstModel).toHaveValue("Claude Sonnet");
   await page.getByRole("button", { name: "Save preset" }).click();
   await expect(page.getByText("Agent preset saved")).toBeVisible();

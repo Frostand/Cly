@@ -6,6 +6,7 @@ import { _electron as electron, expect, test } from "@playwright/test";
 
 const root = process.cwd();
 const viteCli = path.join(root, "node_modules", "vite", "bin", "vite.js");
+const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
 
 test("completes and recovers the production evidence loop with demos disabled", async () => {
   test.setTimeout(90_000);
@@ -23,7 +24,7 @@ test("completes and recovers the production evidence loop with demos disabled", 
 
   const launch = () =>
     electron.launch({
-      args: [path.join(root, "electron/main.js")],
+      args: [...electronArgs, path.join(root, "electron/main.js")],
       cwd: root,
       env: {
         ...process.env,
