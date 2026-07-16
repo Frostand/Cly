@@ -37,6 +37,8 @@ function setup() {
     "0017_cly_dev_tool_effects.sql",
     "0018_cly_dev_handoff_materialization.sql",
     "0019_cly_dev_handoff_link_invariants.sql",
+    "0020_cly_dev_tool_effect_fingerprints.sql",
+    "0021_cly_dev_handoff_link_deletion.sql",
   ]) {
     db.exec(migration(name));
   }
@@ -77,11 +79,21 @@ function setup() {
         commit: { sha: "a".repeat(40) },
         state: "resumable",
       },
-    }).session;
-  const session1 = createSession("project-1", "one");
-  const session2 = createSession("project-2", "two");
+    });
+  const aggregate1 = createSession("project-1", "one");
+  const aggregate2 = createSession("project-2", "two");
+  const session1 = aggregate1.session;
+  const session2 = aggregate2.session;
   const handoffs = createClyDevHandoffRepository({ db });
-  return { databasePath, db, handoffs, session1, session2 };
+  return {
+    aggregate1,
+    aggregate2,
+    databasePath,
+    db,
+    handoffs,
+    session1,
+    session2,
+  };
 }
 
 afterEach(() => {
@@ -181,5 +193,87 @@ describe("Cly Dev handoff link persistence", () => {
         valid.id,
       ),
     ).toEqual(expect.objectContaining({ materializedSessionId: session1.id }));
+  });
+
+  it("blocks direct deletion of a linked session and preserves reverse lookup after reopen", () => {
+    const { databasePath, db, handoffs, session1 } = setup();
+    const imported = handoffs.recordImport(
+      "project-1",
+      envelope("Direct delete"),
+      {},
+    ).record;
+    handoffs.linkMaterializedSession("project-1", imported.id, session1.id);
+
+    expect(() =>
+      db.prepare("DELETE FROM cly_dev_sessions WHERE id = ?").run(session1.id),
+    ).toThrow(/handoff|materialized|linked/i);
+    const reopened = new DatabaseSync(databasePath);
+    reopened.exec("PRAGMA foreign_keys = ON;");
+    databases.push(reopened);
+    expect(
+      createClyDevHandoffRepository({
+        db: reopened,
+      }).findImportByMaterializedSession("project-1", session1.id),
+    ).toEqual(expect.objectContaining({ id: imported.id }));
+  });
+
+  it("blocks task deletion when its cascade contains a linked session", () => {
+    const { aggregate1, db, handoffs, session1 } = setup();
+    const imported = handoffs.recordImport(
+      "project-1",
+      envelope("Task cascade"),
+      {},
+    ).record;
+    handoffs.linkMaterializedSession("project-1", imported.id, session1.id);
+
+    expect(() =>
+      db
+        .prepare("DELETE FROM cly_dev_tasks WHERE id = ?")
+        .run(aggregate1.task.id),
+    ).toThrow(/handoff|materialized|linked/i);
+    expect(
+      db
+        .prepare("SELECT id FROM cly_dev_sessions WHERE id = ?")
+        .get(session1.id),
+    ).toEqual({ id: session1.id });
+  });
+
+  it.each([
+    ["workspace", "cly_dev_workspaces", (aggregate) => aggregate.workspace.id],
+    ["project", "projects", () => "project-1"],
+  ])("preserves a linked session and reverse lookup when %s cascade deletion is blocked", (_, table, id) => {
+    const { aggregate1, db, handoffs, session1 } = setup();
+    const imported = handoffs.recordImport(
+      "project-1",
+      envelope(`Blocked ${table} cascade`),
+      {},
+    ).record;
+    handoffs.linkMaterializedSession("project-1", imported.id, session1.id);
+
+    expect(() =>
+      db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id(aggregate1)),
+    ).toThrow(/immutable|handoff|materialized|linked/i);
+    expect(
+      db
+        .prepare("SELECT id FROM cly_dev_sessions WHERE id = ?")
+        .get(session1.id),
+    ).toEqual({ id: session1.id });
+    expect(
+      handoffs.findImportByMaterializedSession("project-1", session1.id),
+    ).toEqual(expect.objectContaining({ id: imported.id }));
+  });
+
+  it("allows deletion of an unlinked session and its now-empty task", () => {
+    const { aggregate2, db, session2 } = setup();
+
+    expect(
+      db.prepare("DELETE FROM cly_dev_sessions WHERE id = ?").run(session2.id)
+        .changes,
+    ).toBe(1);
+    expect(
+      db
+        .prepare("DELETE FROM cly_dev_tasks WHERE id = ?")
+        .run(aggregate2.task.id).changes,
+    ).toBe(1);
   });
 });

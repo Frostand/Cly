@@ -1504,8 +1504,9 @@ export const clyDevHandoffs = sqliteTable(
     inspectionJson: text("inspection_json").notNull(),
     exportedAt: text("exported_at").notNull(),
     importedAt: text("imported_at"),
-    // SQLite migration 0019 enforces pairing, import direction, and a
-    // project-scoped session reference for these additive 0018 columns.
+    // SQLite migrations 0019/0021 enforce pairing, import direction, a
+    // project-scoped session reference, and linked-session deletion safety
+    // for these additive 0018 columns.
     materializedSessionId: text("materialized_session_id"),
     materializedAt: text("materialized_at"),
     createdAt: text("created_at").notNull(),

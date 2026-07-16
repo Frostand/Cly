@@ -246,7 +246,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784156400000 });
+    ).toEqual({ createdAt: 1784160000000 });
     expect(
       upgraded
         .prepare(
@@ -257,7 +257,7 @@ describe("persisted research storage", () => {
     expectAgentContextDatabaseContract(upgraded);
   });
 
-  it("upgrades already-recorded 0016/0018 state through current migrations", () => {
+  it("upgrades already-recorded 0016/0018/0020 state through current migrations", () => {
     const databasePath = createDatabasePath();
     getStateDatabase(databasePath);
     closePersistedStateDatabase();
@@ -326,7 +326,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784156400000 });
+    ).toEqual({ createdAt: 1784160000000 });
     expect(upgraded.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 
     closePersistedStateDatabase();
@@ -336,6 +336,9 @@ describe("persisted research storage", () => {
     );
     throughMaterialization.exec(
       "DROP TRIGGER cly_dev_handoffs_materialized_link_update",
+    );
+    throughMaterialization.exec(
+      "DROP TRIGGER cly_dev_sessions_linked_handoff_delete",
     );
     throughMaterialization.exec("DROP TABLE cly_dev_tool_effects");
     throughMaterialization.exec(
@@ -367,7 +370,40 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784156400000 });
+    ).toEqual({ createdAt: 1784160000000 });
+    expect(
+      upgradedFrom0018
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'cly_dev_sessions_linked_handoff_delete'",
+        )
+        .get(),
+    ).toEqual({ name: "cly_dev_sessions_linked_handoff_delete" });
+
+    closePersistedStateDatabase();
+    const throughToolFingerprint = new DatabaseSync(databasePath);
+    throughToolFingerprint.exec(
+      "DROP TRIGGER cly_dev_sessions_linked_handoff_delete",
+    );
+    throughToolFingerprint
+      .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
+      .run(1784156400000);
+    throughToolFingerprint.close();
+
+    const upgradedFrom0020 = getStateDatabase(databasePath);
+    expect(
+      upgradedFrom0020
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'cly_dev_sessions_linked_handoff_delete'",
+        )
+        .get(),
+    ).toEqual({ name: "cly_dev_sessions_linked_handoff_delete" });
+    expect(
+      upgradedFrom0020
+        .prepare(
+          "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
+        )
+        .get(),
+    ).toEqual({ createdAt: 1784160000000 });
   });
 
   it("configures a bounded wait for concurrent SQLite writers", () => {

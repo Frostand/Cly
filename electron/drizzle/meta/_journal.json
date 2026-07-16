@@ -148,6 +148,13 @@
       "when": 1784156400000,
       "tag": "0020_cly_dev_tool_effect_fingerprints",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1784160000000,
+      "tag": "0021_cly_dev_handoff_link_deletion",
+      "breakpoints": true
     }
   ]
 }

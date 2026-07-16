@@ -43,6 +43,8 @@ function setup({
   db.exec(migration("0017_cly_dev_tool_effects.sql"));
   db.exec(migration("0018_cly_dev_handoff_materialization.sql"));
   db.exec(migration("0019_cly_dev_handoff_link_invariants.sql"));
+  db.exec(migration("0020_cly_dev_tool_effect_fingerprints.sql"));
+  db.exec(migration("0021_cly_dev_handoff_link_deletion.sql"));
   db.prepare("INSERT INTO projects (id) VALUES (?), (?)").run(
     "source-project",
     "target-project",
