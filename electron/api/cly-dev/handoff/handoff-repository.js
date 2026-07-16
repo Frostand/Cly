@@ -39,33 +39,47 @@ export function createClyDevHandoffRepository({
     return recordFromRow(row);
   };
 
-  const insert = (projectId, direction, rawEnvelope, inspection) => {
+  const insert = (
+    projectId,
+    direction,
+    rawEnvelope,
+    inspection,
+    { ignoreConflict = false } = {},
+  ) => {
     const envelope = validateHandoffEnvelope(rawEnvelope);
     const id = randomUUID();
     const createdAt = now();
-    db.prepare(
-      `INSERT INTO cly_dev_handoffs
+    const result = db
+      .prepare(
+        `INSERT INTO cly_dev_handoffs
        (id, project_id, direction, protocol, schema_version, minimum_reader_version,
         canonical_payload_json, integrity_digest, repository_fingerprint_json,
         research_fingerprint_json, inspection_json, exported_at, imported_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ${ignoreConflict ? "ON CONFLICT DO NOTHING" : ""}`,
+      )
+      .run(
+        id,
+        projectId,
+        direction,
+        envelope.protocol,
+        envelope.schemaVersion,
+        envelope.minimumReaderVersion,
+        canonicalJson(envelope.payload),
+        envelope.integrity.digest,
+        canonicalJson(envelope.payload.repository),
+        canonicalJson(envelope.payload.research),
+        canonicalJson(inspection ?? {}),
+        envelope.exportedAt,
+        direction === "import" ? createdAt : null,
+        createdAt,
+      );
+    return {
+      inserted: result.changes === 1,
       id,
-      projectId,
-      direction,
-      envelope.protocol,
-      envelope.schemaVersion,
-      envelope.minimumReaderVersion,
-      canonicalJson(envelope.payload),
-      envelope.integrity.digest,
-      canonicalJson(envelope.payload.repository),
-      canonicalJson(envelope.payload.research),
-      canonicalJson(inspection ?? {}),
-      envelope.exportedAt,
-      direction === "import" ? createdAt : null,
-      createdAt,
-    );
-    return get(projectId, id);
+      envelope,
+      record: result.changes === 1 ? get(projectId, id) : null,
+    };
   };
 
   return {
@@ -88,21 +102,28 @@ export function createClyDevHandoffRepository({
       return rows.map(recordFromRow);
     },
     recordExport(projectId, envelope, inspection = {}) {
-      return insert(projectId, "export", envelope, inspection);
+      return insert(projectId, "export", envelope, inspection).record;
     },
     recordImport(projectId, envelope, inspection) {
       const validated = validateHandoffEnvelope(envelope);
+      const inserted = insert(projectId, "import", validated, inspection, {
+        ignoreConflict: true,
+      });
+      if (inserted.inserted) {
+        return { record: inserted.record, duplicate: false };
+      }
       const existing = db
         .prepare(
           `SELECT * FROM cly_dev_handoffs
            WHERE project_id = ? AND direction = 'import' AND integrity_digest = ?`,
         )
         .get(projectId, validated.integrity.digest);
-      if (existing) return { record: recordFromRow(existing), duplicate: true };
-      return {
-        record: insert(projectId, "import", validated, inspection),
-        duplicate: false,
-      };
+      if (!existing) {
+        throw new Error(
+          "The idempotent handoff insert conflicted without a project-scoped import identity.",
+        );
+      }
+      return { record: recordFromRow(existing), duplicate: true };
     },
     findImportByDigest(projectId, digest) {
       const row = db

@@ -108,6 +108,7 @@
     },
     "approvals": [
       {
+        "evidenceOnly": true,
         "id": "approval-1",
         "state": "approved",
         "title": "Write migration",
@@ -117,6 +118,7 @@
       }
     ],
     "permissions": {
+      "evidenceOnly": true,
       "filesystem": "workspace-write",
       "network": "restricted",
       "commands": ["pnpm vitest"]
@@ -183,6 +185,6 @@
   "integrity": {
     "algorithm": "sha256",
     "canonicalization": "cly-json-v1",
-    "digest": "58487e03076897c2acd3a99f406589f68c57bd043594a8d100bf048d20c74969"
+    "digest": "cf04c8ea2812031a5119c0edc201d7dffe0e3111b9c51a85b45e36b968f6e74b"
   }
 }

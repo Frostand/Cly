@@ -106,4 +106,31 @@ describe("Cly Dev handoff schema", () => {
       /credential|secret|restricted/i,
     );
   });
+
+  it.each([
+    "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature",
+    "Proxy-Authorization: Basic dXNlcjpwYXNzd29yZA==",
+    "GitHub token ghp_1234567890abcdefghijklmnop",
+    "Slack xoxb-123456789012-abcdefghijklmnop",
+    "AWS AKIAIOSFODNN7EXAMPLE",
+    "OPENAI_API_KEY=sk-1234567890abcdefghijklmnop",
+    "JWT eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature",
+    "Run FILE_CACHE=/Users/example/cache command",
+    "Read /Users/example/private.txt on this machine",
+    "Read /srv/build/private.txt on this machine",
+    "Read C:\\Users\\example\\private.txt on this machine",
+  ])("rejects embedded restricted text: %s", (restrictedText) => {
+    const envelope = fixture("valid-v1.json");
+    envelope.payload.constraints.push(restrictedText);
+    envelope.integrity.digest = hashHandoffPayload(envelope.payload);
+    expect(() => clyDevHandoffEnvelopeSchema.parse(envelope)).toThrow(
+      /credential|secret|restricted|machine path|environment/i,
+    );
+  });
+
+  it("marks synchronized permissions and approvals as historical evidence", () => {
+    const envelope = fixture("valid-v1.json");
+    expect(envelope.payload.permissions.evidenceOnly).toBe(true);
+    expect(envelope.payload.approvals[0].evidenceOnly).toBe(true);
+  });
 });

@@ -51,10 +51,31 @@ export const isAbsoluteMachinePath = (value) =>
     /^file:\/\//i.test(value));
 const containsCredentialValue = (value) =>
   typeof value === "string" &&
-  (/\b(?:api[_-]?key|access[_-]?token|password|client[_-]?secret)\s*[:=]/i.test(
-    value,
-  ) ||
+  (/\b(?:proxy-)?authorization\s*:\s*(?:bearer|basic)\s+\S+/i.test(value) ||
+    /\b(?:bearer|basic)\s+[a-z0-9+/_.=-]{8,}/i.test(value) ||
+    /\b(?:gh[pousr]_[a-z0-9]{20,}|xox[baprs]-[a-z0-9-]{16,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{20,}|sk-[a-z0-9_-]{16,}|glpat-[a-z0-9_-]{16,}|npm_[a-z0-9]{16,})\b/i.test(
+      value,
+    ) ||
+    /\beyJ[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{4,}\b/i.test(value) ||
+    /\b(?:api[_-]?key|access[_-]?token|password|client[_-]?secret)\s*[:=]/i.test(
+      value,
+    ) ||
+    /\b(?:openai|anthropic|azure|aws|google|github|gitlab|slack)[_-](?:api[_-])?(?:key|token|secret)\s*=/i.test(
+      value,
+    ) ||
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(value));
+const containsEnvironmentAssignment = (value) =>
+  typeof value === "string" &&
+  /(?:^|[\s;&|])(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*[^\s;&|]+/.test(
+    value,
+  );
+const containsEmbeddedMachinePath = (value) =>
+  typeof value === "string" &&
+  (/(?:^|[\s"'`=:(])\/(?!\/)(?:[^/\s"'`]+\/)+[^\s"'`]*/.test(value) ||
+    /(?:^|[\s"'`=:(])[a-zA-Z]:\\(?:Users|Documents and Settings|Windows|ProgramData|Temp)\\[^\s"'`]*/i.test(
+      value,
+    ) ||
+    /(?:^|[\s"'`=:(])\\\\[^\\\s]+\\[^\\\s]+/.test(value));
 
 export function findRestrictedHandoffData(
   value,
@@ -66,6 +87,12 @@ export function findRestrictedHandoffData(
   }
   if (containsCredentialValue(value)) {
     return { path: location, reason: "credential or secret value" };
+  }
+  if (containsEnvironmentAssignment(value)) {
+    return { path: location, reason: "environment assignment" };
+  }
+  if (containsEmbeddedMachinePath(value)) {
+    return { path: location, reason: "embedded machine path" };
   }
   if (value === null || typeof value !== "object") return null;
   if (seen.has(value)) return { path: location, reason: "cyclic data" };
@@ -243,6 +270,7 @@ export const clyDevHandoffPayloadSchema = z
     approvals: z.array(
       z
         .object({
+          evidenceOnly: z.literal(true),
           id,
           state: z.enum(["pending", "approved", "rejected", "canceled"]),
           title: text(500),
@@ -254,6 +282,7 @@ export const clyDevHandoffPayloadSchema = z
     ),
     permissions: z
       .object({
+        evidenceOnly: z.literal(true),
         filesystem: z.enum(["read-only", "workspace-write", "unrestricted"]),
         network: z.enum(["disabled", "restricted", "unrestricted"]),
         commands: z.array(text(2_000)),
@@ -406,7 +435,12 @@ const emptyV1Payload = (legacy) => ({
     symbols: [],
   },
   approvals: [],
-  permissions: { filesystem: "read-only", network: "disabled", commands: [] },
+  permissions: {
+    evidenceOnly: true,
+    filesystem: "read-only",
+    network: "disabled",
+    commands: [],
+  },
   constraints: ["Repository identity must be re-inspected after v0 migration."],
   diffs: [],
   tests: [],
