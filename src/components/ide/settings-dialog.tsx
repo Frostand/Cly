@@ -1,5 +1,8 @@
 import {
   Archive,
+  CheckCircle2,
+  CircleAlert,
+  Copy,
   Monitor,
   Moon,
   Plug,
@@ -14,7 +17,10 @@ import { useEffect, useMemo, useState } from "react";
 import anthropicLogo from "@/assets/anthropic.svg";
 import openAiLogo from "@/assets/openai.svg";
 import openCodeLogo from "@/assets/opencode.svg";
-import { CursorIcon } from "@/components/ai-elements/provider-icons";
+import {
+  CursorIcon,
+  ProviderIcon,
+} from "@/components/ai-elements/provider-icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -57,6 +63,7 @@ import { ACCENT_COLORS, BASE_COLORS, useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
 import type {
   AccentColor,
+  AiProvider,
   BaseColor,
   ModelSpeed,
   ReasoningEffort,
@@ -135,6 +142,9 @@ export const SettingsDialog = () => {
   const [selectedDeletedChatIds, setSelectedDeletedChatIds] = useState<
     string[]
   >([]);
+  const [activeHarness, setActiveHarness] = useState<AiProvider>("anthropic");
+  const [copiedCommand, setCopiedCommand] = useState<AiProvider | null>(null);
+  const [loginRequested, setLoginRequested] = useState<AiProvider | null>(null);
 
   useEffect(() => {
     setThemeMounted(true);
@@ -394,6 +404,57 @@ export const SettingsDialog = () => {
 
   const handleRefreshCursorProvider = () => {
     void refreshProviderModels({ force: true, provider: "cursor" });
+  };
+
+  const refreshHarness = (provider: AiProvider) => {
+    void refreshProviderModels({ force: true, provider });
+  };
+
+  const harnessSetup: Record<
+    AiProvider,
+    { command: string; docsUrl: string; name: string; runtime: string }
+  > = {
+    anthropic: {
+      command: "claude  # then run /login",
+      docsUrl: "https://docs.anthropic.com/en/docs/claude-code",
+      name: "Claude Code",
+      runtime: "Claude Code CLI",
+    },
+    cursor: {
+      command: "agent login",
+      docsUrl: "https://cursor.com/docs/cli",
+      name: "Cursor",
+      runtime: "Cursor Agent CLI",
+    },
+    openai: {
+      command: "codex login",
+      docsUrl: "https://developers.openai.com/codex/cli/",
+      name: "Codex",
+      runtime: "Codex CLI",
+    },
+    opencode: {
+      command: "opencode auth login",
+      docsUrl: "https://opencode.ai/docs",
+      name: "OpenCode",
+      runtime: "OpenCode CLI",
+    },
+  };
+
+  const copyHarnessCommand = async (provider: AiProvider) => {
+    try {
+      await navigator.clipboard.writeText(harnessSetup[provider].command);
+      setCopiedCommand(provider);
+      window.setTimeout(() => setCopiedCommand(null), 1600);
+    } catch {
+      // The visible command remains available when clipboard access is denied.
+    }
+  };
+
+  const launchHarnessLogin = async (provider: AiProvider) => {
+    const launched = await getDesktopApi()?.launchProviderLogin(provider);
+    if (launched) {
+      setLoginRequested(provider);
+    }
   };
 
   return (
@@ -679,13 +740,259 @@ export const SettingsDialog = () => {
                     </div>
                   </div>
 
+                  <div className="overflow-hidden rounded-lg border border-surface-200 dark:border-surface-800">
+                    <div className="border-b border-surface-200 px-4 pt-4 dark:border-surface-800">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="font-medium text-base">Harnesses</h3>
+                          <p className="mt-1 text-muted-foreground text-sm">
+                            Connect the local AI tools Cly can run in your
+                            projects.
+                          </p>
+                        </div>
+                        <Button
+                          aria-label={settingsT("refreshProvider", {
+                            provider: getProviderLabel(activeHarness),
+                          })}
+                          disabled={providerModels[activeHarness].loading}
+                          onClick={() => refreshHarness(activeHarness)}
+                          size="icon-xs"
+                          title="Refresh harness"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <RotateCw className="size-3.5" />
+                        </Button>
+                      </div>
+
+                      <div
+                        aria-label="AI harnesses"
+                        className="mt-4 flex gap-1 overflow-x-auto"
+                        role="tablist"
+                      >
+                        {ALL_PROVIDERS.map((provider) => (
+                          <button
+                            aria-selected={activeHarness === provider}
+                            className={cn(
+                              "flex shrink-0 items-center gap-2 border-b-2 px-2.5 py-2 text-sm transition-colors focus-visible:outline-none",
+                              activeHarness === provider
+                                ? "border-foreground text-foreground"
+                                : "border-transparent text-muted-foreground hover:text-foreground",
+                            )}
+                            key={provider}
+                            onClick={() => setActiveHarness(provider)}
+                            role="tab"
+                            type="button"
+                          >
+                            <ProviderIcon
+                              aria-hidden="true"
+                              className="size-3.5"
+                              provider={provider}
+                            />
+                            {harnessSetup[provider].name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {ALL_PROVIDERS.map((provider) => {
+                      if (provider !== activeHarness) return null;
+                      const state = providerModels[provider];
+                      const models = state.models;
+                      const selectedModels = getModelsForProvider(
+                        provider,
+                        settings,
+                      );
+                      const setup = harnessSetup[provider];
+                      const connected =
+                        state.installed && !state.error && models.length > 0;
+                      const statusText = connected
+                        ? `${models.length} model${models.length === 1 ? "" : "s"} available`
+                        : state.installed
+                          ? "CLI needs sign-in or configuration"
+                          : "CLI not detected";
+
+                      return (
+                        <div className="p-4" key={provider} role="tabpanel">
+                          <section
+                            aria-labelledby="harness-authentication"
+                            className="space-y-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <h4
+                                  className="font-medium text-sm"
+                                  id="harness-authentication"
+                                >
+                                  Authentication
+                                </h4>
+                                <p className="mt-1 text-muted-foreground text-sm">
+                                  Cly uses your existing {setup.runtime}{" "}
+                                  session. Credentials stay with the harness,
+                                  not in Cly.
+                                </p>
+                              </div>
+                              <span
+                                className={cn(
+                                  "flex items-center gap-1.5 text-xs",
+                                  connected
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {connected ? (
+                                  <CheckCircle2 className="size-3.5" />
+                                ) : (
+                                  <CircleAlert className="size-3.5" />
+                                )}
+                                {statusText}
+                              </span>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="rounded-md border-2 border-foreground bg-muted/40 p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-medium text-sm">
+                                    CLI
+                                  </span>
+                                  <CheckCircle2
+                                    aria-label="Selected"
+                                    className="size-4"
+                                  />
+                                </div>
+                                <p className="mt-1 text-muted-foreground text-xs">
+                                  Uses the account already signed into{" "}
+                                  {setup.runtime}.
+                                </p>
+                              </div>
+                              <div className="rounded-md border border-surface-200 p-3 text-muted-foreground dark:border-surface-800">
+                                <span className="font-medium text-sm">
+                                  API key
+                                </span>
+                                <p className="mt-1 text-xs">
+                                  Managed by this harness when it supports
+                                  key-based sign-in.
+                                </p>
+                              </div>
+                            </div>
+
+                            {!connected ? (
+                              <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive-border bg-destructive-surface px-3 py-2 text-sm text-destructive dark:border-destructive-border-strong dark:bg-destructive-surface dark:text-destructive-muted">
+                                <CircleAlert className="size-4 shrink-0" />
+                                <span>
+                                  {state.error ??
+                                    `Sign in to ${setup.name}, then refresh.`}
+                                </span>
+                              </div>
+                            ) : null}
+
+                            {loginRequested === provider ? (
+                              <p className="text-muted-foreground text-xs">
+                                Finish signing in in the terminal, then refresh
+                                this harness.
+                              </p>
+                            ) : null}
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                onClick={() =>
+                                  void launchHarnessLogin(provider)
+                                }
+                                size="sm"
+                                type="button"
+                              >
+                                Sign in with {setup.name}
+                              </Button>
+                              <Button
+                                onClick={() =>
+                                  void copyHarnessCommand(provider)
+                                }
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <Copy className="size-3.5" />
+                                {copiedCommand === provider
+                                  ? "Copied"
+                                  : `Copy ${setup.command}`}
+                              </Button>
+                              <Button
+                                onClick={() =>
+                                  void getDesktopApi()?.openExternal(
+                                    setup.docsUrl,
+                                  )
+                                }
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                Setup guide
+                              </Button>
+                            </div>
+                          </section>
+
+                          <section className="mt-5 border-t border-surface-200 pt-4 dark:border-surface-800">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <h4 className="font-medium text-sm">
+                                  Available models
+                                </h4>
+                                <p className="mt-1 text-muted-foreground text-xs">
+                                  Choose models to make available in new chats.
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mt-3 divide-y divide-surface-200 border-y border-surface-200 dark:divide-surface-800 dark:border-surface-800">
+                              {models.length === 0 ? (
+                                <p className="py-3 text-muted-foreground text-sm">
+                                  Sign in, then refresh to load models.
+                                </p>
+                              ) : (
+                                models.map((model) => {
+                                  const selected = selectedModels.includes(
+                                    model.id,
+                                  );
+                                  return (
+                                    <div
+                                      className="flex min-h-9 items-center justify-between gap-3 py-1.5"
+                                      key={model.id}
+                                    >
+                                      <Label
+                                        className={cn(
+                                          "truncate text-sm",
+                                          !selected && "text-muted-foreground",
+                                        )}
+                                      >
+                                        {model.label}
+                                      </Label>
+                                      <Switch
+                                        checked={selected}
+                                        onCheckedChange={(checked) => {
+                                          if (checked !== selected)
+                                            toggleProviderModel(
+                                              provider,
+                                              model.id,
+                                            );
+                                        }}
+                                      />
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </section>
+                        </div>
+                      );
+                    })}
+                  </div>
+
                   {installedProviderCount === 0 ? (
                     <p className="rounded-md px-3 py-2 text-muted-foreground text-sm">
                       {settingsT("installProviders")}
                     </p>
                   ) : null}
 
-                  <div className="grid gap-3">
+                  <div className="hidden grid gap-3" aria-hidden="true">
                     <ProviderStatusCard
                       action={
                         <Button
