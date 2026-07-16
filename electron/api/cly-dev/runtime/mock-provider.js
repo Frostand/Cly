@@ -91,6 +91,7 @@ export function createDeterministicMockProvider(script, options = {}) {
       }
     },
     async cancel(executionId) {
+      options.onCancel?.(executionId);
       active.get(executionId)?.abort();
     },
     normalizeError: normalizeProviderError,

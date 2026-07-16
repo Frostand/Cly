@@ -141,6 +141,13 @@
       "when": 1784152800000,
       "tag": "0019_cly_dev_handoff_link_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1784156400000,
+      "tag": "0020_cly_dev_tool_effect_fingerprints",
+      "breakpoints": true
     }
   ]
 }

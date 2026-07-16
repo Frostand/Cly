@@ -530,7 +530,7 @@ describe("reviewed Cly Dev security invariants", () => {
       now: () => initialTime,
     });
     const running = runtime.execute(request);
-    await vi.waitFor(() => expect(strict.events).toHaveLength(2));
+    await vi.waitFor(() => expect(strict.events).toHaveLength(3));
     await expect(runtime.cancel("request-1")).rejects.toThrow(/scope/i);
     await runtime.cancel({
       projectId: request.projectId,

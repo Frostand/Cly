@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { hashToolArguments } from "./approval-gate.js";
 import { normalizeDurableOutboundContext } from "./outbound-context.js";
 import {
   hasCanonicalProviderCapabilities,
@@ -259,7 +260,7 @@ export function createClyDevExecutionRuntime(options = {}) {
     return { status: "canceled" };
   };
 
-  const execute = async (request) => {
+  const execute = async (request, operation = "execute") => {
     if (!request?.projectId || !request?.sessionId || !request?.requestId) {
       throw new Error(
         "Execution requires projectId, sessionId, and requestId.",
@@ -284,6 +285,16 @@ export function createClyDevExecutionRuntime(options = {}) {
           "request:failure",
         );
       }
+      await append(
+        request,
+        localEvent({
+          key: key(request, `${operation}:running`),
+          type: "session.state.changed",
+          payload: { state: "running" },
+          actor: actor("system", "cly-dev-runtime"),
+          now,
+        }),
+      );
       await append(
         request,
         localEvent({
@@ -396,6 +407,11 @@ export function createClyDevExecutionRuntime(options = {}) {
 
       try {
         let providerEventIndex = 0;
+        const observedUsage = {
+          inputTokens: 0,
+          outputTokens: 0,
+          costMinor: 0,
+        };
         for await (const event of provider.stream(providerRequest, {
           signal: controller.signal,
         })) {
@@ -435,21 +451,29 @@ export function createClyDevExecutionRuntime(options = {}) {
             continue;
           }
           if (event.type === "usage") {
+            const usageDelta = {
+              inputTokens: Math.max(0, Number(event.inputTokens ?? 0)),
+              outputTokens: Math.max(0, Number(event.outputTokens ?? 0)),
+              costMinor: Math.max(0, Number(event.costMinor ?? 0)),
+            };
+            observedUsage.inputTokens += usageDelta.inputTokens;
+            observedUsage.outputTokens += usageDelta.outputTokens;
+            observedUsage.costMinor += usageDelta.costMinor;
             await append(
               request,
               localEvent({
                 key: eventKey,
                 type: "cost.recorded",
                 payload: {
-                  amountMinor: Math.max(0, Number(event.costMinor ?? 0)),
+                  amountMinor: usageDelta.costMinor,
                   currency: String(event.currency ?? "USD").toUpperCase(),
-                  category: `provider_usage:${Number(event.inputTokens ?? 0)}:${Number(event.outputTokens ?? 0)}`,
+                  category: `provider_usage:${usageDelta.inputTokens}:${usageDelta.outputTokens}`,
                 },
                 actor: actor("system", provider.id),
                 now,
               }),
             );
-            const exhausted = budgetFailure(request.budget, event);
+            const exhausted = budgetFailure(request.budget, observedUsage);
             if (exhausted) {
               await provider.cancel(scopedProviderExecutionId);
               controller.abort();
@@ -636,6 +660,8 @@ export function createClyDevExecutionRuntime(options = {}) {
                       sessionId: request.sessionId,
                       requestId: request.requestId,
                       toolCallId: event.toolCallId,
+                      toolName: event.tool,
+                      argumentsSha256: hashToolArguments(event.arguments),
                     },
                   })
                 : { executed: true, result: await execute() };
@@ -736,9 +762,9 @@ export function createClyDevExecutionRuntime(options = {}) {
   };
 
   return Object.freeze({
-    execute,
-    retry: execute,
-    resume: execute,
+    execute: (request) => execute(request, "execute"),
+    retry: (request) => execute(request, "retry"),
+    resume: (request) => execute(request, "resume"),
     async cancel(scope) {
       if (
         !scope ||

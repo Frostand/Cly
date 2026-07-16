@@ -349,6 +349,7 @@ export const streamCodexAppServerResponse = ({
   systemPrompt,
   chatId,
   turnSandboxPolicy,
+  conversationPromptBuilder = buildCodexConversationPrompt,
 }) => {
   const stream = createUIMessageStream({
     originalMessages: messages,
@@ -1005,7 +1006,7 @@ export const streamCodexAppServerResponse = ({
               finish(() => reject(new Error(detail)));
             });
 
-            const fullPrompt = buildCodexConversationPrompt({
+            const fullPrompt = conversationPromptBuilder({
               currentTurnAttachments: preparedAttachments?.promptText ?? null,
               currentTurnProjectReferences: projectReferencesPrompt,
               messages,

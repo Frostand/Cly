@@ -42,6 +42,28 @@ const normalizeStreamLine = (line) => {
   return parseJson(value);
 };
 
+const messageText = (messages) =>
+  (messages ?? [])
+    .flatMap((message) => message?.parts ?? [])
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n");
+
+export const buildClyDevCodexPrompt = ({
+  currentTurnProjectReferences,
+  messages,
+  systemPrompt,
+}) =>
+  [
+    systemPrompt,
+    currentTurnProjectReferences
+      ? `Cly Dev normalized transferable context:\n${currentTurnProjectReferences}`
+      : null,
+    `User request:\n${messageText(messages)}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
 async function* decodeProviderEvents(response, signal) {
   if (!response.ok) {
     throw new Error(
@@ -52,6 +74,7 @@ async function* decodeProviderEvents(response, signal) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  const cumulativeUsage = { inputTokens: 0, outputTokens: 0 };
   const mapEvent = (event) => {
     if (event?.type === "text-delta") {
       return { type: "text", text: event.delta ?? "" };
@@ -70,6 +93,44 @@ async function* decodeProviderEvents(response, signal) {
         toolCallId: event.toolCallId,
         result: event.output,
       };
+    }
+    if (
+      event?.type === "tool-input-available" &&
+      event.providerExecuted === true &&
+      ["runCommand", "writeFile"].includes(event.toolName)
+    ) {
+      throw new Error(
+        "Codex reported a provider-executed effect; Cly Dev cannot verify pre-effect interception.",
+      );
+    }
+    if (event?.type === "message-metadata") {
+      const usage = event.messageMetadata?.usage;
+      const nextInput = Number(usage?.inputTokens);
+      const nextOutput = Number(usage?.outputTokens);
+      if (
+        !Number.isFinite(nextInput) ||
+        nextInput < 0 ||
+        !Number.isFinite(nextOutput) ||
+        nextOutput < 0
+      ) {
+        return null;
+      }
+      const inputTokens = Math.max(0, nextInput - cumulativeUsage.inputTokens);
+      const outputTokens = Math.max(
+        0,
+        nextOutput - cumulativeUsage.outputTokens,
+      );
+      cumulativeUsage.inputTokens = Math.max(
+        cumulativeUsage.inputTokens,
+        nextInput,
+      );
+      cumulativeUsage.outputTokens = Math.max(
+        cumulativeUsage.outputTokens,
+        nextOutput,
+      );
+      return inputTokens || outputTokens
+        ? { type: "usage", inputTokens, outputTokens }
+        : null;
     }
     if (event?.type === "tool-output-error" || event?.type === "error") {
       throw new Error(
@@ -155,6 +216,7 @@ export function createSignedInCodexRunner({
           projectId: request.projectId,
           projectPath,
           responseMessageMetadata: {},
+          conversationPromptBuilder: buildClyDevCodexPrompt,
           sandboxMode: "read-only",
           systemPrompt:
             "Cly Dev production execution is read-only in this Codex bridge. Do not modify files, run effectful commands, access the network, or request additional permissions.",

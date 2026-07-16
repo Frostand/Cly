@@ -89,6 +89,8 @@ describe("DB-backed Cly Dev durable tool effects", () => {
         sessionId: "session-1",
         requestId: "request-1",
         toolCallId: "call-1",
+        toolName: "writeFile",
+        argumentsSha256: "a".repeat(64),
       },
       execute,
     };
@@ -115,10 +117,28 @@ describe("DB-backed Cly Dev durable tool effects", () => {
     expect(
       db
         .prepare(
-          "SELECT status, result_json FROM cly_dev_tool_effects WHERE stable_execution_key = ?",
+          "SELECT status, result_json, tool_name, arguments_sha256 FROM cly_dev_tool_effects WHERE stable_execution_key = ?",
         )
         .get(input.key),
-    ).toMatchObject({ status: "completed", result_json: '{"ok":true}' });
+    ).toMatchObject({
+      status: "completed",
+      result_json: '{"ok":true}',
+      tool_name: "writeFile",
+      arguments_sha256: "a".repeat(64),
+    });
+
+    for (const scope of [
+      { ...input.scope, toolName: "runCommand" },
+      { ...input.scope, argumentsSha256: "b".repeat(64) },
+    ]) {
+      await expect(
+        createDurableToolEffects({ db, now: () => NOW }).executeOnce({
+          ...input,
+          scope,
+          execute: vi.fn(),
+        }),
+      ).rejects.toMatchObject({ code: "DURABLE_EFFECT_FINGERPRINT_MISMATCH" });
+    }
   });
 
   it("fails closed for a crash-left claim instead of silently replaying it", async () => {
@@ -127,10 +147,12 @@ describe("DB-backed Cly Dev durable tool effects", () => {
     db.prepare(
       `INSERT INTO cly_dev_tool_effects
        (stable_execution_key, project_id, session_id, request_id, tool_call_id,
+        tool_name, arguments_sha256,
         status, result_json, error_json, claimed_at, completed_at, failed_at)
        VALUES (?, 'project-1', 'session-1', 'request-2', 'call-2',
+        'runCommand', ?,
         'claimed', NULL, NULL, ?, NULL, NULL)`,
-    ).run(key, NOW);
+    ).run(key, "c".repeat(64), NOW);
     const execute = vi.fn();
 
     await expect(
@@ -141,10 +163,42 @@ describe("DB-backed Cly Dev durable tool effects", () => {
           sessionId: "session-1",
           requestId: "request-2",
           toolCallId: "call-2",
+          toolName: "runCommand",
+          argumentsSha256: "c".repeat(64),
         },
         execute,
       }),
     ).rejects.toMatchObject({ code: "DURABLE_EFFECT_INDETERMINATE" });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a recorded pre-0020 effect has no fingerprint", async () => {
+    const { db } = createFixture();
+    const key = "cly-dev:project-1:session-1:legacy:tool:call-legacy";
+    db.exec("DROP TRIGGER cly_dev_tool_effects_fingerprint_insert");
+    db.prepare(
+      `INSERT INTO cly_dev_tool_effects
+       (stable_execution_key, project_id, session_id, request_id, tool_call_id,
+        status, result_json, error_json, claimed_at, completed_at, failed_at)
+       VALUES (?, 'project-1', 'session-1', 'legacy', 'call-legacy',
+        'completed', '{"legacy":true}', NULL, ?, ?, NULL)`,
+    ).run(key, NOW, NOW);
+    const execute = vi.fn();
+
+    await expect(
+      createDurableToolEffects({ db, now: () => NOW }).executeOnce({
+        key,
+        scope: {
+          projectId: "project-1",
+          sessionId: "session-1",
+          requestId: "legacy",
+          toolCallId: "call-legacy",
+          toolName: "writeFile",
+          argumentsSha256: "d".repeat(64),
+        },
+        execute,
+      }),
+    ).rejects.toMatchObject({ code: "DURABLE_EFFECT_FINGERPRINT_MISSING" });
     expect(execute).not.toHaveBeenCalled();
   });
 });

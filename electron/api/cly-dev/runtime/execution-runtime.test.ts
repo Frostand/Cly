@@ -296,8 +296,9 @@ describe("Cly Dev durable execution runtime", () => {
     await expect(
       harness.runtime.execute(harness.request),
     ).resolves.toMatchObject({ status: "completed" });
-    expect(eventsAtProviderStart).toBe(2);
+    expect(eventsAtProviderStart).toBe(3);
     expect(harness.events.map((event) => event.type)).toEqual([
+      "session.state.changed",
       "message.recorded",
       "context.manifest.recorded",
       "message.recorded",
@@ -305,7 +306,10 @@ describe("Cly Dev durable execution runtime", () => {
       "cost.recorded",
       "session.state.changed",
     ]);
-    expect(harness.events[1].payload.manifestId).toBe("manifest-1");
+    expect(harness.events[0]).toMatchObject({
+      payload: { state: "running" },
+    });
+    expect(harness.events[2].payload.manifestId).toBe("manifest-1");
   });
 
   it("rebuilds canonical context instead of trusting source bytes or digests", async () => {
@@ -365,6 +369,13 @@ describe("Cly Dev durable execution runtime", () => {
       },
     });
     expect(resumed).toMatchObject({ status: "completed" });
+    expect(
+      pending.events.filter(
+        (event) =>
+          event.type === "session.state.changed" &&
+          event.payload.state === "running",
+      ),
+    ).toHaveLength(2);
     expect(pending.executeTool).toHaveBeenCalledTimes(1);
     expect([...pending.results.keys()]).toEqual([
       "cly-dev:project-1:session-1:request-1:tool:call-writeFile",
@@ -490,7 +501,16 @@ describe("Cly Dev durable execution runtime", () => {
       script: [{ type: "wait_until_canceled" }, { type: "completed" }],
     });
     const running = harness.runtime.execute(harness.request);
-    await vi.waitFor(() => expect(harness.events).toHaveLength(2));
+    await vi.waitFor(() =>
+      expect(harness.events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "session.state.changed",
+            payload: { state: "running" },
+          }),
+        ]),
+      ),
+    );
     await harness.runtime.cancel({
       projectId: harness.request.projectId,
       sessionId: harness.request.sessionId,
@@ -501,6 +521,55 @@ describe("Cly Dev durable execution runtime", () => {
       type: "session.state.changed",
       payload: { state: "canceled" },
     });
+  });
+
+  it("records running for a handoff-style resume before provider egress", async () => {
+    let eventsAtProviderStart = [];
+    const harness = createHarness({
+      script: () => {
+        eventsAtProviderStart = harness.events.map((event) => event.type);
+        return [{ type: "completed" }];
+      },
+    });
+
+    await expect(
+      harness.runtime.resume({
+        ...harness.request,
+        requestId: "handoff-resume-1",
+        handoffId: "handoff-1",
+      }),
+    ).resolves.toMatchObject({ status: "completed" });
+    expect(eventsAtProviderStart[0]).toBe("session.state.changed");
+    expect(harness.events[0]).toMatchObject({
+      idempotencyKey:
+        "cly-dev:project-1:session-1:handoff-resume-1:resume:running",
+      payload: { state: "running" },
+    });
+  });
+
+  it("accumulates provider usage deltas before enforcing token budgets", async () => {
+    const cancel = vi.fn();
+    const harness = createHarness({
+      providerOptions: { onCancel: cancel },
+      script: [
+        { type: "usage", inputTokens: 6, outputTokens: 1 },
+        { type: "usage", inputTokens: 6, outputTokens: 1 },
+        { type: "completed" },
+      ],
+    });
+    await expect(
+      harness.runtime.execute({
+        ...harness.request,
+        budget: { maxInputTokens: 10 },
+      }),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "BUDGET_EXHAUSTED" },
+    });
+    expect(
+      harness.events.filter((event) => event.type === "cost.recorded"),
+    ).toHaveLength(2);
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("rejects declared effectful tools before starting a provider that cannot intercept effects", async () => {

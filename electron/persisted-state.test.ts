@@ -246,7 +246,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784152800000 });
+    ).toEqual({ createdAt: 1784156400000 });
     expect(
       upgraded
         .prepare(
@@ -257,13 +257,20 @@ describe("persisted research storage", () => {
     expectAgentContextDatabaseContract(upgraded);
   });
 
-  it("upgrades already-recorded immutable 0016 and additive 0018 handoff state through 0019", () => {
+  it("upgrades already-recorded 0016/0018 state through current migrations", () => {
     const databasePath = createDatabasePath();
     getStateDatabase(databasePath);
     closePersistedStateDatabase();
 
     const throughRuntime = new DatabaseSync(databasePath);
     throughRuntime.exec("PRAGMA foreign_keys = OFF");
+    throughRuntime.exec("DROP TABLE cly_dev_tool_effects");
+    throughRuntime.exec(
+      readFileSync(
+        new URL("./drizzle/0017_cly_dev_tool_effects.sql", import.meta.url),
+        "utf8",
+      ).replaceAll("--> statement-breakpoint", ""),
+    );
     throughRuntime.exec("DROP TABLE cly_dev_handoffs");
     throughRuntime.exec(
       readFileSync(
@@ -319,7 +326,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784152800000 });
+    ).toEqual({ createdAt: 1784156400000 });
     expect(upgraded.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 
     closePersistedStateDatabase();
@@ -329,6 +336,13 @@ describe("persisted research storage", () => {
     );
     throughMaterialization.exec(
       "DROP TRIGGER cly_dev_handoffs_materialized_link_update",
+    );
+    throughMaterialization.exec("DROP TABLE cly_dev_tool_effects");
+    throughMaterialization.exec(
+      readFileSync(
+        new URL("./drizzle/0017_cly_dev_tool_effects.sql", import.meta.url),
+        "utf8",
+      ).replaceAll("--> statement-breakpoint", ""),
     );
     throughMaterialization
       .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
@@ -353,7 +367,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784152800000 });
+    ).toEqual({ createdAt: 1784156400000 });
   });
 
   it("configures a bounded wait for concurrent SQLite writers", () => {

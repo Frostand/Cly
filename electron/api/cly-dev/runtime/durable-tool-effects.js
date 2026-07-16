@@ -23,7 +23,10 @@ const validateInput = ({ key, scope, execute }) => {
     !scope.projectId ||
     !scope.sessionId ||
     !scope.requestId ||
-    !scope.toolCallId
+    !scope.toolCallId ||
+    typeof scope.toolName !== "string" ||
+    !scope.toolName ||
+    !/^[a-f0-9]{64}$/.test(scope.argumentsSha256)
   ) {
     throw new DurableToolEffectError(
       "INVALID_DURABLE_EFFECT_SCOPE",
@@ -44,11 +47,23 @@ const sameScope = (row, scope) =>
   row.request_id === scope.requestId &&
   row.tool_call_id === scope.toolCallId;
 
+const hasFingerprint = (row) =>
+  typeof row.tool_name === "string" &&
+  row.tool_name &&
+  typeof row.arguments_sha256 === "string" &&
+  /^[a-f0-9]{64}$/.test(row.arguments_sha256);
+
+const sameFingerprint = (row, scope) =>
+  row.tool_name === scope.toolName &&
+  row.arguments_sha256 === scope.argumentsSha256;
+
 const equalScopes = (left, right) =>
   left.projectId === right.projectId &&
   left.sessionId === right.sessionId &&
   left.requestId === right.requestId &&
-  left.toolCallId === right.toolCallId;
+  left.toolCallId === right.toolCallId &&
+  left.toolName === right.toolName &&
+  left.argumentsSha256 === right.argumentsSha256;
 
 const storedFailure = (row) => {
   let stored = {};
@@ -97,6 +112,18 @@ export function createDurableToolEffects({
             "The stable effect key is already bound to a different execution scope.",
           );
         }
+        if (!hasFingerprint(existing)) {
+          throw new DurableToolEffectError(
+            "DURABLE_EFFECT_FINGERPRINT_MISSING",
+            "The recorded effect predates verified tool and argument fingerprints and cannot be replayed.",
+          );
+        }
+        if (!sameFingerprint(existing, scope)) {
+          throw new DurableToolEffectError(
+            "DURABLE_EFFECT_FINGERPRINT_MISMATCH",
+            "The stable effect key is already bound to a different tool or argument fingerprint.",
+          );
+        }
         db.exec("COMMIT");
         if (existing.status === "completed") {
           return { kind: "completed", result: parse(existing.result_json) };
@@ -110,14 +137,17 @@ export function createDurableToolEffects({
       db.prepare(
         `INSERT INTO cly_dev_tool_effects
          (stable_execution_key, project_id, session_id, request_id, tool_call_id,
-          status, result_json, error_json, claimed_at, completed_at, failed_at)
-         VALUES (?, ?, ?, ?, ?, 'claimed', NULL, NULL, ?, NULL, NULL)`,
+          tool_name, arguments_sha256, status, result_json, error_json,
+          claimed_at, completed_at, failed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'claimed', NULL, NULL, ?, NULL, NULL)`,
       ).run(
         key,
         scope.projectId,
         scope.sessionId,
         scope.requestId,
         scope.toolCallId,
+        scope.toolName,
+        scope.argumentsSha256,
         now(),
       );
       db.exec("COMMIT");

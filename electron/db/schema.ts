@@ -1442,6 +1442,8 @@ export const clyDevToolEffects = sqliteTable(
     sessionId: text("session_id").notNull(),
     requestId: text("request_id").notNull(),
     toolCallId: text("tool_call_id").notNull(),
+    toolName: text("tool_name"),
+    argumentsSha256: text("arguments_sha256"),
     status: text("status").notNull(),
     resultJson: text("result_json"),
     errorJson: text("error_json"),
@@ -1470,6 +1472,10 @@ export const clyDevToolEffects = sqliteTable(
     check(
       "cly_dev_tool_effects_lifecycle",
       sql`(${table.status} = 'claimed' AND ${table.resultJson} IS NULL AND ${table.errorJson} IS NULL AND ${table.completedAt} IS NULL AND ${table.failedAt} IS NULL) OR (${table.status} = 'completed' AND ${table.resultJson} IS NOT NULL AND ${table.errorJson} IS NULL AND ${table.completedAt} IS NOT NULL AND ${table.failedAt} IS NULL) OR (${table.status} = 'failed' AND ${table.resultJson} IS NULL AND ${table.errorJson} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.failedAt} IS NOT NULL)`,
+    ),
+    check(
+      "cly_dev_tool_effects_fingerprint",
+      sql`(${table.toolName} IS NULL AND ${table.argumentsSha256} IS NULL) OR (${table.toolName} IS NOT NULL AND length(${table.toolName}) > 0 AND length(${table.argumentsSha256}) = 64 AND ${table.argumentsSha256} NOT GLOB '*[^0-9a-f]*')`,
     ),
     index("idx_cly_dev_tool_effects_project_session_status").on(
       table.projectId,
