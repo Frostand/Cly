@@ -2,8 +2,9 @@
 
 ## Scope and limitations
 
-- Review timestamp: 2026-07-16T04:20:50Z
-- Build basis: the exact 486 tested product/source inputs retained in `docs/CLY_DEV_TESTED_SOURCE_MANIFEST.sha256` (manifest SHA-256 `ca7669914c015d10084abe8142c27dcefed043cf6f00313bc18c20b5453e78c7`, baseline `09fd7297fb11c7d7768f3c43de1b0cb8501fabe9`). Evidence documents and the manifest/verifier are excluded from its source scope to avoid self-reference; `node scripts/verify-cly74-tested-source-manifest.mjs` verifies the retained artifact.
+- Review timestamp: 2026-07-16T04:20:50Z (historical; before the light-theme contrast correction)
+- Build basis: commit `f808958` and the pre-correction CLY-74 source manifest (SHA-256 `ca7669914c015d10084abe8142c27dcefed043cf6f00313bc18c20b5453e78c7`). The captures and observations below describe that build only; they are not retroactively attributed to the corrected CSS.
+- Current automated validation: the full Electron lifecycle/accessibility matrix was rerun after the correction at 2026-07-16T17:41:01Z; its current 514-input manifest is `6099dad3235796cec71043b8e43f0cfb2d0e3091bcd67b839ba269611c690d4b`. This validates the current build but does not replace the historical screenshot observations above.
 - Evidence reviewed: generated Electron captures at 1024×700, 1280×800, 1440×900, 1728×1117, 1024×700 at 200% zoom with identity/composer focus, and the final keyboard-run state.
 - Method: one internal Codex reviewer inspected static captures against the CLY-74 hierarchy, identity, truthful-prototype, responsive, and focus-visibility contracts.
 

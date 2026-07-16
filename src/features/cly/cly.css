@@ -488,7 +488,8 @@
     --cly-divider: #e6e6eb;
     --cly-text: #18181b;
     --cly-text-muted: #666671;
-    --cly-text-faint: #858590;
+    /* Keep tertiary labels readable without overtaking the muted text tier. */
+    --cly-text-faint: #6e6f79;
     --cly-accent: #6d5ce7;
     --cly-accent-soft: #ece9ff;
     --cly-selected: #efedff;
@@ -3500,6 +3501,9 @@
     flex-wrap: wrap;
     gap: 6px;
   }
+  .agent-message-user .agent-message-meta time {
+    color: var(--cly-text-muted);
+  }
   .agent-message-meta strong {
     font-size: 9.5px;
   }
@@ -5636,7 +5640,7 @@
   .cly-sidebar-group-label {
     height: 21px;
     padding: 0 9px;
-    color: color-mix(in srgb, var(--cly-text-faint) 90%, transparent);
+    color: var(--cly-text-faint);
     font-size: 7.5px;
     letter-spacing: 0.09em;
   }
