@@ -157,6 +157,190 @@
 }
 
 @layer v4 {
+  .cly-resume-task-form {
+    display: grid;
+    gap: var(--cly-space-3);
+  }
+
+  .cly-resume-task-form > label {
+    display: grid;
+    gap: var(--cly-space-1);
+    color: var(--cly-text-muted);
+    font-size: 10px;
+    font-weight: 650;
+  }
+
+  .cly-resume-task-form input {
+    min-height: var(--cly-control-height);
+    border: 1px solid var(--cly-border);
+    border-radius: var(--cly-radius-sm);
+    padding: 4px 8px;
+    background: var(--cly-surface);
+    color: var(--cly-text);
+  }
+
+  .cly-resume-restriction,
+  .cly-resume-error {
+    display: flex;
+    align-items: center;
+    gap: var(--cly-space-2);
+    margin: 0;
+    border-left: 2px solid var(--cly-warning);
+    padding: var(--cly-space-2);
+    background: var(--cly-warning-soft);
+    color: var(--cly-text);
+    font-size: 10px;
+  }
+
+  .cly-resume-error {
+    border-color: var(--cly-danger);
+    background: var(--cly-danger-soft);
+  }
+
+  .cly-resume-readiness {
+    display: grid;
+    gap: var(--cly-space-2);
+    border-top: 1px solid var(--cly-border);
+    padding-top: var(--cly-space-3);
+  }
+
+  .cly-resume-readiness > header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--cly-space-2);
+  }
+
+  .cly-resume-readiness > header > span {
+    min-width: 0;
+    display: grid;
+  }
+
+  .cly-resume-readiness small {
+    overflow: hidden;
+    color: var(--cly-text-muted);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cly-resume-identity {
+    display: flex;
+    align-items: center;
+    gap: var(--cly-space-3);
+    color: var(--cly-text-muted);
+    font-size: 10px;
+  }
+
+  .cly-resume-identity span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cly-space-1);
+  }
+
+  .cly-resume-identity code {
+    overflow: hidden;
+    font-family: var(--cly-mono);
+    text-overflow: ellipsis;
+  }
+
+  .cly-resume-checks {
+    display: grid;
+    border-top: 1px solid var(--cly-border-subtle);
+  }
+
+  .cly-resume-checks > div {
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    gap: var(--cly-space-2);
+    border-bottom: 1px solid var(--cly-border-subtle);
+    color: var(--cly-text-muted);
+    font-size: 10px;
+  }
+
+  .cly-resume-checks > div[data-status="pass"] svg {
+    color: var(--cly-success);
+  }
+
+  .cly-resume-checks > div[data-status="fail"] svg {
+    color: var(--cly-danger);
+  }
+
+  .cly-resume-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cly-space-1);
+    margin: 0;
+    border: 0;
+    padding: 0;
+  }
+
+  .cly-workspace-window {
+    height: 100%;
+    min-width: 640px;
+    min-height: 480px;
+    display: grid;
+    grid-template-rows: 40px auto minmax(0, 1fr);
+    overflow: hidden;
+    background: var(--cly-workspace);
+  }
+
+  .cly-workspace-window-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cly-space-3);
+    border-bottom: 1px solid var(--cly-border);
+    padding: 5px var(--cly-space-3);
+    padding-left: 76px;
+    background: var(--cly-surface-raised);
+    -webkit-app-region: drag;
+  }
+
+  .cly-workspace-window-header > div {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--cly-space-2);
+  }
+
+  .cly-workspace-window-header span {
+    min-width: 0;
+    display: grid;
+  }
+
+  .cly-workspace-window-header strong,
+  .cly-workspace-window-header small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cly-workspace-window-header strong {
+    font-size: 11px;
+  }
+
+  .cly-workspace-window-header small {
+    color: var(--cly-text-muted);
+    font-size: 9px;
+  }
+
+  .cly-workspace-window-header .cly-btn {
+    -webkit-app-region: no-drag;
+  }
+
+  .cly-workspace-window > .cly-dev-task-identity {
+    border-bottom: 1px solid var(--cly-border);
+    background: var(--cly-surface-raised);
+  }
+
+  .cly-workspace-window > .agent-workbench {
+    min-height: 0;
+  }
+}
+
+@layer v4 {
   .agent-chat-mode {
     grid-template-rows: 39px auto minmax(0, 1fr);
   }

@@ -143,6 +143,22 @@ contextBridge.exposeInMainWorld("dream", {
   windowMaximize: () => ipcRenderer.invoke("window:maximize"),
   windowClose: () => ipcRenderer.invoke("window:close"),
 
+  getWindowRole: () => ipcRenderer.invoke("cly-dev:get-window-role"),
+  getWindowSessionId: () => ipcRenderer.invoke("cly-dev:get-session-id"),
+  getWorkspaceSnapshot: (sessionId) =>
+    ipcRenderer.invoke("cly-dev:get-workspace-snapshot", { sessionId }),
+  detachWorkspace: (input) =>
+    ipcRenderer.invoke("cly-dev:detach-workspace", input),
+  reattachWorkspace: (input) =>
+    ipcRenderer.invoke("cly-dev:reattach-workspace", input),
+  focusAgentWindow: () => ipcRenderer.invoke("cly-dev:focus-agent-window"),
+  focusWorkspaceWindow: () =>
+    ipcRenderer.invoke("cly-dev:focus-workspace-window"),
+  dispatchWorkspaceIntent: (intent) =>
+    ipcRenderer.invoke("cly-dev:dispatch-workspace-intent", intent),
+  onWorkspaceSnapshot: (listener) =>
+    subscribe("cly-dev:workspace-snapshot", listener),
+
   pickProjectDirectory: () => ipcRenderer.invoke("projects:pick-directory"),
 
   loadState: () => ipcRenderer.invoke("state:load"),

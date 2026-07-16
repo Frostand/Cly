@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { registerAgentConfigurationRoutes } from "./agents/configuration-routes.js";
 import { registerChatRoutes } from "./chat-routes.js";
+import { registerClyDevHandoffRoutes } from "./cly-dev/handoff-routes.js";
 import { registerClyDevSessionRoutes } from "./cly-dev/session-routes.js";
 import { registerPrImpactReviewRoutes } from "./github/routes.js";
 import { registerLiteratureRoutes } from "./literature/routes.js";
@@ -99,6 +100,7 @@ export function createApiApp(
   registerToolApprovalRoutes(guardedApp);
   registerAgentConfigurationRoutes(guardedApp);
   registerClyDevSessionRoutes(guardedApp);
+  registerClyDevHandoffRoutes(guardedApp);
   registerProviderRoutes(guardedApp);
   registerChatRoutes(guardedApp);
   registerLiteratureRoutes(guardedApp);
