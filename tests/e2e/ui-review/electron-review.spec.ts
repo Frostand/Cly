@@ -302,7 +302,9 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
       await composer.fill("Keep the verification scoped to local evidence.");
       await composer.press("Meta+Enter");
       await expect(
-        window.getByText("Keep the verification scoped to local evidence."),
+        window.getByText("Keep the verification scoped to local evidence.", {
+          exact: true,
+        }),
       ).toBeVisible();
     });
 
