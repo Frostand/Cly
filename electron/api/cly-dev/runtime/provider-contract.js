@@ -43,6 +43,10 @@ export const hasCanonicalProviderCapabilities = (value) => {
   );
 };
 
+export const isCanonicalProviderModelId = (value) =>
+  typeof value === "string" &&
+  /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,499}$/.test(value);
+
 export class ProviderContractError extends Error {
   constructor(code, message, options = {}) {
     super(message, options);

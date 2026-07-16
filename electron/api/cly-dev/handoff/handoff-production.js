@@ -5,6 +5,7 @@ import { createSignedInCodexRunner } from "../runtime/codex-runner.js";
 import {
   CLY_DEV_PROVIDER_CAPABILITY_FIELDS,
   hasCanonicalProviderCapabilities,
+  isCanonicalProviderModelId,
 } from "../runtime/provider-contract.js";
 import { createClyDevSessionRepository } from "../session-repository.js";
 import { canonicalJson } from "./canonical-json.js";
@@ -93,21 +94,6 @@ const capabilityNames = (capabilities) =>
     )
     .sort();
 
-const validModelIdentifier = (value) => {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > 500 ||
-    /\s/u.test(value)
-  ) {
-    return false;
-  }
-  return !Array.from(value).some((character) => {
-    const codePoint = character.codePointAt(0);
-    return codePoint <= 31 || codePoint === 127;
-  });
-};
-
 export function createProductionClyDevHandoffDependencies({
   db = getStateDatabase(),
   runner,
@@ -191,7 +177,7 @@ export function createProductionClyDevHandoffDependencies({
           !model ||
           typeof model !== "object" ||
           Array.isArray(model) ||
-          !validModelIdentifier(model.id),
+          !isCanonicalProviderModelId(model.id),
       )
     ) {
       throw new Error("Production Codex model discovery is malformed.");

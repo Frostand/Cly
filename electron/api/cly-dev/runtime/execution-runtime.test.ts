@@ -427,6 +427,43 @@ describe("Cly Dev durable execution runtime", () => {
   });
 
   it.each([
+    "mock model",
+    "mock\0model",
+    "mock@model",
+  ])("rejects malformed requested provider model identifier %j before discovery", async (model) => {
+    const harness = createHarness();
+
+    await expect(
+      harness.runtime.execute({
+        ...harness.request,
+        model,
+      }),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "UNSUPPORTED_PROVIDER_MODEL" },
+    });
+    expect(harness.events.map((event) => event.type)).toEqual([
+      "failure.recorded",
+      "session.state.changed",
+    ]);
+  });
+
+  it("rejects a discovered model catalog containing a malformed identifier", async () => {
+    const harness = createHarness({
+      providerOptions: {
+        models: [{ id: "mock-model" }, { id: "malformed model" }],
+      },
+    });
+
+    await expect(
+      harness.runtime.execute(harness.request),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "INVALID_PROVIDER_MODELS" },
+    });
+  });
+
+  it.each([
     [Object.assign(new Error("rate limit"), { status: 429 }), "RATE_LIMITED"],
     [
       Object.assign(new Error("budget exhausted"), {

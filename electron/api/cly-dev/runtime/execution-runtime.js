@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { normalizeDurableOutboundContext } from "./outbound-context.js";
-import { hasCanonicalProviderCapabilities } from "./provider-contract.js";
+import {
+  hasCanonicalProviderCapabilities,
+  isCanonicalProviderModelId,
+} from "./provider-contract.js";
 
 export { deriveTransferableContextSummary } from "./outbound-context.js";
 
@@ -56,10 +59,10 @@ const validateRequestVersion = (request) => {
       `Cly Dev requests require schemaVersion and payloadVersion ${VERSION}.`,
     );
   }
-  if (typeof request.model !== "string" || !request.model.trim()) {
+  if (!isCanonicalProviderModelId(request.model)) {
     return new RuntimeError(
       "UNSUPPORTED_PROVIDER_MODEL",
-      "A provider model id is required.",
+      "A valid provider model id is required.",
     );
   }
   return null;
@@ -331,8 +334,14 @@ export function createClyDevExecutionRuntime(options = {}) {
         const models = await provider.listModels();
         if (
           !Array.isArray(models) ||
-          !models.some((model) => model?.id === request.model)
+          models.some((model) => !isCanonicalProviderModelId(model?.id))
         ) {
+          throw new RuntimeError(
+            "INVALID_PROVIDER_MODELS",
+            "Provider model discovery returned a malformed identifier.",
+          );
+        }
+        if (!models.some((model) => model?.id === request.model)) {
           throw new RuntimeError(
             "UNSUPPORTED_PROVIDER_MODEL",
             `Model ${request.model} is not available from provider ${provider.id}.`,
