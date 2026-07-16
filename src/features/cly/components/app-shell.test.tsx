@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -6,16 +7,69 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentConfiguration } from "../agent-sessions/types";
 import type { ScreenId } from "../domain/types";
 import { createCostLedgerFixture } from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
+import { projectServices } from "../services/project-services";
 import { useClyStore } from "../store/cly-store";
 import { ClyAppShell } from "./app-shell";
 
 const loadFromApi = useClyStore.getState().loadFromApi;
 
+const agentConfiguration: AgentConfiguration = {
+  id: "configuration-1",
+  projectId: "project-cly",
+  name: "Persisted delivery team",
+  maxParallel: 1,
+  maxTotalBudget: {
+    maxInputTokens: 1_000,
+    maxOutputTokens: 500,
+    maxCostMinorUnits: 100,
+    maxRuntimeMs: 10_000,
+  },
+  partialFailurePolicy: "continue",
+  roles: [
+    {
+      id: "implementation",
+      role: "implementation",
+      instanceCount: 1,
+      maxParallel: 1,
+      provider: "openai",
+      model: "gpt-5",
+      reasoningLevel: "medium",
+      budget: {
+        maxInputTokens: 1_000,
+        maxOutputTokens: 500,
+        maxCostMinorUnits: 100,
+        maxRuntimeMs: 10_000,
+      },
+      allowedTools: ["readFile"],
+      allowedContextSources: ["project"],
+      allowedFileGlobs: ["**/*"],
+      permissions: {
+        canReadFiles: true,
+        canWriteFiles: false,
+        canRunCommands: false,
+        canAccessNetwork: false,
+        requiresApprovalForWrite: true,
+        requiresApprovalForNetwork: true,
+      },
+      approvalCheckpoints: [],
+    },
+  ],
+  revision: 1,
+  createdAt: "2026-07-15T00:00:00.000Z",
+  updatedAt: "2026-07-15T00:00:00.000Z",
+};
+
 describe("Cly application shell", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     localStorage.clear();
     const data = createFixtureRepository("active");
@@ -104,6 +158,193 @@ describe("Cly application shell", () => {
         screen.getByRole("heading", { name: heading, level: 1 }),
       ).toBeVisible();
     }
+
+    expect(
+      screen.getByRole("button", { name: "Review estimate" }),
+    ).toBeEnabled();
+    await user.click(
+      screen.getByRole("switch", { name: "Toggle advanced agent controls" }),
+    );
+    await user.click(
+      document.querySelector(".cly-disclosure-row > summary") as HTMLElement,
+    );
+    expect(screen.getAllByLabelText("Input tokens")[0]).toBeVisible();
+    expect(screen.getAllByLabelText("Allowed tools")[0]).toBeVisible();
+  });
+
+  it("reviews an estimate with inaccessible reasons before saving", async () => {
+    const user = userEvent.setup();
+    useClyStore.setState((state) => ({
+      activeScreen: "models",
+      data: { ...state.data, agentConfigurations: [], agentPresets: [] },
+      loadFromApi: vi.fn().mockResolvedValue(true),
+    }));
+    const estimate = vi
+      .spyOn(projectServices.agents, "estimateConfiguration")
+      .mockResolvedValue({
+        inputTokens: 900,
+        outputTokens: 400,
+        costMinorUnits: 75,
+        runtimeMs: 8_000,
+        inaccessibleContext: ["unknown-context"],
+        inaccessibleTools: ["unknownTool"],
+        reasons: ["Tool “unknownTool” is not available."],
+      });
+    const save = vi
+      .spyOn(projectServices.agents, "saveConfiguration")
+      .mockImplementation(async (projectId, configuration) => ({
+        ...configuration,
+        id: "configuration-created",
+        projectId,
+        revision: 1,
+        createdAt: "2026-07-15T00:00:00.000Z",
+        updatedAt: "2026-07-15T00:00:00.000Z",
+      }));
+
+    render(<ClyAppShell />);
+    await user.click(screen.getByRole("button", { name: "Review estimate" }));
+
+    await waitFor(() => expect(estimate).toHaveBeenCalledOnce());
+    expect(estimate.mock.calls[0][0]).toBe("project-cly");
+    expect(estimate.mock.calls[0][1]).toBe("draft");
+    expect(screen.getByText(/unknownTool/)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Save configuration" }),
+    ).toBeVisible();
+
+    await user.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
+
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(useClyStore.getState().toasts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: "Agent configuration saved" }),
+      ]),
+    );
+  });
+
+  it("surfaces an optimistic conflict without overwriting local configuration", async () => {
+    const user = userEvent.setup();
+    useClyStore.setState((state) => ({
+      activeScreen: "models",
+      data: {
+        ...state.data,
+        agentConfigurations: [agentConfiguration],
+        agentPresets: [],
+      },
+      loadFromApi: vi.fn().mockResolvedValue(true),
+    }));
+    vi.spyOn(projectServices.agents, "estimateConfiguration").mockResolvedValue(
+      {
+        inputTokens: 900,
+        outputTokens: 400,
+        costMinorUnits: 75,
+        runtimeMs: 8_000,
+        inaccessibleContext: [],
+        inaccessibleTools: [],
+        reasons: [],
+      },
+    );
+    vi.spyOn(projectServices.agents, "saveConfiguration").mockRejectedValue(
+      new Error("Agent configuration revision conflict."),
+    );
+
+    render(<ClyAppShell />);
+    await user.click(screen.getByRole("button", { name: "Review estimate" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
+
+    await waitFor(() =>
+      expect(useClyStore.getState().toasts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            title: "Agent configuration was not saved",
+          }),
+        ]),
+      ),
+    );
+    expect(useClyStore.getState().data.agentConfigurations).toEqual([
+      agentConfiguration,
+    ]);
+    expect(screen.getByDisplayValue("Persisted delivery team")).toBeVisible();
+  });
+
+  it("resets selected configuration across projects and adopts the new hydration", async () => {
+    useClyStore.setState((state) => ({
+      activeScreen: "models",
+      data: {
+        ...state.data,
+        agentConfigurations: [agentConfiguration],
+        agentPresets: [],
+      },
+      loadFromApi: vi.fn().mockResolvedValue(true),
+    }));
+    render(<ClyAppShell />);
+    expect(screen.getByDisplayValue("Persisted delivery team")).toBeVisible();
+
+    act(() => {
+      useClyStore.setState((state) => ({
+        activeProjectId: "project-cells",
+        data: { ...state.data, agentConfigurations: [], agentPresets: [] },
+      }));
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue("Project agent configuration"),
+      ).toBeVisible(),
+    );
+    expect(screen.queryByDisplayValue("Persisted delivery team")).toBeNull();
+
+    act(() => {
+      useClyStore.getState().setAgentConfigurations([
+        {
+          ...agentConfiguration,
+          id: "configuration-b",
+          projectId: "project-cells",
+          name: "Project B configuration",
+        },
+      ]);
+    });
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Project B configuration")).toBeVisible(),
+    );
+  });
+
+  it("deletes the selected revision and returns to a new project draft", async () => {
+    const user = userEvent.setup();
+    useClyStore.setState((state) => ({
+      activeScreen: "models",
+      data: {
+        ...state.data,
+        agentConfigurations: [agentConfiguration],
+        agentPresets: [],
+      },
+      loadFromApi: vi.fn().mockResolvedValue(true),
+    }));
+    const remove = vi
+      .spyOn(projectServices.agents, "removeConfiguration")
+      .mockImplementation(async () => {
+        useClyStore.getState().setAgentConfigurations([]);
+      });
+
+    render(<ClyAppShell />);
+    await user.click(
+      screen.getByRole("button", { name: "Delete configuration" }),
+    );
+
+    await waitFor(() =>
+      expect(remove).toHaveBeenCalledWith("project-cly", "configuration-1", 1),
+    );
+    expect(useClyStore.getState().toasts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: "Agent configuration deleted" }),
+      ]),
+    );
+    expect(
+      screen.getByDisplayValue("Project agent configuration"),
+    ).toBeVisible();
   });
 
   it("switches between Cly Research and the Cly Dev command center", async () => {

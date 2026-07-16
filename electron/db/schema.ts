@@ -4,9 +4,11 @@ import {
   foreignKey,
   index,
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
@@ -64,6 +66,140 @@ export const chats = sqliteTable(
       table.projectId,
       table.deletedAt,
       table.updatedAt,
+    ),
+  ],
+);
+
+export const agentConfigurations = sqliteTable(
+  "agent_configurations",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    name: text("name").notNull(),
+    maxParallel: integer("max_parallel").notNull(),
+    maxInputTokens: integer("max_input_tokens").notNull(),
+    maxOutputTokens: integer("max_output_tokens").notNull(),
+    maxCostMinorUnits: integer("max_cost_minor_units").notNull(),
+    maxRuntimeMs: integer("max_runtime_ms").notNull(),
+    partialFailurePolicy: text("partial_failure_policy").notNull(),
+    revision: integer("revision").notNull().default(1),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.id],
+      name: "agent_configurations_project_fk",
+    }).onDelete("cascade"),
+    unique("agent_configurations_project_name_unique").on(
+      table.projectId,
+      table.name,
+    ),
+    unique("agent_configurations_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    index("idx_agent_configurations_project_updated").on(
+      table.projectId,
+      sql`${table.updatedAt} DESC`,
+      table.id,
+    ),
+    check(
+      "agent_configurations_parallel_positive",
+      sql`${table.maxParallel} >= 1`,
+    ),
+    check(
+      "agent_configurations_budget_nonnegative",
+      sql`${table.maxInputTokens} >= 0 AND ${table.maxOutputTokens} >= 0 AND ${table.maxCostMinorUnits} >= 0 AND ${table.maxRuntimeMs} > 0`,
+    ),
+    check(
+      "agent_configurations_failure_policy",
+      sql`${table.partialFailurePolicy} IN ('continue', 'cancel_remaining')`,
+    ),
+    check(
+      "agent_configurations_revision_positive",
+      sql`${table.revision} >= 1`,
+    ),
+  ],
+);
+
+export const agentRoleConfigurations = sqliteTable(
+  "agent_role_configurations",
+  {
+    configurationId: text("configuration_id").notNull(),
+    projectId: text("project_id").notNull(),
+    id: text("id").notNull(),
+    position: integer("position").notNull(),
+    role: text("role").notNull(),
+    instanceCount: integer("instance_count").notNull(),
+    maxParallel: integer("max_parallel").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    reasoningLevel: text("reasoning_level").notNull(),
+    maxInputTokens: integer("max_input_tokens").notNull(),
+    maxOutputTokens: integer("max_output_tokens").notNull(),
+    maxCostMinorUnits: integer("max_cost_minor_units").notNull(),
+    maxRuntimeMs: integer("max_runtime_ms").notNull(),
+    allowedToolsJson: text("allowed_tools_json").notNull(),
+    allowedContextSourcesJson: text("allowed_context_sources_json").notNull(),
+    allowedFileGlobsJson: text("allowed_file_globs_json").notNull(),
+    permissionsJson: text("permissions_json").notNull(),
+    approvalCheckpointsJson: text("approval_checkpoints_json").notNull(),
+    fallbackModel: text("fallback_model"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.configurationId, table.projectId],
+      foreignColumns: [agentConfigurations.id, agentConfigurations.projectId],
+      name: "agent_roles_configuration_project_fk",
+    }).onDelete("cascade"),
+    primaryKey({ columns: [table.configurationId, table.id] }),
+    unique("agent_roles_position_unique").on(
+      table.configurationId,
+      table.position,
+    ),
+    index("idx_agent_roles_configuration").on(
+      table.projectId,
+      table.configurationId,
+      table.position,
+    ),
+    check(
+      "agent_roles_role",
+      sql`${table.role} IN ('orchestrator', 'implementation', 'review', 'literature', 'analysis', 'experiment', 'custom')`,
+    ),
+    check("agent_roles_instance_positive", sql`${table.instanceCount} >= 1`),
+    check(
+      "agent_roles_parallel_valid",
+      sql`${table.maxParallel} >= 1 AND ${table.maxParallel} <= ${table.instanceCount}`,
+    ),
+    check(
+      "agent_roles_reasoning",
+      sql`${table.reasoningLevel} IN ('low', 'medium', 'high')`,
+    ),
+    check(
+      "agent_roles_budget_nonnegative",
+      sql`${table.maxInputTokens} >= 0 AND ${table.maxOutputTokens} >= 0 AND ${table.maxCostMinorUnits} >= 0 AND ${table.maxRuntimeMs} > 0`,
+    ),
+    check(
+      "agent_roles_tools_json",
+      sql`json_valid(${table.allowedToolsJson}) AND json_type(${table.allowedToolsJson}) = 'array'`,
+    ),
+    check(
+      "agent_roles_context_json",
+      sql`json_valid(${table.allowedContextSourcesJson}) AND json_type(${table.allowedContextSourcesJson}) = 'array'`,
+    ),
+    check(
+      "agent_roles_globs_json",
+      sql`json_valid(${table.allowedFileGlobsJson}) AND json_type(${table.allowedFileGlobsJson}) = 'array'`,
+    ),
+    check(
+      "agent_roles_permissions_json",
+      sql`json_valid(${table.permissionsJson}) AND json_type(${table.permissionsJson}) = 'object'`,
+    ),
+    check(
+      "agent_roles_checkpoints_json",
+      sql`json_valid(${table.approvalCheckpointsJson}) AND json_type(${table.approvalCheckpointsJson}) = 'array'`,
     ),
   ],
 );

@@ -1,3 +1,8 @@
+import type {
+  AgentConfiguration,
+  AgentConfigurationEstimate,
+  AgentConfigurationInput,
+} from "../agent-sessions/types";
 import type { LiteratureSearchResult } from "../domain/literature-search";
 import type {
   AgentPreset,
@@ -30,6 +35,21 @@ export interface ContextService {
 export interface AgentService {
   savePreset(preset: AgentPreset): Promise<void>;
   startPreview(presetId: string): Promise<void>;
+  listConfigurations(projectId: string): Promise<AgentConfiguration[]>;
+  saveConfiguration(
+    projectId: string,
+    configuration: AgentConfiguration | AgentConfigurationInput,
+  ): Promise<AgentConfiguration>;
+  removeConfiguration(
+    projectId: string,
+    configurationId: string,
+    expectedRevision: number,
+  ): Promise<void>;
+  estimateConfiguration(
+    projectId: string,
+    configurationId: string,
+    configuration?: AgentConfigurationInput,
+  ): Promise<AgentConfigurationEstimate>;
 }
 
 export interface ExperimentService {

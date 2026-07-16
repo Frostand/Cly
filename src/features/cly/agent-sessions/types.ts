@@ -39,6 +39,74 @@ export interface AgentPermissions {
   requiresApprovalForNetwork: boolean;
 }
 
+export type ReasoningLevel = "low" | "medium" | "high";
+
+export interface AgentResourceBudget {
+  maxInputTokens: number;
+  maxOutputTokens: number;
+  maxCostMinorUnits: number;
+  maxRuntimeMs: number;
+}
+
+export interface AgentUsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  costMinorUnits: number;
+  runtimeMs: number;
+}
+
+export interface AgentSchedulerUsageTotals {
+  /** Usage accepted against the configured role and aggregate caps. */
+  accepted: AgentUsageTotals;
+  /** Raw provider-reported usage, including amounts rejected above a cap. */
+  providerReported: AgentUsageTotals;
+  /** Peak simultaneous reservation held by active workers. */
+  reserved: AgentUsageTotals;
+}
+
+export interface AgentRoleConfiguration {
+  id: string;
+  role: AgentRole;
+  instanceCount: number;
+  maxParallel: number;
+  provider: string;
+  model: string;
+  reasoningLevel: ReasoningLevel;
+  budget: AgentResourceBudget;
+  allowedTools: string[];
+  allowedContextSources: string[];
+  allowedFileGlobs: string[];
+  permissions: AgentPermissions;
+  approvalCheckpoints: string[];
+  fallbackModel?: string;
+}
+
+export interface AgentConfigurationInput {
+  name: string;
+  maxParallel: number;
+  maxTotalBudget: AgentResourceBudget;
+  partialFailurePolicy: "continue" | "cancel_remaining";
+  roles: AgentRoleConfiguration[];
+}
+
+export interface AgentConfiguration extends AgentConfigurationInput {
+  id: string;
+  projectId: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentConfigurationEstimate {
+  inputTokens: number;
+  outputTokens: number;
+  costMinorUnits: number;
+  runtimeMs: number;
+  inaccessibleContext: string[];
+  inaccessibleTools: string[];
+  reasons: string[];
+}
+
 export type AgentContextMode =
   | "full_project"
   | "explicit_pack"
@@ -55,11 +123,18 @@ export interface AgentIdentity {
   provider: string;
   model: string;
   reasoningLevel: "Low" | "Medium" | "High";
+  instanceCount?: number;
+  maxParallel?: number;
+  budget?: AgentResourceBudget;
   contextPackId?: string;
   contextPackName: string;
   contextMode: AgentContextMode;
   permissions: AgentPermissions;
   tools: string[];
+  allowedContextSources?: string[];
+  allowedFileGlobs?: string[];
+  approvalCheckpoints?: string[];
+  partialFailurePolicy?: "continue" | "cancel_remaining";
   worktree?: string;
   status: AgentStatus;
   task: string;

@@ -1,5 +1,5 @@
 import type { GroundedLiteratureSummary } from "../../research/domain/research-types";
-import type { AgentSession } from "../agent-sessions/types";
+import type { AgentConfiguration, AgentSession } from "../agent-sessions/types";
 
 export type ScreenId =
   | "overview"
@@ -708,6 +708,7 @@ export interface ClyRepositoryData {
   contextItems: ContextItem[];
   contextPacks: ContextPack[];
   agentPresets: AgentPreset[];
+  agentConfigurations?: AgentConfiguration[];
   agentSessions: AgentSession[];
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];

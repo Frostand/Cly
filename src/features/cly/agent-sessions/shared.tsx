@@ -336,6 +336,88 @@ export function AgentConfigurationSheet() {
                 })
               }
             />
+            <label className="agent-field">
+              <span>Instance count</span>
+              <input
+                type="number"
+                min={1}
+                value={active.instanceCount ?? 1}
+                onChange={(event) =>
+                  setDraft({
+                    ...active,
+                    instanceCount: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="agent-field">
+              <span>Role parallel cap</span>
+              <input
+                type="number"
+                min={1}
+                value={active.maxParallel ?? 1}
+                onChange={(event) =>
+                  setDraft({
+                    ...active,
+                    maxParallel: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            {(
+              [
+                ["maxInputTokens", "Input token cap", 32000],
+                ["maxOutputTokens", "Output token cap", 8000],
+                ["maxCostMinorUnits", "Cost cap (minor units)", 500],
+                ["maxRuntimeMs", "Runtime cap (ms)", 2700000],
+              ] as const
+            ).map(([key, label, fallback]) => (
+              <label className="agent-field" key={key}>
+                <span>{label}</span>
+                <input
+                  type="number"
+                  min={key === "maxRuntimeMs" ? 1 : 0}
+                  value={active.budget?.[key] ?? fallback}
+                  onChange={(event) =>
+                    setDraft({
+                      ...active,
+                      budget: {
+                        maxInputTokens: active.budget?.maxInputTokens ?? 32000,
+                        maxOutputTokens: active.budget?.maxOutputTokens ?? 8000,
+                        maxCostMinorUnits:
+                          active.budget?.maxCostMinorUnits ?? 500,
+                        maxRuntimeMs: active.budget?.maxRuntimeMs ?? 2700000,
+                        [key]: Number(event.target.value),
+                      },
+                    })
+                  }
+                />
+              </label>
+            ))}
+            {(
+              [
+                ["tools", "Allowed tools"],
+                ["allowedContextSources", "Context sources"],
+                ["allowedFileGlobs", "File globs"],
+                ["approvalCheckpoints", "Approval checkpoints"],
+              ] as const
+            ).map(([key, label]) => (
+              <label className="agent-field" key={key}>
+                <span>{label}</span>
+                <input
+                  value={(active[key] ?? []).join(", ")}
+                  onChange={(event) =>
+                    setDraft({
+                      ...active,
+                      [key]: event.target.value
+                        .split(",")
+                        .map((item) => item.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                />
+              </label>
+            ))}
             <label className="agent-field agent-field-wide">
               <span>Task</span>
               <textarea
