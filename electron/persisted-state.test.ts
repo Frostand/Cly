@@ -163,6 +163,16 @@ describe("persisted research storage", () => {
     "agent_context_transmission_approvals",
     "agent_context_audit_events",
   ];
+  const clyDevSyncTables = [
+    "cly_dev_devices",
+    "cly_dev_device_keys",
+    "cly_dev_sync_outbox",
+    "cly_dev_sync_inbox",
+    "cly_dev_sync_heads",
+    "cly_dev_sync_conflicts",
+    "cly_dev_sync_cursors",
+    "cly_dev_sync_audit",
+  ];
 
   it("installs every agent-context table and immutable trigger on a clean database", () => {
     const database = getStateDatabase(createDatabasePath());
@@ -209,13 +219,15 @@ describe("persisted research storage", () => {
     expectAgentContextDatabaseContract(database);
   });
 
-  it("applies reserved migration 0014 after an existing database through 0015", () => {
+  it("applies migrations after an existing database through 0015", () => {
     const databasePath = createDatabasePath();
     getStateDatabase(databasePath);
     closePersistedStateDatabase();
     const throughClyDev = new DatabaseSync(databasePath);
     throughClyDev.exec("PRAGMA foreign_keys = OFF");
     for (const table of [...agentContextTables].reverse())
+      throughClyDev.exec(`DROP TABLE ${table}`);
+    for (const table of [...clyDevSyncTables].reverse())
       throughClyDev.exec(`DROP TABLE ${table}`);
     throughClyDev
       .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
@@ -244,8 +256,16 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784138400000 });
+    ).toEqual({ createdAt: 1784224800000 });
     expectAgentContextDatabaseContract(upgraded);
+    expect(
+      upgraded
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'cly_dev_%' AND name IN ('cly_dev_devices','cly_dev_device_keys','cly_dev_sync_outbox','cly_dev_sync_inbox','cly_dev_sync_heads','cly_dev_sync_conflicts','cly_dev_sync_cursors','cly_dev_sync_audit') ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
+    ).toEqual([...clyDevSyncTables].sort());
   });
 
   it("configures a bounded wait for concurrent SQLite writers", () => {

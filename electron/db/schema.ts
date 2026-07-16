@@ -1434,6 +1434,291 @@ export const clyDevApprovals = sqliteTable(
   ],
 );
 
+export const clyDevDevices = sqliteTable(
+  "cly_dev_devices",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    kind: text("kind").notNull(),
+    trustState: text("trust_state").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    currentKeyVersion: integer("current_key_version").notNull(),
+    registeredAt: text("registered_at").notNull(),
+    verifiedAt: text("verified_at"),
+    revokedAt: text("revoked_at"),
+    revocationReason: text("revocation_reason"),
+    lastSeenAt: text("last_seen_at"),
+  },
+  (table) => [
+    check("cly_dev_devices_kind", sql`${table.kind} IN ('local','peer')`),
+    check(
+      "cly_dev_devices_trust_state",
+      sql`${table.trustState} IN ('pending','trusted','revoked')`,
+    ),
+    check("cly_dev_devices_key_version", sql`${table.currentKeyVersion} >= 1`),
+    check(
+      "cly_dev_devices_trust_timestamps",
+      sql`(${table.trustState} = 'pending' AND ${table.verifiedAt} IS NULL AND ${table.revokedAt} IS NULL) OR (${table.trustState} = 'trusted' AND ${table.verifiedAt} IS NOT NULL AND ${table.revokedAt} IS NULL) OR (${table.trustState} = 'revoked' AND ${table.revokedAt} IS NOT NULL)`,
+    ),
+    uniqueIndex("cly_dev_devices_fingerprint_unique").on(table.fingerprint),
+    uniqueIndex("idx_cly_dev_devices_one_local")
+      .on(table.kind)
+      .where(sql`${table.kind} = 'local'`),
+    index("idx_cly_dev_devices_trust").on(table.trustState, table.name),
+  ],
+);
+
+export const clyDevDeviceKeys = sqliteTable(
+  "cly_dev_device_keys",
+  {
+    deviceId: text("device_id")
+      .notNull()
+      .references(() => clyDevDevices.id, { onDelete: "cascade" }),
+    keyVersion: integer("key_version").notNull(),
+    encryptionPublicKey: text("encryption_public_key").notNull(),
+    signingPublicKey: text("signing_public_key").notNull(),
+    privateKeyRef: text("private_key_ref"),
+    state: text("state").notNull(),
+    createdAt: text("created_at").notNull(),
+    retiredAt: text("retired_at"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.deviceId, table.keyVersion] }),
+    check("cly_dev_device_keys_version", sql`${table.keyVersion} >= 1`),
+    check(
+      "cly_dev_device_keys_state",
+      sql`${table.state} IN ('active','retired','revoked')`,
+    ),
+    check(
+      "cly_dev_device_keys_retired",
+      sql`(${table.state} = 'active' AND ${table.retiredAt} IS NULL) OR ${table.state} != 'active'`,
+    ),
+  ],
+);
+
+export const clyDevSyncOutbox = sqliteTable(
+  "cly_dev_sync_outbox",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    recipientDeviceId: text("recipient_device_id").notNull(),
+    recipientKeyVersion: integer("recipient_key_version").notNull(),
+    envelopeId: text("envelope_id").notNull(),
+    recordKind: text("record_kind").notNull(),
+    recordId: text("record_id").notNull(),
+    revision: integer("revision").notNull(),
+    baseRevision: integer("base_revision").notNull(),
+    envelopeJson: text("envelope_json").notNull(),
+    envelopeSha256: text("envelope_sha256").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    status: text("status").notNull(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: text("next_attempt_at").notNull(),
+    lastErrorCode: text("last_error_code"),
+    createdAt: text("created_at").notNull(),
+    ackedAt: text("acked_at"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.recipientDeviceId, table.recipientKeyVersion],
+      foreignColumns: [clyDevDeviceKeys.deviceId, clyDevDeviceKeys.keyVersion],
+      name: "cly_dev_sync_outbox_recipient_key_fk",
+    }),
+    check("cly_dev_sync_outbox_json", sql`json_valid(${table.envelopeJson})`),
+    check(
+      "cly_dev_sync_outbox_hash",
+      sql`length(${table.envelopeSha256}) = 64`,
+    ),
+    check(
+      "cly_dev_sync_outbox_counts",
+      sql`${table.revision} >= 1 AND ${table.baseRevision} >= 0 AND ${table.byteSize} > 0 AND ${table.attemptCount} >= 0`,
+    ),
+    check(
+      "cly_dev_sync_outbox_status",
+      sql`${table.status} IN ('pending','acked','failed','policy_blocked')`,
+    ),
+    uniqueIndex("cly_dev_sync_outbox_recipient_envelope_unique").on(
+      table.projectId,
+      table.recipientDeviceId,
+      table.envelopeId,
+    ),
+    index("idx_cly_dev_sync_outbox_delivery").on(
+      table.projectId,
+      table.recipientDeviceId,
+      table.status,
+      table.nextAttemptAt,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const clyDevSyncInbox = sqliteTable(
+  "cly_dev_sync_inbox",
+  {
+    envelopeId: text("envelope_id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    recipientDeviceId: text("recipient_device_id")
+      .notNull()
+      .references(() => clyDevDevices.id),
+    senderDeviceId: text("sender_device_id").notNull(),
+    senderKeyVersion: integer("sender_key_version").notNull(),
+    recordKind: text("record_kind").notNull(),
+    recordId: text("record_id").notNull(),
+    revision: integer("revision").notNull(),
+    baseRevision: integer("base_revision").notNull(),
+    envelopeJson: text("envelope_json").notNull(),
+    envelopeSha256: text("envelope_sha256").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    status: text("status").notNull(),
+    receivedAt: text("received_at").notNull(),
+    appliedAt: text("applied_at"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.senderDeviceId, table.senderKeyVersion],
+      foreignColumns: [clyDevDeviceKeys.deviceId, clyDevDeviceKeys.keyVersion],
+      name: "cly_dev_sync_inbox_sender_key_fk",
+    }),
+    check("cly_dev_sync_inbox_json", sql`json_valid(${table.envelopeJson})`),
+    check("cly_dev_sync_inbox_hash", sql`length(${table.envelopeSha256}) = 64`),
+    check(
+      "cly_dev_sync_inbox_counts",
+      sql`${table.revision} >= 1 AND ${table.baseRevision} >= 0 AND ${table.byteSize} > 0`,
+    ),
+    check(
+      "cly_dev_sync_inbox_status",
+      sql`${table.status} IN ('applied','conflict','rejected')`,
+    ),
+    index("idx_cly_dev_sync_inbox_project_received").on(
+      table.projectId,
+      table.receivedAt,
+      table.envelopeId,
+    ),
+  ],
+);
+
+export const clyDevSyncHeads = sqliteTable(
+  "cly_dev_sync_heads",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    recordKind: text("record_kind").notNull(),
+    recordId: text("record_id").notNull(),
+    revision: integer("revision").notNull(),
+    sourceDeviceId: text("source_device_id")
+      .notNull()
+      .references(() => clyDevDevices.id),
+    envelopeId: text("envelope_id")
+      .notNull()
+      .references(() => clyDevSyncInbox.envelopeId),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.projectId, table.recordKind, table.recordId],
+    }),
+    check("cly_dev_sync_heads_revision", sql`${table.revision} >= 1`),
+  ],
+);
+
+export const clyDevSyncConflicts = sqliteTable(
+  "cly_dev_sync_conflicts",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    recordKind: text("record_kind").notNull(),
+    recordId: text("record_id").notNull(),
+    localRevision: integer("local_revision").notNull(),
+    incomingRevision: integer("incoming_revision").notNull(),
+    localEnvelopeId: text("local_envelope_id")
+      .notNull()
+      .references(() => clyDevSyncInbox.envelopeId),
+    incomingEnvelopeId: text("incoming_envelope_id")
+      .notNull()
+      .references(() => clyDevSyncInbox.envelopeId),
+    state: text("state").notNull(),
+    createdAt: text("created_at").notNull(),
+    resolvedAt: text("resolved_at"),
+  },
+  (table) => [
+    check(
+      "cly_dev_sync_conflicts_revisions",
+      sql`${table.localRevision} >= 1 AND ${table.incomingRevision} >= 1`,
+    ),
+    check(
+      "cly_dev_sync_conflicts_state",
+      sql`${table.state} IN ('pending','keep_local','use_incoming')`,
+    ),
+    uniqueIndex("cly_dev_sync_conflicts_incoming_unique").on(
+      table.projectId,
+      table.incomingEnvelopeId,
+    ),
+    index("idx_cly_dev_sync_conflicts_project_state").on(
+      table.projectId,
+      table.state,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const clyDevSyncCursors = sqliteTable(
+  "cly_dev_sync_cursors",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    deviceId: text("device_id")
+      .notNull()
+      .references(() => clyDevDevices.id, { onDelete: "cascade" }),
+    direction: text("direction").notNull(),
+    cursor: text("cursor").notNull(),
+    lastSyncAt: text("last_sync_at"),
+    status: text("status").notNull(),
+    errorCode: text("error_code"),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.deviceId, table.direction] }),
+    check(
+      "cly_dev_sync_cursors_direction",
+      sql`${table.direction} IN ('push','pull')`,
+    ),
+    check(
+      "cly_dev_sync_cursors_status",
+      sql`${table.status} IN ('idle','syncing','complete','failed')`,
+    ),
+  ],
+);
+
+export const clyDevSyncAudit = sqliteTable(
+  "cly_dev_sync_audit",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
+    action: text("action").notNull(),
+    actorDeviceId: text("actor_device_id"),
+    subjectDeviceId: text("subject_device_id"),
+    metadataJson: text("metadata_json").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "cly_dev_sync_audit_metadata_json",
+      sql`json_valid(${table.metadataJson})`,
+    ),
+    index("idx_cly_dev_sync_audit_created").on(table.createdAt, table.id),
+  ],
+);
+
 export const agentContextItems = sqliteTable(
   "agent_context_items",
   {

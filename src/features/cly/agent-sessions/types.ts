@@ -193,6 +193,57 @@ export interface ClyDevOutboundContext {
   egressSha256: string;
 }
 
+export interface ClyDevDevicePublicBundle {
+  deviceId: string;
+  keyVersion: number;
+  encryptionKey: string;
+  signingKey: string;
+}
+
+export interface ClyDevDevice {
+  id: string;
+  name: string;
+  kind: "local" | "peer";
+  trustState: "pending" | "trusted" | "revoked";
+  fingerprint: string;
+  keyVersion: number;
+  publicBundle: ClyDevDevicePublicBundle;
+  registeredAt: string;
+  verifiedAt: string | null;
+  revokedAt: string | null;
+  revocationReason: string | null;
+  lastSeenAt: string | null;
+}
+
+export interface ClyDevSyncConflict {
+  id: string;
+  projectId: string;
+  recordKind: string;
+  recordId: string;
+  localRevision: number;
+  incomingRevision: number;
+  localEnvelopeId: string;
+  incomingEnvelopeId: string;
+  state: "pending" | "keep_local" | "use_incoming";
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface ClyDevSyncStatus {
+  localDevice: ClyDevDevice;
+  devices: ClyDevDevice[];
+  keyStoreState: "available" | "locked" | "unavailable";
+  approvedChanges: number;
+  localOnlyItems: number;
+  trustedDeviceCount: number;
+  pendingChanges: number;
+  failedChanges: number;
+  policyBlocked: number;
+  conflictCount: number;
+  conflicts: ClyDevSyncConflict[];
+  lastSyncAt: string | null;
+}
+
 export type AgentRole =
   | "orchestrator"
   | "implementation"

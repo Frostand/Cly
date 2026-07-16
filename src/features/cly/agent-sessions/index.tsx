@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { EmptyState, PageHeader } from "../components/primitives";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
+import { DeviceSyncPanel } from "./device-sync-panel";
 import { productionAgentSessionServices } from "./production-services";
 
 const DemoAgentSessionsScreen =
@@ -44,6 +45,7 @@ function ProductionAgentSessionsScreen() {
         kicker="Workspace"
         title="Agent Sessions"
         description="Durable local sessions, ordered events, and explicit restart recovery."
+        actions={<DeviceSyncPanel projectId={projectId} />}
       />
       {loading && sessions.length === 0 ? (
         <EmptyState

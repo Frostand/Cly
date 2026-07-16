@@ -182,6 +182,30 @@ const buildOutboundContext = (db, projectId, sessionId) => {
     sha256: createHash("sha256").update(bytes).digest("hex"),
   };
 };
+const buildOutboundEvent = ({ event, provenance, sequence, sessionId }) => {
+  const envelope = {
+    schemaVersion: CLY_DEV_SCHEMA_VERSION,
+    kind: "cly.session_event",
+    sessionId,
+    sequence,
+    event: {
+      schemaVersion: event.schemaVersion,
+      payloadVersion: event.payloadVersion,
+      idempotencyKey: event.idempotencyKey,
+      type: event.type,
+      occurredAt: event.occurredAt,
+      actor: event.actor,
+      payload: event.payload,
+    },
+    provenance,
+  };
+  const bytes = json(envelope);
+  return {
+    envelope,
+    bytes,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+};
 const nextState = (current, event) => {
   if (event.type === "session.interrupted") return "interrupted";
   if (event.type === "session.resumable") return "resumable";
@@ -544,8 +568,10 @@ export function createClyDevSessionRepository({
         const recordedAt = now();
         const id = randomUUID();
         const outbound =
-          event.type === "context.manifest.recorded"
-            ? buildOutboundContext(db, projectId, sessionId)
+          event.transferability === "transferable"
+            ? event.type === "context.manifest.recorded"
+              ? buildOutboundContext(db, projectId, sessionId)
+              : buildOutboundEvent({ event, provenance, sequence, sessionId })
             : null;
         db.prepare(
           `INSERT INTO cly_dev_session_events

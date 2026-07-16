@@ -438,7 +438,7 @@ describe("ClyDevSessionRepository", () => {
     ).toThrow(/immutable/i);
   });
 
-  it("enforces every structured event category and rejects arbitrary transferable payloads", () => {
+  it("enforces every structured event category and permits only approved transferable payloads", () => {
     const common = {
       schemaVersion: 1,
       payloadVersion: 1,
@@ -500,7 +500,19 @@ describe("ClyDevSessionRepository", () => {
         ...common,
         type: "message.recorded",
         transferability: "transferable",
-        payload: { role: "agent", body: "secret" },
+        payload: { role: "agent", body: "approved handoff" },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      clyDevEventInputSchema.parse({
+        ...common,
+        type: "message.recorded",
+        transferability: "transferable",
+        payload: {
+          role: "agent",
+          body: "approved handoff",
+          absolutePath: "/secret",
+        },
       }),
     ).toThrow();
     expect(() =>
