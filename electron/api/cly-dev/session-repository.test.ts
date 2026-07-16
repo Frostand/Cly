@@ -10,6 +10,10 @@ import {
   closePersistedStateDatabase,
   getStateDatabase,
 } from "../../persisted-state.js";
+import {
+  createClyDevHandoffService,
+  createMemoryHandoffTransport,
+} from "./handoff-service.js";
 import { normalizeDurableOutboundContext } from "./runtime/outbound-context.js";
 import { createClyDevSessionRepository } from "./session-repository.js";
 import {
@@ -174,6 +178,119 @@ afterEach(() => {
 });
 
 describe("ClyDevSessionRepository", () => {
+  it("publishes transferable events after the first 500 session events", async () => {
+    const { first } = openDatabasePair();
+    insertProject(first, "project-a");
+    const repository = createClyDevSessionRepository({ db: first });
+    const session = createSession(repository, "project-a");
+    for (let index = 0; index < 500; index += 1) {
+      repository.appendEvent("project-a", session.id, event(`local-${index}`));
+    }
+    repository.appendEvent("project-a", session.id, {
+      ...event("transferable-501", "message.recorded", {
+        role: "agent",
+        body: "This event must survive handoff pagination.",
+      }),
+      transferability: "transferable",
+    });
+
+    const transport = createMemoryHandoffTransport();
+    const service = createClyDevHandoffService({ repository, transport });
+    await service.pairDevice({ deviceId: "machine-1", pairingCode: "123456" });
+    const envelope = await service.publish("project-a", session.id, {
+      deviceId: "machine-1",
+      expectedRevision: 0,
+    });
+
+    expect(
+      repository.getHandoffSource("project-a", session.id).events,
+    ).toHaveLength(501);
+    expect(envelope.events).toEqual([
+      expect.objectContaining({
+        idempotencyKey: "transferable-501",
+        payload: expect.objectContaining({
+          body: "This event must survive handoff pagination.",
+        }),
+      }),
+    ]);
+  });
+
+  it("resumes transferable task state on a second machine without source paths", async () => {
+    const sourceDatabase = openDatabasePair().first;
+    const destinationDatabase = openDatabasePair().first;
+    insertProject(sourceDatabase, "project-a");
+    insertProject(destinationDatabase, "project-a");
+    const sourceRepository = createClyDevSessionRepository({
+      db: sourceDatabase,
+    });
+    const destinationRepository = createClyDevSessionRepository({
+      db: destinationDatabase,
+    });
+    const session = createSession(sourceRepository, "project-a");
+    sourceRepository.appendEvent("project-a", session.id, {
+      ...event("message-transfer", "message.recorded", {
+        role: "user",
+        body: "Continue from the approved plan.",
+      }),
+      transferability: "transferable",
+    });
+    const transport = createMemoryHandoffTransport();
+    const sourceService = createClyDevHandoffService({
+      repository: sourceRepository,
+      transport,
+    });
+    const destinationService = createClyDevHandoffService({
+      repository: destinationRepository,
+      transport,
+      inspectDestination: async () => ({
+        status: "ready",
+        blocking: false,
+        checks: [],
+        actions: [],
+      }),
+    });
+    await sourceService.pairDevice({
+      deviceId: "machine-1",
+      pairingCode: "123456",
+    });
+    await destinationService.pairDevice({
+      deviceId: "machine-2",
+      pairingCode: "654321",
+    });
+    const envelope = await sourceService.publish("project-a", session.id, {
+      deviceId: "machine-1",
+      expectedRevision: 0,
+    });
+    const resumed = await destinationService.resume(envelope.handoffId, {
+      deviceId: "machine-2",
+      destination: {
+        name: "Machine B worktree",
+        machine: { id: "machine-2", platform: "linux" },
+        repositoryPath: "/home/b/repo",
+        worktreePath: "/home/b/repo",
+      },
+    });
+
+    expect(resumed.readiness).toMatchObject({ blocking: false });
+    expect(
+      destinationRepository.listEvents("project-a", session.id),
+    ).toMatchObject([
+      {
+        type: "message.recorded",
+        payload: { body: "Continue from the approved plan." },
+      },
+    ]);
+    const imported = destinationRepository.getHandoffSource(
+      "project-a",
+      session.id,
+    );
+    expect(imported.workspace.localOnly).toEqual({
+      repositoryPath: "/home/b/repo",
+      worktreePath: "/home/b/repo",
+    });
+    expect(JSON.stringify(imported)).not.toContain("/tmp/repo");
+  });
+
   it("requires versioned structured payloads and rejects restricted transferable context fields", () => {
     const { first } = openDatabasePair();
     insertProject(first, "project-a");
@@ -474,7 +591,7 @@ describe("ClyDevSessionRepository", () => {
     ).toThrow(/immutable/i);
   });
 
-  it("enforces every structured event category and rejects arbitrary transferable payloads", () => {
+  it("enforces every structured event category and permits only approved transferable payloads", () => {
     const common = {
       schemaVersion: 1,
       payloadVersion: 1,
@@ -536,7 +653,19 @@ describe("ClyDevSessionRepository", () => {
         ...common,
         type: "message.recorded",
         transferability: "transferable",
-        payload: { role: "agent", body: "secret" },
+        payload: { role: "agent", body: "approved handoff" },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      clyDevEventInputSchema.parse({
+        ...common,
+        type: "message.recorded",
+        transferability: "transferable",
+        payload: {
+          role: "agent",
+          body: "approved handoff",
+          absolutePath: "/secret",
+        },
       }),
     ).toThrow();
     expect(() =>

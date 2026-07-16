@@ -193,6 +193,115 @@ export interface ClyDevOutboundContext {
   egressSha256: string;
 }
 
+export interface ClyDevDevicePublicBundle {
+  deviceId: string;
+  keyVersion: number;
+  encryptionKey: string;
+  signingKey: string;
+}
+
+export interface ClyDevDevice {
+  id: string;
+  name: string;
+  kind: "local" | "peer";
+  trustState: "pending" | "trusted" | "revoked";
+  fingerprint: string;
+  keyVersion: number;
+  publicBundle: ClyDevDevicePublicBundle;
+  registeredAt: string;
+  verifiedAt: string | null;
+  revokedAt: string | null;
+  revocationReason: string | null;
+  lastSeenAt: string | null;
+}
+
+export interface ClyDevSyncConflict {
+  id: string;
+  projectId: string;
+  recordKind: string;
+  recordId: string;
+  localRevision: number;
+  incomingRevision: number;
+  localEnvelopeId: string;
+  incomingEnvelopeId: string;
+  state: "pending" | "keep_local" | "use_incoming";
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface ClyDevSyncStatus {
+  localDevice: ClyDevDevice;
+  devices: ClyDevDevice[];
+  keyStoreState: "available" | "locked" | "unavailable";
+  approvedChanges: number;
+  localOnlyItems: number;
+  trustedDeviceCount: number;
+  pendingChanges: number;
+  failedChanges: number;
+  policyBlocked: number;
+  conflictCount: number;
+  conflicts: ClyDevSyncConflict[];
+  lastSyncAt: string | null;
+}
+
+export type ClyDevResumeAction =
+  | "fetch"
+  | "clone"
+  | "create-branch"
+  | "create-worktree"
+  | "inspect-changes"
+  | "defer"
+  | "return-to-source";
+
+export interface ClyDevResumeReadiness {
+  status: string;
+  blocking: boolean;
+  checks: Array<{
+    id: string;
+    status: "pass" | "fail" | "warning";
+    summary: string;
+  }>;
+  actions: ClyDevResumeAction[];
+  missingTools?: string[];
+}
+
+export interface ClyDevHandoffEnvelope {
+  handoffId: string;
+  projectId: string;
+  sessionId: string;
+  revision: number;
+  sourceMachine: { id: string; platform: "darwin" | "linux" | "win32" };
+  repository: { id: string; remoteUrl?: string };
+  worktree: { id: string; branch: string; baseRef?: string };
+  commit: { sha: string };
+  task: {
+    id: string;
+    title: string;
+    objective: string;
+    researchObjectIds: string[];
+  };
+  session: { id: string; title: string; state: ClyDevSessionState };
+}
+
+export interface ClyDevHandoffInspection {
+  envelope: ClyDevHandoffEnvelope;
+  readiness: ClyDevResumeReadiness;
+  snapshot?: ClyDevSessionSnapshot;
+}
+
+export interface ClyDevResumeDestination {
+  name?: string;
+  path: string;
+  repositoryPath: string;
+  worktreePath: string;
+  requiredTools: string[];
+  machine: {
+    id: string;
+    platform: "darwin" | "linux" | "win32";
+    architecture?: string;
+  };
+}
+
 export type AgentRole =
   | "orchestrator"
   | "implementation"

@@ -29,8 +29,8 @@ import {
   ModelsAgentsScreen,
   SettingsScreen,
 } from "../screens/system";
-import { isClyExplicitDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
+import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
 import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
 import { Inspector } from "./inspector";
 import { Sidebar } from "./navigation";
@@ -140,6 +140,7 @@ function runMenuCommand(command: string) {
 }
 
 export function ClyAppShell() {
+  useClyDataBootstrap();
   const activeScreen = useClyStore((s) => s.activeScreen);
   const activeProduct = useClyStore((s) => s.activeProduct);
   const sidebarCollapsed = useClyStore((s) => s.sidebarCollapsed);
@@ -149,16 +150,6 @@ export function ClyAppShell() {
   const fixtureMode = useClyStore((s) => s.fixtureMode);
   const setScreen = useClyStore((s) => s.setScreen);
   const ActiveScreen = screens[activeScreen];
-
-  useEffect(() => {
-    // main.tsx installs authenticated API fetch before React mounts. Hydrating
-    // here avoids firing the request while static imports are still loading.
-    if (isClyExplicitDemoRuntime) {
-      useClyStore.getState().setFixtureMode("active");
-    } else {
-      void useClyStore.getState().loadFromApi();
-    }
-  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

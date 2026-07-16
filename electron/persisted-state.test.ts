@@ -9,6 +9,8 @@ import { createResearchRepository } from "./api/research/repository.js";
 import {
   closePersistedStateDatabase,
   getStateDatabase,
+  loadClyDevWindowLayout,
+  saveClyDevWindowLayout,
   savePersistedState,
 } from "./persisted-state.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
@@ -163,6 +165,38 @@ describe("persisted research storage", () => {
     "agent_context_transmission_approvals",
     "agent_context_audit_events",
   ];
+  const clyDevSyncTables = [
+    "cly_dev_devices",
+    "cly_dev_device_keys",
+    "cly_dev_sync_outbox",
+    "cly_dev_sync_inbox",
+    "cly_dev_sync_heads",
+    "cly_dev_sync_conflicts",
+    "cly_dev_sync_cursors",
+    "cly_dev_sync_audit",
+  ];
+
+  it("persists detached-window layout independently of IDE snapshots", () => {
+    const databasePath = createDatabasePath();
+    expect(
+      saveClyDevWindowLayout(
+        {
+          version: 1,
+          workspace: {
+            detached: true,
+            displayId: 7,
+            maximized: false,
+            bounds: { x: 40, y: 60, width: 900, height: 700 },
+          },
+        },
+        { databasePath },
+      ),
+    ).toBe(true);
+    expect(loadClyDevWindowLayout({ databasePath })).toMatchObject({
+      version: 1,
+      workspace: { detached: true, displayId: 7 },
+    });
+  });
 
   it("installs every agent-context table and immutable trigger on a clean database", () => {
     const database = getStateDatabase(createDatabasePath());
@@ -209,7 +243,7 @@ describe("persisted research storage", () => {
     expectAgentContextDatabaseContract(database);
   });
 
-  it("applies reserved migration 0014 and later migrations after a database through 0015", () => {
+  it("applies migrations after a database through 0015", () => {
     const databasePath = createDatabasePath();
     getStateDatabase(databasePath);
     closePersistedStateDatabase();
@@ -218,6 +252,8 @@ describe("persisted research storage", () => {
     throughClyDev.exec("DROP TABLE cly_dev_tool_effects");
     throughClyDev.exec("DROP TABLE cly_dev_handoffs");
     for (const table of [...agentContextTables].reverse())
+      throughClyDev.exec(`DROP TABLE ${table}`);
+    for (const table of [...clyDevSyncTables].reverse())
       throughClyDev.exec(`DROP TABLE ${table}`);
     throughClyDev
       .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
@@ -246,7 +282,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784160000000 });
+    ).toEqual({ createdAt: 1784224800000 });
     expect(
       upgraded
         .prepare(
@@ -255,6 +291,14 @@ describe("persisted research storage", () => {
         .get(),
     ).toEqual({ name: "cly_dev_tool_effects" });
     expectAgentContextDatabaseContract(upgraded);
+    expect(
+      upgraded
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'cly_dev_%' AND name IN ('cly_dev_devices','cly_dev_device_keys','cly_dev_sync_outbox','cly_dev_sync_inbox','cly_dev_sync_heads','cly_dev_sync_conflicts','cly_dev_sync_cursors','cly_dev_sync_audit') ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
+    ).toEqual([...clyDevSyncTables].sort());
   });
 
   it("upgrades already-recorded 0016/0018/0020 state through current migrations", () => {

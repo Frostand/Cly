@@ -33,9 +33,15 @@ Cly now includes a two-application Research/Dev shell, objective planning,
 reviewer-capsule workflows, a local-first development command center, shared fixtures,
 mock service boundaries, all primary research and integrity workspaces, desktop
 menus, keyboard navigation, automated workflows, and responsive visual
-fixtures. Agent Sessions includes a complete two-mode Overview and Orchestrator
-Chat workspace with full delegated-agent fixtures and a Browser, Terminal,
-Code Diff, Agents, and Live Files workbench. Real research persistence,
+fixtures. Agent Sessions includes durable local session events plus secure
+device registration and end-to-end encrypted, resumable synchronization of
+explicitly approved chat, context, and handoff records. Pairing requires
+fingerprint verification; OS-protected device keys, rotation, revocation,
+offline queues, acknowledgements, and explicit conflict resolution are built
+into the local service. The sync protocol is transport-neutral and does not
+yet ship with a hosted relay. The Overview and Orchestrator Chat workspace also
+includes delegated-agent fixtures and a Browser, Terminal, Code Diff, Agents,
+and Live Files workbench. Real research persistence,
 scanners, model execution, external
 integrations, and orchestration remain Phase 2 work. Do not use the current
 fixture-backed build as a source of truth for production research data.

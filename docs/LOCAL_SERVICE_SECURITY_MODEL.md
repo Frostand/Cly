@@ -1,7 +1,7 @@
 # Local service security model
 
 - Status: required design gate for Phase 2 adapters
-- Last reviewed: 2026-07-12
+- Last reviewed: 2026-07-16
 
 Scope: local-service authentication, credentials, research-context
 transmission, repository observation, execution adapters, imported content,
@@ -147,6 +147,68 @@ that context.
 The provider-specific findings and migration constraints are recorded in
 `phase-0/provider-credential-audit.md`. Existing chat adapters that read Codex
 or Claude credential files must not be reused by research execution.
+
+## Cly Dev device-sync boundary
+
+Device sync extends the local-service boundary to another user-approved Cly
+installation. A paired device, its public keys, and an untrusted transport are
+separate trust decisions: possessing a pairing bundle or encrypted envelope
+does not authorize synchronization.
+
+### Required controls
+
+- A device begins `pending` and becomes `trusted` only after its fingerprint is
+  entered and matched. A revoked device cannot be trusted again under the same
+  identity, receive a new outbox batch, or rotate keys.
+- Device private keys are main-process-only credentials. They are encrypted
+  with Electron `safeStorage`; plaintext fallback is prohibited. SQLite,
+  renderer responses, pairing bundles, logs, audits, and sync envelopes never
+  contain the private bundle.
+- Envelopes use AES-256-GCM content encryption, recipient-specific
+  X25519/HKDF-SHA-256 key wrapping, and an Ed25519 signature over canonical
+  metadata, recipient slots, and ciphertext. Project, record, revision,
+  sender, recipient, and key-version substitutions therefore fail validation.
+- The encrypted outbox and inbox are the only durable sync payload stores.
+  Plaintext exists only while an approved local event is encrypted or an
+  authenticated incoming record is decrypted for application.
+- Only allowlisted event types marked `transferable` may enter the outbox.
+  Local-only events and manifest fields—including absolute paths, environment
+  variable names, local notes, and uncommitted-file paths—are never serialized
+  into an envelope.
+- Every import is schema-, signature-, recipient-, trust-, key-version-, size-,
+  and quota-checked before application. One corrupt record does not prevent
+  valid records in the same bounded batch from being accepted.
+- Delivery is idempotent by project, recipient, and envelope identity. Durable
+  cursors, acknowledgements, attempt counts, retry times, and stable error codes
+  permit resume after interruption without duplicating applied records.
+- Mutable records carry a base revision. A mismatch creates a durable conflict
+  and never overwrites the current head until the user chooses the local or
+  incoming version. Chat messages remain append-only.
+- Audit records contain action, device IDs, project ID, counts, revisions,
+  byte sizes, outcomes, and error codes only. Audit metadata rejects fields
+  capable of carrying bodies, messages, payloads, ciphertext, envelopes,
+  secrets, or private keys.
+
+### Rotation and revocation semantics
+
+Local rotation creates a fresh keypair in the credential store before making
+its public version active. Unacknowledged outbox records signed by the retired
+key are discarded and become eligible for re-encryption during the next
+staging pass; acknowledged history remains intact. Peers accept a strictly
+newer public version only after its fingerprint is verified, including a later
+version when an intermediate rotation was missed. Retired keys remain usable
+for authenticating records that were already in flight; they cannot receive
+newly staged state. Revoking a peer marks all its keys revoked and converts its
+pending deliveries to `policy_blocked`. Revocation prevents future disclosure
+but cannot retract plaintext the peer legitimately decrypted before
+revocation.
+
+The current implementation exposes authenticated local HTTP endpoints for
+pairing, encrypted batch export/import, acknowledgements, status, and conflict
+resolution. It deliberately does not designate or trust a hosted relay: any
+future transport must treat envelopes as opaque bytes, enforce independent
+authentication and quotas, and preserve the end-to-end cryptographic checks
+described above.
 
 ## Selected-context preview and approval
 

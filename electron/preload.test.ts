@@ -55,5 +55,27 @@ describe("Electron preload API session authority", () => {
         isElectron: true,
       }),
     );
+
+    const api = electronMocks.exposeInMainWorld.mock.calls[0]?.[1];
+    await api.getWindowRole();
+    await api.detachWorkspace({ sessionId: "session-1" });
+    await api.dispatchWorkspaceIntent({
+      mutationId: "mutation-1",
+      sessionId: "session-1",
+      baseRevision: 0,
+      type: "select_file",
+      payload: { selectedFileId: "src/app.tsx" },
+    });
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      "cly-dev:get-window-role",
+    );
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      "cly-dev:detach-workspace",
+      { sessionId: "session-1" },
+    );
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      "cly-dev:dispatch-workspace-intent",
+      expect.objectContaining({ mutationId: "mutation-1" }),
+    );
   });
 });

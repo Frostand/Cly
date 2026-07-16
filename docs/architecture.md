@@ -91,6 +91,42 @@ SQLite and Drizzle are the source of truth for application and research metadata
 
 Provider credentials belong in the operating-system credential store. They must not be written to SQLite, project files, logs, git history, or agent context.
 
+### Secure Cly Dev device sync
+
+Cly Dev sync is an encrypted, transport-neutral protocol layered on the
+local-first session repository. It synchronizes only records explicitly marked
+`transferable`: approved chat messages, context manifests, summaries, plans,
+decisions, progress, remaining-work state, approvals, and session state.
+Tool output, diffs, test logs, costs, failures, absolute paths, environment
+metadata, local notes, and uncommitted-file paths remain local.
+
+Each installation owns an X25519 encryption key and an Ed25519 signing key.
+Private key material is encrypted by Electron `safeStorage` and is unavailable
+when the operating-system credential store is locked or unsupported. SQLite
+contains only opaque credential references and public keys. Devices exchange
+public pairing bundles, and the user must verify the displayed fingerprint
+through a separate channel before either device can receive new state.
+
+The sender creates a recipient-isolated envelope with AES-256-GCM, wraps its
+content key using X25519 plus HKDF-SHA-256, and signs the canonical envelope
+with Ed25519. A device therefore cannot recover another device's queued state
+or discover its recipient slot. The durable outbox and inbox store ciphertext
+envelopes only. Bounded batches, resumable cursors, acknowledgements,
+exponential retry metadata, and content-free audit events make the protocol
+suitable for an offline queue or a future relay without giving that transport
+access to plaintext.
+
+Local key rotation advances exactly one version and requires the new
+fingerprint to be verified on peers. Unacknowledged envelopes signed by the
+retired key are removed so the next staging pass encrypts them with the active
+key. A peer may accept any strictly newer version after verifying its
+fingerprint, which keeps recovery possible when intermediate rotations were
+missed. Old public keys are retained only for records already in flight.
+Revocation blocks new exports and marks pending deliveries policy-blocked.
+Mutable handoff records use base revisions; concurrent updates create an
+explicit conflict that the user resolves rather than silently choosing a
+winner.
+
 ## Extension boundary
 
 Cly code lives under `src/features/cly/`. The coding workspace infrastructure lives under `src/components/ide/` and `electron/`. Research modules depend on typed service interfaces (`src/features/cly/services/interfaces.ts`), not on editor internals.

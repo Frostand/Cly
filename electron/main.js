@@ -10,6 +10,7 @@ import {
   dialog,
   ipcMain,
   nativeTheme,
+  screen,
   shell,
 } from "electron";
 import getPort from "get-port";
@@ -19,12 +20,18 @@ import {
   toggleWebContentsDevToolsDetached,
 } from "./app-menu.js";
 import { createBrowserSessionManager } from "./browser-sessions.js";
+import {
+  clampWindowBounds,
+  createClyDevWorkspaceCore,
+} from "./cly-dev-windows.js";
 import { detectAvailableEditors, openProjectInEditor } from "./editors.js";
 import {
   closePersistedStateDatabase,
   ensurePersistedInstallId,
+  loadClyDevWindowLayout,
   loadPersistedState,
   loadPersistedThemePreference,
+  saveClyDevWindowLayout,
   savePersistedState,
   savePersistedThemePreference,
 } from "./persisted-state.js";
@@ -100,8 +107,14 @@ app.setPath("userData", APP_USER_DATA_PATH);
 app.setPath("sessionData", APP_SESSION_DATA_PATH);
 
 let mainWindow = null;
+let workspaceWindow = null;
+let workspaceWindowSessionId = null;
+const workspaceWindowsClosingForReattach = new WeakSet();
+let appIsQuitting = false;
 let updateManager = null;
 let installId = null;
+const windowBindings = new Map();
+const clyDevWorkspaceCore = createClyDevWorkspaceCore();
 
 function normalizeThemePreference(value) {
   return value === "light" || value === "dark" || value === "system"
@@ -158,11 +171,11 @@ function getWindowBackground(theme, baseColor) {
 }
 
 function applyWindowThemeBackground(theme, baseColor) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
+  for (const window of [mainWindow, workspaceWindow]) {
+    if (window && !window.isDestroyed()) {
+      window.setBackgroundColor(getWindowBackground(theme, baseColor));
+    }
   }
-
-  mainWindow.setBackgroundColor(getWindowBackground(theme, baseColor));
 }
 
 function getThemePreferencePreloadArgument() {
@@ -354,6 +367,11 @@ async function createMainWindow() {
     },
     width: 1920,
   });
+  const mainWindowWebContentsId = mainWindow.webContents.id;
+  windowBindings.set(mainWindowWebContentsId, {
+    role: "agent",
+    sessionId: null,
+  });
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
@@ -434,6 +452,7 @@ async function createMainWindow() {
 
   mainWindow.on("closed", () => {
     browserSessionManager.reset();
+    windowBindings.delete(mainWindowWebContentsId);
     mainWindow = null;
   });
 
@@ -442,6 +461,166 @@ async function createMainWindow() {
   mainWindow.loadURL(rendererServerManager.getUrl()).catch((error) => {
     console.error("Failed to load renderer:", error);
   });
+}
+
+function saveWorkspaceWindowLayoutFor(
+  targetWindow,
+  sessionId,
+  detached = true,
+) {
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  const bounds = targetWindow.getBounds();
+  const display = screen.getDisplayMatching(bounds);
+  saveClyDevWindowLayout({
+    version: 1,
+    workspace: {
+      detached,
+      sessionId,
+      bounds,
+      displayId: display?.id ?? null,
+      maximized: targetWindow.isMaximized(),
+    },
+  });
+}
+
+function saveWorkspaceWindowLayout(detached = true) {
+  saveWorkspaceWindowLayoutFor(
+    workspaceWindow,
+    workspaceWindowSessionId,
+    detached,
+  );
+}
+
+function broadcastWorkspaceSnapshot(snapshot) {
+  for (const window of [mainWindow, workspaceWindow]) {
+    if (!window || window.isDestroyed()) continue;
+    const binding = windowBindings.get(window.webContents.id);
+    if (
+      binding?.role === "agent" ||
+      binding?.sessionId === snapshot.sessionId
+    ) {
+      window.webContents.send("cly-dev:workspace-snapshot", snapshot);
+    }
+  }
+}
+
+clyDevWorkspaceCore.subscribe(broadcastWorkspaceSnapshot);
+
+async function createWorkspaceWindow(sessionId) {
+  if (workspaceWindow && !workspaceWindow.isDestroyed()) {
+    if (workspaceWindowSessionId === sessionId) {
+      workspaceWindow.show();
+      workspaceWindow.focus();
+      return;
+    }
+    saveWorkspaceWindowLayout(true);
+    const previousWorkspaceWindow = workspaceWindow;
+    workspaceWindowsClosingForReattach.add(previousWorkspaceWindow);
+    previousWorkspaceWindow.close();
+  }
+
+  const persisted = loadClyDevWindowLayout()?.workspace;
+  const restored = clampWindowBounds(
+    persisted?.bounds ?? { x: 180, y: 120, width: 1100, height: 780 },
+    screen.getAllDisplays(),
+    persisted?.displayId,
+    { width: 640, height: 480 },
+  );
+  workspaceWindowSessionId = sessionId;
+  const createdWorkspaceWindow = new BrowserWindow({
+    backgroundColor: getWindowBackground(),
+    x: restored.x,
+    y: restored.y,
+    width: restored.width,
+    height: restored.height,
+    minWidth: 640,
+    minHeight: 480,
+    icon:
+      process.platform === "darwin" || !existsSync(appIconPath)
+        ? undefined
+        : appIconPath,
+    show: false,
+    title: `${APP_NAME} — Developer workspace`,
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
+    ...(process.platform !== "darwin" && { frame: false }),
+    trafficLightPosition:
+      process.platform === "darwin" ? { x: 14, y: 14 } : undefined,
+    webPreferences: {
+      contextIsolation: true,
+      additionalArguments: [getThemePreferencePreloadArgument()],
+      nodeIntegration: false,
+      preload: path.join(__dirname, "preload.cjs"),
+      sandbox: true,
+      spellcheck: false,
+      webviewTag: false,
+    },
+  });
+  workspaceWindow = createdWorkspaceWindow;
+  saveWorkspaceWindowLayoutFor(createdWorkspaceWindow, sessionId, true);
+  const workspaceWebContentsId = createdWorkspaceWindow.webContents.id;
+  windowBindings.set(workspaceWebContentsId, {
+    role: "workspace",
+    sessionId,
+  });
+  createdWorkspaceWindow.once("ready-to-show", () => {
+    createdWorkspaceWindow.show();
+    if (persisted?.maximized) createdWorkspaceWindow.maximize();
+  });
+  createdWorkspaceWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isHttpUrl(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
+  createdWorkspaceWindow.webContents.on("will-navigate", (event, url) => {
+    if (isRendererNavigation(url)) return;
+    event.preventDefault();
+    if (isHttpUrl(url)) shell.openExternal(url);
+  });
+  createdWorkspaceWindow.on("moved", () =>
+    saveWorkspaceWindowLayoutFor(createdWorkspaceWindow, sessionId),
+  );
+  createdWorkspaceWindow.on("resized", () =>
+    saveWorkspaceWindowLayoutFor(createdWorkspaceWindow, sessionId),
+  );
+  createdWorkspaceWindow.on("close", () => {
+    if (
+      !appIsQuitting &&
+      !workspaceWindowsClosingForReattach.has(createdWorkspaceWindow)
+    ) {
+      saveWorkspaceWindowLayoutFor(createdWorkspaceWindow, sessionId, false);
+    }
+  });
+  createdWorkspaceWindow.on("closed", () => {
+    const closingForReattach = workspaceWindowsClosingForReattach.has(
+      createdWorkspaceWindow,
+    );
+    workspaceWindowsClosingForReattach.delete(createdWorkspaceWindow);
+    windowBindings.delete(workspaceWebContentsId);
+    const wasCurrentWorkspaceWindow =
+      workspaceWindow === createdWorkspaceWindow;
+    if (wasCurrentWorkspaceWindow) {
+      workspaceWindow = null;
+      workspaceWindowSessionId = null;
+    }
+    if (!appIsQuitting && wasCurrentWorkspaceWindow) {
+      mainWindow?.show();
+      mainWindow?.focus();
+    }
+    if (!closingForReattach && !appIsQuitting) {
+      const current = clyDevWorkspaceCore.getSnapshot(sessionId);
+      clyDevWorkspaceCore.dispatchIntent("agent", {
+        mutationId: `workspace-closed:${sessionId}:${current.revision}`,
+        sessionId,
+        baseRevision: current.revision,
+        type: "set_workspace_mode",
+        payload: { workspaceMode: "inline" },
+      });
+    }
+  });
+  await configureRendererProxy(createdWorkspaceWindow.webContents);
+  const url = new URL(rendererServerManager.getUrl());
+  url.searchParams.set("clyWindowRole", "workspace");
+  url.searchParams.set("sessionId", sessionId);
+  await createdWorkspaceWindow.loadURL(url.toString());
 }
 
 ipcMain.handle("projects:pick-directory", pickDirectory);
@@ -471,6 +650,68 @@ ipcMain.handle("state:save", (_event, state) =>
   getStateSaveQueue().save(state),
 );
 
+ipcMain.handle("cly-dev:get-window-role", (event) => {
+  return windowBindings.get(event.sender.id)?.role ?? "agent";
+});
+ipcMain.handle("cly-dev:get-session-id", (event) => {
+  return windowBindings.get(event.sender.id)?.sessionId ?? null;
+});
+ipcMain.handle("cly-dev:get-workspace-snapshot", (_event, { sessionId } = {}) =>
+  clyDevWorkspaceCore.getSnapshot(sessionId),
+);
+ipcMain.handle("cly-dev:dispatch-workspace-intent", (event, intent) => {
+  const role = windowBindings.get(event.sender.id)?.role ?? "agent";
+  return clyDevWorkspaceCore.dispatchIntent(role, intent);
+});
+ipcMain.handle(
+  "cly-dev:detach-workspace",
+  async (_event, { sessionId } = {}) => {
+    const current = clyDevWorkspaceCore.getSnapshot(sessionId);
+    if (!current) throw new Error("A valid session is required to detach.");
+    const result = clyDevWorkspaceCore.dispatchIntent("agent", {
+      mutationId: `detach:${sessionId}:${current.revision}`,
+      sessionId,
+      baseRevision: current.revision,
+      type: "set_workspace_mode",
+      payload: { workspaceMode: "detached" },
+    });
+    if (!result.accepted)
+      throw new Error("The workspace state changed. Try again.");
+    await createWorkspaceWindow(sessionId);
+  },
+);
+ipcMain.handle("cly-dev:reattach-workspace", (_event, { sessionId } = {}) => {
+  const current = clyDevWorkspaceCore.getSnapshot(sessionId);
+  if (!current) throw new Error("A valid session is required to reattach.");
+  const result = clyDevWorkspaceCore.dispatchIntent("agent", {
+    mutationId: `reattach:${sessionId}:${current.revision}`,
+    sessionId,
+    baseRevision: current.revision,
+    type: "set_workspace_mode",
+    payload: { workspaceMode: "inline" },
+  });
+  if (!result.accepted)
+    throw new Error("The workspace state changed. Try again.");
+  if (
+    workspaceWindow &&
+    !workspaceWindow.isDestroyed() &&
+    workspaceWindowSessionId === sessionId
+  ) {
+    const targetWorkspaceWindow = workspaceWindow;
+    saveWorkspaceWindowLayoutFor(targetWorkspaceWindow, sessionId, false);
+    workspaceWindowsClosingForReattach.add(targetWorkspaceWindow);
+    targetWorkspaceWindow.close();
+  }
+});
+ipcMain.handle("cly-dev:focus-agent-window", () => {
+  mainWindow?.show();
+  mainWindow?.focus();
+});
+ipcMain.handle("cly-dev:focus-workspace-window", () => {
+  workspaceWindow?.show();
+  workspaceWindow?.focus();
+});
+
 ipcMain.handle("theme:set", (_event, { theme } = {}) => {
   const normalizedTheme = normalizeThemePreference(theme);
   saveThemePreference(normalizedTheme);
@@ -496,18 +737,19 @@ nativeTheme.on("updated", () => {
 });
 
 // Window controls (Windows/Linux frameless window)
-ipcMain.handle("window:minimize", () => {
-  mainWindow?.minimize();
+ipcMain.handle("window:minimize", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
-ipcMain.handle("window:maximize", () => {
-  if (mainWindow?.isMaximized()) {
-    mainWindow.unmaximize();
+ipcMain.handle("window:maximize", (event) => {
+  const target = BrowserWindow.fromWebContents(event.sender);
+  if (target?.isMaximized()) {
+    target.unmaximize();
   } else {
-    mainWindow?.maximize();
+    target?.maximize();
   }
 });
-ipcMain.handle("window:close", () => {
-  mainWindow?.close();
+ipcMain.handle("window:close", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
 });
 
 ipcMain.handle("shell:open-external", (_event, { url }) => {
@@ -560,8 +802,8 @@ ipcMain.handle("editors:detect", () => {
   return detectAvailableEditors();
 });
 
-ipcMain.handle("editors:open", (_event, { projectPath, editorId }) => {
-  return openProjectInEditor({ editorId, projectPath });
+ipcMain.handle("editors:open", (_event, payload) => {
+  return openProjectInEditor(payload ?? {});
 });
 
 ipcMain.handle(
@@ -630,6 +872,21 @@ app.whenReady().then(async () => {
   await rendererServerManager.start();
   await createMainWindow();
 
+  const restoredWindowLayout = loadClyDevWindowLayout()?.workspace;
+  if (restoredWindowLayout?.detached && restoredWindowLayout.sessionId) {
+    const snapshot = clyDevWorkspaceCore.getSnapshot(
+      restoredWindowLayout.sessionId,
+    );
+    clyDevWorkspaceCore.dispatchIntent("agent", {
+      mutationId: `restore-detached:${restoredWindowLayout.sessionId}`,
+      sessionId: restoredWindowLayout.sessionId,
+      baseRevision: snapshot.revision,
+      type: "set_workspace_mode",
+      payload: { workspaceMode: "detached" },
+    });
+    await createWorkspaceWindow(restoredWindowLayout.sessionId);
+  }
+
   try {
     installId = ensurePersistedInstallId();
   } catch (error) {
@@ -661,6 +918,8 @@ app.on("before-quit", (event) => {
     return;
   }
   event.preventDefault();
+  appIsQuitting = true;
+  saveWorkspaceWindowLayout(true);
 
   updateManager?.stop();
   processSessionManager.stopAllProcesses();

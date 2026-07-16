@@ -32,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { getDesktopApi } from "../../../lib/electron";
 import { Badge, Button, Dialog } from "../components/primitives";
 import { ClySplitPane } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
@@ -44,7 +45,12 @@ import type {
   DiffTabState,
   TerminalTabState,
 } from "./types";
+import { useWorkspaceSnapshotSync } from "./use-window-sync";
 import { sessionStatusLabel, toneForAgentStatus } from "./utils";
+import {
+  deriveWorkspaceSnapshotFields,
+  seedWorkspaceSnapshot,
+} from "./window-sync";
 import { AgentWorkbench } from "./workbench";
 
 export function AgentSessionsChat() {
@@ -133,6 +139,7 @@ function EmptyChatMode({ sessions }: { sessions: AgentSession[] }) {
 }
 
 function ActiveChatMode({ session }: { session: AgentSession }) {
+  useWorkspaceSnapshotSync(session.id);
   const [inspection, setInspection] = useState<"tests" | "diff" | null>(null);
   const inspectionTriggerRef = useRef<HTMLButtonElement | null>(null);
   const closeInspection = () => {
@@ -216,13 +223,25 @@ function TaskWorkspaceControls({
 }) {
   const update = useClyStore((state) => state.updateAgentSession);
   const notify = useClyStore((state) => state.notify);
-  const setMode = (workspaceMode: ClyDevWorkspaceMode) =>
+  const setMode = async (workspaceMode: ClyDevWorkspaceMode) => {
+    const api = getDesktopApi();
+    if (workspaceMode === "detached-workspace" && api) {
+      await seedWorkspaceSnapshot(session);
+      await api.detachWorkspace({ sessionId: session.id });
+    } else if (
+      session.workspaceMode === "detached-workspace" &&
+      workspaceMode !== "detached-workspace" &&
+      api
+    ) {
+      await api.reattachWorkspace({ sessionId: session.id });
+    }
     update(session.id, (current) => ({ ...current, workspaceMode }));
+  };
   const modes: Array<[ClyDevWorkspaceMode, string]> = [
     ["agent-only", "Agent only"],
     ["inline-workspace", "Inline workspace"],
-    ["detached-workspace", "Detached prototype intent"],
-    ["external-editor", "External-editor prototype intent"],
+    ["detached-workspace", "Detached workspace"],
+    ["external-editor", "External editor"],
   ];
   return (
     <div className="cly-dev-task-controls">
@@ -238,7 +257,7 @@ function TaskWorkspaceControls({
               name={`task-workspace-mode-${session.id}`}
               value={mode}
               checked={session.workspaceMode === mode}
-              onChange={() => setMode(mode)}
+              onChange={() => void setMode(mode)}
             />
             <span>{label}</span>
           </label>
@@ -264,25 +283,40 @@ function TaskWorkspaceControls({
           Inspect diff
         </Button>
         {session.workspaceMode === "inline-workspace" ? (
-          <Button onClick={() => setMode("detached-workspace")}>
-            <AppWindow size={12} /> Detach workspace (prototype)
+          <Button onClick={() => void setMode("detached-workspace")}>
+            <AppWindow size={12} /> Detach workspace
           </Button>
         ) : null}
         {session.workspaceMode === "detached-workspace" ? (
-          <Button onClick={() => setMode("inline-workspace")}>
-            Reattach workspace (prototype)
+          <Button onClick={() => void setMode("inline-workspace")}>
+            Reattach workspace
           </Button>
         ) : null}
         {session.workspaceMode === "external-editor" ? (
           <Button
-            onClick={() =>
+            onClick={async () => {
+              const projectPath =
+                session.identity.workspace.worktree ?? session.worktree;
+              const selected = deriveWorkspaceSnapshotFields(session);
+              const opened = projectPath
+                ? await getDesktopApi()?.openInEditor({
+                    editorId: "vscode",
+                    projectPath,
+                    filePath:
+                      selected.selectedFileId ??
+                      selected.selectedDiffId ??
+                      undefined,
+                  })
+                : false;
               notify(
-                "External editor intent recorded",
-                `Prototype deep link for ${session.identity.workspace.branch}.`,
-              )
-            }
+                opened ? "Opened in VS Code" : "Editor location unavailable",
+                opened
+                  ? `${session.identity.repository.name} · ${session.identity.workspace.branch}`
+                  : "Cly needs an absolute local worktree path before it can open this task safely.",
+              );
+            }}
           >
-            <ExternalLink size={12} /> Open editor (prototype)
+            <ExternalLink size={12} /> Open in VS Code
           </Button>
         ) : null}
       </div>
@@ -329,11 +363,11 @@ function TaskStateBanner({ session }: { session: AgentSession }) {
   }
   if (session.workspaceMode === "detached-workspace") {
     messages.push(
-      "Detached workspace intent recorded — inline workspace remains the fallback",
+      "Developer workspace detached — close it to restore the inline workspace",
     );
   } else if (session.workspaceMode === "external-editor") {
     messages.push(
-      "External-editor deep-link mode selected — no editor has been opened yet",
+      "External editor mode selected — Cly retains inline diff and test inspection",
     );
   }
   if (!messages.length) return null;

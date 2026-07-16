@@ -16,6 +16,7 @@ import { registerAgentConfigurationRoutes } from "./agents/configuration-routes.
 import { registerChatRoutes } from "./chat-routes.js";
 import { registerClyDevHandoffRoutes } from "./cly-dev/handoff/handoff-routes.js";
 import { registerClyDevSessionRoutes } from "./cly-dev/session-routes.js";
+import { registerClyDevSyncRoutes } from "./cly-dev/sync-routes.js";
 import { registerPrImpactReviewRoutes } from "./github/routes.js";
 import { registerLiteratureRoutes } from "./literature/routes.js";
 import { registerProjectGitRoutes } from "./project-git-routes.js";
@@ -102,6 +103,7 @@ export function createApiApp(
   registerToolApprovalRoutes(guardedApp);
   registerAgentConfigurationRoutes(guardedApp);
   registerClyDevSessionRoutes(guardedApp, clyDev);
+  registerClyDevSyncRoutes(guardedApp);
   registerClyDevHandoffRoutes(guardedApp, clyDevHandoff);
   registerProviderRoutes(guardedApp);
   registerChatRoutes(guardedApp);

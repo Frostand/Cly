@@ -19,6 +19,9 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { getDesktopApi } from "../../../lib/electron";
+import type { ClyDevWorkspaceMode } from "../agent-sessions/types";
+import { seedWorkspaceSnapshot } from "../agent-sessions/window-sync";
 import { clyFadeSlide, clyMotion } from "../design-system/motion";
 import type { FixtureMode, ScreenId } from "../domain/types";
 import { capabilityUnavailableMessage } from "../services/capabilities";
@@ -72,6 +75,39 @@ const fixtureModes: { id: FixtureMode; label: string; description: string }[] =
       description: "Partial data and permission failures",
     },
   ];
+
+async function setSelectedWorkspaceMode(workspaceMode: ClyDevWorkspaceMode) {
+  const state = useClyStore.getState();
+  const sessionId = state.selectedAgentSessionId;
+  const session = state.data.agentSessions.find(
+    (item) => item.id === sessionId,
+  );
+  if (!sessionId || !session) return;
+  const api = getDesktopApi();
+  try {
+    if (workspaceMode === "detached-workspace" && api) {
+      await seedWorkspaceSnapshot(session);
+      await api.detachWorkspace({ sessionId });
+    } else if (
+      session.workspaceMode === "detached-workspace" &&
+      workspaceMode !== "detached-workspace" &&
+      api
+    ) {
+      await api.reattachWorkspace({ sessionId });
+    }
+    useClyStore.getState().updateAgentSession(sessionId, (current) => ({
+      ...current,
+      workspaceMode,
+    }));
+  } catch (error) {
+    useClyStore
+      .getState()
+      .notify(
+        "Workspace mode could not change",
+        error instanceof Error ? error.message : "Try again.",
+      );
+  }
+}
 
 export function Titlebar() {
   const project = useClyStore(
@@ -464,68 +500,28 @@ export function CommandPalette() {
         label: "Use Agent-only Mode",
         group: "View",
         icon: CommandIcon,
-        run: () => {
-          const state = useClyStore.getState();
-          if (state.selectedAgentSessionId)
-            state.updateAgentSession(
-              state.selectedAgentSessionId,
-              (session) => ({
-                ...session,
-                workspaceMode: "agent-only",
-              }),
-            );
-        },
+        run: () => void setSelectedWorkspaceMode("agent-only"),
       },
       {
         id: "use-inline-workspace",
         label: "Use Inline Workspace",
         group: "View",
         icon: CommandIcon,
-        run: () => {
-          const state = useClyStore.getState();
-          if (state.selectedAgentSessionId)
-            state.updateAgentSession(
-              state.selectedAgentSessionId,
-              (session) => ({
-                ...session,
-                workspaceMode: "inline-workspace",
-              }),
-            );
-        },
+        run: () => void setSelectedWorkspaceMode("inline-workspace"),
       },
       {
         id: "detach-workspace-intent",
         label: "Detach Workspace (Prototype Intent)",
         group: "View",
         icon: CommandIcon,
-        run: () => {
-          const state = useClyStore.getState();
-          if (state.selectedAgentSessionId)
-            state.updateAgentSession(
-              state.selectedAgentSessionId,
-              (session) => ({
-                ...session,
-                workspaceMode: "detached-workspace",
-              }),
-            );
-        },
+        run: () => void setSelectedWorkspaceMode("detached-workspace"),
       },
       {
         id: "reattach-workspace-intent",
         label: "Reattach Workspace (Prototype Intent)",
         group: "View",
         icon: CommandIcon,
-        run: () => {
-          const state = useClyStore.getState();
-          if (state.selectedAgentSessionId)
-            state.updateAgentSession(
-              state.selectedAgentSessionId,
-              (session) => ({
-                ...session,
-                workspaceMode: "inline-workspace",
-              }),
-            );
-        },
+        run: () => void setSelectedWorkspaceMode("inline-workspace"),
       },
       {
         id: "open-interrupted-agent-task",
