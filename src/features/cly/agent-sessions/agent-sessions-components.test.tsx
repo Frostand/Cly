@@ -269,7 +269,7 @@ describe("Agent Sessions workspace", () => {
     ).toHaveLength(2);
   });
 
-  it("supports agent-only, inline, detach, and reattach prototype intents", async () => {
+  it("supports agent-only, inline, detached, and external-editor modes", async () => {
     const user = userEvent.setup();
     useClyStore.setState({
       agentSessionsMode: "chat",
@@ -278,12 +278,10 @@ describe("Agent Sessions workspace", () => {
     render(<AgentSessionsScreen />);
 
     expect(
-      screen.getByRole("radio", { name: "Detached prototype intent" }),
+      screen.getByRole("radio", { name: "Detached workspace" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("radio", {
-        name: "External-editor prototype intent",
-      }),
+      screen.getByRole("radio", { name: "External editor" }),
     ).toBeVisible();
 
     await user.click(screen.getByRole("radio", { name: "Agent only" }));
@@ -302,30 +300,24 @@ describe("Agent Sessions workspace", () => {
 
     await user.click(screen.getByRole("radio", { name: "Inline workspace" }));
     expect(screen.getByLabelText("Session workbench")).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: "Detach workspace (prototype)" }),
-    );
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Detached workspace intent recorded",
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Reattach workspace (prototype)" }),
-    );
-    expect(screen.getByLabelText("Session workbench")).toBeVisible();
-
-    await user.click(
-      screen.getByRole("radio", {
-        name: "External-editor prototype intent",
-      }),
-    );
+    await user.click(screen.getByRole("button", { name: "Detach workspace" }));
+    expect(
+      screen.getByRole("radio", { name: "Detached workspace" }),
+    ).toBeChecked();
     expect(
       screen.queryByLabelText("Session workbench"),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "External-editor deep-link mode selected",
+    await user.click(
+      screen.getByRole("button", { name: "Reattach workspace" }),
     );
+    expect(screen.getByLabelText("Session workbench")).toBeVisible();
+
+    await user.click(screen.getByRole("radio", { name: "External editor" }));
     expect(
-      screen.getByRole("button", { name: "Open editor (prototype)" }),
+      screen.queryByLabelText("Session workbench"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open in VS Code" }),
     ).toBeVisible();
   });
 

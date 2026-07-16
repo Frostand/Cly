@@ -263,6 +263,7 @@ const actorSchema = z
   .object({ kind: z.enum(["user", "agent", "tool", "system"]), id: idSchema })
   .strict();
 const eventBase = {
+  id: idSchema.optional(),
   schemaVersion: versionSchema,
   payloadVersion: z.literal(CLY_DEV_PAYLOAD_VERSION),
   idempotencyKey: idSchema,

@@ -11,7 +11,10 @@ import type {
   ClyDevDevice,
   ClyDevDevicePublicBundle,
   ClyDevEventInput,
+  ClyDevHandoffEnvelope,
+  ClyDevHandoffInspection,
   ClyDevOutboundContext,
+  ClyDevResumeDestination,
   ClyDevSessionEvent,
   ClyDevSessionOverviewPage,
   ClyDevSessionRecord,
@@ -1155,6 +1158,52 @@ export const apiClient = {
     return request<ClyDevSyncConflict>(
       `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sync/conflicts/${encodeURIComponent(conflictId)}`,
       { method: "POST", body: JSON.stringify({ resolution }) },
+    );
+  },
+
+  pairClyDevDevice(input: { deviceId: string; pairingCode: string }) {
+    return request<{ deviceId: string; state: "paired" }>(
+      "/api/cly-dev/devices/pair",
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  publishClyDevHandoff(
+    projectId: string,
+    sessionId: string,
+    input: { deviceId: string; expectedRevision: number },
+  ) {
+    return request<ClyDevHandoffEnvelope>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/handoffs`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  inspectClyDevHandoff(
+    handoffId: string,
+    input: {
+      deviceId: string;
+      destination: ClyDevResumeDestination;
+      offline?: boolean;
+    },
+  ) {
+    return request<ClyDevHandoffInspection>(
+      `/api/cly-dev/handoffs/${encodeURIComponent(handoffId)}/inspect`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  resumeClyDevHandoff(
+    handoffId: string,
+    input: {
+      deviceId: string;
+      destination: ClyDevResumeDestination;
+      offline?: boolean;
+    },
+  ) {
+    return request<ClyDevHandoffInspection>(
+      `/api/cly-dev/handoffs/${encodeURIComponent(handoffId)}/resume`,
+      { method: "POST", body: JSON.stringify(input) },
     );
   },
 };

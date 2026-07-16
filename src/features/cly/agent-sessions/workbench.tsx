@@ -60,6 +60,7 @@ import {
   toneForAgentStatus,
   workbenchLabel,
 } from "./utils";
+import { dispatchWorkspaceMutation } from "./window-sync";
 
 const tabIcons: Record<WorkbenchTabType, React.ReactNode> = {
   browser: <Globe2 size={13} />,
@@ -69,7 +70,13 @@ const tabIcons: Record<WorkbenchTabType, React.ReactNode> = {
   "live-files": <Files size={13} />,
 };
 
-export function AgentWorkbench({ session }: { session: AgentSession }) {
+export function AgentWorkbench({
+  session,
+  windowOwnership = "inline",
+}: {
+  session: AgentSession;
+  windowOwnership?: "inline" | "workspace";
+}) {
   const activate = useClyStore((state) => state.activateWorkbenchTab);
   const reorder = useClyStore((state) => state.reorderWorkbenchTab);
   const open = useClyStore((state) => state.openWorkbenchTab);
@@ -87,7 +94,7 @@ export function AgentWorkbench({ session }: { session: AgentSession }) {
       className="agent-workbench"
       aria-label="Session workbench"
       data-maximized={session.workbenchMaximized}
-      data-window-ownership="inline"
+      data-window-ownership={windowOwnership}
     >
       <div className="agent-workbench-tabs">
         <div
@@ -109,7 +116,14 @@ export function AgentWorkbench({ session }: { session: AgentSession }) {
                 aria-selected={tab.id === session.activeWorkbenchTabId}
                 tabIndex={tab.id === session.activeWorkbenchTabId ? 0 : -1}
                 className="agent-workbench-tab"
-                onClick={() => activate(session.id, tab.id)}
+                onClick={() => {
+                  activate(session.id, tab.id);
+                  void dispatchWorkspaceMutation(
+                    session.id,
+                    "activate_workbench_tab",
+                    { activeWorkbenchTabId: tab.id },
+                  );
+                }}
                 onKeyDown={(event) => {
                   if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
                     return;
@@ -121,6 +135,11 @@ export function AgentWorkbench({ session }: { session: AgentSession }) {
                   const next = session.workbenchTabs[nextIndex];
                   if (!next) return;
                   activate(session.id, next.id);
+                  void dispatchWorkspaceMutation(
+                    session.id,
+                    "activate_workbench_tab",
+                    { activeWorkbenchTabId: next.id },
+                  );
                   requestAnimationFrame(() =>
                     document
                       .getElementById(`workbench-tab-${session.id}-${next.id}`)
@@ -186,30 +205,34 @@ export function AgentWorkbench({ session }: { session: AgentSession }) {
             </div>
           ) : null}
         </div>
-        <Button
-          iconOnly
-          variant="ghost"
-          aria-label={
-            session.workbenchMaximized
-              ? "Restore workbench"
-              : "Maximize workbench"
-          }
-          onClick={() => toggleMaximized(session.id)}
-        >
-          {session.workbenchMaximized ? (
-            <Minimize2 size={13} />
-          ) : (
-            <Maximize2 size={13} />
-          )}
-        </Button>
-        <Button
-          iconOnly
-          variant="ghost"
-          aria-label="Collapse workbench"
-          onClick={() => toggleWorkbench(session.id)}
-        >
-          <PanelRightClose size={13} />
-        </Button>
+        {windowOwnership === "inline" ? (
+          <Button
+            iconOnly
+            variant="ghost"
+            aria-label={
+              session.workbenchMaximized
+                ? "Restore workbench"
+                : "Maximize workbench"
+            }
+            onClick={() => toggleMaximized(session.id)}
+          >
+            {session.workbenchMaximized ? (
+              <Minimize2 size={13} />
+            ) : (
+              <Maximize2 size={13} />
+            )}
+          </Button>
+        ) : null}
+        {windowOwnership === "inline" ? (
+          <Button
+            iconOnly
+            variant="ghost"
+            aria-label="Collapse workbench"
+            onClick={() => toggleWorkbench(session.id)}
+          >
+            <PanelRightClose size={13} />
+          </Button>
+        ) : null}
       </div>
       <div
         className="agent-workbench-content"
@@ -528,7 +551,12 @@ export function DiffTab({
             type="button"
             key={file.path}
             data-active={file.path === selected?.path}
-            onClick={() => patchState({ selectedPath: file.path })}
+            onClick={() => {
+              patchState({ selectedPath: file.path });
+              void dispatchWorkspaceMutation(session.id, "select_diff", {
+                selectedDiffId: file.path,
+              });
+            }}
           >
             <FileCode2 size={13} />
             <span>
@@ -972,7 +1000,12 @@ export function LiveFilesTab({
             type="button"
             key={edit.id}
             data-active={edit.id === selected?.id}
-            onClick={() => patchState({ selectedPath: edit.filePath })}
+            onClick={() => {
+              patchState({ selectedPath: edit.filePath });
+              void dispatchWorkspaceMutation(session.id, "select_file", {
+                selectedFileId: edit.filePath,
+              });
+            }}
           >
             <FileCode2 size={13} />
             <span>

@@ -9,6 +9,8 @@ import { createResearchRepository } from "./api/research/repository.js";
 import {
   closePersistedStateDatabase,
   getStateDatabase,
+  loadClyDevWindowLayout,
+  saveClyDevWindowLayout,
   savePersistedState,
 } from "./persisted-state.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
@@ -173,6 +175,28 @@ describe("persisted research storage", () => {
     "cly_dev_sync_cursors",
     "cly_dev_sync_audit",
   ];
+
+  it("persists detached-window layout independently of IDE snapshots", () => {
+    const databasePath = createDatabasePath();
+    expect(
+      saveClyDevWindowLayout(
+        {
+          version: 1,
+          workspace: {
+            detached: true,
+            displayId: 7,
+            maximized: false,
+            bounds: { x: 40, y: 60, width: 900, height: 700 },
+          },
+        },
+        { databasePath },
+      ),
+    ).toBe(true);
+    expect(loadClyDevWindowLayout({ databasePath })).toMatchObject({
+      version: 1,
+      workspace: { detached: true, displayId: 7 },
+    });
+  });
 
   it("installs every agent-context table and immutable trigger on a clean database", () => {
     const database = getStateDatabase(createDatabasePath());

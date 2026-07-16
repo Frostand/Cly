@@ -1,5 +1,5 @@
 import { spawn as spawnProcess } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { shell } from "electron";
 
@@ -309,10 +309,80 @@ function resolveKnownEditor(editorId) {
   return null;
 }
 
-export function openProjectInEditor({ editorId, projectPath }) {
+const hasUnsafePathCharacters = (value) =>
+  typeof value !== "string" ||
+  [...value].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+
+export function resolveEditorTarget({ projectPath, filePath, line, column }) {
+  if (
+    hasUnsafePathCharacters(projectPath) ||
+    !path.isAbsolute(projectPath) ||
+    (filePath !== undefined && hasUnsafePathCharacters(filePath))
+  ) {
+    return null;
+  }
+  let repositoryPath;
+  try {
+    repositoryPath = realpathSync(projectPath);
+  } catch {
+    return null;
+  }
+  if (!filePath)
+    return { repositoryPath, filePath: null, line: null, column: null };
+  const requestedPath = path.resolve(repositoryPath, filePath);
+  let resolvedFilePath;
+  try {
+    resolvedFilePath = realpathSync(requestedPath);
+  } catch {
+    return null;
+  }
+  const relative = path.relative(repositoryPath, resolvedFilePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  const normalizedLine = line === undefined ? 1 : line;
+  const normalizedColumn = column === undefined ? 1 : column;
+  if (
+    !Number.isInteger(normalizedLine) ||
+    normalizedLine <= 0 ||
+    !Number.isInteger(normalizedColumn) ||
+    normalizedColumn <= 0
+  ) {
+    return null;
+  }
+  return {
+    repositoryPath,
+    filePath: resolvedFilePath,
+    line: normalizedLine,
+    column: normalizedColumn,
+  };
+}
+
+export function buildEditorArguments(editorId, target, fallbackArgs) {
+  if (target.filePath && (editorId === "vscode" || editorId === "cursor")) {
+    return [
+      target.repositoryPath,
+      "--goto",
+      `${target.filePath}:${target.line}:${target.column}`,
+    ];
+  }
+  return fallbackArgs(target.repositoryPath);
+}
+
+export function openProjectInEditor({
+  editorId,
+  projectPath,
+  filePath,
+  line,
+  column,
+}) {
   if (!projectPath || typeof projectPath !== "string") {
     return false;
   }
+
+  const target = resolveEditorTarget({ projectPath, filePath, line, column });
+  if (!target) return false;
 
   const editor = resolveKnownEditor(editorId);
   if (!editor) {
@@ -320,14 +390,16 @@ export function openProjectInEditor({ editorId, projectPath }) {
       return false;
     }
 
-    shell.openPath(projectPath);
+    shell.openPath(target.repositoryPath);
     return true;
   }
 
   const editorDef = KNOWN_EDITORS.find((e) => e.id === editorId);
   const args = editorDef
-    ? editorDef.args(projectPath, editor.executable)
-    : [projectPath];
+    ? buildEditorArguments(editorId, target, (repositoryPath) =>
+        editorDef.args(repositoryPath, editor.executable),
+      )
+    : [target.repositoryPath];
 
   if (process.platform === "win32" && editor.isTerminal) {
     const launcher = WINDOWS_CMD_PATH ?? "cmd.exe";
@@ -340,7 +412,7 @@ export function openProjectInEditor({ editorId, projectPath }) {
         "start",
         "",
         "/D",
-        projectPath,
+        target.repositoryPath,
         editor.executable,
         ...args,
       ],

@@ -43,6 +43,7 @@ const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 const DRIZZLE_MIGRATIONS_FOLDER = path.join(__dirname, "drizzle");
 const INSTALL_ID_CONFIG_KEY = "installId";
 const THEME_PREFERENCES_CONFIG_KEY = "themePreferences";
+const CLY_DEV_WINDOW_LAYOUT_CONFIG_KEY = "clyDevWindowLayoutV1";
 const PERSISTED_STATE_CONFIG_KEYS = [
   "activeProjectId",
   "chatSort",
@@ -1431,6 +1432,27 @@ export function savePersistedThemePreference(
     database,
     THEME_PREFERENCES_CONFIG_KEY,
     preferences,
+    new Date().toISOString(),
+  );
+  return true;
+}
+
+export function loadClyDevWindowLayout({ databasePath } = {}) {
+  const database = getStateDatabase(databasePath);
+  const row = database
+    .prepare("SELECT value FROM config WHERE key = ? LIMIT 1")
+    .get(CLY_DEV_WINDOW_LAYOUT_CONFIG_KEY);
+  const layout = parseJson(row?.value, null);
+  return isRecord(layout) && layout.version === 1 ? layout : null;
+}
+
+export function saveClyDevWindowLayout(layout, { databasePath } = {}) {
+  if (!isRecord(layout) || layout.version !== 1) return false;
+  const database = getStateDatabase(databasePath);
+  writeConfig(
+    database,
+    CLY_DEV_WINDOW_LAYOUT_CONFIG_KEY,
+    layout,
     new Date().toISOString(),
   );
   return true;

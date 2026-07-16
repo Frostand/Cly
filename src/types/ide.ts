@@ -470,6 +470,49 @@ export interface BrowserUpdatePayload {
   webContentsId?: number;
 }
 
+export type ClyDevWindowRole = "agent" | "workspace";
+
+export interface WorkspaceIntent {
+  mutationId: string;
+  sessionId: string;
+  baseRevision: number;
+  type:
+    | "select_file"
+    | "select_diff"
+    | "resolve_approval"
+    | "set_workspace_mode"
+    | "activate_workbench_tab";
+  payload: Record<string, unknown>;
+}
+
+export interface WorkspaceSnapshot {
+  sessionId: string;
+  revision: number;
+  selectedFileId: string | null;
+  selectedDiffId: string | null;
+  pendingApprovalIds: string[];
+  workspaceMode: "inline" | "detached";
+  activeWorkbenchTabId: string | null;
+}
+
+export interface WorkspaceIntentResult {
+  accepted: boolean;
+  duplicate: boolean;
+  reason: "agent-window-required" | "invalid-intent" | "stale-revision" | null;
+  snapshot: WorkspaceSnapshot;
+}
+
+export interface ClyDevWindowLayoutV1 {
+  version: 1;
+  workspace: {
+    detached: boolean;
+    sessionId?: string | null;
+    displayId: number | string | null;
+    maximized: boolean;
+    bounds: { x: number; y: number; width: number; height: number };
+  };
+}
+
 export interface DesktopApi {
   isElectron: true;
   apiSessionToken?: string;
@@ -490,6 +533,20 @@ export interface DesktopApi {
   windowMinimize: () => Promise<void>;
   windowMaximize: () => Promise<void>;
   windowClose: () => Promise<void>;
+
+  getWindowRole: () => Promise<ClyDevWindowRole>;
+  getWindowSessionId: () => Promise<string | null>;
+  getWorkspaceSnapshot: (sessionId: string) => Promise<WorkspaceSnapshot>;
+  detachWorkspace: (input: { sessionId: string }) => Promise<void>;
+  reattachWorkspace: (input: { sessionId: string }) => Promise<void>;
+  focusAgentWindow: () => Promise<void>;
+  focusWorkspaceWindow: () => Promise<void>;
+  dispatchWorkspaceIntent: (
+    intent: WorkspaceIntent,
+  ) => Promise<WorkspaceIntentResult>;
+  onWorkspaceSnapshot: (
+    listener: (snapshot: WorkspaceSnapshot) => void,
+  ) => () => void;
 
   pickProjectDirectory: () => Promise<string | null>;
 
@@ -532,6 +589,9 @@ export interface DesktopApi {
   openInEditor: (payload: {
     projectPath: string;
     editorId: string;
+    filePath?: string;
+    line?: number;
+    column?: number;
   }) => Promise<boolean>;
 
   getUpdateStatus: () => Promise<UpdateStatusEvent>;

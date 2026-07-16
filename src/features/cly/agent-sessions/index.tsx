@@ -1,10 +1,11 @@
-import { Bot, RotateCw } from "lucide-react";
-import { useEffect } from "react";
-import { EmptyState, PageHeader } from "../components/primitives";
+import { Bot, Laptop, RotateCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Button, EmptyState, PageHeader } from "../components/primitives";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { DeviceSyncPanel } from "./device-sync-panel";
 import { productionAgentSessionServices } from "./production-services";
+import { ResumeTaskDialog } from "./resume-task-dialog";
 
 const DemoAgentSessionsScreen =
   __CLY_INCLUDE_DEMOS__ && isClyDemoRuntime
@@ -20,6 +21,7 @@ export function AgentSessionsScreen() {
 }
 
 function ProductionAgentSessionsScreen() {
+  const [resumeOpen, setResumeOpen] = useState(false);
   const projectId = useClyStore((state) => state.activeProjectId);
   const sessions = useClyStore((state) => state.clyDevSessions);
   const loading = useClyStore((state) => state.clyDevSessionsLoading);
@@ -45,7 +47,14 @@ function ProductionAgentSessionsScreen() {
         kicker="Workspace"
         title="Agent Sessions"
         description="Durable local sessions, ordered events, and explicit restart recovery."
-        actions={<DeviceSyncPanel projectId={projectId} />}
+        actions={
+          <>
+            <DeviceSyncPanel projectId={projectId} />
+            <Button onClick={() => setResumeOpen(true)}>
+              <Laptop size={13} aria-hidden="true" /> Resume on this machine
+            </Button>
+          </>
+        }
       />
       {loading && sessions.length === 0 ? (
         <EmptyState
@@ -92,6 +101,11 @@ function ProductionAgentSessionsScreen() {
           ))}
         </section>
       )}
+      <ResumeTaskDialog
+        open={resumeOpen}
+        onClose={() => setResumeOpen(false)}
+        onResumed={() => void load(projectId)}
+      />
     </div>
   );
 }

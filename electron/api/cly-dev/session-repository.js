@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { assertTransferableHandoffEnvelope } from "./handoff-schema.js";
 import {
   CLY_DEV_PAYLOAD_VERSION,
   CLY_DEV_SCHEMA_VERSION,
@@ -21,6 +22,7 @@ const parse = (value, fallback) => {
   }
 };
 const transaction = (db, operation) => {
+  if (db.isTransaction) return operation();
   db.exec("BEGIN IMMEDIATE");
   try {
     const result = operation();
@@ -182,17 +184,19 @@ const buildOutboundContext = (db, projectId, sessionId) => {
     sha256: createHash("sha256").update(bytes).digest("hex"),
   };
 };
-const buildOutboundEvent = ({ event, provenance, sequence, sessionId }) => {
+const buildOutboundEvent = ({ id, event, provenance, sequence, sessionId }) => {
   const envelope = {
     schemaVersion: CLY_DEV_SCHEMA_VERSION,
     kind: "cly.session_event",
     sessionId,
     sequence,
     event: {
+      id,
       schemaVersion: event.schemaVersion,
       payloadVersion: event.payloadVersion,
       idempotencyKey: event.idempotencyKey,
       type: event.type,
+      transferability: "transferable",
       occurredAt: event.occurredAt,
       actor: event.actor,
       payload: event.payload,
@@ -495,6 +499,199 @@ export function createClyDevSessionRepository({
         .all(projectId)
         .map(sessionFromRow);
     },
+    getHandoffSource(projectId, sessionId) {
+      const row = db
+        .prepare(
+          `SELECT sessions.*, tasks.id AS handoff_task_id, tasks.title AS handoff_task_title,
+                  tasks.objective AS handoff_task_objective,
+                  tasks.research_object_ids_json AS handoff_research_object_ids_json,
+                  workspaces.id AS handoff_workspace_id,
+                  workspaces.name AS handoff_workspace_name,
+                  workspaces.repository_json AS handoff_repository_json,
+                  workspaces.worktree_json AS handoff_worktree_json,
+                  workspaces.machine_json AS handoff_machine_json,
+                  workspaces.local_only_json AS handoff_local_only_json,
+                  workspaces.created_at AS handoff_workspace_created_at,
+                  workspaces.updated_at AS handoff_workspace_updated_at
+           FROM cly_dev_sessions sessions
+           JOIN cly_dev_tasks tasks
+             ON tasks.id = sessions.task_id AND tasks.project_id = sessions.project_id
+           JOIN cly_dev_workspaces workspaces
+             ON workspaces.id = tasks.workspace_id AND workspaces.project_id = tasks.project_id
+           WHERE sessions.id = ? AND sessions.project_id = ?`,
+        )
+        .get(sessionId, projectId);
+      if (!row)
+        throw new Error("Cly Dev session was not found in this project.");
+      const events = [];
+      let afterSequence = 0;
+      while (true) {
+        const page = repository.listEvents(
+          projectId,
+          sessionId,
+          afterSequence,
+          500,
+        );
+        events.push(...page);
+        if (page.length < 500) break;
+        afterSequence = page.at(-1).sequence;
+      }
+      return {
+        workspace: {
+          id: row.handoff_workspace_id,
+          projectId,
+          schemaVersion: CLY_DEV_SCHEMA_VERSION,
+          name: row.handoff_workspace_name,
+          repository: parse(row.handoff_repository_json, {}),
+          worktree: parse(row.handoff_worktree_json, {}),
+          machine: parse(row.handoff_machine_json, {}),
+          localOnly: parse(row.handoff_local_only_json, {}),
+          createdAt: row.handoff_workspace_created_at,
+          updatedAt: row.handoff_workspace_updated_at,
+        },
+        task: {
+          id: row.handoff_task_id,
+          title: row.handoff_task_title,
+          objective: row.handoff_task_objective,
+          researchObjectIds: parse(row.handoff_research_object_ids_json, []),
+        },
+        session: sessionFromRow(row),
+        context: repository.getOutboundContext(projectId, sessionId),
+        events,
+      };
+    },
+    importHandoff(projectId, rawEnvelope, destination) {
+      const envelope = assertTransferableHandoffEnvelope(rawEnvelope);
+      if (envelope.projectId !== projectId) {
+        throw new Error("The handoff belongs to a different project.");
+      }
+      const machine = destination?.machine;
+      const repositoryPath = destination?.repositoryPath;
+      const worktreePath = destination?.worktreePath;
+      if (!machine || !repositoryPath || !worktreePath) {
+        throw new Error(
+          "Destination machine, repository path, and worktree path are required.",
+        );
+      }
+      return transaction(db, () => {
+        let existing = db
+          .prepare(
+            "SELECT * FROM cly_dev_sessions WHERE id = ? AND project_id = ?",
+          )
+          .get(envelope.sessionId, projectId);
+        if (!existing) {
+          const workspace = insertWorkspace(
+            projectId,
+            clyDevWorkspaceInputSchema.parse({
+              schemaVersion: CLY_DEV_SCHEMA_VERSION,
+              idempotencyKey: `${envelope.handoffId}:workspace:${machine.id}`,
+              id: `${envelope.sessionId}:workspace:${machine.id}`,
+              name: destination.name ?? envelope.task.title,
+              repository: envelope.repository,
+              worktree: envelope.worktree,
+              machine,
+              localOnly: { repositoryPath, worktreePath },
+            }),
+          );
+          const manifest = envelope.context.manifest;
+          const contextManifest = insertContextManifest(
+            projectId,
+            workspace.id,
+            clyDevContextManifestInputSchema.parse({
+              schemaVersion: CLY_DEV_SCHEMA_VERSION,
+              idempotencyKey: `${envelope.handoffId}:context`,
+              id: manifest.id,
+              localOnly: {
+                absolutePaths: [],
+                environmentVariableNames: [],
+                notes: [],
+                uncommittedFilePaths: [],
+              },
+              transferable: {
+                summary: manifest.summary,
+                entries: manifest.entries,
+              },
+            }),
+          );
+          const task = insertTask(
+            projectId,
+            workspace.id,
+            clyDevTaskInputSchema.parse({
+              schemaVersion: CLY_DEV_SCHEMA_VERSION,
+              idempotencyKey: `${envelope.handoffId}:task`,
+              id: envelope.task.id,
+              title: envelope.task.title,
+              objective: envelope.task.objective,
+              researchObjectIds: envelope.task.researchObjectIds,
+            }),
+          );
+          insertSession(
+            projectId,
+            task.id,
+            clyDevSessionInputSchema.parse({
+              schemaVersion: CLY_DEV_SCHEMA_VERSION,
+              idempotencyKey: `${envelope.handoffId}:session`,
+              id: envelope.session.id,
+              title: envelope.session.title,
+              contextManifestId: contextManifest.id,
+              provider: envelope.session.provider,
+              commit: envelope.commit,
+              state: "resumable",
+            }),
+          );
+          existing = findSession(db, projectId, envelope.sessionId);
+        }
+
+        const projection = db
+          .prepare(
+            "SELECT * FROM cly_dev_session_projections WHERE session_id = ? AND project_id = ?",
+          )
+          .get(envelope.sessionId, projectId);
+        const currentProjection = parse(projection.snapshot_json, {});
+        const importedRevision = Number(currentProjection.handoffRevision ?? 0);
+        if (importedRevision > envelope.revision) {
+          throw new Error(
+            "A newer handoff revision is already present on this machine.",
+          );
+        }
+        for (const event of envelope.events.toSorted(
+          (left, right) => left.sequence - right.sequence,
+        )) {
+          repository.appendEvent(projectId, envelope.sessionId, {
+            id: event.id,
+            schemaVersion: event.schemaVersion,
+            payloadVersion: event.payloadVersion,
+            idempotencyKey: event.idempotencyKey,
+            type: event.type,
+            transferability: event.transferability,
+            occurredAt: event.occurredAt,
+            actor: event.actor,
+            payload: event.payload,
+          });
+        }
+        const updatedProjection = db
+          .prepare(
+            "SELECT snapshot_json FROM cly_dev_session_projections WHERE session_id = ? AND project_id = ?",
+          )
+          .get(envelope.sessionId, projectId);
+        db.prepare(
+          `UPDATE cly_dev_session_projections
+           SET snapshot_json = ?, updated_at = ?
+           WHERE session_id = ? AND project_id = ?`,
+        ).run(
+          json({
+            ...parse(updatedProjection.snapshot_json, {}),
+            handoffId: envelope.handoffId,
+            handoffRevision: envelope.revision,
+            sourceMachine: envelope.sourceMachine,
+          }),
+          now(),
+          envelope.sessionId,
+          projectId,
+        );
+        return repository.getSnapshot(projectId, existing.id);
+      });
+    },
     listSessionOverviews(projectId, offset = 0, limit = 50) {
       const boundedOffset = Math.max(0, Number(offset) || 0);
       const boundedLimit = Math.max(1, Math.min(100, Number(limit) || 50));
@@ -566,12 +763,18 @@ export function createClyDevSessionRepository({
         };
         const sequence = projection.last_sequence + 1;
         const recordedAt = now();
-        const id = randomUUID();
+        const id = event.id ?? randomUUID();
         const outbound =
           event.transferability === "transferable"
             ? event.type === "context.manifest.recorded"
               ? buildOutboundContext(db, projectId, sessionId)
-              : buildOutboundEvent({ event, provenance, sequence, sessionId })
+              : buildOutboundEvent({
+                  id,
+                  event,
+                  provenance,
+                  sequence,
+                  sessionId,
+                })
             : null;
         db.prepare(
           `INSERT INTO cly_dev_session_events
