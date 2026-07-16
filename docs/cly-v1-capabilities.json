@@ -230,14 +230,24 @@
     "reason": null
   },
   {
+    "id": "agents.sessions-durable",
+    "route": "agent-sessions",
+    "action": "Persist and inspect durable agent session state",
+    "state": "production",
+    "service": "productionAgentSessionServices",
+    "api": "GET /api/projects/:projectId/cly-dev/sessions; POST /api/projects/:projectId/cly-dev/session-aggregates",
+    "test": "src/features/cly/agent-sessions/production-services.test.ts",
+    "reason": null
+  },
+  {
     "id": "agents.execute",
     "route": "agent-sessions",
     "action": "Start, pause, stop, or approve an agent session",
-    "state": "read-only-preview",
+    "state": "unavailable",
     "service": null,
     "api": null,
     "test": null,
-    "reason": "Agent Sessions is a read-only preview until a durable runtime and explicit approval service are connected."
+    "reason": "Process start, pause, stop, resume, and approval-gated tool execution remain unavailable until the CLY-76 runtime is connected."
   },
   {
     "id": "agents.workbench",

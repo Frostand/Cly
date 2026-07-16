@@ -7,6 +7,16 @@ import type {
   AgentConfiguration,
   AgentConfigurationEstimate,
   AgentConfigurationInput,
+  ClyDevContextManifest,
+  ClyDevEventInput,
+  ClyDevOutboundContext,
+  ClyDevSessionEvent,
+  ClyDevSessionOverviewPage,
+  ClyDevSessionRecord,
+  ClyDevSessionSnapshot,
+  ClyDevSessionState,
+  ClyDevTask,
+  ClyDevWorkspace,
 } from "../agent-sessions/types";
 import type { LiteraturePaper } from "../domain/literature-search";
 import type {
@@ -697,6 +707,206 @@ export const apiClient = {
     return request<{ removed: boolean }>(
       `/api/projects/${encodeURIComponent(projectId)}/literature/reading-lists/${encodeURIComponent(listId)}/sources/${encodeURIComponent(sourceId)}`,
       { method: "DELETE" },
+    );
+  },
+
+  fetchClyDevWorkspaces(projectId: string) {
+    return request<ClyDevWorkspace[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces`,
+    );
+  },
+
+  createClyDevWorkspace(
+    projectId: string,
+    input: {
+      schemaVersion: 1;
+      idempotencyKey: string;
+      id?: string;
+      name: string;
+      repository: { id: string; remoteUrl?: string };
+      worktree: { id: string; branch: string; baseRef?: string };
+      machine: {
+        id: string;
+        platform: "darwin" | "linux" | "win32";
+        architecture?: string;
+      };
+      localOnly: { repositoryPath: string; worktreePath: string };
+    },
+  ) {
+    return request<ClyDevWorkspace>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  createClyDevContextManifest(
+    projectId: string,
+    workspaceId: string,
+    input: {
+      schemaVersion: 1;
+      idempotencyKey: string;
+      id?: string;
+      localOnly: {
+        absolutePaths?: string[];
+        environmentVariableNames?: string[];
+        notes?: string[];
+        uncommittedFilePaths?: string[];
+      };
+      transferable: {
+        summary: string;
+        entries: Array<Record<string, string>>;
+      };
+    },
+  ) {
+    return request<ClyDevContextManifest>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces/${encodeURIComponent(workspaceId)}/context-manifests`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  fetchClyDevTasks(projectId: string, workspaceId: string) {
+    return request<ClyDevTask[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces/${encodeURIComponent(workspaceId)}/tasks`,
+    );
+  },
+
+  createClyDevTask(
+    projectId: string,
+    workspaceId: string,
+    input: {
+      schemaVersion: 1;
+      idempotencyKey: string;
+      id?: string;
+      title: string;
+      objective: string;
+      researchObjectIds?: string[];
+    },
+  ) {
+    return request<ClyDevTask>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces/${encodeURIComponent(workspaceId)}/tasks`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  fetchClyDevSessionOverviews(projectId: string, offset = 0, limit = 50) {
+    return request<ClyDevSessionOverviewPage>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions?offset=${offset}&limit=${limit}`,
+    );
+  },
+
+  createClyDevSession(
+    projectId: string,
+    taskId: string,
+    input: {
+      schemaVersion: 1;
+      idempotencyKey: string;
+      id?: string;
+      title: string;
+      contextManifestId: string;
+      provider: { id: string; model: string };
+      commit: { sha: string };
+      state?: ClyDevSessionState;
+    },
+  ) {
+    return request<ClyDevSessionRecord>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/tasks/${encodeURIComponent(taskId)}/sessions`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  createClyDevSessionAggregate(
+    projectId: string,
+    input: {
+      workspace: {
+        schemaVersion: 1;
+        idempotencyKey: string;
+        id?: string;
+        name: string;
+        repository: { id: string; remoteUrl?: string };
+        worktree: { id: string; branch: string; baseRef?: string };
+        machine: {
+          id: string;
+          platform: "darwin" | "linux" | "win32";
+          architecture?: string;
+        };
+        localOnly: { repositoryPath: string; worktreePath: string };
+      };
+      contextManifest: {
+        schemaVersion: 1;
+        idempotencyKey: string;
+        id?: string;
+        localOnly: {
+          absolutePaths?: string[];
+          environmentVariableNames?: string[];
+          notes?: string[];
+          uncommittedFilePaths?: string[];
+        };
+        transferable: {
+          summary: string;
+          entries: Array<Record<string, string>>;
+        };
+      };
+      task: {
+        schemaVersion: 1;
+        idempotencyKey: string;
+        id?: string;
+        title: string;
+        objective: string;
+        researchObjectIds?: string[];
+      };
+      session: {
+        schemaVersion: 1;
+        idempotencyKey: string;
+        id?: string;
+        title: string;
+        provider: { id: string; model: string };
+        commit: { sha: string };
+        state?: ClyDevSessionState;
+      };
+    },
+  ) {
+    return request<{
+      workspace: ClyDevWorkspace;
+      contextManifest: ClyDevContextManifest;
+      task: ClyDevTask;
+      session: ClyDevSessionRecord;
+    }>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/session-aggregates`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  fetchClyDevSessionSnapshot(projectId: string, sessionId: string) {
+    return request<ClyDevSessionSnapshot>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}`,
+    );
+  },
+
+  fetchClyDevOutboundContext(projectId: string, sessionId: string) {
+    return request<ClyDevOutboundContext>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/context-envelope`,
+    );
+  },
+
+  fetchClyDevSessionEvents(
+    projectId: string,
+    sessionId: string,
+    afterSequence = 0,
+    limit = 100,
+  ) {
+    return request<ClyDevSessionEvent[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/events?afterSequence=${afterSequence}&limit=${limit}`,
+    );
+  },
+
+  appendClyDevSessionEvent(
+    projectId: string,
+    sessionId: string,
+    event: ClyDevEventInput,
+  ) {
+    return request<ClyDevSessionEvent>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/events`,
+      { method: "POST", body: JSON.stringify(event) },
     );
   },
 };
