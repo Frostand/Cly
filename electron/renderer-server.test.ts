@@ -45,6 +45,12 @@ describe("production renderer proxy authority boundary", () => {
       host: "127.0.0.1",
     });
     const rendererUrl = `http://127.0.0.1:${internalRendererPort}`;
+    const clyDevHandoffOptions = { marker: "production-options" };
+    const getDatabase = vi.fn(() => {
+      throw new Error("threaded production dependency");
+    });
+    const handoffDependencies = { getDatabase };
+    const createClyDevHandoffDependencies = vi.fn(() => handoffDependencies);
     manager = createRendererServerManager({
       apiServerPort,
       appDir,
@@ -54,9 +60,15 @@ describe("production renderer proxy authority boundary", () => {
       rendererProbeIntervalMs: 10,
       rendererStartupTimeoutMs: 1_000,
       rendererUrlFromEnv: undefined,
-      createClyDevHandoffDependencies: () => ({}),
+      createClyDevHandoffDependencies,
+      clyDevHandoffOptions,
     });
     await manager.start();
+
+    expect(createClyDevHandoffDependencies).toHaveBeenCalledOnce();
+    expect(createClyDevHandoffDependencies).toHaveBeenCalledWith(
+      clyDevHandoffOptions,
+    );
 
     const staticResponse = await fetch(rendererUrl);
     expect(staticResponse.status).toBe(200);
@@ -77,6 +89,20 @@ describe("production renderer proxy authority boundary", () => {
       },
     });
     expect(authorizedResponse.status).toBe(404);
+
+    const threadedHandoffResponse = await fetch(
+      `${rendererUrl}/api/projects/project-1/cly-dev/handoffs/export`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [API_SESSION_TOKEN_HEADER]: manager.getApiSessionToken(),
+        },
+        body: JSON.stringify({ sessionId: "session-1" }),
+      },
+    );
+    expect(threadedHandoffResponse.status).toBe(409);
+    expect(getDatabase).toHaveBeenCalledOnce();
   });
 
   it("does not configure the development proxy with backend authority", async () => {

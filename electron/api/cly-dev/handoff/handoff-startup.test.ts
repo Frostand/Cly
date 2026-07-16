@@ -29,6 +29,171 @@ afterEach(async () => {
 });
 
 describe("production Cly Dev handoff startup", () => {
+  it.each([
+    [
+      "missing capability",
+      {
+        streaming: true,
+        reasoning: true,
+        toolCalls: true,
+      },
+      [{ id: "test-model" }],
+    ],
+    [
+      "non-boolean capability",
+      {
+        streaming: true,
+        reasoning: true,
+        toolCalls: "yes",
+        interceptBeforeEffect: true,
+      },
+      [{ id: "test-model" }],
+    ],
+    [
+      "unknown capability",
+      {
+        streaming: true,
+        reasoning: true,
+        toolCalls: true,
+        interceptBeforeEffect: true,
+        futureCapability: true,
+      },
+      [{ id: "test-model" }],
+    ],
+    [
+      "malformed model identifier",
+      {
+        streaming: true,
+        reasoning: true,
+        toolCalls: true,
+        interceptBeforeEffect: true,
+      },
+      [{ id: "test-model" }, { id: " invalid-model " }],
+    ],
+  ])("rejects authenticated provider discovery with %s", async (_, capabilities, models) => {
+    const directory = mkdtempSync(path.join(tmpdir(), "cly-handoff-provider-"));
+    directories.push(directory);
+    const db = getStateDatabase(path.join(directory, "state.sqlite"));
+    const dependencies = createProductionClyDevHandoffDependencies({
+      db,
+      runner: {
+        getAuthentication: () => ({ status: "authenticated" }),
+        listModels: () => models,
+        getCapabilities: () => capabilities,
+      },
+    });
+
+    await expect(dependencies.getProviderCapabilities({})).rejects.toThrow(
+      /capabilit|model/i,
+    );
+  });
+
+  it("never publishes existing durable approvals as pre-materialization authority", () => {
+    const directory = mkdtempSync(
+      path.join(tmpdir(), "cly-handoff-approvals-"),
+    );
+    directories.push(directory);
+    const db = getStateDatabase(path.join(directory, "state.sqlite"));
+    const insertProject = db.prepare(
+      `INSERT INTO projects
+       (id, path, normalized_path, name, status, sort_order, metadata, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'open', 0, ?, '2026-07-16', '2026-07-16')`,
+    );
+    for (const projectId of ["project-1", "project-2"]) {
+      insertProject.run(
+        projectId,
+        `/tmp/${projectId}`,
+        `/tmp/${projectId}`,
+        projectId,
+        JSON.stringify({ clyDevPolicy: { default: "deny" } }),
+      );
+    }
+    const sessions = createClyDevSessionRepository({ db });
+    const createSession = (projectId: string, suffix: string) =>
+      sessions.createSessionAggregate(projectId, {
+        workspace: {
+          schemaVersion: 1,
+          idempotencyKey: `workspace-${suffix}`,
+          name: `Workspace ${suffix}`,
+          repository: { id: `repo-${suffix}` },
+          worktree: { id: `tree-${suffix}`, branch: "main" },
+          machine: { id: `machine-${suffix}`, platform: "darwin" },
+          localOnly: {
+            repositoryPath: `/tmp/repo-${suffix}`,
+            worktreePath: `/tmp/tree-${suffix}`,
+          },
+        },
+        contextManifest: {
+          schemaVersion: 1,
+          idempotencyKey: `context-${suffix}`,
+          localOnly: {},
+          transferable: { summary: "Approval fixture", entries: [] },
+        },
+        task: {
+          schemaVersion: 1,
+          idempotencyKey: `task-${suffix}`,
+          title: `Task ${suffix}`,
+          objective: "Require fresh approval",
+          researchObjectIds: [],
+        },
+        session: {
+          schemaVersion: 1,
+          idempotencyKey: `session-${suffix}`,
+          title: `Session ${suffix}`,
+          provider: { id: "openai-codex", model: "test-model" },
+          commit: { sha: "a".repeat(40) },
+          state: "resumable",
+        },
+      }).session;
+    const currentSession = createSession("project-1", "current");
+    const otherSession = createSession("project-1", "other-session");
+    const otherProjectSession = createSession("project-2", "other-project");
+    const insertApproval = db.prepare(
+      `INSERT INTO cly_dev_approvals
+       (id, project_id, session_id, schema_version, payload_version, state,
+        request_sequence, resolution_sequence, payload_json, requested_at, resolved_at)
+       VALUES (?, ?, ?, 1, 1, 'approved', 1, 2, ?, '2020-01-01', '2020-01-01')`,
+    );
+    for (const [id, projectId, sessionId] of [
+      ["expired-current-session", "project-1", currentSession.id],
+      ["approved-other-session", "project-1", otherSession.id],
+      ["approved-other-project", "project-2", otherProjectSession.id],
+    ]) {
+      insertApproval.run(
+        id,
+        projectId,
+        sessionId,
+        JSON.stringify({
+          approvalId: id,
+          requestedAction: "writeFile",
+          detail: JSON.stringify({ expiresAt: "2020-01-01T00:00:00.000Z" }),
+        }),
+      );
+    }
+    const dependencies = createProductionClyDevHandoffDependencies({
+      db,
+      runner: {
+        getAuthentication: () => ({ status: "authenticated" }),
+        listModels: () => [{ id: "test-model" }],
+        getCapabilities: () => ({
+          streaming: true,
+          reasoning: true,
+          toolCalls: true,
+          interceptBeforeEffect: true,
+        }),
+      },
+    });
+
+    expect(dependencies.inspectApprovals({ projectId: "project-1" })).toEqual({
+      compatible: true,
+      currentApprovalIds: [],
+    });
+    expect(dependencies.inspectApprovals({ projectId: "project-2" })).toEqual({
+      compatible: true,
+      currentApprovalIds: [],
+    });
+  });
+
   it("fails closed when live project and provider inspectors lack authority", async () => {
     const directory = mkdtempSync(path.join(tmpdir(), "cly-handoff-closed-"));
     directories.push(directory);
@@ -121,6 +286,15 @@ describe("production Cly Dev handoff startup", () => {
       "2026-07-16T12:00:00.000Z",
       "2026-07-16T12:00:00.000Z",
     );
+    db.prepare(
+      `INSERT INTO research_objects
+       (id, project_id, type, title, description, payload, origin, review_state,
+        created_at, updated_at)
+       VALUES ('research-1', 'project-1', 'claim', 'Production evidence',
+               'Exercises live research inspection', '{"status":"supported"}',
+               'human', 'reviewed', '2026-07-16T12:00:00.000Z',
+               '2026-07-16T12:30:00.000Z')`,
+    ).run();
     const sessions = createClyDevSessionRepository({ db });
     const aggregate = sessions.createSessionAggregate("project-1", {
       workspace: {
@@ -149,6 +323,7 @@ describe("production Cly Dev handoff startup", () => {
               commitSha,
               objectHash,
             },
+            { kind: "research_object", researchObjectId: "research-1" },
           ],
         },
       },
@@ -157,7 +332,7 @@ describe("production Cly Dev handoff startup", () => {
         idempotencyKey: "startup-task",
         title: "Resume from startup",
         objective: "Prove production handoff composition",
-        researchObjectIds: [],
+        researchObjectIds: ["research-1"],
       },
       session: {
         schemaVersion: 1,
@@ -206,6 +381,13 @@ describe("production Cly Dev handoff startup", () => {
     });
     expect(exportedResponse.status).toBe(200);
     const envelope = await exportedResponse.json();
+    expect(envelope.payload.research.objects).toEqual([
+      expect.objectContaining({
+        id: "research-1",
+        version: "2026-07-16T12:30:00.000Z",
+        contentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    ]);
 
     const inspectionResponse = await request(`${base}/inspect`, { envelope });
     expect(inspectionResponse.status).toBe(200);
@@ -220,6 +402,9 @@ describe("production Cly Dev handoff startup", () => {
         duplicate: false,
         materialized: expect.objectContaining({
           actionableState: expect.any(Object),
+          task: expect.objectContaining({
+            researchObjectIds: ["research-1"],
+          }),
         }),
       }),
     );

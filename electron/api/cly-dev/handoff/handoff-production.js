@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { getStateDatabase } from "../../../persisted-state.js";
 import { runGitCommand } from "../../project-git/core.js";
 import { createSignedInCodexRunner } from "../runtime/codex-runner.js";
+import {
+  CLY_DEV_PROVIDER_CAPABILITY_FIELDS,
+  hasCanonicalProviderCapabilities,
+} from "../runtime/provider-contract.js";
 import { createClyDevSessionRepository } from "../session-repository.js";
 import { canonicalJson } from "./canonical-json.js";
 
@@ -81,12 +85,28 @@ const researchObject = (row) => {
 };
 
 const capabilityNames = (capabilities) =>
-  Object.entries(capabilities ?? {})
-    .filter(([, enabled]) => enabled === true)
-    .map(([name]) =>
+  CLY_DEV_PROVIDER_CAPABILITY_FIELDS.filter(
+    (name) => capabilities[name] === true,
+  )
+    .map((name) =>
       name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`),
     )
     .sort();
+
+const validModelIdentifier = (value) => {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > 500 ||
+    /\s/u.test(value)
+  ) {
+    return false;
+  }
+  return !Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint <= 31 || codePoint === 127;
+  });
+};
 
 export function createProductionClyDevHandoffDependencies({
   db = getStateDatabase(),
@@ -163,12 +183,26 @@ export function createProductionClyDevHandoffDependencies({
       throw new Error("The production Codex provider is not authenticated.");
     }
     const models = await productionRunner.listModels();
-    if (!Array.isArray(models) || !models.some((model) => model?.id)) {
-      throw new Error("No production Codex model is available.");
+    if (
+      !Array.isArray(models) ||
+      models.length === 0 ||
+      models.some(
+        (model) =>
+          !model ||
+          typeof model !== "object" ||
+          Array.isArray(model) ||
+          !validModelIdentifier(model.id),
+      )
+    ) {
+      throw new Error("Production Codex model discovery is malformed.");
     }
-    const capabilities = capabilityNames(
-      await productionRunner.getCapabilities(),
-    );
+    const discoveredCapabilities = await productionRunner.getCapabilities();
+    if (!hasCanonicalProviderCapabilities(discoveredCapabilities)) {
+      throw new Error(
+        "Production Codex capability discovery is incomplete or unknown.",
+      );
+    }
+    const capabilities = capabilityNames(discoveredCapabilities);
     return { capabilities, models: models.filter((model) => model?.id) };
   };
 
@@ -208,18 +242,15 @@ export function createProductionClyDevHandoffDependencies({
     }),
     inspectApprovals: ({ projectId }) => {
       loadPermissionScope(db, projectId);
-      const currentApprovalIds = db
-        .prepare(
-          `SELECT id FROM cly_dev_approvals
-           WHERE project_id = ? AND state = 'approved' ORDER BY id`,
-        )
-        .all(projectId)
-        .map((row) => row.id);
+      db.prepare(
+        `SELECT 1 FROM cly_dev_approvals
+           WHERE project_id = ? LIMIT 1`,
+      ).get(projectId);
       return {
-        // Historical approval ids are evidence only; resumed effects still pass
-        // through the target project's durable production approval gate.
+        // There is no imported session/action/context scope to validate yet.
+        // Every resumed effect must obtain fresh durable target authority.
         compatible: true,
-        currentApprovalIds,
+        currentApprovalIds: [],
       };
     },
     resolveTargetWorkspace: ({ projectId, repository }) =>

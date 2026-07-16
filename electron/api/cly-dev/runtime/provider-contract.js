@@ -18,6 +18,31 @@ const REQUIRED_METHODS = [
   "normalizeError",
 ];
 
+export const CLY_DEV_PROVIDER_CAPABILITY_FIELDS = Object.freeze([
+  "streaming",
+  "reasoning",
+  "toolCalls",
+  "interceptBeforeEffect",
+]);
+
+const providerCapabilityFieldSet = new Set(CLY_DEV_PROVIDER_CAPABILITY_FIELDS);
+
+export const hasCanonicalProviderCapabilities = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const keys = Reflect.ownKeys(value);
+  return (
+    keys.length === CLY_DEV_PROVIDER_CAPABILITY_FIELDS.length &&
+    keys.every(
+      (key) => typeof key === "string" && providerCapabilityFieldSet.has(key),
+    ) &&
+    CLY_DEV_PROVIDER_CAPABILITY_FIELDS.every(
+      (field) => typeof value[field] === "boolean",
+    )
+  );
+};
+
 export class ProviderContractError extends Error {
   constructor(code, message, options = {}) {
     super(message, options);

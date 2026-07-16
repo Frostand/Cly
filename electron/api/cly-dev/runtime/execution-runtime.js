@@ -1,16 +1,10 @@
 import { createHash } from "node:crypto";
 import { normalizeDurableOutboundContext } from "./outbound-context.js";
+import { hasCanonicalProviderCapabilities } from "./provider-contract.js";
 
 export { deriveTransferableContextSummary } from "./outbound-context.js";
 
 const VERSION = 1;
-const CAPABILITY_FIELDS = [
-  "streaming",
-  "reasoning",
-  "toolCalls",
-  "interceptBeforeEffect",
-];
-
 class RuntimeError extends Error {
   constructor(code, message, retryable = false, cause) {
     super(message, { cause });
@@ -72,11 +66,7 @@ const validateRequestVersion = (request) => {
 };
 
 const validateCapabilities = (capabilities) => {
-  if (
-    !capabilities ||
-    typeof capabilities !== "object" ||
-    CAPABILITY_FIELDS.some((field) => typeof capabilities[field] !== "boolean")
-  ) {
+  if (!hasCanonicalProviderCapabilities(capabilities)) {
     throw new RuntimeError(
       "INVALID_PROVIDER_CAPABILITIES",
       "Provider capability discovery returned an incomplete or unknown result.",
