@@ -658,17 +658,30 @@ export function createClyDevSessionRepository({
         for (const event of envelope.events.toSorted(
           (left, right) => left.sequence - right.sequence,
         )) {
-          repository.appendEvent(projectId, envelope.sessionId, {
-            id: event.id,
-            schemaVersion: event.schemaVersion,
-            payloadVersion: event.payloadVersion,
-            idempotencyKey: event.idempotencyKey,
-            type: event.type,
-            transferability: event.transferability,
-            occurredAt: event.occurredAt,
-            actor: event.actor,
-            payload: event.payload,
-          });
+          repository.appendEvent(
+            projectId,
+            envelope.sessionId,
+            {
+              id: event.id,
+              schemaVersion: event.schemaVersion,
+              payloadVersion: event.payloadVersion,
+              idempotencyKey: event.idempotencyKey,
+              type: event.type,
+              transferability: event.transferability,
+              occurredAt: event.occurredAt,
+              actor: event.actor,
+              payload: event.payload,
+            },
+            event.type === "context.manifest.recorded"
+              ? {
+                  outboundContext: buildOutboundContext(
+                    db,
+                    projectId,
+                    envelope.sessionId,
+                  ).envelope,
+                }
+              : undefined,
+          );
         }
         const updatedProjection = db
           .prepare(
@@ -773,12 +786,9 @@ export function createClyDevSessionRepository({
                 manifestId: sessionRow.context_manifest_id,
               });
             } else {
-              const built = buildOutboundContext(db, projectId, sessionId);
-              outbound = {
-                envelope: built.envelope,
-                bytes: built.bytes,
-                sha256: built.sha256,
-              };
+              throw new Error(
+                "A normalized outbound context is required for a context manifest event.",
+              );
             }
           } else {
             outbound = buildOutboundEvent({
@@ -897,6 +907,16 @@ export function createClyDevSessionRepository({
         )
         .all(projectId, sessionId, afterSequence, boundedLimit)
         .map(eventFromRow);
+    },
+    findEventByIdempotencyKey(projectId, sessionId, idempotencyKey) {
+      findSession(db, projectId, sessionId);
+      const row = db
+        .prepare(
+          `SELECT * FROM cly_dev_session_events
+           WHERE project_id = ? AND session_id = ? AND idempotency_key = ?`,
+        )
+        .get(projectId, sessionId, idempotencyKey);
+      return row ? eventFromRow(row) : null;
     },
     getSnapshot(projectId, sessionId) {
       const session = sessionFromRow(findSession(db, projectId, sessionId));

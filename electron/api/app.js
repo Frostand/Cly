@@ -17,6 +17,7 @@ import { registerChatRoutes } from "./chat-routes.js";
 import { registerClyDevHandoffRoutes } from "./cly-dev/handoff/handoff-routes.js";
 import { registerClyDevSessionRoutes } from "./cly-dev/session-routes.js";
 import { registerClyDevSyncRoutes } from "./cly-dev/sync-routes.js";
+import { registerClyDevWorkbenchRoutes } from "./cly-dev/workbench-routes.js";
 import { registerPrImpactReviewRoutes } from "./github/routes.js";
 import { registerLiteratureRoutes } from "./literature/routes.js";
 import { registerProjectGitRoutes } from "./project-git-routes.js";
@@ -48,6 +49,7 @@ export function createApiApp(
     maxConcurrentRequests = DEFAULT_MAX_CONCURRENT_REQUESTS,
     clyDev,
     clyDevHandoff,
+    clyDevWorkbench,
     registerAdditionalRoutes,
   } = {},
 ) {
@@ -105,6 +107,7 @@ export function createApiApp(
   registerClyDevSessionRoutes(guardedApp, clyDev);
   registerClyDevSyncRoutes(guardedApp);
   registerClyDevHandoffRoutes(guardedApp, clyDevHandoff);
+  registerClyDevWorkbenchRoutes(guardedApp, clyDevWorkbench);
   registerProviderRoutes(guardedApp);
   registerChatRoutes(guardedApp);
   registerLiteratureRoutes(guardedApp);

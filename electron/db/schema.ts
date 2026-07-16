@@ -1550,6 +1550,11 @@ export const clyDevDeviceKeys = sqliteTable(
 
 export const clyDevHandoffs = sqliteTable(
   "cly_dev_handoffs",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
     direction: text("direction").notNull(),
     protocol: text("protocol").notNull(),
     schemaVersion: integer("schema_version").notNull(),
