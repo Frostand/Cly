@@ -1434,6 +1434,80 @@ export const clyDevApprovals = sqliteTable(
   ],
 );
 
+export const clyDevHandoffs = sqliteTable(
+  "cly_dev_handoffs",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    direction: text("direction").notNull(),
+    protocol: text("protocol").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    minimumReaderVersion: integer("minimum_reader_version").notNull(),
+    canonicalPayloadJson: text("canonical_payload_json").notNull(),
+    integrityDigest: text("integrity_digest").notNull(),
+    repositoryFingerprintJson: text("repository_fingerprint_json").notNull(),
+    researchFingerprintJson: text("research_fingerprint_json").notNull(),
+    inspectionJson: text("inspection_json").notNull(),
+    exportedAt: text("exported_at").notNull(),
+    importedAt: text("imported_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "cly_dev_handoffs_direction",
+      sql`${table.direction} IN ('export', 'import')`,
+    ),
+    check(
+      "cly_dev_handoffs_protocol",
+      sql`${table.protocol} = 'cly.dev.handoff'`,
+    ),
+    check("cly_dev_handoffs_version", sql`${table.schemaVersion} = 1`),
+    check(
+      "cly_dev_handoffs_reader_version",
+      sql`${table.minimumReaderVersion} >= 1 AND ${table.minimumReaderVersion} <= ${table.schemaVersion}`,
+    ),
+    check(
+      "cly_dev_handoffs_payload_json",
+      sql`json_valid(${table.canonicalPayloadJson}) AND json_type(${table.canonicalPayloadJson}) = 'object'`,
+    ),
+    check(
+      "cly_dev_handoffs_integrity_digest",
+      sql`length(${table.integrityDigest}) = 64`,
+    ),
+    check(
+      "cly_dev_handoffs_repository_json",
+      sql`json_valid(${table.repositoryFingerprintJson}) AND json_type(${table.repositoryFingerprintJson}) = 'object'`,
+    ),
+    check(
+      "cly_dev_handoffs_research_json",
+      sql`json_valid(${table.researchFingerprintJson}) AND json_type(${table.researchFingerprintJson}) = 'object'`,
+    ),
+    check(
+      "cly_dev_handoffs_inspection_json",
+      sql`json_valid(${table.inspectionJson}) AND json_type(${table.inspectionJson}) = 'object'`,
+    ),
+    check(
+      "cly_dev_handoffs_import_timestamp",
+      sql`(${table.direction} = 'export' AND ${table.importedAt} IS NULL) OR (${table.direction} = 'import' AND ${table.importedAt} IS NOT NULL)`,
+    ),
+    uniqueIndex("cly_dev_handoffs_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("cly_dev_handoffs_import_identity_unique")
+      .on(table.projectId, table.integrityDigest)
+      .where(sql`${table.direction} = 'import'`),
+    index("idx_cly_dev_handoffs_project_created").on(
+      table.projectId,
+      table.direction,
+      sql`${table.createdAt} DESC`,
+      table.id,
+    ),
+  ],
+);
+
 export const agentContextItems = sqliteTable(
   "agent_context_items",
   {

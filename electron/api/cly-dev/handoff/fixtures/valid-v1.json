@@ -1,0 +1,188 @@
+{
+  "protocol": "cly.dev.handoff",
+  "schemaVersion": 1,
+  "minimumReaderVersion": 1,
+  "exportedAt": "2026-07-16T12:00:00.000Z",
+  "payload": {
+    "task": {
+      "id": "task-1",
+      "title": "Implement durable handoff",
+      "sessionId": "session-1",
+      "state": "resumable"
+    },
+    "messages": [
+      {
+        "id": "message-1",
+        "role": "user",
+        "body": "Preserve the actionable state.",
+        "createdAt": "2026-07-16T11:00:00.000Z"
+      }
+    ],
+    "conversationSync": "included",
+    "summaries": [
+      {
+        "id": "summary-1",
+        "title": "Current state",
+        "sections": ["Schema is designed", "Persistence remains"],
+        "createdAt": "2026-07-16T11:05:00.000Z"
+      }
+    ],
+    "goal": {
+      "objective": "Resume on another provider without replaying chat",
+      "successCriteria": ["Round-trip actionable state"]
+    },
+    "plan": {
+      "steps": [
+        {
+          "id": "step-1",
+          "text": "Implement protocol",
+          "status": "in_progress"
+        }
+      ]
+    },
+    "progress": {
+      "status": "in_progress",
+      "completedItems": ["Designed schema"],
+      "currentItem": "Implement persistence"
+    },
+    "decisions": [
+      {
+        "id": "decision-1",
+        "summary": "Hash canonical payload only",
+        "rationale": "Export timestamps do not alter task identity",
+        "decidedAt": "2026-07-16T11:10:00.000Z"
+      }
+    ],
+    "openQuestions": [
+      {
+        "id": "question-1",
+        "question": "Should stale imports resume automatically?",
+        "status": "open"
+      }
+    ],
+    "remainingWork": [
+      {
+        "id": "work-1",
+        "description": "Run database reopen test",
+        "status": "pending"
+      }
+    ],
+    "contextManifest": {
+      "id": "manifest-1",
+      "summary": "Committed implementation context",
+      "entries": [
+        {
+          "kind": "repository_file",
+          "repositoryId": "repo-1",
+          "relativePath": "src/index.ts",
+          "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "objectHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "kind": "research_object",
+          "researchObjectId": "research-1",
+          "version": "v3",
+          "contentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ]
+    },
+    "repository": {
+      "id": "repo-1",
+      "remoteUrl": "https://github.com/example/cly.git",
+      "branch": "feature/handoff",
+      "worktreeId": "worktree-1",
+      "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "files": [
+        {
+          "relativePath": "src/index.ts",
+          "objectHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "symbols": [
+        {
+          "relativePath": "src/index.ts",
+          "name": "resumeTask",
+          "kind": "function"
+        }
+      ]
+    },
+    "approvals": [
+      {
+        "id": "approval-1",
+        "state": "approved",
+        "title": "Write migration",
+        "requestedAction": "database.write",
+        "requestedAt": "2026-07-16T11:15:00.000Z",
+        "resolvedAt": "2026-07-16T11:16:00.000Z"
+      }
+    ],
+    "permissions": {
+      "filesystem": "workspace-write",
+      "network": "restricted",
+      "commands": ["pnpm vitest"]
+    },
+    "constraints": ["Do not include machine paths"],
+    "diffs": [
+      {
+        "id": "diff-1",
+        "relativePaths": ["src/index.ts"],
+        "additions": 12,
+        "deletions": 2,
+        "baseCommitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "resultHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "tests": [
+      {
+        "id": "test-1",
+        "command": "pnpm vitest run",
+        "status": "passed",
+        "passed": 4,
+        "failed": 0,
+        "durationMs": 1250
+      }
+    ],
+    "failures": [
+      {
+        "id": "failure-1",
+        "code": "INITIAL_RED",
+        "message": "Module was absent before implementation",
+        "retryable": false
+      }
+    ],
+    "costs": {
+      "currency": "USD",
+      "totalMinor": 25,
+      "items": [
+        {
+          "category": "model",
+          "amountMinor": 25
+        }
+      ]
+    },
+    "research": {
+      "objects": [
+        {
+          "id": "research-1",
+          "version": "v3",
+          "contentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "impact": [
+        {
+          "objectId": "research-1",
+          "summary": "Changes interpretation of the result",
+          "level": "material"
+        }
+      ]
+    },
+    "providerRequirements": {
+      "capabilities": ["tool_calls", "structured_output"]
+    }
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "canonicalization": "cly-json-v1",
+    "digest": "58487e03076897c2acd3a99f406589f68c57bd043594a8d100bf048d20c74969"
+  }
+}

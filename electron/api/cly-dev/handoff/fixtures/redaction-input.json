@@ -1,0 +1,10 @@
+{
+  "localOnly": {
+    "terminalId": "pty-1",
+    "repositoryPath": "/tmp/private-worktree",
+    "environment": {
+      "API_TOKEN": "secret"
+    }
+  },
+  "machinePath": "/Users/example/private.txt"
+}

@@ -1,0 +1,22 @@
+{
+  "protocol": "cly.dev.handoff",
+  "schemaVersion": 0,
+  "minimumReaderVersion": 0,
+  "exportedAt": "2026-07-16T12:00:00.000Z",
+  "payload": {
+    "task": {
+      "id": "legacy-task",
+      "title": "Legacy task",
+      "sessionId": "legacy-session",
+      "state": "resumable",
+      "objective": "Migrate this objective"
+    },
+    "summary": "A legacy structured summary",
+    "remaining": ["Verify migration"]
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "canonicalization": "cly-json-v1",
+    "digest": "6896772fdaef3fc04b271ccd85de76b4ed4b8f5cab3108ae56fddc24a440c9f6"
+  }
+}

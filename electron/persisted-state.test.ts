@@ -244,7 +244,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784138400000 });
+    ).toEqual({ createdAt: 1784142000000 });
     expectAgentContextDatabaseContract(upgraded);
   });
 
