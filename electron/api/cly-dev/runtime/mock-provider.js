@@ -15,12 +15,21 @@ const abortableWait = (milliseconds, signal) =>
       reject(abortError());
       return;
     }
-    const timer =
-      milliseconds === undefined ? null : setTimeout(resolve, milliseconds);
-    const cancel = () => {
+    let timer = null;
+    const cleanup = () => {
       if (timer) clearTimeout(timer);
+      signal.removeEventListener("abort", cancel);
+    };
+    const settle = () => {
+      cleanup();
+      resolve();
+    };
+    const cancel = () => {
+      cleanup();
       reject(abortError());
     };
+    timer =
+      milliseconds === undefined ? null : setTimeout(settle, milliseconds);
     signal.addEventListener("abort", cancel, { once: true });
   });
 
@@ -41,6 +50,7 @@ export function createDeterministicMockProvider(script, options = {}) {
       return options.models ?? [{ id: "mock-model", name: "Mock model" }];
     },
     async getCapabilities() {
+      if (options.capabilities === null) return null;
       return {
         streaming: true,
         reasoning: true,

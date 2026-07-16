@@ -1,6 +1,52 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
+import {
+  clyDevContextManifestInputSchema,
+  commitIdentitySchema,
+  machineIdentitySchema,
+  providerIdentitySchema,
+  repositoryIdentitySchema,
+  worktreeIdentitySchema,
+} from "../session-schema.js";
 
 const VERSION = 1;
+const idSchema = z.string().trim().min(1).max(500);
+const transferableShape =
+  clyDevContextManifestInputSchema.shape.transferable.shape;
+const outboundContextSchema = z
+  .object({
+    schemaVersion: z.literal(VERSION),
+    kind: z.literal("cly.context_manifest"),
+    manifest: z
+      .object({
+        id: idSchema,
+        schemaVersion: z.literal(VERSION),
+        summary: transferableShape.summary,
+        entries: transferableShape.entries,
+      })
+      .strict(),
+    provenance: z
+      .object({
+        repository: repositoryIdentitySchema,
+        worktree: worktreeIdentitySchema,
+        commit: commitIdentitySchema,
+        machine: machineIdentitySchema,
+        provider: providerIdentitySchema,
+        research: z.object({ objectIds: z.array(idSchema) }).strict(),
+      })
+      .strict(),
+  })
+  .strict();
+const forbiddenContextKey =
+  /(?:password|secret|token|credential|api[_-]?key|environment(?:value|values)|absolute(?:path|paths)|cache|dataset|process|terminal|local[_-]?only|providerconfig)/i;
+const forbiddenContextString =
+  /(?:^\s*(?:\/|[a-z]:[\\/]|\\\\)|-----BEGIN [^-]*PRIVATE KEY-----|\bbearer\s+\S+|\b(?:api[_-]?key|token|password|secret|credential)\s*[:=]\s*\S+)/i;
+const CAPABILITY_FIELDS = [
+  "streaming",
+  "reasoning",
+  "toolCalls",
+  "interceptBeforeEffect",
+];
 
 class RuntimeError extends Error {
   constructor(code, message, retryable = false, cause) {
@@ -52,6 +98,16 @@ const normalizeOutbound = (outbound) => {
   };
 };
 
+const hasForbiddenContextMaterial = (value) => {
+  if (typeof value === "string") return forbiddenContextString.test(value);
+  if (Array.isArray(value)) return value.some(hasForbiddenContextMaterial);
+  if (!value || typeof value !== "object") return false;
+  return Object.entries(value).some(
+    ([key, child]) =>
+      forbiddenContextKey.test(key) || hasForbiddenContextMaterial(child),
+  );
+};
+
 const assertExactOutbound = (outbound) => {
   const normalized = normalizeOutbound(outbound);
   const equalBytes = bytesOf(normalized.previewBytes).equals(
@@ -69,13 +125,69 @@ const assertExactOutbound = (outbound) => {
       "The context preview is not byte-for-byte identical to provider egress.",
     );
   }
-  if (!normalized.egress?.manifest?.id) {
+  let parsedBytes;
+  const egressText = bytesOf(normalized.egressBytes).toString("utf8");
+  try {
+    parsedBytes = JSON.parse(egressText);
+  } catch (error) {
     throw new RuntimeError(
       "INVALID_OUTBOUND_CONTEXT",
-      "Outbound context must contain a durable manifest id.",
+      "Outbound context bytes must be valid JSON.",
+      false,
+      error,
     );
   }
-  return normalized;
+  const bytesDescribeExactObject =
+    egressText === JSON.stringify(normalized.egress) &&
+    egressText === JSON.stringify(parsedBytes);
+  const parsed = outboundContextSchema.safeParse(parsedBytes);
+  if (
+    !bytesDescribeExactObject ||
+    !parsed.success ||
+    hasForbiddenContextMaterial(parsedBytes)
+  ) {
+    throw new RuntimeError(
+      "INVALID_OUTBOUND_CONTEXT",
+      "Outbound context is not a strict transferable Cly Dev context envelope.",
+    );
+  }
+  return { ...normalized, egress: parsed.data, preview: parsed.data };
+};
+
+const validateRequestVersion = (request) => {
+  if (request.schemaVersion !== VERSION || request.payloadVersion !== VERSION) {
+    return new RuntimeError(
+      "UNSUPPORTED_REQUEST_VERSION",
+      `Cly Dev requests require schemaVersion and payloadVersion ${VERSION}.`,
+    );
+  }
+  if (typeof request.model !== "string" || !request.model.trim()) {
+    return new RuntimeError(
+      "UNSUPPORTED_PROVIDER_MODEL",
+      "A provider model id is required.",
+    );
+  }
+  return null;
+};
+
+const validateCapabilities = (capabilities) => {
+  if (
+    !capabilities ||
+    typeof capabilities !== "object" ||
+    CAPABILITY_FIELDS.some((field) => typeof capabilities[field] !== "boolean")
+  ) {
+    throw new RuntimeError(
+      "INVALID_PROVIDER_CAPABILITIES",
+      "Provider capability discovery returned an incomplete or unknown result.",
+    );
+  }
+  if (!capabilities.streaming) {
+    throw new RuntimeError(
+      "UNSUPPORTED_PROVIDER_CAPABILITY",
+      "The selected provider does not support streaming execution.",
+    );
+  }
+  return capabilities;
 };
 
 const normalizedRuntimeError = (provider, error) => {
@@ -136,6 +248,8 @@ const budgetFailure = (budget, usage) => {
 
 const stableToolKey = ({ projectId, sessionId, requestId }, toolCallId) =>
   `cly-dev:${projectId}:${sessionId}:${requestId}:tool:${toolCallId}`;
+const executionScopeKey = ({ projectId, sessionId, requestId }) =>
+  JSON.stringify([projectId, sessionId, requestId]);
 
 const getApproval = (approvals, toolCallId) => {
   if (typeof approvals === "function") return approvals(toolCallId);
@@ -160,10 +274,8 @@ export function createClyDevExecutionRuntime(options = {}) {
     repository?.getOutboundContext?.bind(repository);
   const approvalGate = options.approvalGate;
   const executeTool = options.executeTool;
+  const durableToolEffects = options.durableToolEffects;
   const now = options.now ?? (() => new Date().toISOString());
-  const getToolResult = options.getToolResult;
-  const saveToolResult = options.saveToolResult;
-  const inMemoryResults = new Map();
   const active = new Map();
 
   if (!provider) throw new Error("A Cly Dev provider adapter is required.");
@@ -214,41 +326,7 @@ export function createClyDevExecutionRuntime(options = {}) {
     return { status: "failed", error };
   };
 
-  const findPersistedToolResult = async (request, resultKey) => {
-    if (getToolResult) {
-      const result = await getToolResult(resultKey, request);
-      if (result !== undefined) return result;
-    }
-    if (inMemoryResults.has(resultKey)) return inMemoryResults.get(resultKey);
-    if (!repository?.listEvents) return undefined;
-    let afterSequence = 0;
-    for (;;) {
-      const events = await repository.listEvents(
-        request.projectId,
-        request.sessionId,
-        afterSequence,
-        500,
-      );
-      for (const event of events) {
-        if (event.type !== "message.recorded") continue;
-        try {
-          const body = JSON.parse(event.payload.body);
-          if (body.kind === "tool_result" && body.key === resultKey) {
-            return body.result;
-          }
-        } catch {
-          // Non-runtime message bodies are intentionally ignored.
-        }
-      }
-      if (events.length < 500) break;
-      afterSequence = events.at(-1).sequence;
-    }
-    return undefined;
-  };
-
-  const persistToolResult = async (request, resultKey, result) => {
-    await saveToolResult?.(resultKey, result, request);
-    inMemoryResults.set(resultKey, result);
+  const recordToolResult = async (request, resultKey, result, executed) => {
     await append(
       request,
       localEvent({
@@ -256,7 +334,12 @@ export function createClyDevExecutionRuntime(options = {}) {
         type: "message.recorded",
         payload: {
           role: "system",
-          body: JSON.stringify({ kind: "tool_result", key: resultKey, result }),
+          body: JSON.stringify({
+            kind: "tool_result",
+            key: resultKey,
+            result,
+            executed,
+          }),
         },
         actor: actor("tool", "cly-dev-tool-runtime"),
         now,
@@ -288,9 +371,20 @@ export function createClyDevExecutionRuntime(options = {}) {
     const abortFromCaller = () => controller.abort();
     request.signal?.addEventListener("abort", abortFromCaller, { once: true });
     if (request.signal?.aborted) controller.abort();
-    active.set(request.requestId, controller);
+    const activeKey = executionScopeKey(request);
+    const activeControllers = active.get(activeKey) ?? new Set();
+    activeControllers.add(controller);
+    active.set(activeKey, activeControllers);
 
     try {
+      const requestVersionError = validateRequestVersion(request);
+      if (requestVersionError) {
+        return appendFailure(
+          request,
+          normalizedRuntimeError(provider, requestVersionError),
+          "request:failure",
+        );
+      }
       await append(
         request,
         localEvent({
@@ -306,6 +400,7 @@ export function createClyDevExecutionRuntime(options = {}) {
       );
 
       let outbound;
+      let providerCapabilities;
       try {
         outbound = assertExactOutbound(
           await buildOutboundContext(request.projectId, request.sessionId),
@@ -333,7 +428,19 @@ export function createClyDevExecutionRuntime(options = {}) {
         const authentication = await provider.getAuthentication();
         const authenticationError = authFailure(authentication);
         if (authenticationError) throw authenticationError;
-        const capabilities = await provider.getCapabilities();
+        const models = await provider.listModels();
+        if (
+          !Array.isArray(models) ||
+          !models.some((model) => model?.id === request.model)
+        ) {
+          throw new RuntimeError(
+            "UNSUPPORTED_PROVIDER_MODEL",
+            `Model ${request.model} is not available from provider ${provider.id}.`,
+          );
+        }
+        providerCapabilities = validateCapabilities(
+          await provider.getCapabilities(),
+        );
         const declaredTools = request.tools ?? [];
         const classifications = declaredTools.map((tool) =>
           approvalGate.classify({ tool: tool.name ?? tool.tool }),
@@ -341,11 +448,17 @@ export function createClyDevExecutionRuntime(options = {}) {
         const declaresEffect = classifications.some(
           (classification) => classification?.sideEffecting,
         );
+        if (declaredTools.length > 0 && !providerCapabilities.toolCalls) {
+          throw new RuntimeError(
+            "UNSUPPORTED_PROVIDER_CAPABILITY",
+            "The selected provider does not support requested tool calls.",
+          );
+        }
         const explicitlyReadOnly = ["plan", "read_only", "read-only"].includes(
           request.mode,
         );
         if (
-          capabilities.interceptBeforeEffect === false &&
+          providerCapabilities.interceptBeforeEffect === false &&
           (declaresEffect || !explicitlyReadOnly)
         ) {
           throw new RuntimeError(
@@ -477,59 +590,46 @@ export function createClyDevExecutionRuntime(options = {}) {
             );
 
             const resultKey = stableToolKey(request, event.toolCallId);
-            const existing = await findPersistedToolResult(request, resultKey);
-            if (existing !== undefined) {
-              await append(
-                request,
-                localEvent({
-                  key: `${resultKey}:completed`,
-                  type: "tool.recorded",
-                  payload: {
-                    toolCallId: event.toolCallId,
-                    tool: event.tool,
-                    status: "completed",
-                  },
-                  actor: actor("tool", "cly-dev-tool-runtime"),
-                  now,
-                }),
+            if (!providerCapabilities.toolCalls) {
+              const unsupported = new RuntimeError(
+                "UNSUPPORTED_PROVIDER_CAPABILITY",
+                "The provider emitted a tool call without declaring tool-call support.",
               );
-              continue;
+              await provider.cancel(request.requestId);
+              controller.abort();
+              return appendFailure(
+                request,
+                normalizedRuntimeError(provider, unsupported),
+                `${resultKey}:unsupported`,
+              );
             }
-
             const approval = await getApproval(
               request.approvals,
               event.toolCallId,
             );
-            const gateRequest = approvalGate.createRequest({
-              projectId: request.projectId,
-              sessionId: request.sessionId,
-              toolCall: event,
-              contextHash: outbound.egressSha256,
-            });
-            const gateDecision = approvalGate.evaluate({
+            const gateDecision = await approvalGate.evaluate({
               projectId: request.projectId,
               sessionId: request.sessionId,
               toolCall: event,
               contextHash: outbound.egressSha256,
               approval,
-              projectPolicy: request.projectPolicy,
             });
-            const approvalRelevant =
-              gateDecision.type === "pending" ||
-              gateDecision.approval ||
-              gateDecision.code === "INVALID_APPROVAL" ||
-              gateDecision.code?.startsWith("APPROVAL_");
-            if (gateRequest && approvalRelevant) {
+            const approvalRecord = gateDecision.approval;
+            if (
+              gateDecision.type === "pending" &&
+              gateDecision.code === "APPROVAL_REQUIRED" &&
+              approvalRecord
+            ) {
               await append(
                 request,
                 localEvent({
                   key: `${resultKey}:approval:requested`,
                   type: "approval.requested",
                   payload: {
-                    approvalId: gateRequest.approvalId,
+                    approvalId: approvalRecord.approvalId,
                     title: `Allow ${event.tool}`,
-                    detail: JSON.stringify(gateRequest),
-                    requestedAction: gateRequest.category,
+                    detail: JSON.stringify(approvalRecord),
+                    requestedAction: approvalRecord.category,
                   },
                   actor: actor("agent", provider.id),
                   now,
@@ -545,9 +645,10 @@ export function createClyDevExecutionRuntime(options = {}) {
               };
             }
             if (
-              gateRequest &&
-              approvalRelevant &&
-              gateDecision.type !== "pending"
+              approvalRecord &&
+              ["approved", "rejected", "canceled"].includes(
+                approvalRecord.state,
+              )
             ) {
               await append(
                 request,
@@ -555,10 +656,10 @@ export function createClyDevExecutionRuntime(options = {}) {
                   key: `${resultKey}:approval:resolved`,
                   type: "approval.resolved",
                   payload: {
-                    approvalId: gateRequest.approvalId,
+                    approvalId: approvalRecord.approvalId,
                     state:
                       gateDecision.type === "allow" ? "approved" : "rejected",
-                    resolvedBy: approval?.resolvedBy ?? "cly-dev-user",
+                    resolvedBy: approvalRecord.resolvedBy ?? "cly-dev-user",
                   },
                   actor: actor("user", "cly-dev-user"),
                   now,
@@ -594,15 +695,55 @@ export function createClyDevExecutionRuntime(options = {}) {
               }),
             );
             try {
-              const result = await executeTool(event, {
+              const classification = approvalGate.classify(event);
+              if (
+                classification?.sideEffecting &&
+                typeof durableToolEffects?.executeOnce !== "function"
+              ) {
+                throw new RuntimeError(
+                  "DURABLE_EFFECT_STORE_REQUIRED",
+                  "Effectful tools require an atomic durable execute-once store.",
+                );
+              }
+              const metadata = {
                 idempotencyKey: resultKey,
                 projectId: request.projectId,
                 sessionId: request.sessionId,
                 requestId: request.requestId,
                 signal: controller.signal,
                 category: gateDecision.category,
-              });
-              await persistToolResult(request, resultKey, result);
+              };
+              const execute = () => executeTool(event, metadata);
+              const outcome = durableToolEffects?.executeOnce
+                ? await durableToolEffects.executeOnce({
+                    key: resultKey,
+                    execute,
+                    scope: {
+                      projectId: request.projectId,
+                      sessionId: request.sessionId,
+                      requestId: request.requestId,
+                      toolCallId: event.toolCallId,
+                    },
+                  })
+                : { executed: true, result: await execute() };
+              if (
+                !outcome ||
+                typeof outcome !== "object" ||
+                !("result" in outcome) ||
+                typeof outcome.executed !== "boolean"
+              ) {
+                throw new RuntimeError(
+                  "INVALID_EFFECT_STORE_RESULT",
+                  "The atomic effect store returned an invalid result.",
+                );
+              }
+              const result = outcome.result;
+              await recordToolResult(
+                request,
+                resultKey,
+                result,
+                outcome.executed,
+              );
               await append(
                 request,
                 localEvent({
@@ -675,7 +816,9 @@ export function createClyDevExecutionRuntime(options = {}) {
       }
     } finally {
       request.signal?.removeEventListener("abort", abortFromCaller);
-      active.delete(request.requestId);
+      const controllers = active.get(activeKey);
+      controllers?.delete(controller);
+      if (controllers?.size === 0) active.delete(activeKey);
     }
   };
 
@@ -683,9 +826,22 @@ export function createClyDevExecutionRuntime(options = {}) {
     execute,
     retry: execute,
     resume: execute,
-    async cancel(requestId) {
-      active.get(requestId)?.abort();
-      await provider.cancel(requestId);
+    async cancel(scope) {
+      if (
+        !scope ||
+        typeof scope !== "object" ||
+        !scope.projectId ||
+        !scope.sessionId ||
+        !scope.requestId
+      ) {
+        throw new Error(
+          "Cancellation requires projectId, sessionId, and requestId scope.",
+        );
+      }
+      for (const controller of active.get(executionScopeKey(scope)) ?? []) {
+        controller.abort();
+      }
+      await provider.cancel(scope.requestId);
     },
   });
 }

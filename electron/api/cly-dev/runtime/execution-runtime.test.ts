@@ -16,7 +16,14 @@ const context = {
     summary: "safe",
     entries: [],
   },
-  provenance: {},
+  provenance: {
+    repository: { id: "repo-1" },
+    worktree: { id: "worktree-1", branch: "main" },
+    commit: { sha: "a".repeat(40) },
+    machine: { id: "machine-1", platform: "darwin" },
+    provider: { id: "deterministic-mock", model: "mock-model" },
+    research: { objectIds: [] },
+  },
 };
 const contextBytes = JSON.stringify(context);
 const contextHash = createHash("sha256").update(contextBytes).digest("hex");
@@ -35,21 +42,16 @@ const call = (tool: string, argumentsValue: Record<string, unknown> = {}) => ({
   arguments: argumentsValue,
 });
 
-const approvalFor = (
-  gate: ReturnType<typeof createApprovalGate>,
-  toolCall: ReturnType<typeof call>,
-  overrides = {},
-) => ({
-  ...gate.createRequest({
-    projectId: "project-1",
-    sessionId: "session-1",
-    toolCall,
-    contextHash,
-  }),
-  state: "approved",
-  resolvedBy: "user-1",
-  ...overrides,
-});
+const createGateHarness = (projectPolicy) => {
+  const approvals = new Map<string, Record<string, unknown>>();
+  const gate = createApprovalGate({
+    now: () => NOW,
+    projectPolicy,
+    approvalTtlMs: 3_600_000,
+    loadApproval: async (approvalId) => approvals.get(approvalId),
+  });
+  return { approvals, gate };
+};
 
 describe("Cly Dev approval gate", () => {
   const categories = {
@@ -64,14 +66,12 @@ describe("Cly Dev approval gate", () => {
 
   it.each(
     Object.entries(categories),
-  )("classifies %s effects and requires exact approval scope", (category, [
+  )("classifies %s effects and requires exact approval scope", async (category, [
     tool,
     args,
   ]) => {
-    const gate = createApprovalGate({
-      now: () => NOW,
-      projectPolicy: { categories: { [category]: "approval" } },
-      approvalTtlMs: 3_600_000,
+    const { approvals, gate } = createGateHarness({
+      categories: { [category]: "approval" },
     });
     const toolCall = call(tool, args);
 
@@ -79,51 +79,58 @@ describe("Cly Dev approval gate", () => {
       category,
       sideEffecting: true,
     });
-    expect(
+    const pending = await gate.evaluate({
+      projectId: "project-1",
+      sessionId: "session-1",
+      toolCall,
+      contextHash,
+    });
+    expect(pending).toMatchObject({ type: "pending", category });
+    approvals.set(pending.approval.approvalId, {
+      ...pending.approval,
+      state: "approved",
+      resolvedBy: "user-1",
+    });
+    await expect(
       gate.evaluate({
         projectId: "project-1",
         sessionId: "session-1",
         toolCall,
         contextHash,
+        approval: {
+          approvalId: pending.approval.approvalId,
+          state: "rejected",
+        },
       }),
-    ).toMatchObject({ type: "pending", category });
-    expect(
-      gate.evaluate({
-        projectId: "project-1",
-        sessionId: "session-1",
-        toolCall,
-        contextHash,
-        approval: approvalFor(gate, toolCall),
-      }),
-    ).toMatchObject({ type: "allow", category });
+    ).resolves.toMatchObject({ type: "allow", category });
   });
 
-  it("denies unknown tools/categories and policy-denied effects", () => {
+  it("denies unknown tools/categories and policy-denied effects", async () => {
     const gate = createApprovalGate({
       now: () => NOW,
       projectPolicy: { default: "deny" },
     });
-    expect(
+    await expect(
       gate.evaluate({
         projectId: "project-1",
         sessionId: "session-1",
         toolCall: call("mysteryTool"),
         contextHash,
       }),
-    ).toMatchObject({ type: "deny", code: "UNKNOWN_TOOL" });
+    ).resolves.toMatchObject({ type: "deny", code: "UNKNOWN_TOOL" });
 
     const denied = createApprovalGate({
       now: () => NOW,
       projectPolicy: { categories: { command: "deny" } },
     });
-    expect(
+    await expect(
       denied.evaluate({
         projectId: "project-1",
         sessionId: "session-1",
         toolCall: call("runCommand", { command: "rm -rf output" }),
         contextHash,
       }),
-    ).toMatchObject({ type: "deny", code: "POLICY_DENIED" });
+    ).resolves.toMatchObject({ type: "deny", code: "POLICY_DENIED" });
   });
 
   it.each([
@@ -135,23 +142,32 @@ describe("Cly Dev approval gate", () => {
     ["approved", { tool: "writeFile" }, "deny"],
     ["approved", { argumentsHash: "wrong" }, "deny"],
     ["approved", { contextHash: "wrong" }, "deny"],
-  ])("handles %s and mismatched approval scope", (state, overrides, type) => {
-    const gate = createApprovalGate({
-      now: () => NOW,
-      projectPolicy: { categories: { command: "approval" } },
-      approvalTtlMs: 3_600_000,
+  ])("handles %s and mismatched approval scope", async (state, overrides, type) => {
+    const { approvals, gate } = createGateHarness({
+      categories: { command: "approval" },
     });
     const toolCall = call("runCommand", { command: "pnpm test" });
-    const approval = approvalFor(gate, toolCall, { state, ...overrides });
-    expect(
+    const approval = {
+      ...gate.createRequest({
+        projectId: "project-1",
+        sessionId: "session-1",
+        toolCall,
+        contextHash,
+      }),
+      state,
+      resolvedBy: "user-1",
+      ...overrides,
+    };
+    approvals.set(approval.approvalId, approval);
+    await expect(
       gate.evaluate({
         projectId: "project-1",
         sessionId: "session-1",
         toolCall,
         contextHash,
-        approval,
+        approval: { approvalId: approval.approvalId },
       }),
-    ).toMatchObject({ type });
+    ).resolves.toMatchObject({ type });
   });
 });
 
@@ -167,13 +183,30 @@ const createHarness = ({
     sequence: number;
     type: string;
   }> = [];
-  const results = new Map<string, unknown>();
+  const durableApprovals = new Map<string, string>();
+  const approvals = new Map<string, Record<string, unknown>>();
+  const results = new Map<
+    string,
+    Promise<{ executed: boolean; result: unknown }>
+  >();
   const appendEvent = vi.fn(async (_projectId, _sessionId, event) => {
     clyDevEventInputSchema.parse(event);
     const duplicate = events.find(
       (item) => item.idempotencyKey === event.idempotencyKey,
     );
     if (duplicate) return duplicate;
+    if (event.type === "approval.requested") {
+      if (durableApprovals.has(event.payload.approvalId)) {
+        throw new Error("approval request already exists");
+      }
+      durableApprovals.set(event.payload.approvalId, "pending");
+    }
+    if (event.type === "approval.resolved") {
+      if (durableApprovals.get(event.payload.approvalId) !== "pending") {
+        throw new Error("approval must be pending before resolution");
+      }
+      durableApprovals.set(event.payload.approvalId, event.payload.state);
+    }
     const recorded = { ...event, sequence: events.length + 1 };
     events.push(recorded);
     return recorded;
@@ -188,18 +221,34 @@ const createHarness = ({
     now: () => NOW,
     projectPolicy: policy,
     approvalTtlMs: 3_600_000,
+    loadApproval: async (approvalId) => approvals.get(approvalId),
   });
+  const durableToolEffects = {
+    executeOnce: vi.fn(async ({ key, execute }) => {
+      const existing = results.get(key);
+      if (existing) {
+        const outcome = await existing;
+        return { ...outcome, executed: false };
+      }
+      const pending = Promise.resolve()
+        .then(execute)
+        .then((result) => ({ executed: true, result }));
+      results.set(key, pending);
+      return pending;
+    }),
+  };
   const runtime = createClyDevExecutionRuntime({
     provider,
     appendEvent,
     buildOutboundContext: async () => customOutbound,
     approvalGate: gate,
     executeTool,
-    getToolResult: async (key) => results.get(key),
-    saveToolResult: async (key, result) => results.set(key, result),
+    durableToolEffects,
     now: () => NOW,
   });
   const request = {
+    schemaVersion: 1,
+    payloadVersion: 1,
     projectId: "project-1",
     sessionId: "session-1",
     requestId: "request-1",
@@ -208,6 +257,7 @@ const createHarness = ({
   };
   return {
     appendEvent,
+    approvals,
     events,
     executeTool,
     gate,
@@ -215,6 +265,7 @@ const createHarness = ({
     request,
     results,
     runtime,
+    durableToolEffects,
   };
 };
 
@@ -288,10 +339,19 @@ describe("Cly Dev durable execution runtime", () => {
       pending.events.some((event) => event.type === "approval.requested"),
     ).toBe(true);
 
-    const approval = approvalFor(pending.gate, toolCall);
+    pending.approvals.set(first.approval.approvalId, {
+      ...first.approval,
+      state: "approved",
+      resolvedBy: "user-1",
+    });
     const resumed = await pending.runtime.resume({
       ...pending.request,
-      approvals: { [toolCall.toolCallId]: approval },
+      approvals: {
+        [toolCall.toolCallId]: {
+          approvalId: first.approval.approvalId,
+          state: "rejected",
+        },
+      },
     });
     expect(resumed).toMatchObject({ status: "completed" });
     expect(pending.executeTool).toHaveBeenCalledTimes(1);
@@ -383,7 +443,11 @@ describe("Cly Dev durable execution runtime", () => {
     });
     const running = harness.runtime.execute(harness.request);
     await vi.waitFor(() => expect(harness.events).toHaveLength(2));
-    await harness.runtime.cancel("request-1");
+    await harness.runtime.cancel({
+      projectId: harness.request.projectId,
+      sessionId: harness.request.sessionId,
+      requestId: harness.request.requestId,
+    });
     await expect(running).resolves.toMatchObject({ status: "canceled" });
     expect(harness.events.at(-1)).toMatchObject({
       type: "session.state.changed",

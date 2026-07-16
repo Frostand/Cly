@@ -69,15 +69,20 @@ export const hashToolArguments = (argumentsValue = {}) =>
 const getToolName = (toolCall) => toolCall?.tool ?? toolCall?.name;
 
 const getMode = (policy, category) => {
+  if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
+    return { code: "POLICY_MISSING" };
+  }
   const configured =
     policy?.categories?.[category] ??
     policy?.permissions?.[category] ??
     policy?.[category] ??
     policy?.default;
-  if (VALID_MODES.has(configured)) return configured;
-  if (configured === true) return "allow";
-  if (configured === false) return "deny";
-  return category === "read_only" ? "allow" : "approval";
+  if (VALID_MODES.has(configured)) return { mode: configured };
+  if (configured === true) return { mode: "allow" };
+  if (configured === false) return { mode: "deny" };
+  return {
+    code: configured === undefined ? "POLICY_MISSING" : "POLICY_INVALID",
+  };
 };
 
 const decision = (type, category, extras = {}) => ({
@@ -89,7 +94,9 @@ const decision = (type, category, extras = {}) => ({
 const approvalScope = (approval) => approval?.scope ?? approval ?? {};
 
 export function createApprovalGate({
-  projectPolicy = {},
+  projectPolicy,
+  loadProjectPolicy,
+  loadApproval,
   now = () => new Date().toISOString(),
   approvalTtlMs = 15 * 60 * 1000,
 } = {}) {
@@ -104,11 +111,13 @@ export function createApprovalGate({
     };
   };
 
-  const policyFor = (projectId, override) => {
-    const source = override ?? projectPolicy;
+  const policyFor = async (projectId) => {
+    const source = loadProjectPolicy
+      ? await loadProjectPolicy(projectId)
+      : projectPolicy;
     if (typeof source === "function") return source(projectId) ?? {};
-    if (source?.projects?.[projectId]) return source.projects[projectId];
-    return source ?? {};
+    if (source?.projects) return source.projects[projectId] ?? null;
+    return source ?? null;
   };
 
   const createRequest = ({
@@ -140,13 +149,12 @@ export function createApprovalGate({
     };
   };
 
-  const evaluate = ({
+  const evaluate = async ({
     projectId,
     sessionId,
     toolCall,
     contextHash,
     approval,
-    projectPolicy: policyOverride,
   }) => {
     const classification = classify(toolCall);
     if (!classification) {
@@ -155,19 +163,32 @@ export function createApprovalGate({
         reason: `Tool ${getToolName(toolCall) ?? "(missing)"} has no known permission category.`,
       });
     }
-    const mode = getMode(
-      policyFor(projectId, policyOverride),
+    const policyDecision = getMode(
+      await policyFor(projectId),
       classification.category,
     );
-    if (mode === "deny") {
+    if (!policyDecision.mode) {
+      return decision("deny", classification.category, {
+        code: policyDecision.code,
+        reason: "No valid trusted project policy authorizes this tool.",
+      });
+    }
+    if (policyDecision.mode === "deny") {
       return decision("deny", classification.category, {
         code: "POLICY_DENIED",
         reason: `Project policy denies ${classification.category} effects.`,
       });
     }
-    if (mode === "allow") {
+    if (policyDecision.mode === "allow") {
       return decision("allow", classification.category, {
         reason: "Project policy allows this tool effect.",
+      });
+    }
+
+    if (typeof loadApproval !== "function") {
+      return decision("deny", classification.category, {
+        code: "APPROVAL_RESOLVER_UNAVAILABLE",
+        reason: "A durable authoritative approval resolver is required.",
       });
     }
 
@@ -177,33 +198,38 @@ export function createApprovalGate({
       toolCall,
       contextHash,
     });
-    if (!approval) {
+    const approvalId =
+      typeof approval === "string" ? approval : approval?.approvalId;
+    if (!approvalId) {
       return decision("pending", classification.category, {
         code: "APPROVAL_REQUIRED",
         approval: request,
       });
     }
-    if (approval.state === "pending") {
-      return decision("pending", classification.category, {
-        code: "APPROVAL_PENDING",
-        approval,
+    const storedApproval = await loadApproval(approvalId, {
+      projectId,
+      sessionId,
+      toolCallId: toolCall.toolCallId,
+    });
+    if (!storedApproval) {
+      return decision("deny", classification.category, {
+        code: "APPROVAL_NOT_FOUND",
+        reason: "The durable approval record was not found.",
       });
     }
-    if (["rejected", "canceled"].includes(approval.state)) {
+    const scope = approvalScope(storedApproval);
+    if (
+      storedApproval.approvalId !== approvalId ||
+      !["pending", "approved", "rejected", "canceled"].includes(
+        storedApproval.state,
+      )
+    ) {
       return decision("deny", classification.category, {
-        code: "APPROVAL_REJECTED",
-        reason: "The requested tool effect was not approved.",
-        approval,
-      });
-    }
-    if (approval.state !== "approved") {
-      return decision("deny", classification.category, {
-        code: "INVALID_APPROVAL",
-        reason: "The approval has an unknown state.",
+        code: "INVALID_APPROVAL_RECORD",
+        reason: "The durable approval record is malformed.",
       });
     }
 
-    const scope = approvalScope(approval);
     const exactFields = [
       "projectId",
       "sessionId",
@@ -232,9 +258,22 @@ export function createApprovalGate({
         reason: "The approval has expired.",
       });
     }
+    if (storedApproval.state === "pending") {
+      return decision("pending", classification.category, {
+        code: "APPROVAL_PENDING",
+        approval: storedApproval,
+      });
+    }
+    if (["rejected", "canceled"].includes(storedApproval.state)) {
+      return decision("deny", classification.category, {
+        code: "APPROVAL_REJECTED",
+        reason: "The requested tool effect was not approved.",
+        approval: storedApproval,
+      });
+    }
     return decision("allow", classification.category, {
       reason: "An exact, unexpired approval permits this tool effect.",
-      approval,
+      approval: storedApproval,
     });
   };
 

@@ -34,13 +34,7 @@ export function createProductionClyDevProvider({
           interceptBeforeEffect: false,
         };
       }
-      return {
-        streaming: true,
-        reasoning: true,
-        toolCalls: true,
-        interceptBeforeEffect: false,
-        ...(await runner.getCapabilities()),
-      };
+      return runner.getCapabilities();
     },
     async *stream(request, context) {
       if (!runner) throw unavailable();
