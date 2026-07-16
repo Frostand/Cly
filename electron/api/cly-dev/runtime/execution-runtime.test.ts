@@ -3,7 +3,10 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { clyDevEventInputSchema } from "../session-schema.js";
 import { createApprovalGate } from "./approval-gate.js";
-import { createClyDevExecutionRuntime } from "./execution-runtime.js";
+import {
+  createClyDevExecutionRuntime,
+  deriveTransferableContextSummary,
+} from "./execution-runtime.js";
 import { createDeterministicMockProvider } from "./mock-provider.js";
 
 const NOW = "2026-07-16T12:00:00.000Z";
@@ -13,7 +16,7 @@ const context = {
   manifest: {
     id: "manifest-1",
     schemaVersion: 1,
-    summary: "safe",
+    summary: deriveTransferableContextSummary([]),
     entries: [],
   },
   provenance: {

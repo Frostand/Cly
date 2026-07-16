@@ -10,6 +10,31 @@ import {
 } from "../session-schema.js";
 
 const VERSION = 1;
+const TRANSFERABLE_CONTEXT_KINDS = [
+  "research_object",
+  "repository_file",
+  "commit",
+  "note",
+];
+
+export const deriveTransferableContextSummary = (entries) => {
+  if (!Array.isArray(entries)) {
+    throw new TypeError("Transferable context entries must be an array.");
+  }
+  const counts = Object.fromEntries(
+    TRANSFERABLE_CONTEXT_KINDS.map((kind) => [kind, 0]),
+  );
+  for (const entry of entries) {
+    if (!entry || !TRANSFERABLE_CONTEXT_KINDS.includes(entry.kind)) {
+      throw new TypeError(
+        "Transferable context contains an unknown entry kind.",
+      );
+    }
+    counts[entry.kind] += 1;
+  }
+  return `Cly Dev transferable context v1: entries=${entries.length}; research_object=${counts.research_object}; repository_file=${counts.repository_file}; commit=${counts.commit}; note=${counts.note}.`;
+};
+
 const idSchema = z.string().trim().min(1).max(500);
 const transferableShape =
   clyDevContextManifestInputSchema.shape.transferable.shape;
@@ -151,9 +176,14 @@ const assertExactOutbound = (outbound) => {
     egressText === JSON.stringify(normalized.egress) &&
     egressText === JSON.stringify(parsedBytes);
   const parsed = outboundContextSchema.safeParse(parsedBytes);
+  const hasDerivedSummary =
+    parsed.success &&
+    parsed.data.manifest.summary ===
+      deriveTransferableContextSummary(parsed.data.manifest.entries);
   if (
     !bytesDescribeExactObject ||
     !parsed.success ||
+    !hasDerivedSummary ||
     hasForbiddenContextMaterial(parsedBytes)
   ) {
     throw new RuntimeError(

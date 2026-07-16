@@ -2,7 +2,10 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { createApprovalGate } from "./approval-gate.js";
-import { createClyDevExecutionRuntime } from "./execution-runtime.js";
+import {
+  createClyDevExecutionRuntime,
+  deriveTransferableContextSummary,
+} from "./execution-runtime.js";
 import { createDeterministicMockProvider } from "./mock-provider.js";
 
 const initialTime = "2026-07-16T12:00:00.000Z";
@@ -13,7 +16,7 @@ const contextEnvelope = {
   manifest: {
     id: "manifest-1",
     schemaVersion: 1,
-    summary: "Committed research context",
+    summary: deriveTransferableContextSummary([]),
     entries: [],
   },
   provenance: {
@@ -108,6 +111,26 @@ const createAtomicEffects = () => {
 };
 
 describe("reviewed Cly Dev security invariants", () => {
+  it("derives provider context summaries only from fixed entry-kind counters", () => {
+    const summary = deriveTransferableContextSummary([
+      {
+        kind: "repository_file",
+        repositoryId: "private-repository-id",
+        relativePath: "private/path.txt",
+      },
+      { kind: "research_object", researchObjectId: "private-research-id" },
+      { kind: "commit", commitSha: "a".repeat(40) },
+      { kind: "note", title: "private note title" },
+      { kind: "note", title: "another private note title" },
+    ]);
+    expect(summary).toBe(
+      "Cly Dev transferable context v1: entries=5; research_object=1; repository_file=1; commit=1; note=2.",
+    );
+    expect(summary).not.toContain("private");
+    expect(summary).not.toContain("path.txt");
+    expect(summary).not.toContain("aaaa");
+  });
+
   it("loads approval state and immutable scope from an authoritative resolver", async () => {
     let now = initialTime;
     const stored = new Map<string, Record<string, unknown>>();
@@ -280,6 +303,30 @@ describe("reviewed Cly Dev security invariants", () => {
     [
       "private key material",
       { manifest: { summary: "-----BEGIN OPENSSH PRIVATE KEY-----" } },
+    ],
+    [
+      "file URL in supplied summary",
+      { manifest: { summary: "Failure at file:///Users/alice/private.txt" } },
+    ],
+    [
+      "punctuation-adjacent path in supplied summary",
+      { manifest: { summary: "Failure;/Users/alice/private.txt" } },
+    ],
+    [
+      "GitLab token in supplied summary",
+      { manifest: { summary: "Observed glpat-1234567890abcdef" } },
+    ],
+    [
+      "Hugging Face token in supplied summary",
+      { manifest: { summary: "Observed hf_1234567890abcdef" } },
+    ],
+    [
+      "OAuth token in supplied summary",
+      { manifest: { summary: "Observed ya29.a0AfH6SMBprivate" } },
+    ],
+    [
+      "benign arbitrary supplied summary",
+      { manifest: { summary: "A user-controlled sentence" } },
     ],
     ["environment value", { manifest: { environmentValue: "private" } }],
     ["process cache", { process: { cache: "private" } }],
