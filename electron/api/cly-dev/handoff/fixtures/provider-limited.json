@@ -1,0 +1,4 @@
+{
+  "capabilities": ["tool_calls"],
+  "expectedMissing": ["structured_output"]
+}

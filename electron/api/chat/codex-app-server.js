@@ -345,8 +345,11 @@ export const streamCodexAppServerResponse = ({
   projectPath,
   reasoningEffort,
   responseMessageMetadata,
+  sandboxMode,
   systemPrompt,
   chatId,
+  turnSandboxPolicy,
+  conversationPromptBuilder = buildCodexConversationPrompt,
 }) => {
   const stream = createUIMessageStream({
     originalMessages: messages,
@@ -1003,14 +1006,15 @@ export const streamCodexAppServerResponse = ({
               finish(() => reject(new Error(detail)));
             });
 
-            const fullPrompt = buildCodexConversationPrompt({
+            const fullPrompt = conversationPromptBuilder({
               currentTurnAttachments: preparedAttachments?.promptText ?? null,
               currentTurnProjectReferences: projectReferencesPrompt,
               messages,
               projectPath,
               systemPrompt,
             });
-            const sandbox = getCodexAppSandboxMode(codexPermissionMode);
+            const sandbox =
+              sandboxMode ?? getCodexAppSandboxMode(codexPermissionMode);
             const approvalPolicy =
               getCodexAppApprovalPolicy(codexPermissionMode);
 
@@ -1051,10 +1055,12 @@ export const streamCodexAppServerResponse = ({
                 type: "text",
               })),
               model,
-              sandboxPolicy: getCodexAppTurnSandboxPolicy({
-                codexPermissionMode,
-                projectPath,
-              }),
+              sandboxPolicy:
+                turnSandboxPolicy ??
+                getCodexAppTurnSandboxPolicy({
+                  codexPermissionMode,
+                  projectPath,
+                }),
               threadId,
             });
           })

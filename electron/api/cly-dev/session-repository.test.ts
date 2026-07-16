@@ -14,10 +14,12 @@ import {
   createClyDevHandoffService,
   createMemoryHandoffTransport,
 } from "./handoff-service.js";
+import { normalizeDurableOutboundContext } from "./runtime/outbound-context.js";
 import { createClyDevSessionRepository } from "./session-repository.js";
 import {
   clyDevContextManifestInputSchema,
   clyDevEventInputSchema,
+  clyDevInternalEventInputSchema,
   clyDevWorkspaceInputSchema,
 } from "./session-schema.js";
 
@@ -534,18 +536,52 @@ describe("ClyDevSessionRepository", () => {
       },
     });
     expect(outbound.preview).not.toHaveProperty("localOnly");
-    const transferableEvent = repository.appendEvent("project-a", session.id, {
-      schemaVersion: 1,
-      payloadVersion: 1,
-      idempotencyKey: "context-transfer",
-      type: "context.manifest.recorded",
-      transferability: "transferable",
+    const normalized = normalizeDurableOutboundContext(outbound.preview);
+    const contextEvent = (idempotencyKey: string) => ({
+      schemaVersion: 1 as const,
+      payloadVersion: 1 as const,
+      idempotencyKey,
+      type: "context.manifest.recorded" as const,
+      transferability: "transferable" as const,
       occurredAt: "2026-07-15T12:01:00.000Z",
-      actor: { kind: "system", id: "context-boundary" },
+      actor: { kind: "system" as const, id: "context-boundary" },
       payload: { manifestId: manifest.id },
     });
-    expect(transferableEvent.outboundEnvelope).toEqual(outbound.preview);
-    expect(transferableEvent.outboundSha256).toBe(outbound.previewSha256);
+    expect(() =>
+      repository.appendEvent(
+        "project-a",
+        session.id,
+        contextEvent("missing-normalized-context"),
+      ),
+    ).toThrow(/normalized outbound context/i);
+    const transferableEvent = repository.appendEvent(
+      "project-a",
+      session.id,
+      contextEvent("context-transfer"),
+      {
+        outboundContext: normalized.envelope,
+        outboundSha256: "0".repeat(64),
+      },
+    );
+    expect(transferableEvent.outboundEnvelope).toEqual(normalized.envelope);
+    expect(transferableEvent.outboundSha256).toBe(normalized.sha256);
+    expect(transferableEvent.outboundSha256).not.toBe("0".repeat(64));
+    expect(() =>
+      repository.appendEvent(
+        "project-a",
+        session.id,
+        contextEvent("tampered-normalized-context"),
+        {
+          outboundContext: {
+            ...normalized.envelope,
+            manifest: {
+              ...normalized.envelope.manifest,
+              summary: "Tampered summary",
+            },
+          },
+        },
+      ),
+    ).toThrow(/strict provider-egress validation/i);
     expect(() =>
       first
         .prepare(
@@ -639,9 +675,17 @@ describe("ClyDevSessionRepository", () => {
         transferability: "transferable",
         payload: { manifestId: "manifest-1" },
       }),
+    ).toThrow();
+    expect(() =>
+      clyDevInternalEventInputSchema.parse({
+        ...common,
+        type: "context.manifest.recorded",
+        transferability: "transferable",
+        payload: { manifestId: "manifest-1" },
+      }),
     ).not.toThrow();
     expect(() =>
-      clyDevEventInputSchema.parse({
+      clyDevInternalEventInputSchema.parse({
         ...common,
         type: "context.manifest.recorded",
         transferability: "transferable",

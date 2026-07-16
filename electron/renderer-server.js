@@ -2,7 +2,7 @@ import { spawn as spawnProcess } from "node:child_process";
 import http from "node:http";
 import path from "node:path";
 import sirv from "sirv";
-
+import { createProductionClyDevHandoffDependencies } from "./api/cly-dev/handoff/handoff-production.js";
 import { createApiSessionToken, startApiServer } from "./api-server.js";
 import { stopChildProcess } from "./process-sessions.js";
 
@@ -53,6 +53,8 @@ export function createRendererServerManager({
   rendererProbeIntervalMs,
   rendererStartupTimeoutMs,
   rendererUrlFromEnv,
+  createClyDevHandoffDependencies = createProductionClyDevHandoffDependencies,
+  clyDevHandoffOptions,
 }) {
   const apiSessionToken = createApiSessionToken();
   let rendererUrl = developmentRendererUrl;
@@ -61,11 +63,13 @@ export function createRendererServerManager({
   let productionHttpServer = null;
 
   async function start() {
+    const clyDevHandoff = createClyDevHandoffDependencies(clyDevHandoffOptions);
     // Always start the API server (Hono) on the API port.
     apiServer = await startApiServer({
       port: apiServerPort,
       apiToken: apiSessionToken,
       allowedRendererOrigin: new URL(developmentRendererUrl).origin,
+      clyDevHandoff,
     });
 
     if (isDevelopment) {

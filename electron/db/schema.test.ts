@@ -14,6 +14,8 @@ import {
   agentContextRevisions,
   agentContextTransmissionApprovals,
   agentRoleConfigurations,
+  clyDevHandoffs,
+  clyDevToolEffects,
 } from "./schema.js";
 
 const dialect = new SQLiteDialect();
@@ -86,6 +88,66 @@ const tableContract = (table: Parameters<typeof getTableConfig>[0]) => {
     ),
   };
 };
+
+describe("Cly Dev execution Drizzle schema", () => {
+  it("matches the durable tool-effect claim lifecycle in migration 0017", () => {
+    expect(tableContract(clyDevToolEffects)).toMatchObject({
+      checkSql: {
+        cly_dev_tool_effects_error_json:
+          "error_json IS NULL OR json_valid(error_json)",
+        cly_dev_tool_effects_lifecycle:
+          "(status = 'claimed' AND result_json IS NULL AND error_json IS NULL AND completed_at IS NULL AND failed_at IS NULL) OR (status = 'completed' AND result_json IS NOT NULL AND error_json IS NULL AND completed_at IS NOT NULL AND failed_at IS NULL) OR (status = 'failed' AND result_json IS NULL AND error_json IS NOT NULL AND completed_at IS NULL AND failed_at IS NOT NULL)",
+        cly_dev_tool_effects_result_json:
+          "result_json IS NULL OR json_valid(result_json)",
+        cly_dev_tool_effects_status:
+          "status IN ('claimed', 'completed', 'failed')",
+      },
+      foreignKeys: [
+        {
+          columns: ["session_id", "project_id"],
+          foreignColumns: ["id", "project_id"],
+          foreignTable: "cly_dev_sessions",
+          name: "cly_dev_tool_effects_session_project_fk",
+          onDelete: "cascade",
+        },
+      ],
+      indexes: {
+        idx_cly_dev_tool_effects_project_session_status: [
+          { name: "project_id", order: "asc" },
+          { name: "session_id", order: "asc" },
+          { name: "status", order: "asc" },
+          { name: "claimed_at", order: "asc" },
+        ],
+      },
+    });
+  });
+
+  it("matches the project-scoped handoff materialization linkage in migration 0018", () => {
+    expect(
+      getTableConfig(clyDevHandoffs).columns.map((column) => column.name),
+    ).toEqual(
+      expect.arrayContaining(["materialized_session_id", "materialized_at"]),
+    );
+    expect(tableContract(clyDevHandoffs)).toMatchObject({
+      indexes: {
+        cly_dev_handoffs_import_identity_unique: [
+          { name: "project_id", order: "asc" },
+          { name: "integrity_digest", order: "asc" },
+        ],
+        cly_dev_handoffs_materialized_session_unique: [
+          { name: "project_id", order: "asc" },
+          { name: "materialized_session_id", order: "asc" },
+        ],
+        idx_cly_dev_handoffs_project_created: [
+          { name: "project_id", order: "asc" },
+          { name: "direction", order: "asc" },
+          { name: "created_at", order: "desc" },
+          { name: "id", order: "asc" },
+        ],
+      },
+    });
+  });
+});
 
 describe("agent configuration Drizzle schema", () => {
   it("matches migration 0013 for configuration constraints and indexes", () => {

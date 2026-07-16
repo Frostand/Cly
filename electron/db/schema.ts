@@ -1434,6 +1434,58 @@ export const clyDevApprovals = sqliteTable(
   ],
 );
 
+export const clyDevToolEffects = sqliteTable(
+  "cly_dev_tool_effects",
+  {
+    stableExecutionKey: text("stable_execution_key").primaryKey(),
+    projectId: text("project_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    requestId: text("request_id").notNull(),
+    toolCallId: text("tool_call_id").notNull(),
+    toolName: text("tool_name"),
+    argumentsSha256: text("arguments_sha256"),
+    status: text("status").notNull(),
+    resultJson: text("result_json"),
+    errorJson: text("error_json"),
+    claimedAt: text("claimed_at").notNull(),
+    completedAt: text("completed_at"),
+    failedAt: text("failed_at"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.sessionId, table.projectId],
+      foreignColumns: [clyDevSessions.id, clyDevSessions.projectId],
+      name: "cly_dev_tool_effects_session_project_fk",
+    }).onDelete("cascade"),
+    check(
+      "cly_dev_tool_effects_status",
+      sql`${table.status} IN ('claimed', 'completed', 'failed')`,
+    ),
+    check(
+      "cly_dev_tool_effects_result_json",
+      sql`${table.resultJson} IS NULL OR json_valid(${table.resultJson})`,
+    ),
+    check(
+      "cly_dev_tool_effects_error_json",
+      sql`${table.errorJson} IS NULL OR json_valid(${table.errorJson})`,
+    ),
+    check(
+      "cly_dev_tool_effects_lifecycle",
+      sql`(${table.status} = 'claimed' AND ${table.resultJson} IS NULL AND ${table.errorJson} IS NULL AND ${table.completedAt} IS NULL AND ${table.failedAt} IS NULL) OR (${table.status} = 'completed' AND ${table.resultJson} IS NOT NULL AND ${table.errorJson} IS NULL AND ${table.completedAt} IS NOT NULL AND ${table.failedAt} IS NULL) OR (${table.status} = 'failed' AND ${table.resultJson} IS NULL AND ${table.errorJson} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.failedAt} IS NOT NULL)`,
+    ),
+    check(
+      "cly_dev_tool_effects_fingerprint",
+      sql`(${table.toolName} IS NULL AND ${table.argumentsSha256} IS NULL) OR (${table.toolName} IS NOT NULL AND length(${table.toolName}) > 0 AND length(${table.argumentsSha256}) = 64 AND ${table.argumentsSha256} NOT GLOB '*[^0-9a-f]*')`,
+    ),
+    index("idx_cly_dev_tool_effects_project_session_status").on(
+      table.projectId,
+      table.sessionId,
+      table.status,
+      table.claimedAt,
+    ),
+  ],
+);
+
 export const clyDevDevices = sqliteTable(
   "cly_dev_devices",
   {
@@ -1492,6 +1544,83 @@ export const clyDevDeviceKeys = sqliteTable(
     check(
       "cly_dev_device_keys_retired",
       sql`(${table.state} = 'active' AND ${table.retiredAt} IS NULL) OR ${table.state} != 'active'`,
+    ),
+  ],
+);
+
+export const clyDevHandoffs = sqliteTable(
+  "cly_dev_handoffs",
+    direction: text("direction").notNull(),
+    protocol: text("protocol").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    minimumReaderVersion: integer("minimum_reader_version").notNull(),
+    canonicalPayloadJson: text("canonical_payload_json").notNull(),
+    integrityDigest: text("integrity_digest").notNull(),
+    repositoryFingerprintJson: text("repository_fingerprint_json").notNull(),
+    researchFingerprintJson: text("research_fingerprint_json").notNull(),
+    inspectionJson: text("inspection_json").notNull(),
+    exportedAt: text("exported_at").notNull(),
+    importedAt: text("imported_at"),
+    // SQLite migrations 0019/0021 enforce pairing, import direction, a
+    // project-scoped session reference, and linked-session deletion safety
+    // for these additive 0018 columns.
+    materializedSessionId: text("materialized_session_id"),
+    materializedAt: text("materialized_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "cly_dev_handoffs_direction",
+      sql`${table.direction} IN ('export', 'import')`,
+    ),
+    check(
+      "cly_dev_handoffs_protocol",
+      sql`${table.protocol} = 'cly.dev.handoff'`,
+    ),
+    check("cly_dev_handoffs_version", sql`${table.schemaVersion} = 1`),
+    check(
+      "cly_dev_handoffs_reader_version",
+      sql`${table.minimumReaderVersion} >= 1 AND ${table.minimumReaderVersion} <= ${table.schemaVersion}`,
+    ),
+    check(
+      "cly_dev_handoffs_payload_json",
+      sql`json_valid(${table.canonicalPayloadJson}) AND json_type(${table.canonicalPayloadJson}) = 'object'`,
+    ),
+    check(
+      "cly_dev_handoffs_integrity_digest",
+      sql`length(${table.integrityDigest}) = 64`,
+    ),
+    check(
+      "cly_dev_handoffs_repository_json",
+      sql`json_valid(${table.repositoryFingerprintJson}) AND json_type(${table.repositoryFingerprintJson}) = 'object'`,
+    ),
+    check(
+      "cly_dev_handoffs_research_json",
+      sql`json_valid(${table.researchFingerprintJson}) AND json_type(${table.researchFingerprintJson}) = 'object'`,
+    ),
+    check(
+      "cly_dev_handoffs_inspection_json",
+      sql`json_valid(${table.inspectionJson}) AND json_type(${table.inspectionJson}) = 'object'`,
+    ),
+    check(
+      "cly_dev_handoffs_import_timestamp",
+      sql`(${table.direction} = 'export' AND ${table.importedAt} IS NULL) OR (${table.direction} = 'import' AND ${table.importedAt} IS NOT NULL)`,
+    ),
+    uniqueIndex("cly_dev_handoffs_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("cly_dev_handoffs_import_identity_unique")
+      .on(table.projectId, table.integrityDigest)
+      .where(sql`${table.direction} = 'import'`),
+    uniqueIndex("cly_dev_handoffs_materialized_session_unique")
+      .on(table.projectId, table.materializedSessionId)
+      .where(sql`${table.materializedSessionId} IS NOT NULL`),
+    index("idx_cly_dev_handoffs_project_created").on(
+      table.projectId,
+      table.direction,
+      sql`${table.createdAt} DESC`,
+      table.id,
     ),
   ],
 );
@@ -1718,7 +1847,6 @@ export const clyDevSyncAudit = sqliteTable(
     index("idx_cly_dev_sync_audit_created").on(table.createdAt, table.id),
   ],
 );
-
 export const agentContextItems = sqliteTable(
   "agent_context_items",
   {

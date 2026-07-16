@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -243,12 +243,14 @@ describe("persisted research storage", () => {
     expectAgentContextDatabaseContract(database);
   });
 
-  it("applies migrations after an existing database through 0015", () => {
+  it("applies migrations after a database through 0015", () => {
     const databasePath = createDatabasePath();
     getStateDatabase(databasePath);
     closePersistedStateDatabase();
     const throughClyDev = new DatabaseSync(databasePath);
     throughClyDev.exec("PRAGMA foreign_keys = OFF");
+    throughClyDev.exec("DROP TABLE cly_dev_tool_effects");
+    throughClyDev.exec("DROP TABLE cly_dev_handoffs");
     for (const table of [...agentContextTables].reverse())
       throughClyDev.exec(`DROP TABLE ${table}`);
     for (const table of [...clyDevSyncTables].reverse())
@@ -281,6 +283,13 @@ describe("persisted research storage", () => {
         )
         .get(),
     ).toEqual({ createdAt: 1784224800000 });
+    expect(
+      upgraded
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cly_dev_tool_effects'",
+        )
+        .get(),
+    ).toEqual({ name: "cly_dev_tool_effects" });
     expectAgentContextDatabaseContract(upgraded);
     expect(
       upgraded
@@ -290,6 +299,155 @@ describe("persisted research storage", () => {
         .all()
         .map((row) => row.name),
     ).toEqual([...clyDevSyncTables].sort());
+  });
+
+  it("upgrades already-recorded 0016/0018/0020 state through current migrations", () => {
+    const databasePath = createDatabasePath();
+    getStateDatabase(databasePath);
+    closePersistedStateDatabase();
+
+    const throughRuntime = new DatabaseSync(databasePath);
+    throughRuntime.exec("PRAGMA foreign_keys = OFF");
+    throughRuntime.exec("DROP TABLE cly_dev_tool_effects");
+    throughRuntime.exec(
+      readFileSync(
+        new URL("./drizzle/0017_cly_dev_tool_effects.sql", import.meta.url),
+        "utf8",
+      ).replaceAll("--> statement-breakpoint", ""),
+    );
+    throughRuntime.exec("DROP TABLE cly_dev_handoffs");
+    throughRuntime.exec(
+      readFileSync(
+        new URL("./drizzle/0016_cly_dev_handoffs.sql", import.meta.url),
+        "utf8",
+      ).replaceAll("--> statement-breakpoint", ""),
+    );
+    throughRuntime.exec(`
+      INSERT OR IGNORE INTO projects
+        (id, path, normalized_path, name, status, sort_order, metadata, created_at, updated_at)
+      VALUES
+        ('handoff-upgrade-project', '/tmp/handoff-upgrade', '/tmp/handoff-upgrade',
+         'Handoff upgrade', 'open', 0, '{}', '2026-07-16', '2026-07-16');
+      INSERT INTO cly_dev_handoffs
+        (id, project_id, direction, protocol, schema_version, minimum_reader_version,
+         canonical_payload_json, integrity_digest, repository_fingerprint_json,
+         research_fingerprint_json, inspection_json, exported_at, imported_at, created_at)
+      VALUES
+        ('legacy-handoff', 'handoff-upgrade-project', 'export', 'cly.dev.handoff', 1, 1,
+         '{}', '${"a".repeat(64)}', '{}', '{}', '{}',
+         '2026-07-16T12:00:00.000Z', NULL, '2026-07-16T12:00:00.000Z');
+    `);
+    throughRuntime
+      .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
+      .run(1784145600000);
+    expect(
+      throughRuntime
+        .prepare("PRAGMA table_info(cly_dev_handoffs)")
+        .all()
+        .map((row) => row.name),
+    ).not.toContain("materialized_session_id");
+    throughRuntime.close();
+
+    const upgraded = getStateDatabase(databasePath);
+    expect(
+      upgraded
+        .prepare("PRAGMA table_info(cly_dev_handoffs)")
+        .all()
+        .map((row) => row.name),
+    ).toEqual(
+      expect.arrayContaining(["materialized_session_id", "materialized_at"]),
+    );
+    expect(
+      upgraded
+        .prepare(
+          "SELECT id, materialized_session_id AS materializedSessionId FROM cly_dev_handoffs WHERE id = ?",
+        )
+        .get("legacy-handoff"),
+    ).toEqual({ id: "legacy-handoff", materializedSessionId: null });
+    expect(
+      upgraded
+        .prepare(
+          "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
+        )
+        .get(),
+    ).toEqual({ createdAt: 1784160000000 });
+    expect(upgraded.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+
+    closePersistedStateDatabase();
+    const throughMaterialization = new DatabaseSync(databasePath);
+    throughMaterialization.exec(
+      "DROP TRIGGER cly_dev_handoffs_materialized_link_insert",
+    );
+    throughMaterialization.exec(
+      "DROP TRIGGER cly_dev_handoffs_materialized_link_update",
+    );
+    throughMaterialization.exec(
+      "DROP TRIGGER cly_dev_sessions_linked_handoff_delete",
+    );
+    throughMaterialization.exec("DROP TABLE cly_dev_tool_effects");
+    throughMaterialization.exec(
+      readFileSync(
+        new URL("./drizzle/0017_cly_dev_tool_effects.sql", import.meta.url),
+        "utf8",
+      ).replaceAll("--> statement-breakpoint", ""),
+    );
+    throughMaterialization
+      .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
+      .run(1784149200000);
+    throughMaterialization.close();
+
+    const upgradedFrom0018 = getStateDatabase(databasePath);
+    expect(
+      upgradedFrom0018
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'cly_dev_handoffs_materialized_link_%' ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
+    ).toEqual([
+      "cly_dev_handoffs_materialized_link_insert",
+      "cly_dev_handoffs_materialized_link_update",
+    ]);
+    expect(
+      upgradedFrom0018
+        .prepare(
+          "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
+        )
+        .get(),
+    ).toEqual({ createdAt: 1784160000000 });
+    expect(
+      upgradedFrom0018
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'cly_dev_sessions_linked_handoff_delete'",
+        )
+        .get(),
+    ).toEqual({ name: "cly_dev_sessions_linked_handoff_delete" });
+
+    closePersistedStateDatabase();
+    const throughToolFingerprint = new DatabaseSync(databasePath);
+    throughToolFingerprint.exec(
+      "DROP TRIGGER cly_dev_sessions_linked_handoff_delete",
+    );
+    throughToolFingerprint
+      .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
+      .run(1784156400000);
+    throughToolFingerprint.close();
+
+    const upgradedFrom0020 = getStateDatabase(databasePath);
+    expect(
+      upgradedFrom0020
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'cly_dev_sessions_linked_handoff_delete'",
+        )
+        .get(),
+    ).toEqual({ name: "cly_dev_sessions_linked_handoff_delete" });
+    expect(
+      upgradedFrom0020
+        .prepare(
+          "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
+        )
+        .get(),
+    ).toEqual({ createdAt: 1784160000000 });
   });
 
   it("configures a bounded wait for concurrent SQLite writers", () => {

@@ -1,0 +1,6 @@
+[
+  "/api/private/session.db",
+  "/v1/secrets/provider.json",
+  "/assets/private/token.txt",
+  "/static/cache/credentials.json"
+]

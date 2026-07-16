@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { assertTransferableHandoffEnvelope } from "./handoff-schema.js";
+import { verifyNormalizedOutboundContext } from "./runtime/outbound-context.js";
 import {
   CLY_DEV_PAYLOAD_VERSION,
   CLY_DEV_SCHEMA_VERSION,
   clyDevContextManifestInputSchema,
-  clyDevEventInputSchema,
+  clyDevInternalEventInputSchema,
   clyDevSessionAggregateInputSchema,
   clyDevSessionInputSchema,
   clyDevSessionStates,
@@ -718,8 +719,8 @@ export function createClyDevSessionRepository({
         nextOffset: hasMore ? boundedOffset + boundedLimit : null,
       };
     },
-    appendEvent(projectId, sessionId, rawEvent) {
-      const event = clyDevEventInputSchema.parse(rawEvent);
+    appendEvent(projectId, sessionId, rawEvent, { outboundContext } = {}) {
+      const event = clyDevInternalEventInputSchema.parse(rawEvent);
       return transaction(db, () => {
         const sessionRow = findSession(db, projectId, sessionId);
         if (
@@ -764,18 +765,31 @@ export function createClyDevSessionRepository({
         const sequence = projection.last_sequence + 1;
         const recordedAt = now();
         const id = event.id ?? randomUUID();
-        const outbound =
-          event.transferability === "transferable"
-            ? event.type === "context.manifest.recorded"
-              ? buildOutboundContext(db, projectId, sessionId)
-              : buildOutboundEvent({
-                  id,
-                  event,
-                  provenance,
-                  sequence,
-                  sessionId,
-                })
-            : null;
+        let outbound = null;
+        if (event.transferability === "transferable") {
+          if (event.type === "context.manifest.recorded") {
+            if (outboundContext !== undefined) {
+              outbound = verifyNormalizedOutboundContext(outboundContext, {
+                manifestId: sessionRow.context_manifest_id,
+              });
+            } else {
+              const built = buildOutboundContext(db, projectId, sessionId);
+              outbound = {
+                envelope: built.envelope,
+                bytes: built.bytes,
+                sha256: built.sha256,
+              };
+            }
+          } else {
+            outbound = buildOutboundEvent({
+              id,
+              event,
+              provenance,
+              sequence,
+              sessionId,
+            });
+          }
+        }
         db.prepare(
           `INSERT INTO cly_dev_session_events
            (id, project_id, session_id, schema_version, payload_version, sequence,
