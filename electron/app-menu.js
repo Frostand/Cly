@@ -72,7 +72,7 @@ export function configureApplicationMenu(app, appName) {
         },
         {
           label: "Switch Project…",
-          accelerator: "CommandOrControl+Alt+O",
+          accelerator: "CommandOrControl+Shift+O",
           click: command("project-switcher"),
         },
         { type: "separator" },
@@ -126,7 +126,6 @@ export function configureApplicationMenu(app, appName) {
         { label: "New Agent Session", click: command("new-agent-session") },
         {
           label: "Show Agent Sessions Overview",
-          accelerator: "CommandOrControl+Shift+O",
           click: command("agent-sessions-overview"),
         },
         {

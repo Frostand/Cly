@@ -156,6 +156,269 @@
   }
 }
 
+@layer v4 {
+  .agent-chat-mode {
+    grid-template-rows: 39px auto minmax(0, 1fr);
+  }
+
+  .cly-dev-task-bar {
+    min-width: 0;
+    border-bottom: 1px solid var(--cly-border);
+    background: var(--cly-surface-raised);
+  }
+
+  .cly-dev-task-identity {
+    padding: 7px 9px 6px;
+  }
+
+  .cly-dev-identity-groups {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(92px, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--cly-border-subtle);
+    border-radius: 8px;
+    background: var(--cly-border-subtle);
+  }
+
+  .cly-dev-identity-group {
+    min-width: 0;
+    min-inline-size: 0;
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    border: 0;
+    padding: 6px 8px;
+    background: var(--cly-surface);
+  }
+
+  .cly-dev-identity-group > legend {
+    width: 100%;
+    padding: 0;
+    color: var(--cly-text-faint);
+    font-size: 8px;
+    font-weight: 720;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+  }
+
+  .cly-dev-identity-group strong,
+  .cly-dev-identity-group small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cly-dev-identity-group strong {
+    font-size: 9px;
+    font-weight: 630;
+  }
+
+  .cly-dev-identity-group strong[data-mono="true"] {
+    font-family: var(--cly-mono);
+  }
+
+  .cly-dev-identity-group small {
+    color: var(--cly-text-faint);
+    font-size: 7.5px;
+  }
+
+  .cly-dev-task-controls {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 9px 7px;
+  }
+
+  .cly-dev-workspace-modes,
+  .cly-dev-task-actions {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .cly-dev-workspace-modes {
+    flex: none;
+    padding: 2px;
+    border: 1px solid var(--cly-border);
+    border-radius: 7px;
+    background: var(--cly-surface);
+  }
+
+  .cly-dev-workspace-modes label {
+    min-height: 24px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--cly-text-muted);
+    cursor: pointer;
+    font-size: 8.5px;
+    white-space: nowrap;
+  }
+
+  .cly-dev-workspace-modes label:has(input:checked) {
+    background: var(--cly-selected);
+    color: var(--cly-text);
+    font-weight: 650;
+  }
+
+  .cly-dev-workspace-modes input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+
+  .cly-dev-workspace-modes label:has(input:focus-visible) {
+    outline: 2px solid var(--cly-accent);
+    outline-offset: 2px;
+  }
+
+  .cly-dev-workspace-modes label span {
+    padding: 4px 7px;
+  }
+
+  .cly-dev-task-actions {
+    min-width: 0;
+    justify-content: flex-end;
+  }
+
+  .cly-dev-task-actions .cly-btn {
+    min-height: 26px;
+    padding: 4px 8px;
+    font-size: 8.5px;
+    white-space: nowrap;
+  }
+
+  .cly-dev-task-state {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 9px 7px;
+    border-left: 2px solid var(--cly-warning);
+    background: var(--cly-warning-soft);
+    padding: 5px 8px;
+    color: var(--cly-text-muted);
+    font-size: 8.5px;
+    line-height: 1.35;
+  }
+
+  .cly-dev-task-state .cly-btn {
+    min-height: 24px;
+    flex: none;
+    padding: 4px 8px;
+    font-size: 8.5px;
+  }
+
+  .cly-dev-task-state[role="alert"] {
+    border-left-color: var(--cly-danger);
+    background: var(--cly-danger-soft);
+  }
+
+  .agent-chat-split[data-agent-only="true"] {
+    display: block;
+  }
+
+  .agent-chat-split[data-agent-only="true"] .agent-chat-pane {
+    width: 100%;
+    height: 100%;
+  }
+
+  .agent-chat-pane:has(.cly-dev-inline-inspection) {
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+
+  .cly-dev-inline-inspection {
+    max-height: 172px;
+    overflow: auto;
+    border-top: 1px solid var(--cly-border);
+    background: var(--cly-surface-raised);
+  }
+
+  .cly-dev-inline-inspection > header {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--cly-border-subtle);
+    background: var(--cly-surface-raised);
+    padding: 4px 7px 4px 10px;
+    font-size: 9px;
+  }
+
+  .cly-dev-inline-inspection pre {
+    margin: 0;
+    padding: 8px 10px;
+    color: var(--cly-text-muted);
+    font-family: var(--cly-mono);
+    font-size: 8.5px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+
+  .cly-dev-inline-inspection article {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--cly-border-subtle);
+    font-size: 8.5px;
+  }
+
+  .cly-dev-inline-inspection article strong {
+    font-family: var(--cly-mono);
+  }
+
+  .cly-dev-inline-inspection article span,
+  .cly-dev-inline-inspection p {
+    color: var(--cly-text-muted);
+  }
+
+  .cly-dev-inline-inspection p {
+    margin: 0;
+    padding: 8px 10px;
+    font-size: 8.5px;
+  }
+
+  @media (max-width: 1250px) {
+    .cly-dev-identity-groups {
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+    }
+  }
+
+  @media (max-width: 920px) {
+    .cly-dev-task-controls {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .cly-dev-task-actions {
+      justify-content: flex-start;
+    }
+  }
+
+  @media (max-width: 780px) {
+    .cly-dev-identity-groups {
+      grid-template-columns: repeat(2, minmax(120px, 1fr));
+    }
+
+    .cly-dev-workspace-modes,
+    .cly-dev-task-actions {
+      overflow-x: auto;
+    }
+  }
+}
+
 /*
  * Modern cockpit pass
  *
@@ -3738,7 +4001,7 @@
     border: 0;
     border-bottom: 2px solid transparent;
     background: transparent;
-    padding: 0 21px 0 8px;
+    padding: 0 8px;
     color: var(--cly-text-faint);
     cursor: pointer;
     font-size: 8.5px;
@@ -3782,6 +4045,10 @@
     top: 4px;
     right: 19px;
     display: block;
+  }
+  .agent-tab-menu.agent-active-tab-menu {
+    display: block;
+    flex: none;
   }
   .agent-tab-menu summary {
     width: 17px;

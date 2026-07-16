@@ -3,9 +3,59 @@ import type {
   AgentMessage,
   AgentPermissions,
   AgentSession,
+  ClyDevTaskIdentity,
   NewAgentSessionInput,
   WorkbenchTab,
 } from "./types";
+
+const taskIdentity = ({
+  title,
+  branch,
+  worktree,
+  model = "GPT-5",
+  reasoningLevel = "high",
+  usedTokens = 58_200,
+  usedCostMinorUnits = 284,
+  researchImpact = "Changes calibration semantics linked to the primary reliability claim.",
+  researchObjectIds = ["claim-01", "exp-01", "code-01"],
+  risk = "medium",
+}: {
+  title: string;
+  branch: string;
+  worktree?: string;
+  model?: string;
+  reasoningLevel?: ClyDevTaskIdentity["provider"]["reasoningLevel"];
+  usedTokens?: number;
+  usedCostMinorUnits?: number;
+  researchImpact?: string;
+  researchObjectIds?: string[];
+  risk?: ClyDevTaskIdentity["researchImpact"]["risk"];
+}): ClyDevTaskIdentity => ({
+  project: { id: "project-cly", name: "Neural Surrogate Reliability" },
+  repository: {
+    name: "neural-surrogates",
+    remote: "github.com/cly-labs/neural-surrogates",
+  },
+  workspace: { branch, worktree, commit: "6e82a1f" },
+  machine: { id: "machine-local", name: "Research Mac" },
+  provider: {
+    id: "openai",
+    model,
+    reasoningLevel,
+  },
+  budget: {
+    usedTokens,
+    maxTokens: 200_000,
+    usedCostMinorUnits,
+    maxCostMinorUnits: 1_000,
+  },
+  objective: { title, issueId: "CLY-74" },
+  researchImpact: {
+    summary: researchImpact,
+    objectIds: researchObjectIds,
+    risk,
+  },
+});
 
 const standardPermissions: AgentPermissions = {
   canReadFiles: true,
@@ -281,6 +331,13 @@ export const createAgentSessionFixtures = (): AgentSession[] => {
       title: "Audit primary claim evidence",
       objective:
         "Trace the primary reliability claim through source evidence, experiments, code, and generated artifacts; identify the smallest defensible correction.",
+      identity: taskIdentity({
+        title: "Audit primary claim evidence",
+        branch: "agent/calibration-audit",
+        worktree: ".cly-worktrees/claim-audit",
+      }),
+      workspaceMode: "inline-workspace",
+      taskState: "streaming",
       orchestrator,
       delegatedAgents: [implementationAgent, reviewerAgent],
       tasks: [
@@ -341,6 +398,18 @@ export const createAgentSessionFixtures = (): AgentSession[] => {
       title: "Plan compute-matched baseline",
       objective:
         "Prepare a compute-matched baseline experiment with explicit budget and acceptance criteria.",
+      identity: taskIdentity({
+        title: "Plan compute-matched baseline",
+        branch: "experiment/compute-matched-baseline",
+        usedTokens: 21_800,
+        usedCostMinorUnits: 92,
+        researchImpact:
+          "May change the evidence supporting the compute-matched baseline.",
+        researchObjectIds: ["claim-01", "exp-04"],
+        risk: "high",
+      }),
+      workspaceMode: "inline-workspace",
+      taskState: "awaiting-approval",
       orchestrator: agent({
         id: "agent-plan-orchestrator",
         name: "Experiment Orchestrator",
@@ -418,6 +487,18 @@ export const createAgentSessionFixtures = (): AgentSession[] => {
       title: "Review OOD notebook",
       objective:
         "Find hidden state, portability gaps, and provenance breaks in the OOD evaluation notebook.",
+      identity: taskIdentity({
+        title: "Review OOD notebook",
+        branch: "audit/ood-notebook",
+        usedTokens: 18_300,
+        usedCostMinorUnits: 74,
+        researchImpact:
+          "Documents reproducibility gaps without changing research objects.",
+        researchObjectIds: ["nb-02"],
+        risk: "low",
+      }),
+      workspaceMode: "agent-only",
+      taskState: "interrupted-resumable",
       orchestrator: agent({
         id: "agent-notebook-orchestrator",
         name: "Notebook Review Orchestrator",
@@ -525,6 +606,20 @@ export const createNewAgentSession = (
     projectId: "project-cly",
     title: input.title,
     objective: input.objective,
+    identity: taskIdentity({
+      title: input.title,
+      branch: input.branchPreference,
+      model: input.model,
+      reasoningLevel:
+        input.reasoningLevel.toLowerCase() as ClyDevTaskIdentity["provider"]["reasoningLevel"],
+      usedTokens: 0,
+      usedCostMinorUnits: 0,
+      researchImpact: "Research impact has not been assessed yet.",
+      researchObjectIds: [],
+      risk: "low",
+    }),
+    workspaceMode: "inline-workspace",
+    taskState: "loading",
     orchestrator,
     delegatedAgents: [implementationAgent, reviewerAgent],
     tasks: [

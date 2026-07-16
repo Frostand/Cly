@@ -194,6 +194,110 @@ test("keeps chat and delegated-agent panes independently scrollable", async ({
   await expect(page.locator(".cly-sidebar-group-label")).toHaveCount(0);
 });
 
+test("validates Cly Dev identity, workspace ownership, restoration, and fallback states", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1024, height: 700 });
+  await page.keyboard.press("Control+Shift+O");
+  const projectSwitcher = page.getByRole("dialog", {
+    name: "Project switcher",
+  });
+  await expect(projectSwitcher).toBeVisible();
+  await projectSwitcher
+    .getByRole("button", { name: /Cell morphology atlas/ })
+    .press("Enter");
+  await expect(page.getByTestId("project-switcher")).toContainText(
+    "Cell morphology atlas",
+  );
+  await page.keyboard.press("Control+Shift+O");
+  await page
+    .getByRole("dialog", { name: "Project switcher" })
+    .getByRole("button", { name: /Neural surrogate reliability/ })
+    .press("Enter");
+  await page.getByTestId("fixture-selector").click();
+  await page
+    .getByRole("button", { name: /^Active Project Coherent linked/ })
+    .click();
+  await page
+    .getByRole("article", { name: /Audit primary claim evidence/ })
+    .getByRole("button", { name: /Open chat/ })
+    .click();
+
+  const identity = page.getByRole("region", { name: "Task identity" });
+  await expect(identity).toBeVisible();
+  for (const label of [
+    "Project",
+    "Repository",
+    "Workspace",
+    "Machine",
+    "Provider",
+    "Budget",
+    "Objective",
+    "Research impact",
+  ]) {
+    const group = identity.getByRole("group", { name: label });
+    await expect(group).toBeVisible();
+    const box = await group.boundingBox();
+    expect(box?.y ?? 701).toBeLessThan(700);
+  }
+
+  await page.getByRole("radio", { name: "Agent only" }).press("Space");
+  await expect(page.getByLabel("Session workbench")).toHaveCount(0);
+  await expect(page.getByLabel("Message the Orchestrator")).toBeVisible();
+  await page.getByRole("button", { name: "Inspect tests" }).click();
+  await expect(
+    page.getByRole("region", { name: "Test inspection" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Inspect diff" }).click();
+  await expect(
+    page.getByRole("region", { name: "Diff inspection" }),
+  ).toBeVisible();
+
+  await page.getByRole("radio", { name: "Inline workspace" }).click();
+  await page
+    .getByRole("button", { name: "Detach workspace (prototype)" })
+    .click();
+  await expect(
+    page.getByTestId("agent-sessions-chat").getByRole("status"),
+  ).toContainText("Detached workspace intent recorded");
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Reattach workspace (prototype)" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Reattach workspace (prototype)" })
+    .click();
+  await expect(page.getByLabel("Session workbench")).toBeVisible();
+
+  await page
+    .getByLabel("Switch agent session")
+    .selectOption({ label: "Review OOD notebook" });
+  await expect(
+    page.getByTestId("agent-sessions-chat").getByRole("status"),
+  ).toContainText("Offline");
+  await expect(page.getByRole("button", { name: "Resume task" })).toBeVisible();
+
+  await page.getByTestId("fixture-selector").click();
+  await page
+    .getByRole("button", { name: /^Integration Errors Partial data/ })
+    .click();
+  await page
+    .getByRole("article", { name: /Audit primary claim evidence/ })
+    .getByRole("button", { name: /Open chat/ })
+    .click();
+  await expect(
+    page.getByTestId("agent-sessions-chat").getByRole("alert"),
+  ).toContainText("Delegated agent failed");
+
+  await page.getByTestId("fixture-selector").click();
+  await page
+    .getByRole("button", { name: /^Empty No research objects/ })
+    .click();
+  await page.getByRole("radio", { name: "chat" }).press("Enter");
+  await expect(page.getByTestId("agent-chat-empty")).toBeVisible();
+});
+
 test("captures Agent Sessions visual regression fixtures", async ({ page }) => {
   test.setTimeout(60_000);
   const sizes = [
@@ -227,11 +331,17 @@ test("captures Agent Sessions visual regression fixtures", async ({ page }) => {
     .getByRole("article", { name: /Audit primary claim evidence/ })
     .getByRole("button", { name: /Open chat/ })
     .click();
+  await expect(
+    page.getByRole("region", { name: "Task identity" }),
+  ).toBeVisible();
+  for (const [width, height] of sizes) {
+    await page.setViewportSize({ width, height });
+    await page.screenshot({
+      path: `output/playwright/agent-chat-active-${width}x${height}.png`,
+      fullPage: true,
+    });
+  }
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.screenshot({
-    path: "output/playwright/agent-chat-active-1440x900.png",
-    fullPage: true,
-  });
 
   for (const [tabName, fileName] of [
     ["Calibration paper", "agent-browser.png"],

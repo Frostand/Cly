@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   Archive,
   ArrowDown,
   ArrowRight,
@@ -8,6 +9,7 @@ import {
   Circle,
   Clock3,
   Code2,
+  ExternalLink,
   FilePlus2,
   GitBranch,
   History,
@@ -34,8 +36,14 @@ import { Badge, Button } from "../components/primitives";
 import { ClySplitPane } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
 import { demoAgentSessionServices } from "./demo-services";
-import { AgentSessionsModeSwitcher } from "./shared";
-import type { AgentMessage as AgentMessageType, AgentSession } from "./types";
+import { AgentSessionsModeSwitcher, ClyDevTaskIdentitySurface } from "./shared";
+import type {
+  AgentMessage as AgentMessageType,
+  AgentSession,
+  ClyDevWorkspaceMode,
+  DiffTabState,
+  TerminalTabState,
+} from "./types";
 import { sessionStatusLabel, toneForAgentStatus } from "./utils";
 import { AgentWorkbench } from "./workbench";
 
@@ -125,17 +133,35 @@ function EmptyChatMode({ sessions }: { sessions: AgentSession[] }) {
 }
 
 function ActiveChatMode({ session }: { session: AgentSession }) {
+  const [inspection, setInspection] = useState<"tests" | "diff" | null>(null);
   const chat = (
     <section className="agent-chat-pane" aria-label="Orchestrator conversation">
       <Conversation session={session} />
+      {inspection ? (
+        <TaskInspection
+          session={session}
+          kind={inspection}
+          onClose={() => setInspection(null)}
+        />
+      ) : null}
       <ChatComposer session={session} />
     </section>
   );
   const workbench = <AgentWorkbench session={session} />;
+  const inlineWorkspace = session.workspaceMode === "inline-workspace";
   return (
     <div className="agent-chat-mode" data-testid="agent-sessions-chat">
       <SessionHeader session={session} />
-      {session.workbenchMaximized ? (
+      <div className="cly-dev-task-bar">
+        <ClyDevTaskIdentitySurface session={session} />
+        <TaskWorkspaceControls session={session} onInspect={setInspection} />
+        <TaskStateBanner session={session} />
+      </div>
+      {!inlineWorkspace ? (
+        <div className="agent-chat-split" data-agent-only="true">
+          {chat}
+        </div>
+      ) : session.workbenchMaximized ? (
         <div className="agent-chat-split" data-maximized="true">
           {workbench}
         </div>
@@ -158,6 +184,202 @@ function ActiveChatMode({ session }: { session: AgentSession }) {
         />
       )}
     </div>
+  );
+}
+
+function TaskWorkspaceControls({
+  session,
+  onInspect,
+}: {
+  session: AgentSession;
+  onInspect: (kind: "tests" | "diff") => void;
+}) {
+  const update = useClyStore((state) => state.updateAgentSession);
+  const notify = useClyStore((state) => state.notify);
+  const setMode = (workspaceMode: ClyDevWorkspaceMode) =>
+    update(session.id, (current) => ({ ...current, workspaceMode }));
+  const modes: Array<[ClyDevWorkspaceMode, string]> = [
+    ["agent-only", "Agent only"],
+    ["inline-workspace", "Inline workspace"],
+    ["detached-workspace", "Detached workspace"],
+    ["external-editor", "External editor"],
+  ];
+  return (
+    <div className="cly-dev-task-controls">
+      <div
+        className="cly-dev-workspace-modes"
+        role="radiogroup"
+        aria-label="Task workspace mode"
+      >
+        {modes.map(([mode, label]) => (
+          <label key={mode}>
+            <input
+              type="radio"
+              name={`task-workspace-mode-${session.id}`}
+              value={mode}
+              checked={session.workspaceMode === mode}
+              onChange={() => setMode(mode)}
+            />
+            <span>{label}</span>
+          </label>
+        ))}
+      </div>
+      <div
+        className="cly-dev-task-actions"
+        role="toolbar"
+        aria-label="Task tools"
+      >
+        <Button variant="ghost" onClick={() => onInspect("tests")}>
+          Inspect tests
+        </Button>
+        <Button variant="ghost" onClick={() => onInspect("diff")}>
+          Inspect diff
+        </Button>
+        {session.workspaceMode === "inline-workspace" ? (
+          <Button onClick={() => setMode("detached-workspace")}>
+            <AppWindow size={12} /> Detach workspace (prototype)
+          </Button>
+        ) : null}
+        {session.workspaceMode === "detached-workspace" ? (
+          <Button onClick={() => setMode("inline-workspace")}>
+            Reattach workspace (prototype)
+          </Button>
+        ) : null}
+        {session.workspaceMode === "external-editor" ? (
+          <Button
+            onClick={() =>
+              notify(
+                "External editor intent recorded",
+                `Prototype deep link for ${session.identity.workspace.branch}.`,
+              )
+            }
+          >
+            <ExternalLink size={12} /> Open editor (prototype)
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TaskStateBanner({ session }: { session: AgentSession }) {
+  const update = useClyStore((state) => state.updateAgentSession);
+  const failedAgent = session.delegatedAgents.find(
+    (agent) => agent.status === "failed",
+  );
+  const messages: string[] = [];
+  if (session.connectionState === "offline") {
+    messages.push(
+      "Offline — saved conversation and inspection evidence remain available",
+    );
+  } else if (session.connectionState === "reconnecting") {
+    messages.push("Reconnecting — new direction will wait for Core");
+  }
+  if (session.taskState === "interrupted-resumable") {
+    messages.push(
+      "Task was interrupted and can be resumed from its saved checkpoint",
+    );
+  } else if (session.taskState === "awaiting-approval") {
+    messages.push(
+      "Awaiting approval — review the inline approval event to continue",
+    );
+  } else if (session.taskState === "loading") {
+    messages.push("Loading task state from Core");
+  } else if (session.taskState === "failed") {
+    messages.push("Task failed — inspect retained evidence before retrying");
+  } else if (session.taskState === "canceled") {
+    messages.push("Task canceled — conversation and evidence are retained");
+  } else if (session.taskState === "unsupported") {
+    messages.push("Task configuration is unsupported on this machine");
+  }
+  if (failedAgent) {
+    messages.push(`Delegated agent failed — ${failedAgent.lastAction}`);
+  }
+  if (session.workspaceMode === "detached-workspace") {
+    messages.push(
+      "Detached workspace intent recorded — inline workspace remains the fallback",
+    );
+  } else if (session.workspaceMode === "external-editor") {
+    messages.push(
+      "External-editor deep-link mode selected — no editor has been opened yet",
+    );
+  }
+  if (!messages.length) return null;
+  const isAlert = session.taskState === "failed" || Boolean(failedAgent);
+  return (
+    <div
+      className="cly-dev-task-state"
+      role={isAlert ? "alert" : "status"}
+      aria-live={isAlert ? "assertive" : "polite"}
+    >
+      <span>{messages.join(" · ")}</span>
+      {session.taskState === "interrupted-resumable" ? (
+        <Button
+          onClick={() =>
+            update(session.id, (current) => ({
+              ...current,
+              connectionState: "connected",
+              status: "running",
+              taskState: "streaming",
+            }))
+          }
+        >
+          Resume task
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskInspection({
+  session,
+  kind,
+  onClose,
+}: {
+  session: AgentSession;
+  kind: "tests" | "diff";
+  onClose: () => void;
+}) {
+  const terminal = session.workbenchTabs.find((tab) => tab.type === "terminal")
+    ?.state as TerminalTabState | undefined;
+  const diff = session.workbenchTabs.find((tab) => tab.type === "diff")
+    ?.state as DiffTabState | undefined;
+  return (
+    <section
+      className="cly-dev-inline-inspection"
+      aria-label={kind === "tests" ? "Test inspection" : "Diff inspection"}
+    >
+      <header>
+        <strong>{kind === "tests" ? "Tests" : "Diff"}</strong>
+        <Button
+          iconOnly
+          variant="ghost"
+          aria-label="Close inspection"
+          onClick={onClose}
+        >
+          <X size={12} />
+        </Button>
+      </header>
+      {kind === "tests" ? (
+        <pre>
+          {terminal?.lines.join("\n") ??
+            "No retained test output for this task."}
+        </pre>
+      ) : diff?.files.length ? (
+        <div>
+          {diff.files.map((file) => (
+            <article key={file.path}>
+              <strong>{file.path}</strong>
+              <span>
+                +{file.additions} −{file.deletions} · {file.risk}
+              </span>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p>No retained diff for this task.</p>
+      )}
+    </section>
   );
 }
 

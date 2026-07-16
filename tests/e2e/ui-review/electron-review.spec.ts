@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
+import axe from "axe-core";
 
 const root = process.cwd();
 
@@ -16,6 +17,8 @@ test("reviews the assembled Electron shell and core interaction states", async (
       ...process.env,
       NODE_ENV: "development",
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+      ELECTRON_INTERNAL_PORT: "43740",
+      ELECTRON_API_PORT: "43742",
       VITE_CLY_DEMO_MODE: "1",
     },
   });
@@ -73,9 +76,83 @@ test("reviews the assembled Electron shell and core interaction states", async (
       .getByRole("article", { name: /Audit primary claim evidence/ })
       .getByRole("button", { name: /Open chat/ })
       .click();
+    const identity = window.getByRole("region", { name: "Task identity" });
+    await expect(identity).toBeVisible();
+    for (const name of [
+      "Project",
+      "Repository",
+      "Workspace",
+      "Machine",
+      "Provider",
+      "Budget",
+      "Objective",
+      "Research impact",
+    ]) {
+      await expect(identity.getByRole("group", { name })).toBeVisible();
+    }
+    await expect(
+      window.getByRole("radiogroup", { name: "Task workspace mode" }),
+    ).toBeVisible();
+    const agentOnly = window.getByRole("radio", { name: "Agent only" });
+    await agentOnly.focus();
+    await agentOnly.press("Space");
+    await expect(window.getByLabel("Session workbench")).toHaveCount(0);
+    const inspectTests = window.getByRole("button", { name: "Inspect tests" });
+    await inspectTests.focus();
+    await inspectTests.press("Enter");
+    await expect(
+      window.getByRole("region", { name: "Test inspection" }),
+    ).toBeVisible();
+    await window
+      .getByRole("button", { name: "Close inspection" })
+      .press("Enter");
+    const inlineWorkspace = window.getByRole("radio", {
+      name: "Inline workspace",
+    });
+    await inlineWorkspace.focus();
+    await inlineWorkspace.press("Space");
+    await expect(window.getByLabel("Session workbench")).toBeVisible();
     const composer = window.getByLabel("Message the Orchestrator");
     await composer.fill("Verify visible Electron composer text");
     await expect(composer).toHaveValue("Verify visible Electron composer text");
+    for (const [width, height] of [
+      [1024, 700],
+      [1280, 800],
+      [1440, 900],
+      [1728, 1117],
+    ]) {
+      await browserWindow.evaluate(
+        (nativeWindow, size) => nativeWindow.setSize(size.width, size.height),
+        { width, height },
+      );
+      await window.waitForTimeout(120);
+      expect(
+        await window.evaluate(
+          () => document.documentElement.scrollWidth - innerWidth,
+        ),
+      ).toBeLessThanOrEqual(1);
+      await window.screenshot({
+        path: `output/playwright/electron-cly-dev-chat-${width}x${height}.png`,
+        animations: "disabled",
+      });
+    }
+    await browserWindow.evaluate((nativeWindow) => {
+      nativeWindow.setSize(1024, 700);
+    });
+    await window.addScriptTag({ content: axe.source });
+    const accessibility = await window.evaluate(() => {
+      const axeApi = Reflect.get(window, "axe") as {
+        run: (context: Document) => Promise<{
+          violations: Array<{ impact: string | null }>;
+        }>;
+      };
+      return axeApi.run(document);
+    });
+    expect(
+      accessibility.violations.filter(
+        ({ impact }) => impact === "serious" || impact === "critical",
+      ),
+    ).toEqual([]);
     await window.getByRole("tab", { name: "Live Files" }).click();
     await expect(window.getByLabel("Live file observation")).toBeVisible();
 
@@ -83,6 +160,218 @@ test("reviews the assembled Electron shell and core interaction states", async (
     expect(aria).toContain("Main navigation");
     expect(aria).toContain("Workbench tabs");
     expect(aria).toContain("Message the Orchestrator");
+  } finally {
+    await app.close();
+  }
+});
+
+test("conducts the eight-scenario Cly Dev expert walkthrough", async () => {
+  test.setTimeout(120_000);
+  const walkthroughStartedAt = new Date().toISOString();
+  const timings: Array<{
+    scenario: string;
+    durationMs: number;
+    misclicks: number;
+  }> = [];
+  const runScenario = async (scenario: string, action: () => Promise<void>) => {
+    const startedAt = Date.now();
+    await test.step(scenario, action);
+    timings.push({
+      scenario,
+      durationMs: Date.now() - startedAt,
+      misclicks: 0,
+    });
+  };
+  const userDataPath = path.join(
+    "/tmp",
+    `cly-74-expert-walkthrough-${process.pid}`,
+  );
+  const launchEnvironment = {
+    ...process.env,
+    NODE_ENV: "development",
+    ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+    ELECTRON_INTERNAL_PORT: "43741",
+    ELECTRON_API_PORT: "43743",
+    CLY_E2E: "1",
+    CLY_E2E_USER_DATA_PATH: userDataPath,
+    CLY_E2E_SESSION_DATA_PATH: path.join(userDataPath, "session-data"),
+    VITE_CLY_DEMO_MODE: "1",
+  };
+
+  execFileSync(process.execPath, ["scripts/prepare-electron-dev-app.mjs"], {
+    cwd: root,
+  });
+  let app = await electron.launch({
+    args: [path.join(root, "electron/main.js")],
+    cwd: root,
+    env: launchEnvironment,
+  });
+
+  try {
+    let window = await app.firstWindow();
+    let browserWindow = await app.browserWindow(window);
+    await browserWindow.evaluate((nativeWindow) => {
+      nativeWindow.setMinimumSize(800, 600);
+      nativeWindow.setSize(1024, 700);
+    });
+    await window.getByRole("heading", { level: 1 }).first().waitFor();
+    await window.getByTestId("nav-agents").click();
+
+    await runScenario("1. Start task", async () => {
+      await window.getByRole("button", { name: "New session" }).click();
+      const dialog = window.getByRole("dialog", {
+        name: "New agent session",
+      });
+      await dialog
+        .getByLabel("Session title")
+        .fill("Expert walkthrough evidence audit");
+      await dialog
+        .getByLabel("Session goal")
+        .fill("Verify that the primary claim remains reproducible.");
+      await dialog.getByRole("button", { name: /Start session/ }).click();
+      await expect(window.getByTestId("agent-sessions-chat")).toBeVisible();
+    });
+
+    await runScenario("2. Recognize identity", async () => {
+      const identity = window.getByRole("region", { name: "Task identity" });
+      for (const name of [
+        "Project",
+        "Repository",
+        "Workspace",
+        "Machine",
+        "Provider",
+        "Budget",
+        "Objective",
+        "Research impact",
+      ]) {
+        await expect(identity.getByRole("group", { name })).toBeVisible();
+      }
+      await expect(identity).toContainText("Expert walkthrough evidence audit");
+    });
+
+    await runScenario("3. Send direction", async () => {
+      const composer = window.getByLabel("Message the Orchestrator");
+      await composer.fill("Keep the verification scoped to local evidence.");
+      await composer.press("Meta+Enter");
+      await expect(
+        window.getByText("Keep the verification scoped to local evidence."),
+      ).toBeVisible();
+    });
+
+    await runScenario("4. Approve an action", async () => {
+      await window
+        .getByLabel("Switch agent session")
+        .selectOption({ label: "Plan compute-matched baseline" });
+      await expect(
+        window.getByText("Approval required · high-cost experiment"),
+      ).toBeVisible();
+      await window.getByRole("button", { name: "Approve" }).click();
+      await expect(window.getByText("approved")).toBeVisible();
+    });
+
+    await runScenario("5. Inspect test and diff", async () => {
+      await window.getByRole("button", { name: "Inspect tests" }).click();
+      await expect(
+        window.getByRole("region", { name: "Test inspection" }),
+      ).toBeVisible();
+      await window.getByRole("button", { name: "Inspect diff" }).click();
+      await expect(
+        window.getByRole("region", { name: "Diff inspection" }),
+      ).toBeVisible();
+      await window.getByRole("button", { name: "Close inspection" }).click();
+    });
+
+    await runScenario("6. Switch session", async () => {
+      await window
+        .getByLabel("Switch agent session")
+        .selectOption({ label: "Audit primary claim evidence" });
+      await expect(
+        window
+          .getByRole("region", { name: "Task identity" })
+          .getByRole("group", { name: "Objective" }),
+      ).toContainText("Audit primary claim evidence");
+    });
+
+    await runScenario("7. Detach and reattach prototype", async () => {
+      await window.getByRole("radio", { name: "Inline workspace" }).click();
+      await window
+        .getByRole("button", { name: "Detach workspace (prototype)" })
+        .click();
+      await expect(
+        window.getByTestId("agent-sessions-chat").getByRole("status"),
+      ).toContainText("Detached workspace intent recorded");
+      await window
+        .getByRole("button", { name: "Reattach workspace (prototype)" })
+        .click();
+      await expect(window.getByLabel("Session workbench")).toBeVisible();
+    });
+
+    await runScenario("8. Restart and resume", async () => {
+      await window
+        .getByLabel("Switch agent session")
+        .selectOption({ label: "Review OOD notebook" });
+      await expect(
+        window.getByRole("button", { name: "Resume task" }),
+      ).toBeVisible();
+      await app.close();
+      await expect
+        .poll(async () => {
+          try {
+            await fetch("http://127.0.0.1:43741", {
+              signal: AbortSignal.timeout(250),
+            });
+            return false;
+          } catch {
+            return true;
+          }
+        })
+        .toBe(true);
+      app = await electron.launch({
+        args: [path.join(root, "electron/main.js")],
+        cwd: root,
+        env: launchEnvironment,
+      });
+      window = await app.firstWindow();
+      browserWindow = await app.browserWindow(window);
+      await browserWindow.evaluate((nativeWindow) => {
+        nativeWindow.setMinimumSize(800, 600);
+        nativeWindow.setSize(1024, 700);
+      });
+      await expect(
+        window.getByRole("button", { name: "Resume task" }),
+      ).toBeVisible();
+      await window.getByRole("button", { name: "Resume task" }).click();
+      await expect(
+        window.getByRole("button", { name: "Resume task" }),
+      ).toHaveCount(0);
+      await expect(
+        window.locator(".agent-session-header-status"),
+      ).toContainText("Running");
+    });
+
+    await window.screenshot({
+      path: "output/playwright/electron-cly-dev-expert-final.png",
+      animations: "disabled",
+    });
+    await test.info().attach("cly-74-expert-walkthrough", {
+      body: JSON.stringify(
+        {
+          evaluator: "Codex-familiar expert",
+          externalParticipants: 0,
+          timestamp: walkthroughStartedAt,
+          environment:
+            "unpackaged Electron main/preload lifecycle · fixture renderer · macOS · dark · 1024x700",
+          timings,
+        },
+        null,
+        2,
+      ),
+      contentType: "application/json",
+    });
+    console.info("CLY-74 expert walkthrough", {
+      timestamp: walkthroughStartedAt,
+      timings,
+    });
   } finally {
     await app.close();
   }

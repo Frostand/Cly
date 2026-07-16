@@ -12,6 +12,7 @@ import { Badge, Button, Dialog, Segmented } from "../components/primitives";
 import { useClyStore } from "../store/cly-store";
 import type {
   AgentIdentity,
+  AgentSession,
   AgentSessionsMode,
   NewAgentSessionInput,
 } from "./types";
@@ -41,6 +42,89 @@ export function AgentSessionsModeSwitcher({
         label="Agent Sessions mode"
       />
     </div>
+  );
+}
+
+const formatTokens = (value: number) =>
+  new Intl.NumberFormat("en", { notation: "compact" }).format(value);
+
+const formatCost = (minorUnits: number) => `$${(minorUnits / 100).toFixed(2)}`;
+
+export function ClyDevTaskIdentitySurface({
+  session,
+}: {
+  session: AgentSession;
+}) {
+  const identity = session.identity;
+  return (
+    <section className="cly-dev-task-identity" aria-label="Task identity">
+      <div className="cly-dev-identity-groups">
+        <IdentityGroup label="Project" value={identity.project.name} />
+        <IdentityGroup
+          label="Repository"
+          value={identity.repository.name}
+          detail={identity.repository.remote}
+        />
+        <IdentityGroup
+          label="Workspace"
+          value={identity.workspace.branch}
+          detail={
+            identity.workspace.worktree ??
+            identity.workspace.commit ??
+            "Primary checkout"
+          }
+          mono
+        />
+        <IdentityGroup
+          label="Machine"
+          value={identity.machine.name}
+          detail={identity.machine.id}
+        />
+        <IdentityGroup
+          label="Provider"
+          value={`${identity.provider.model} · ${identity.provider.reasoningLevel}`}
+          detail={identity.provider.id}
+        />
+        <IdentityGroup
+          label="Budget"
+          value={`${formatTokens(identity.budget.usedTokens)} / ${formatTokens(identity.budget.maxTokens)} tokens`}
+          detail={`${formatCost(identity.budget.usedCostMinorUnits)} / ${formatCost(identity.budget.maxCostMinorUnits)}`}
+        />
+        <IdentityGroup
+          label="Objective"
+          value={identity.objective.title}
+          detail={identity.objective.issueId}
+        />
+        <IdentityGroup
+          label="Research impact"
+          value={identity.researchImpact.summary}
+          detail={`${identity.researchImpact.risk} risk · ${identity.researchImpact.objectIds.length} objects`}
+        />
+      </div>
+    </section>
+  );
+}
+
+function IdentityGroup({
+  label,
+  value,
+  detail,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  mono?: boolean;
+}) {
+  return (
+    <fieldset
+      className="cly-dev-identity-group"
+      title={[value, detail].filter(Boolean).join(" · ")}
+    >
+      <legend>{label}</legend>
+      <strong data-mono={mono}>{value}</strong>
+      {detail ? <small>{detail}</small> : null}
+    </fieldset>
   );
 }
 

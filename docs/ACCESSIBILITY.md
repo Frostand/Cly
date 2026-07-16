@@ -12,10 +12,13 @@
 - Loading uses a named status region and skeleton rows.
 - The inspector no longer creates an empty landmark when there is no selection.
 - Reduced-motion preferences remove nonessential movement.
+- Active Cly Dev tasks expose a named Task identity region with individually named Project, Repository, Workspace, Machine, Provider, Budget, Objective, and Research impact groups.
+- Agent-only, inline, detached, and external-editor choices form one named radio group. State changes use a single restrained status or alert region.
+- Inline test and diff inspection remain keyboard reachable when the workbench is absent.
 
 ## Keyboard contract
 
-Tab reaches every visible action in visual order. Enter/Space activate native controls. Arrow keys resize a focused split. Escape closes transient overlays or clears selection. Command-palette and shell shortcuts remain documented in Settings.
+Tab reaches every visible action in visual order. In Cly Dev the order is header, identity, workspace mode, task tools, transcript, composer, then inline workbench. Enter/Space activate native controls. Arrow keys resize a focused split. Escape closes transient overlays or clears selection. Dialogs and future detached windows return focus to their initiating control. Command-palette and shell shortcuts remain documented in Settings.
 
 ## Tables and large collections
 
@@ -27,7 +30,7 @@ Text roles use theme tokens rather than route colors. Muted text is reserved for
 
 ## Verification
 
-Component tests cover progress ARIA values, labeled search, native disclosure, split separators, status text, and virtual-list semantics. Playwright exercises keyboard commands, inspector selection, sidebar/activity controls, and every route at narrow and large desktop sizes.
+Component tests cover progress ARIA values, labeled search, native disclosure, split separators, task identity, workspace modes, status text, and virtual-list semantics. Playwright exercises keyboard commands, inspector selection, sidebar/activity controls, Cly Dev fallback modes, and every route at narrow and large desktop sizes. Electron validation includes axe and keyboard traversal of the target route.
 
 ## Remaining manual checks
 

@@ -71,7 +71,6 @@ const tabIcons: Record<WorkbenchTabType, React.ReactNode> = {
 
 export function AgentWorkbench({ session }: { session: AgentSession }) {
   const activate = useClyStore((state) => state.activateWorkbenchTab);
-  const close = useClyStore((state) => state.closeWorkbenchTab);
   const reorder = useClyStore((state) => state.reorderWorkbenchTab);
   const open = useClyStore((state) => state.openWorkbenchTab);
   const toggleMaximized = useClyStore(
@@ -88,21 +87,46 @@ export function AgentWorkbench({ session }: { session: AgentSession }) {
       className="agent-workbench"
       aria-label="Session workbench"
       data-maximized={session.workbenchMaximized}
+      data-window-ownership="inline"
     >
-      <div
-        className="agent-workbench-tabs"
-        role="tablist"
-        aria-label="Workbench tabs"
-      >
-        <div className="agent-workbench-tab-scroll">
+      <div className="agent-workbench-tabs">
+        <div
+          className="agent-workbench-tab-scroll"
+          role="tablist"
+          aria-label="Workbench tabs"
+        >
           {session.workbenchTabs.map((tab, index) => (
-            <div className="agent-workbench-tab-wrap" key={tab.id}>
+            <div
+              className="agent-workbench-tab-wrap"
+              key={tab.id}
+              role="presentation"
+            >
               <button
                 type="button"
                 role="tab"
+                id={`workbench-tab-${session.id}-${tab.id}`}
+                aria-controls={`workbench-panel-${session.id}`}
                 aria-selected={tab.id === session.activeWorkbenchTabId}
+                tabIndex={tab.id === session.activeWorkbenchTabId ? 0 : -1}
                 className="agent-workbench-tab"
                 onClick={() => activate(session.id, tab.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
+                    return;
+                  event.preventDefault();
+                  const delta = event.key === "ArrowLeft" ? -1 : 1;
+                  const nextIndex =
+                    (index + delta + session.workbenchTabs.length) %
+                    session.workbenchTabs.length;
+                  const next = session.workbenchTabs[nextIndex];
+                  if (!next) return;
+                  activate(session.id, next.id);
+                  requestAnimationFrame(() =>
+                    document
+                      .getElementById(`workbench-tab-${session.id}-${next.id}`)
+                      ?.focus(),
+                  );
+                }}
                 draggable
                 onDragStart={(event) =>
                   event.dataTransfer.setData(
@@ -122,20 +146,17 @@ export function AgentWorkbench({ session }: { session: AgentSession }) {
                 {tab.pinned ? <Pin size={10} /> : tabIcons[tab.type]}
                 <span>{tab.title}</span>
               </button>
-              {!tab.pinned ? (
-                <button
-                  type="button"
-                  className="agent-workbench-tab-close"
-                  aria-label={`Close ${tab.title}`}
-                  onClick={() => close(session.id, tab.id)}
-                >
-                  <X size={11} />
-                </button>
-              ) : null}
-              <WorkbenchTabMenu session={session} tab={tab} index={index} />
             </div>
           ))}
         </div>
+        {activeTab ? (
+          <WorkbenchTabMenu
+            session={session}
+            tab={activeTab}
+            index={session.workbenchTabs.indexOf(activeTab)}
+            active
+          />
+        ) : null}
         <div className="agent-tab-picker-wrap">
           <Button
             iconOnly
@@ -190,7 +211,14 @@ export function AgentWorkbench({ session }: { session: AgentSession }) {
           <PanelRightClose size={13} />
         </Button>
       </div>
-      <div className="agent-workbench-content">
+      <div
+        className="agent-workbench-content"
+        id={`workbench-panel-${session.id}`}
+        role="tabpanel"
+        aria-labelledby={
+          activeTab ? `workbench-tab-${session.id}-${activeTab.id}` : undefined
+        }
+      >
         {activeTab ? (
           <WorkbenchContent session={session} tab={activeTab} />
         ) : (
@@ -214,17 +242,21 @@ function WorkbenchTabMenu({
   session,
   tab,
   index,
+  active = false,
 }: {
   session: AgentSession;
   tab: WorkbenchTab;
   index: number;
+  active?: boolean;
 }) {
   const duplicate = useClyStore((state) => state.duplicateWorkbenchTab);
   const pin = useClyStore((state) => state.toggleWorkbenchTabPin);
   const reorder = useClyStore((state) => state.reorderWorkbenchTab);
   const close = useClyStore((state) => state.closeWorkbenchTab);
   return (
-    <details className="agent-tab-menu">
+    <details
+      className={`agent-tab-menu${active ? " agent-active-tab-menu" : ""}`}
+    >
       <summary aria-label={`${tab.title} tab menu`} aria-haspopup="menu">
         <MoreHorizontal size={11} />
       </summary>

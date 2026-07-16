@@ -378,11 +378,18 @@ export function CommandPalette() {
     return [
       ...navigation,
       {
+        id: "project-switcher",
+        label: "Switch project",
+        group: "Navigate",
+        icon: CommandIcon,
+        shortcut: "⌘⇧O",
+        run: () => useClyStore.getState().setProjectSwitcherOpen(true),
+      },
+      {
         id: "agent-overview",
         label: "Show Agent Sessions Overview",
         group: "Navigate",
         icon: CommandIcon,
-        shortcut: "⌘⇧O",
         run: () => useClyStore.getState().setAgentSessionsMode("overview"),
       },
       {

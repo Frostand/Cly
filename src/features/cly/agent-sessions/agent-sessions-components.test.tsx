@@ -79,7 +79,7 @@ describe("Agent Sessions workspace", () => {
     );
 
     expect(screen.getByTestId("agent-sessions-chat")).toBeVisible();
-    expect(screen.getByText("Audit submission evidence")).toBeVisible();
+    expect(screen.getAllByText("Audit submission evidence")[0]).toBeVisible();
     expect(screen.getByText("Preparing a research-aware plan")).toBeVisible();
     expect(
       useClyStore.getState().data.agentSessions[0]?.orchestrator.reasoningLevel,
@@ -214,5 +214,113 @@ describe("Agent Sessions workspace", () => {
     );
     expect(within(menu).getByText("agent/calibration-audit")).toBeVisible();
     expect(within(menu).getByText("$2.84 · 58.2k tokens")).toBeVisible();
+  });
+
+  it("keeps the complete Cly Dev task identity discoverable in Chat", () => {
+    useClyStore.setState({
+      agentSessionsMode: "chat",
+      selectedAgentSessionId: "session-01",
+    });
+    render(<AgentSessionsScreen />);
+
+    const identity = screen.getByRole("region", { name: "Task identity" });
+    for (const label of [
+      "Project",
+      "Repository",
+      "Workspace",
+      "Machine",
+      "Provider",
+      "Budget",
+      "Objective",
+      "Research impact",
+    ]) {
+      expect(
+        within(identity).getByRole("group", { name: label }),
+      ).toBeVisible();
+    }
+    expect(
+      within(identity).getByText("Neural Surrogate Reliability"),
+    ).toBeVisible();
+    expect(within(identity).getByText("agent/calibration-audit")).toBeVisible();
+    expect(within(identity).getByText(/GPT-5 · high/)).toBeVisible();
+  });
+
+  it("supports agent-only, inline, detach, and reattach prototype intents", async () => {
+    const user = userEvent.setup();
+    useClyStore.setState({
+      agentSessionsMode: "chat",
+      selectedAgentSessionId: "session-01",
+    });
+    render(<AgentSessionsScreen />);
+
+    await user.click(screen.getByRole("radio", { name: "Agent only" }));
+    expect(
+      screen.queryByLabelText("Session workbench"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Message the Orchestrator")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Inspect tests" }));
+    expect(
+      screen.getByRole("region", { name: "Test inspection" }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Inspect diff" }));
+    expect(
+      screen.getByRole("region", { name: "Diff inspection" }),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("radio", { name: "Inline workspace" }));
+    expect(screen.getByLabelText("Session workbench")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Detach workspace (prototype)" }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Detached workspace intent recorded",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Reattach workspace (prototype)" }),
+    );
+    expect(screen.getByLabelText("Session workbench")).toBeVisible();
+
+    await user.click(screen.getByRole("radio", { name: "External editor" }));
+    expect(
+      screen.queryByLabelText("Session workbench"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "External-editor deep-link mode selected",
+    );
+    expect(
+      screen.getByRole("button", { name: "Open editor (prototype)" }),
+    ).toBeVisible();
+  });
+
+  it("announces offline, failed, and interrupted resumable task states truthfully", () => {
+    const session = useClyStore.getState().data.agentSessions[0];
+    expect(session).toBeDefined();
+    useClyStore.setState((state) => ({
+      data: {
+        ...state.data,
+        agentSessions: state.data.agentSessions.map((item, index) =>
+          index === 0
+            ? {
+                ...item,
+                connectionState: "offline",
+                taskState: "interrupted-resumable",
+              }
+            : item,
+        ),
+      },
+      agentSessionsMode: "chat",
+      selectedAgentSessionId: session?.id,
+    }));
+    const { rerender } = render(<AgentSessionsScreen />);
+    expect(screen.getByRole("status")).toHaveTextContent(/Offline/);
+    expect(screen.getByRole("status")).toHaveTextContent(/can be resumed/);
+
+    useClyStore.getState().updateAgentSession(session?.id ?? "", (item) => ({
+      ...item,
+      connectionState: "connected",
+      taskState: "failed",
+    }));
+    rerender(<AgentSessionsScreen />);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Task failed/);
   });
 });

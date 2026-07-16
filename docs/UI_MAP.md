@@ -3,7 +3,7 @@
 | Destination | Primary views | Important actions |
 |---|---|---|
 | Overview | status strip, question/hypothesis, activity, claims, next action, graph preview, reports | open graph, inspect risk, review next action |
-| Agent Sessions | active, history, approvals | start preview, inspect outputs, review approval |
+| Agent Sessions | Overview; task identity; conversation; plan/progress; approvals; context; agent-only, inline, detached-intent, and external-editor-intent modes; optional workbench | start task, send direction, inspect tests/diff, approve/reject, switch project/session, detach/reattach prototype, resume |
 | Context | composer, exact agent preview, context packs, budget | include, exclude, pin, summarize/raw, reorder, save |
 | Research Graph | graph, outline, relationships, evidence chain | search, filter, zoom, trace, create/approve link |
 | Experiments | experiment list, runs, compare, timeline, outputs | create, compare, duplicate boundary, report |
