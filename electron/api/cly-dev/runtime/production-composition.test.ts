@@ -280,4 +280,52 @@ describe("production Cly Dev execution composition", () => {
     expect(await (await first).json()).toEqual({ status: "canceled" });
     expect(await (await second).json()).toEqual({ status: "completed" });
   });
+
+  it("fails closed for unknown durable cancellation scope and keeps absent active requests idempotent", async () => {
+    const { db } = createFixture({ clyDevPolicy: { default: "deny" } });
+    const cancel = vi.fn();
+    const runner = {
+      getAuthentication: () => ({ status: "authenticated" }),
+      listModels: () => [{ id: "test-model" }],
+      getCapabilities: () => ({
+        streaming: true,
+        reasoning: true,
+        toolCalls: false,
+        interceptBeforeEffect: false,
+      }),
+      async *stream() {
+        yield { type: "completed" };
+      },
+      cancel,
+    };
+    const app = createApiApp(TOKEN, {
+      clyDev: { getDatabase: () => db, runner, now: () => NOW },
+    });
+    const cancelRequest = (projectId: string, sessionId: string) =>
+      app.request(
+        `/api/projects/${projectId}/cly-dev/sessions/${sessionId}/cancel`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            schemaVersion: 1,
+            payloadVersion: 1,
+            requestId: "not-active",
+          }),
+        },
+      );
+
+    expect((await cancelRequest("wrong-project", "session-1")).status).toBe(
+      404,
+    );
+    expect((await cancelRequest("project-1", "missing-session")).status).toBe(
+      404,
+    );
+    const noActive = await cancelRequest("project-1", "session-1");
+    expect(noActive.status).toBe(200);
+    expect(await noActive.json()).toEqual({
+      status: "cancellation_requested",
+    });
+    expect(cancel).not.toHaveBeenCalled();
+  });
 });

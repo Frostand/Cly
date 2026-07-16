@@ -90,7 +90,10 @@ export function createProductionClyDevRuntime({
   return Object.freeze({
     execute: (request) => core.execute(prepare(request)),
     resume: (request) => core.resume(prepare(request)),
-    cancel: (scope) => core.cancel(scope),
+    cancel(scope) {
+      repository.getSnapshot(scope.projectId, scope.sessionId);
+      return core.cancel(scope);
+    },
   });
 }
 

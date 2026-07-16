@@ -113,10 +113,9 @@ export function registerClyDevSessionRoutes(
         });
         return c.json({ status: "cancellation_requested" });
       } catch (error) {
-        return c.text(
-          error instanceof Error ? error.message : "Cancellation failed.",
-          400,
-        );
+        const message =
+          error instanceof Error ? error.message : "Cancellation failed.";
+        return c.text(message, /not found/i.test(message) ? 404 : 400);
       }
     },
   );
