@@ -13,6 +13,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { registerChatRoutes } from "./chat-routes.js";
+import { registerClyDevSessionRoutes } from "./cly-dev/session-routes.js";
 import { registerPrImpactReviewRoutes } from "./github/routes.js";
 import { registerLiteratureRoutes } from "./literature/routes.js";
 import { registerProjectGitRoutes } from "./project-git-routes.js";
@@ -95,6 +96,7 @@ export function createApiApp(
   );
 
   registerToolApprovalRoutes(guardedApp);
+  registerClyDevSessionRoutes(guardedApp);
   registerProviderRoutes(guardedApp);
   registerChatRoutes(guardedApp);
   registerLiteratureRoutes(guardedApp);

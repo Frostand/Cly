@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ExperimentLineage } from "../../research/contracts/experiment-provenance";
+import { productionAgentSessionServices } from "../agent-sessions/production-services";
 import type {
   AgentIdentity,
   AgentMessage,
@@ -7,6 +8,7 @@ import type {
   AgentSessionOverviewFilter,
   AgentSessionOverviewSort,
   AgentSessionsMode,
+  ClyDevSessionOverview,
   NewAgentSessionInput,
   WorkbenchTab,
   WorkbenchTabType,
@@ -109,6 +111,9 @@ interface ClyState {
   inheritedRestrictions: Record<string, InheritedRestriction[]>;
   obligationsLoading: boolean;
   obligationsError: string | null;
+  clyDevSessions: ClyDevSessionOverview[];
+  clyDevSessionsLoading: boolean;
+  clyDevSessionsError: string | null;
   agentSessionsMode: AgentSessionsMode;
   selectedAgentSessionId: string | null;
   selectedOverviewSessionId: string | null;
@@ -145,6 +150,7 @@ interface ClyState {
   notify: (title: string, detail?: string) => void;
   dismissToast: (id: string) => void;
   loadFromApi: (projectId?: string) => Promise<boolean>;
+  loadClyDevSessions: (projectId?: string) => Promise<boolean>;
   loadObligations: (projectId?: string) => Promise<boolean>;
   saveDatasetObligation: (
     datasetObjectId: string,
@@ -845,6 +851,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
   inheritedRestrictions: {},
   obligationsLoading: false,
   obligationsError: null,
+  clyDevSessions: [],
+  clyDevSessionsLoading: false,
+  clyDevSessionsError: null,
   agentSessionsMode: savedAgentSessionIsValid
     ? (saved.agentSessionsMode ?? "overview")
     : "overview",
@@ -1073,6 +1082,27 @@ export const useClyStore = create<ClyState>((set, get) => ({
         operation: "hydrate-project-research",
       });
       get().notify("Research data could not load", message);
+      return false;
+    }
+  },
+  loadClyDevSessions: async (requestedProjectId) => {
+    const projectId = requestedProjectId ?? get().activeProjectId;
+    set({ clyDevSessionsLoading: true, clyDevSessionsError: null });
+    try {
+      const sessions = await productionAgentSessionServices.hydrate(projectId);
+      if (get().activeProjectId !== projectId) return false;
+      set({
+        clyDevSessions: sessions,
+        clyDevSessionsLoading: false,
+        clyDevSessionsError: null,
+      });
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Agent sessions could not load.";
+      set({ clyDevSessionsLoading: false, clyDevSessionsError: message });
       return false;
     }
   },

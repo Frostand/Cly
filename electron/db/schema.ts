@@ -940,3 +940,360 @@ export const runArtifacts = sqliteTable(
     ),
   ],
 );
+
+export const clyDevWorkspaces = sqliteTable(
+  "cly_dev_workspaces",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    schemaVersion: integer("schema_version").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    name: text("name").notNull(),
+    repositoryJson: text("repository_json").notNull(),
+    worktreeJson: text("worktree_json").notNull(),
+    machineJson: text("machine_json").notNull(),
+    localOnlyJson: text("local_only_json").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "cly_dev_workspaces_repository_json",
+      sql`json_valid(${table.repositoryJson})`,
+    ),
+    check("cly_dev_workspaces_version", sql`${table.schemaVersion} = 1`),
+    check(
+      "cly_dev_workspaces_worktree_json",
+      sql`json_valid(${table.worktreeJson})`,
+    ),
+    check(
+      "cly_dev_workspaces_machine_json",
+      sql`json_valid(${table.machineJson})`,
+    ),
+    check(
+      "cly_dev_workspaces_local_only_json",
+      sql`json_valid(${table.localOnlyJson})`,
+    ),
+    uniqueIndex("cly_dev_workspaces_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("cly_dev_workspaces_project_idempotency_unique").on(
+      table.projectId,
+      table.idempotencyKey,
+    ),
+    index("idx_cly_dev_workspaces_project_updated").on(
+      table.projectId,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const clyDevContextManifests = sqliteTable(
+  "cly_dev_context_manifests",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    localOnlyJson: text("local_only_json").notNull(),
+    transferableJson: text("transferable_json").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.workspaceId, table.projectId],
+      foreignColumns: [clyDevWorkspaces.id, clyDevWorkspaces.projectId],
+      name: "cly_dev_context_manifests_workspace_project_fk",
+    }).onDelete("cascade"),
+    check("cly_dev_context_manifests_version", sql`${table.schemaVersion} = 1`),
+    check(
+      "cly_dev_context_manifests_local_json",
+      sql`json_valid(${table.localOnlyJson})`,
+    ),
+    check(
+      "cly_dev_context_manifests_transferable_json",
+      sql`json_valid(${table.transferableJson})`,
+    ),
+    uniqueIndex("cly_dev_context_manifests_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("cly_dev_context_manifests_project_idempotency_unique").on(
+      table.projectId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
+export const clyDevTasks = sqliteTable(
+  "cly_dev_tasks",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    title: text("title").notNull(),
+    objective: text("objective").notNull(),
+    researchObjectIdsJson: text("research_object_ids_json")
+      .notNull()
+      .default("[]"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.workspaceId, table.projectId],
+      foreignColumns: [clyDevWorkspaces.id, clyDevWorkspaces.projectId],
+      name: "cly_dev_tasks_workspace_project_fk",
+    }).onDelete("cascade"),
+    check(
+      "cly_dev_tasks_research_objects_json",
+      sql`json_valid(${table.researchObjectIdsJson}) AND json_type(${table.researchObjectIdsJson}) = 'array'`,
+    ),
+    check("cly_dev_tasks_version", sql`${table.schemaVersion} = 1`),
+    uniqueIndex("cly_dev_tasks_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("cly_dev_tasks_project_idempotency_unique").on(
+      table.projectId,
+      table.idempotencyKey,
+    ),
+    index("idx_cly_dev_tasks_project_workspace").on(
+      table.projectId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const clyDevSessions = sqliteTable(
+  "cly_dev_sessions",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    taskId: text("task_id").notNull(),
+    contextManifestId: text("context_manifest_id").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    title: text("title").notNull(),
+    providerJson: text("provider_json").notNull(),
+    commitJson: text("commit_json").notNull(),
+    state: text("state").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.taskId, table.projectId],
+      foreignColumns: [clyDevTasks.id, clyDevTasks.projectId],
+      name: "cly_dev_sessions_task_project_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.contextManifestId, table.projectId],
+      foreignColumns: [
+        clyDevContextManifests.id,
+        clyDevContextManifests.projectId,
+      ],
+      name: "cly_dev_sessions_context_project_fk",
+    }),
+    check("cly_dev_sessions_version", sql`${table.schemaVersion} = 1`),
+    check(
+      "cly_dev_sessions_state",
+      sql`${table.state} IN ('queued', 'running', 'awaiting_approval', 'completed', 'canceled', 'failed', 'interrupted', 'resumable')`,
+    ),
+    check(
+      "cly_dev_sessions_provider_json",
+      sql`json_valid(${table.providerJson})`,
+    ),
+    check("cly_dev_sessions_commit_json", sql`json_valid(${table.commitJson})`),
+    uniqueIndex("cly_dev_sessions_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("cly_dev_sessions_project_idempotency_unique").on(
+      table.projectId,
+      table.idempotencyKey,
+    ),
+    index("idx_cly_dev_sessions_project_state").on(
+      table.projectId,
+      table.state,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const clyDevSessionProjections = sqliteTable(
+  "cly_dev_session_projections",
+  {
+    sessionId: text("session_id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    state: text("state").notNull(),
+    lastSequence: integer("last_sequence").notNull().default(0),
+    snapshotJson: text("snapshot_json").notNull().default("{}"),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.sessionId, table.projectId],
+      foreignColumns: [clyDevSessions.id, clyDevSessions.projectId],
+      name: "cly_dev_session_projections_session_project_fk",
+    }).onDelete("cascade"),
+    check(
+      "cly_dev_session_projections_version",
+      sql`${table.schemaVersion} = 1`,
+    ),
+    check(
+      "cly_dev_session_projections_state",
+      sql`${table.state} IN ('queued', 'running', 'awaiting_approval', 'completed', 'canceled', 'failed', 'interrupted', 'resumable')`,
+    ),
+    check(
+      "cly_dev_session_projections_sequence_nonnegative",
+      sql`${table.lastSequence} >= 0`,
+    ),
+    check(
+      "cly_dev_session_projections_snapshot_json",
+      sql`json_valid(${table.snapshotJson})`,
+    ),
+    index("idx_cly_dev_session_projections_project_state").on(
+      table.projectId,
+      table.state,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const clyDevSessionEvents = sqliteTable(
+  "cly_dev_session_events",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    payloadVersion: integer("payload_version").notNull(),
+    sequence: integer("sequence").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    type: text("type").notNull(),
+    transferability: text("transferability").notNull(),
+    occurredAt: text("occurred_at").notNull(),
+    actorJson: text("actor_json").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    provenanceJson: text("provenance_json").notNull(),
+    outboundEnvelopeJson: text("outbound_envelope_json"),
+    outboundSha256: text("outbound_sha256"),
+    recordedAt: text("recorded_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.sessionId, table.projectId],
+      foreignColumns: [clyDevSessions.id, clyDevSessions.projectId],
+      name: "cly_dev_session_events_session_project_fk",
+    }).onDelete("cascade"),
+    check(
+      "cly_dev_session_events_version",
+      sql`${table.schemaVersion} = 1 AND ${table.payloadVersion} = 1`,
+    ),
+    check(
+      "cly_dev_session_events_transferability",
+      sql`${table.transferability} IN ('local-only', 'transferable')`,
+    ),
+    check(
+      "cly_dev_session_events_sequence_positive",
+      sql`${table.sequence} >= 1`,
+    ),
+    check(
+      "cly_dev_session_events_actor_json",
+      sql`json_valid(${table.actorJson})`,
+    ),
+    check(
+      "cly_dev_session_events_payload_json",
+      sql`json_valid(${table.payloadJson})`,
+    ),
+    check(
+      "cly_dev_session_events_provenance_json",
+      sql`json_valid(${table.provenanceJson})`,
+    ),
+    check(
+      "cly_dev_session_events_outbound_json",
+      sql`${table.outboundEnvelopeJson} IS NULL OR json_valid(${table.outboundEnvelopeJson})`,
+    ),
+    check(
+      "cly_dev_session_events_outbound_boundary",
+      sql`(${table.transferability} = 'local-only' AND ${table.outboundEnvelopeJson} IS NULL AND ${table.outboundSha256} IS NULL) OR (${table.transferability} = 'transferable' AND ${table.outboundEnvelopeJson} IS NOT NULL AND length(${table.outboundSha256}) = 64)`,
+    ),
+    uniqueIndex("cly_dev_session_events_sequence_unique").on(
+      table.sessionId,
+      table.sequence,
+    ),
+    uniqueIndex("cly_dev_session_events_idempotency_unique").on(
+      table.sessionId,
+      table.idempotencyKey,
+    ),
+    index("idx_cly_dev_session_events_project_session_sequence").on(
+      table.projectId,
+      table.sessionId,
+      table.sequence,
+    ),
+  ],
+);
+
+export const clyDevApprovals = sqliteTable(
+  "cly_dev_approvals",
+  {
+    id: text("id").notNull(),
+    projectId: text("project_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    payloadVersion: integer("payload_version").notNull(),
+    state: text("state").notNull(),
+    requestSequence: integer("request_sequence").notNull(),
+    resolutionSequence: integer("resolution_sequence"),
+    payloadJson: text("payload_json").notNull(),
+    requestedAt: text("requested_at").notNull(),
+    resolvedAt: text("resolved_at"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.sessionId, table.projectId],
+      foreignColumns: [clyDevSessions.id, clyDevSessions.projectId],
+      name: "cly_dev_approvals_session_project_fk",
+    }).onDelete("cascade"),
+    check(
+      "cly_dev_approvals_version",
+      sql`${table.schemaVersion} = 1 AND ${table.payloadVersion} = 1`,
+    ),
+    check(
+      "cly_dev_approvals_state",
+      sql`${table.state} IN ('pending', 'approved', 'rejected', 'canceled')`,
+    ),
+    check(
+      "cly_dev_approvals_payload_json",
+      sql`json_valid(${table.payloadJson})`,
+    ),
+    check(
+      "cly_dev_approvals_order",
+      sql`${table.resolutionSequence} IS NULL OR ${table.resolutionSequence} > ${table.requestSequence}`,
+    ),
+    uniqueIndex("cly_dev_approvals_session_id_unique").on(
+      table.sessionId,
+      table.id,
+    ),
+    index("idx_cly_dev_approvals_project_session_order").on(
+      table.projectId,
+      table.sessionId,
+      table.requestSequence,
+    ),
+  ],
+);
