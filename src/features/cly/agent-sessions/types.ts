@@ -42,6 +42,141 @@ export type ClyDevTaskState =
   | "canceled"
   | "interrupted-resumable"
   | "unsupported";
+export type ClyDevSessionState =
+  | "queued"
+  | "running"
+  | "awaiting_approval"
+  | "completed"
+  | "canceled"
+  | "failed"
+  | "interrupted"
+  | "resumable";
+
+export interface ClyDevActor {
+  kind: "user" | "agent" | "tool" | "system";
+  id: string;
+}
+
+export interface ClyDevEventInput {
+  schemaVersion: 1;
+  payloadVersion: 1;
+  idempotencyKey: string;
+  type: string;
+  transferability: "local-only" | "transferable";
+  occurredAt: string;
+  actor: ClyDevActor;
+  payload: Record<string, unknown>;
+}
+
+export interface ClyDevSessionEvent extends ClyDevEventInput {
+  id: string;
+  projectId: string;
+  sessionId: string;
+  sequence: number;
+  recordedAt: string;
+  provenance: ClyDevProvenance;
+}
+
+export interface ClyDevProvenance {
+  repository: { id: string; remoteUrl?: string };
+  worktree: { id: string; branch: string; baseRef?: string };
+  commit: { sha: string };
+  machine: { id: string; platform: "darwin" | "linux" | "win32" };
+  provider: { id: string; model: string };
+  research: { objectIds: string[] };
+}
+
+export interface ClyDevWorkspace {
+  id: string;
+  projectId: string;
+  name: string;
+  schemaVersion: 1;
+  idempotencyKey: string;
+  repository: ClyDevProvenance["repository"];
+  worktree: ClyDevProvenance["worktree"];
+  machine: ClyDevProvenance["machine"];
+  localOnly: { repositoryPath: string; worktreePath: string };
+  createdAt: string;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
+export interface ClyDevTask {
+  id: string;
+  projectId: string;
+  workspaceId: string;
+  title: string;
+  objective: string;
+  researchObjectIds: string[];
+  schemaVersion: 1;
+  idempotencyKey: string;
+  createdAt: string;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
+export interface ClyDevSessionRecord {
+  id: string;
+  projectId: string;
+  taskId: string;
+  title: string;
+  contextManifestId: string;
+  schemaVersion: 1;
+  idempotencyKey: string;
+  provider: ClyDevProvenance["provider"];
+  providerId: string;
+  model: string;
+  commit: ClyDevProvenance["commit"];
+  state: ClyDevSessionState;
+  createdAt: string;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
+export interface ClyDevApproval {
+  id: string;
+  projectId: string;
+  sessionId: string;
+  state: "pending" | "approved" | "rejected" | "canceled";
+  requestSequence: number;
+  resolutionSequence: number | null;
+  requestedAt: string;
+  resolvedAt: string | null;
+  [key: string]: unknown;
+}
+
+export interface ClyDevSessionSnapshot extends ClyDevSessionRecord {
+  lastSequence: number;
+  approvals: ClyDevApproval[];
+  process: null;
+}
+
+export interface ClyDevSessionOverview extends ClyDevSessionRecord {
+  lastSequence: number;
+  pendingApprovalCount: number;
+  process: null;
+}
+
+export interface ClyDevContextManifest {
+  id: string;
+  projectId: string;
+  workspaceId: string;
+  schemaVersion: 1;
+  idempotencyKey: string;
+  localOnly: {
+    absolutePaths: string[];
+    environmentVariableNames: string[];
+    notes: string[];
+    uncommittedFilePaths: string[];
+  };
+  transferable: {
+    summary: string;
+    entries: Array<Record<string, string>>;
+  };
+  preview: ClyDevContextManifest["transferable"];
+  egress: ClyDevContextManifest["transferable"];
+  createdAt: string;
+}
 
 export type AgentRole =
   | "orchestrator"

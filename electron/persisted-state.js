@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { readMigrationFiles } from "drizzle-orm/migrator";
+import { recoverClyDevSessionsOnStartup } from "./api/cly-dev/session-repository.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1354,6 +1355,11 @@ export function getStateDatabase(databasePath = resolveStateDatabasePath()) {
     createPreMigrationBackup(database, resolvedDatabasePath);
   }
   runDrizzleMigrations(database);
+
+  // Runtime processes cannot survive an Electron restart. Preserve the exact
+  // interruption in the event log, then expose those sessions as explicitly
+  // resumable; recovery never attempts to revive an orphaned process.
+  recoverClyDevSessionsOnStartup(database);
 
   if (shouldImportLegacyState(database, legacyState, hadRelationalState)) {
     saveStateToRelationalDatabase(database, legacyState);

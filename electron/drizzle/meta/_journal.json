@@ -99,6 +99,13 @@
       "when": 1784131200000,
       "tag": "0013_agent_configuration",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1784134800000,
+      "tag": "0015_cly_dev_sessions",
+      "breakpoints": true
     }
   ]
 }

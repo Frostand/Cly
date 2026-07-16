@@ -233,11 +233,11 @@
     "id": "agents.execute",
     "route": "agent-sessions",
     "action": "Start, pause, stop, or approve an agent session",
-    "state": "read-only-preview",
-    "service": null,
-    "api": null,
-    "test": null,
-    "reason": "Agent Sessions is a read-only preview until a durable runtime and explicit approval service are connected."
+    "state": "production",
+    "service": "productionAgentSessionServices",
+    "api": "POST /api/projects/:projectId/cly-dev/sessions/:sessionId/events",
+    "test": "src/features/cly/agent-sessions/production-services.test.ts",
+    "reason": null
   },
   {
     "id": "agents.workbench",

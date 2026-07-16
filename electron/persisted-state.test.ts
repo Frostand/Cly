@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { createClyDevSessionRepository } from "./api/cly-dev/session-repository.js";
 import { createResearchRepository } from "./api/research/repository.js";
 import {
   closePersistedStateDatabase,
@@ -95,6 +96,98 @@ describe("persisted research storage", () => {
       { id: "project-a", status: "open" },
       { id: "project-b", status: "closed" },
     ]);
+  });
+
+  it("preserves append-only Cly Dev events during IDE snapshots and recovers running sessions after reopen", () => {
+    const databasePath = createDatabasePath();
+    const database = getStateDatabase(databasePath);
+    database.exec(`
+      INSERT INTO projects (id, path, normalized_path, name, status, sort_order, metadata, created_at, updated_at)
+      VALUES ('project-dev', '/tmp/dev', '/tmp/dev', 'Dev', 'open', 0, '{}', '2026-01-01', '2026-01-01');
+    `);
+    const repository = createClyDevSessionRepository({ db: database });
+    const workspace = repository.createWorkspace("project-dev", {
+      schemaVersion: 1,
+      idempotencyKey: "workspace-dev-key",
+      id: "workspace-dev",
+      name: "Dev",
+      repository: { id: "repository-dev" },
+      worktree: { id: "worktree-dev", branch: "main" },
+      machine: { id: "machine-dev", platform: "darwin" },
+      localOnly: { repositoryPath: "/tmp/dev", worktreePath: "/tmp/dev" },
+    });
+    const contextManifest = repository.createContextManifest(
+      "project-dev",
+      workspace.id,
+      {
+        schemaVersion: 1,
+        idempotencyKey: "context-dev-key",
+        id: "context-dev",
+        localOnly: {
+          absolutePaths: ["/tmp/dev"],
+          environmentVariableNames: [],
+          notes: [],
+          uncommittedFilePaths: [],
+        },
+        transferable: { summary: "Safe context", entries: [] },
+      },
+    );
+    const task = repository.createTask("project-dev", workspace.id, {
+      schemaVersion: 1,
+      idempotencyKey: "task-dev-key",
+      id: "task-dev",
+      title: "Durable task",
+      objective: "Recover safely",
+    });
+    const session = repository.createSession("project-dev", task.id, {
+      schemaVersion: 1,
+      idempotencyKey: "session-dev-key",
+      id: "session-dev",
+      title: "Durable session",
+      contextManifestId: contextManifest.id,
+      provider: { id: "openai", model: "gpt-5" },
+      commit: { sha: "abcdef1234567890" },
+      state: "running",
+    });
+    repository.appendEvent("project-dev", session.id, {
+      schemaVersion: 1,
+      payloadVersion: 1,
+      idempotencyKey: "tool-1",
+      type: "tool.recorded",
+      transferability: "local-only",
+      occurredAt: "2026-01-01T00:01:00.000Z",
+      actor: { kind: "tool", id: "test-runner" },
+      payload: {
+        toolCallId: "tool-1",
+        tool: "test-runner",
+        status: "completed",
+        exitCode: 0,
+      },
+    });
+
+    savePersistedState(
+      {
+        projects: [{ id: "project-dev", name: "Dev", path: "/tmp/dev" }],
+        closedProjects: [],
+        chats: [],
+        messagesByChatId: {},
+        settings: {},
+      },
+      { databasePath },
+    );
+    expect(repository.listEvents("project-dev", session.id)).toHaveLength(1);
+
+    closePersistedStateDatabase();
+    const reopened = getStateDatabase(databasePath);
+    const recovered = createClyDevSessionRepository({ db: reopened });
+    expect(recovered.getSnapshot("project-dev", session.id)).toMatchObject({
+      state: "resumable",
+      process: null,
+      lastSequence: 3,
+    });
+    expect(
+      recovered.listEvents("project-dev", session.id).map((item) => item.type),
+    ).toEqual(["tool.recorded", "session.interrupted", "session.resumable"]);
   });
 
   it("serializes burst state saves with research writes without loss or contention", async () => {
