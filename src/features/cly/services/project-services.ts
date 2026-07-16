@@ -1,3 +1,7 @@
+import type {
+  AgentConfiguration,
+  AgentConfigurationInput,
+} from "../agent-sessions/types";
 import { extractLiteratureMetadata } from "../domain/literature-enrichment";
 import {
   deterministicSemanticRanker,
@@ -102,6 +106,54 @@ export const projectServices: ClyServices = {
         return;
       }
       throw new CapabilityUnavailableError("agents.execute");
+    },
+    async listConfigurations(projectId) {
+      return apiClient.fetchAgentConfigurations(projectId);
+    },
+    async saveConfiguration(projectId, configuration) {
+      const input: AgentConfigurationInput = {
+        name: configuration.name,
+        maxParallel: configuration.maxParallel,
+        maxTotalBudget: configuration.maxTotalBudget,
+        partialFailurePolicy: configuration.partialFailurePolicy,
+        roles: configuration.roles,
+      };
+      const persisted =
+        "revision" in configuration && "id" in configuration
+          ? await apiClient.updateAgentConfiguration(
+              projectId,
+              configuration.id,
+              configuration.revision,
+              input,
+            )
+          : await apiClient.createAgentConfiguration(projectId, input);
+      stateForProject(projectId)?.setAgentConfigurations([
+        ...(stateForProject(projectId)?.data.agentConfigurations ?? []).filter(
+          (item: AgentConfiguration) => item.id !== persisted.id,
+        ),
+        persisted,
+      ]);
+      return persisted;
+    },
+    async removeConfiguration(projectId, configurationId, expectedRevision) {
+      await apiClient.removeAgentConfiguration(
+        projectId,
+        configurationId,
+        expectedRevision,
+      );
+      const state = stateForProject(projectId);
+      state?.setAgentConfigurations(
+        (state.data.agentConfigurations ?? []).filter(
+          (item) => item.id !== configurationId,
+        ),
+      );
+    },
+    async estimateConfiguration(projectId, configurationId, configuration) {
+      return apiClient.estimateAgentConfiguration(
+        projectId,
+        configurationId,
+        configuration,
+      );
     },
   },
   experiments: {

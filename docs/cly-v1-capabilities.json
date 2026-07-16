@@ -222,12 +222,12 @@
   {
     "id": "agents.configure",
     "route": "models-agents",
-    "action": "Save an agent preset",
-    "state": "unavailable",
-    "service": null,
-    "api": null,
-    "test": null,
-    "reason": "Agent presets are unavailable until they are project-scoped and persisted."
+    "action": "Save an agent configuration",
+    "state": "production",
+    "service": "projectServices.agents.saveConfiguration",
+    "api": "GET/POST/PUT/DELETE /api/projects/:projectId/agent-configurations",
+    "test": "electron/api/agents/configuration-repository.test.ts",
+    "reason": null
   },
   {
     "id": "agents.execute",

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ExperimentLineage } from "../../research/contracts/experiment-provenance";
 import type {
+  AgentConfiguration,
   AgentIdentity,
   AgentMessage,
   AgentSession,
@@ -239,6 +240,7 @@ interface ClyState {
   addDecision: (decision: ResearchDecision) => void;
   updateDecision: (id: string, patch: Partial<ResearchDecision>) => void;
   addAgentPreset: (preset: AgentPreset) => void;
+  setAgentConfigurations: (configurations: AgentConfiguration[]) => void;
   setAgentSessionsMode: (
     mode: AgentSessionsMode,
     sessionId?: string | null,
@@ -1005,6 +1007,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
       const [
         researchData,
         experimentLineages,
+        agentConfigurations,
         lineageSuggestions,
         decisionBriefs,
         preregistrations,
@@ -1014,6 +1017,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
       ] = await Promise.all([
         apiClient.fetchResearchData(projectId),
         apiClient.fetchExperimentLineages(projectId).catch(() => []),
+        apiClient.fetchAgentConfigurations(projectId).catch(() => undefined),
         // Lineage reconstruction is additive. Older or temporarily unavailable
         // APIs must not prevent hydration of the canonical research graph.
         apiClient.fetchLineageSuggestions(projectId).catch(() => []),
@@ -1028,7 +1032,16 @@ export const useClyStore = create<ClyState>((set, get) => ({
       if (get().activeProjectId !== projectId) return false;
       set((state) => ({
         data: hydrateAgentSessionLayouts(
-          mapResearchData(state.data, researchData, experimentLineages),
+          agentConfigurations
+            ? {
+                ...mapResearchData(
+                  state.data,
+                  researchData,
+                  experimentLineages,
+                ),
+                agentConfigurations,
+              }
+            : mapResearchData(state.data, researchData, experimentLineages),
           state.agentSessionLayouts,
         ),
         fixtureMode: "empty",
@@ -1724,6 +1737,10 @@ export const useClyStore = create<ClyState>((set, get) => ({
         ...state.data,
         agentPresets: [preset, ...state.data.agentPresets],
       },
+    })),
+  setAgentConfigurations: (agentConfigurations) =>
+    set((state) => ({
+      data: { ...state.data, agentConfigurations },
     })),
   setAgentSessionsMode: (agentSessionsMode, requestedSessionId) => {
     const state = get();

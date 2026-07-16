@@ -68,6 +68,120 @@ export const chats = sqliteTable(
   ],
 );
 
+export const agentConfigurations = sqliteTable(
+  "agent_configurations",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    maxParallel: integer("max_parallel").notNull(),
+    maxInputTokens: integer("max_input_tokens").notNull(),
+    maxOutputTokens: integer("max_output_tokens").notNull(),
+    maxCostMinorUnits: integer("max_cost_minor_units").notNull(),
+    maxRuntimeMs: integer("max_runtime_ms").notNull(),
+    partialFailurePolicy: text("partial_failure_policy").notNull(),
+    revision: integer("revision").notNull().default(1),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_configurations_project_name_unique").on(
+      table.projectId,
+      table.name,
+    ),
+    uniqueIndex("agent_configurations_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    index("idx_agent_configurations_project_updated").on(
+      table.projectId,
+      table.updatedAt,
+      table.id,
+    ),
+    check(
+      "agent_configurations_parallel_positive",
+      sql`${table.maxParallel} >= 1`,
+    ),
+    check(
+      "agent_configurations_failure_policy",
+      sql`${table.partialFailurePolicy} IN ('continue', 'cancel_remaining')`,
+    ),
+    check(
+      "agent_configurations_revision_positive",
+      sql`${table.revision} >= 1`,
+    ),
+  ],
+);
+
+export const agentRoleConfigurations = sqliteTable(
+  "agent_role_configurations",
+  {
+    configurationId: text("configuration_id").notNull(),
+    projectId: text("project_id").notNull(),
+    id: text("id").notNull(),
+    position: integer("position").notNull(),
+    role: text("role").notNull(),
+    instanceCount: integer("instance_count").notNull(),
+    maxParallel: integer("max_parallel").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    reasoningLevel: text("reasoning_level").notNull(),
+    maxInputTokens: integer("max_input_tokens").notNull(),
+    maxOutputTokens: integer("max_output_tokens").notNull(),
+    maxCostMinorUnits: integer("max_cost_minor_units").notNull(),
+    maxRuntimeMs: integer("max_runtime_ms").notNull(),
+    allowedToolsJson: text("allowed_tools_json").notNull(),
+    allowedContextSourcesJson: text("allowed_context_sources_json").notNull(),
+    allowedFileGlobsJson: text("allowed_file_globs_json").notNull(),
+    permissionsJson: text("permissions_json").notNull(),
+    approvalCheckpointsJson: text("approval_checkpoints_json").notNull(),
+    fallbackModel: text("fallback_model"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.configurationId, table.projectId],
+      foreignColumns: [agentConfigurations.id, agentConfigurations.projectId],
+      name: "agent_roles_configuration_project_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("agent_roles_configuration_id_unique").on(
+      table.configurationId,
+      table.id,
+    ),
+    uniqueIndex("agent_roles_position_unique").on(
+      table.configurationId,
+      table.position,
+    ),
+    index("idx_agent_roles_configuration").on(
+      table.projectId,
+      table.configurationId,
+      table.position,
+    ),
+    check(
+      "agent_roles_parallel_valid",
+      sql`${table.maxParallel} >= 1 AND ${table.maxParallel} <= ${table.instanceCount}`,
+    ),
+    check("agent_roles_tools_json", sql`json_valid(${table.allowedToolsJson})`),
+    check(
+      "agent_roles_context_json",
+      sql`json_valid(${table.allowedContextSourcesJson})`,
+    ),
+    check(
+      "agent_roles_globs_json",
+      sql`json_valid(${table.allowedFileGlobsJson})`,
+    ),
+    check(
+      "agent_roles_permissions_json",
+      sql`json_valid(${table.permissionsJson})`,
+    ),
+    check(
+      "agent_roles_checkpoints_json",
+      sql`json_valid(${table.approvalCheckpointsJson})`,
+    ),
+  ],
+);
+
 export const lineageSuggestions = sqliteTable(
   "lineage_suggestions",
   {

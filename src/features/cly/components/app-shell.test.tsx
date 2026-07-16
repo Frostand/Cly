@@ -104,6 +104,18 @@ describe("Cly application shell", () => {
         screen.getByRole("heading", { name: heading, level: 1 }),
       ).toBeVisible();
     }
+
+    expect(
+      screen.getByRole("button", { name: "Review estimate" }),
+    ).toBeEnabled();
+    await user.click(
+      screen.getByRole("switch", { name: "Toggle advanced agent controls" }),
+    );
+    await user.click(
+      document.querySelector(".cly-disclosure-row > summary") as HTMLElement,
+    );
+    expect(screen.getAllByLabelText("Input tokens")[0]).toBeVisible();
+    expect(screen.getAllByLabelText("Allowed tools")[0]).toBeVisible();
   });
 
   it("switches between Cly Research and the Cly Dev command center", async () => {
