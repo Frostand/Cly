@@ -200,6 +200,9 @@ describe("Cly Dev handoff schema", () => {
     "export debug=secret",
     "prepare; debug=secret pnpm vitest",
     "prepare && X=secret ./run-tests",
+    "export debug=secret;",
+    "debug=secret; pnpm vitest",
+    "prepare; debug=secret;",
   ])("rejects POSIX environment assignment in shell context: %s", (text) => {
     const envelope = fixture("valid-v1.json");
     envelope.payload.constraints.push(text);

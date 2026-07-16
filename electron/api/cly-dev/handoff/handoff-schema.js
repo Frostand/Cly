@@ -72,6 +72,7 @@ const containsCredentialValue = (value) =>
     ) ||
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(value));
 const posixAssignment = String.raw`[A-Za-z_][A-Za-z0-9_]*\s*=\s*[^\s;&|]+`;
+const assignmentTerminator = String.raw`(?=\s|$|;|&&|\|\||\|)`;
 const commandFieldPath = /\.(?:command|commands)(?:\.|$)/;
 const containsEnvironmentAssignment = (value, location) => {
   if (typeof value !== "string") return false;
@@ -82,13 +83,13 @@ const containsEnvironmentAssignment = (value, location) => {
     return true;
   }
   const assignmentBeforeCommand = new RegExp(
-    String.raw`^\s*${posixAssignment}\s+\S+`,
+    String.raw`^\s*${posixAssignment}${assignmentTerminator}`,
   );
   const exportedAssignment = new RegExp(
-    String.raw`(?:^|&&|\|\||[;|])\s*export\s+${posixAssignment}(?:\s|$)`,
+    String.raw`(?:^|&&|\|\||[;|])\s*export\s+${posixAssignment}${assignmentTerminator}`,
   );
   const assignmentAfterSeparator = new RegExp(
-    String.raw`(?:&&|\|\||[;|])\s*${posixAssignment}(?:\s|$)`,
+    String.raw`(?:&&|\|\||[;|])\s*${posixAssignment}${assignmentTerminator}`,
   );
   const assignmentBeforeKnownExecutable = new RegExp(
     String.raw`(?:^|\s)${posixAssignment}\s+(?:pnpm|npm|npx|yarn|bun|node|tsx|tsc|vitest|jest|python3?|bash|sh|zsh|git|make|cargo|go|ruby|java|mvn|gradle|dotnet|pytest|\.\.?\/)\S*\b`,
