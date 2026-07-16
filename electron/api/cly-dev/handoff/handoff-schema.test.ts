@@ -184,14 +184,32 @@ describe("Cly Dev handoff schema", () => {
     );
   });
 
-  it("allows benign equations and recognized root-relative web routes", () => {
+  it("allows benign equations", () => {
     const envelope = fixture("valid-v1.json");
-    envelope.payload.constraints.push(
-      "Equation x=2 has one root",
-      "Request /api/v1/tasks after resuming",
-    );
+    envelope.payload.constraints.push("Equation x=2 has one root");
     envelope.integrity.digest = hashHandoffPayload(envelope.payload);
     expect(clyDevHandoffEnvelopeSchema.parse(envelope)).toEqual(envelope);
+  });
+
+  it("rejects absolute paths under every formerly exempt web prefix", () => {
+    const paths = fixture("formerly-exempt-paths.json");
+    for (const absolutePath of paths) {
+      const direct = fixture("valid-v1.json");
+      direct.payload.constraints.push(absolutePath);
+      direct.integrity.digest = hashHandoffPayload(direct.payload);
+      expect(() => clyDevHandoffEnvelopeSchema.parse(direct)).toThrow(
+        /absolute machine path|restricted/i,
+      );
+
+      const embedded = fixture("valid-v1.json");
+      embedded.payload.constraints.push(
+        `Inspect ${absolutePath} before resume`,
+      );
+      embedded.integrity.digest = hashHandoffPayload(embedded.payload);
+      expect(() => clyDevHandoffEnvelopeSchema.parse(embedded)).toThrow(
+        /machine path|restricted/i,
+      );
+    }
   });
 
   it.each([

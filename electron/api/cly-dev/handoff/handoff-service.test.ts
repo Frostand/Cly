@@ -9,10 +9,12 @@ import { createClyDevHandoffRepository } from "./handoff-repository.js";
 import { createClyDevHandoffService } from "./handoff-service.js";
 
 const openDatabases: DatabaseSync[] = [];
-const migration = readFileSync(
-  new URL("../../../drizzle/0016_cly_dev_handoffs.sql", import.meta.url),
-  "utf8",
-).replaceAll("--> statement-breakpoint", "");
+const migration = ["0015_cly_dev_sessions.sql", "0016_cly_dev_handoffs.sql"]
+  .map((name) =>
+    readFileSync(new URL(`../../../drizzle/${name}`, import.meta.url), "utf8"),
+  )
+  .join("\n")
+  .replaceAll("--> statement-breakpoint", "");
 
 function openDatabase(databasePath = ":memory:") {
   const db = new DatabaseSync(databasePath);
@@ -87,6 +89,7 @@ function setup(
       getProviderCapabilities: () => state.capabilities,
       inspectPermissions: () => state.permissions,
       inspectApprovals: () => state.approvals,
+      materializeImport: ({ record }: { record: unknown }) => ({ record }),
       ...serviceOverrides,
     }),
   };

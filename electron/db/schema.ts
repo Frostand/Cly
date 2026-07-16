@@ -1452,6 +1452,8 @@ export const clyDevHandoffs = sqliteTable(
     inspectionJson: text("inspection_json").notNull(),
     exportedAt: text("exported_at").notNull(),
     importedAt: text("imported_at"),
+    materializedSessionId: text("materialized_session_id"),
+    materializedAt: text("materialized_at"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
@@ -1492,6 +1494,15 @@ export const clyDevHandoffs = sqliteTable(
       "cly_dev_handoffs_import_timestamp",
       sql`(${table.direction} = 'export' AND ${table.importedAt} IS NULL) OR (${table.direction} = 'import' AND ${table.importedAt} IS NOT NULL)`,
     ),
+    check(
+      "cly_dev_handoffs_materialization",
+      sql`(${table.direction} = 'export' AND ${table.materializedSessionId} IS NULL AND ${table.materializedAt} IS NULL) OR (${table.direction} = 'import' AND ((${table.materializedSessionId} IS NULL AND ${table.materializedAt} IS NULL) OR (${table.materializedSessionId} IS NOT NULL AND ${table.materializedAt} IS NOT NULL)))`,
+    ),
+    foreignKey({
+      columns: [table.materializedSessionId, table.projectId],
+      foreignColumns: [clyDevSessions.id, clyDevSessions.projectId],
+      name: "cly_dev_handoffs_materialized_session_project_fk",
+    }),
     uniqueIndex("cly_dev_handoffs_id_project_unique").on(
       table.id,
       table.projectId,
@@ -1499,6 +1510,9 @@ export const clyDevHandoffs = sqliteTable(
     uniqueIndex("cly_dev_handoffs_import_identity_unique")
       .on(table.projectId, table.integrityDigest)
       .where(sql`${table.direction} = 'import'`),
+    uniqueIndex("cly_dev_handoffs_materialized_session_unique")
+      .on(table.projectId, table.materializedSessionId)
+      .where(sql`${table.materializedSessionId} IS NOT NULL`),
     index("idx_cly_dev_handoffs_project_created").on(
       table.projectId,
       table.direction,

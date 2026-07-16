@@ -22,6 +22,8 @@ const recordFromRow = (row) => ({
   inspection: parse(row.inspection_json),
   exportedAt: row.exported_at,
   importedAt: row.imported_at,
+  materializedSessionId: row.materialized_session_id,
+  materializedAt: row.materialized_at,
   createdAt: row.created_at,
 });
 
@@ -133,6 +135,47 @@ export function createClyDevHandoffRepository({
         )
         .get(projectId, digest);
       return row ? recordFromRow(row) : null;
+    },
+    linkMaterializedSession(projectId, handoffId, sessionId) {
+      const existing = get(projectId, handoffId);
+      if (existing.direction !== "import") {
+        throw new Error(
+          "Only imported handoffs can link a materialized session.",
+        );
+      }
+      if (
+        existing.materializedSessionId &&
+        existing.materializedSessionId !== sessionId
+      ) {
+        throw new Error(
+          "This imported handoff is already linked to a different session.",
+        );
+      }
+      const session = db
+        .prepare(
+          "SELECT id FROM cly_dev_sessions WHERE id = ? AND project_id = ?",
+        )
+        .get(sessionId, projectId);
+      if (!session) {
+        throw new Error(
+          "The materialized Cly Dev session was not found in this project.",
+        );
+      }
+      if (!existing.materializedSessionId) {
+        db.prepare(
+          `UPDATE cly_dev_handoffs
+           SET materialized_session_id = ?, materialized_at = ?
+           WHERE id = ? AND project_id = ? AND direction = 'import'
+             AND materialized_session_id IS NULL`,
+        ).run(sessionId, now(), handoffId, projectId);
+      }
+      const linked = get(projectId, handoffId);
+      if (linked.materializedSessionId !== sessionId) {
+        throw new Error(
+          "This imported handoff was concurrently linked to a different session.",
+        );
+      }
+      return linked;
     },
   };
 }

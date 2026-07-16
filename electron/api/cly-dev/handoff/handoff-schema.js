@@ -43,12 +43,9 @@ export const isRestrictedHandoffKey = (key) => {
     normalized === "pid"
   );
 };
-const isRecognizedRootRelativeWebRoute = (value) =>
-  typeof value === "string" &&
-  /^\/(?:api|v\d+|assets|static)(?:\/|$)[^\s]*$/i.test(value);
 export const isAbsoluteMachinePath = (value) =>
   typeof value === "string" &&
-  ((value.startsWith("/") && !isRecognizedRootRelativeWebRoute(value)) ||
+  (value.startsWith("/") ||
     value.startsWith("\\\\") ||
     /^[a-zA-Z]:[\\/]/.test(value) ||
     /^file:\/\//i.test(value));
@@ -104,9 +101,7 @@ const containsEnvironmentAssignment = (value, location) => {
 };
 const containsEmbeddedMachinePath = (value) =>
   typeof value === "string" &&
-  (/(?:^|[\s"'`=:(])\/(?!\/)(?!(?:api|v\d+|assets|static)(?:\/|$))(?:[^/\s"'`]+\/)+[^\s"'`]*/i.test(
-    value,
-  ) ||
+  (/(?:^|[\s"'`=:(])\/(?!\/)(?:[^/\s"'`]+\/)+[^\s"'`]*/i.test(value) ||
     /(?:^|[\s"'`=:(])[a-zA-Z]:\\(?:Users|Documents and Settings|Windows|ProgramData|Temp)\\[^\s"'`]*/i.test(
       value,
     ) ||

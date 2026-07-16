@@ -309,6 +309,7 @@ export function createClyDevHandoffService({
   inspectPermissions,
   inspectApprovals,
   getAggregate,
+  materializeImport,
 } = {}) {
   if (!repository) throw new Error("A Cly Dev handoff repository is required.");
 
@@ -887,12 +888,22 @@ export function createClyDevHandoffService({
       typeof inputOrProjectId === "string"
         ? { projectId: inputOrProjectId, envelope: possibleEnvelope }
         : inputOrProjectId;
-    const inspection = await inspectImport(input);
+    const inspection = input.inspection ?? (await inspectImport(input));
     if (!inspection.compatible || !inspection.envelope) {
       const explanation = inspection.conflicts
         .map((conflict) => conflict.message)
         .join(" ");
       throw new Error(`Cly Dev handoff import refused. ${explanation}`);
+    }
+    if (inspection.stale.length) {
+      throw new Error(
+        "Cly Dev handoff import refused. The source state is stale and must be reconciled before resume.",
+      );
+    }
+    if (typeof materializeImport !== "function") {
+      throw new Error(
+        "Cly Dev handoff import refused. A resumable-state materializer is required.",
+      );
     }
     const { record, duplicate } = await repository.recordImport(
       input.projectId,
@@ -905,12 +916,21 @@ export function createClyDevHandoffService({
         authority: inspection.authority,
       },
     );
-    return {
+    const materialization = await materializeImport({
+      projectId: input.projectId,
       record,
+      payload: inspection.payload,
+      inspection,
+    });
+    return {
+      record: materialization.record,
       duplicate,
       inspection,
       payload: inspection.payload,
       authority: inspection.authority,
+      ...(materialization.materialized
+        ? { materialized: materialization.materialized }
+        : {}),
     };
   }
 
