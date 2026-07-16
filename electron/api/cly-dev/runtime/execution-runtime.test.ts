@@ -45,6 +45,11 @@ const call = (tool: string, argumentsValue: Record<string, unknown> = {}) => ({
   arguments: argumentsValue,
 });
 
+const withTools = (request, ...names: string[]) => ({
+  ...request,
+  tools: names.map((name) => ({ name })),
+});
+
 const createGateHarness = (projectPolicy) => {
   const approvals = new Map<string, Record<string, unknown>>();
   const gate = createApprovalGate({
@@ -179,6 +184,8 @@ const createHarness = ({
   policy = { default: "allow" },
   providerOptions = {},
   customOutbound = outbound,
+  requestApproval,
+  beforeAppend,
 } = {}) => {
   const events: Array<{
     idempotencyKey: string;
@@ -193,6 +200,7 @@ const createHarness = ({
     Promise<{ executed: boolean; result: unknown }>
   >();
   const appendEvent = vi.fn(async (_projectId, _sessionId, event) => {
+    await beforeAppend?.(event);
     clyDevInternalEventInputSchema.parse(event);
     const duplicate = events.find(
       (item) => item.idempotencyKey === event.idempotencyKey,
@@ -203,12 +211,22 @@ const createHarness = ({
         throw new Error("approval request already exists");
       }
       durableApprovals.set(event.payload.approvalId, "pending");
+      approvals.set(event.payload.approvalId, {
+        ...JSON.parse(event.payload.detail),
+        approvalId: event.payload.approvalId,
+        state: "pending",
+      });
     }
     if (event.type === "approval.resolved") {
       if (durableApprovals.get(event.payload.approvalId) !== "pending") {
         throw new Error("approval must be pending before resolution");
       }
       durableApprovals.set(event.payload.approvalId, event.payload.state);
+      approvals.set(event.payload.approvalId, {
+        ...approvals.get(event.payload.approvalId),
+        state: event.payload.state,
+        resolvedBy: event.payload.resolvedBy,
+      });
     }
     const recorded = { ...event, sequence: events.length + 1 };
     events.push(recorded);
@@ -247,6 +265,7 @@ const createHarness = ({
     approvalGate: gate,
     executeTool,
     durableToolEffects,
+    requestApproval,
     now: () => NOW,
   });
   const request = {
@@ -347,7 +366,8 @@ describe("Cly Dev durable execution runtime", () => {
       script,
       policy: { categories: { file_write: "approval" } },
     });
-    const first = await pending.runtime.execute(pending.request);
+    const declaredRequest = withTools(pending.request, "writeFile");
+    const first = await pending.runtime.execute(declaredRequest);
     expect(first).toMatchObject({ status: "awaiting_approval" });
     expect(pending.executeTool).not.toHaveBeenCalled();
     expect(
@@ -360,7 +380,7 @@ describe("Cly Dev durable execution runtime", () => {
       resolvedBy: "user-1",
     });
     const resumed = await pending.runtime.resume({
-      ...pending.request,
+      ...declaredRequest,
       approvals: {
         [toolCall.toolCallId]: {
           approvalId: first.approval.approvalId,
@@ -390,13 +410,107 @@ describe("Cly Dev durable execution runtime", () => {
     const harness = createHarness({
       script: [toolCall, { type: "completed" }],
     });
-    await harness.runtime.execute(harness.request);
-    await harness.runtime.retry(harness.request);
-    await harness.runtime.resume(harness.request);
+    const declaredRequest = withTools(harness.request, "runCommand");
+    await harness.runtime.execute(declaredRequest);
+    await harness.runtime.retry(declaredRequest);
+    await harness.runtime.resume(declaredRequest);
     expect(harness.executeTool).toHaveBeenCalledTimes(1);
     expect(
       harness.events.filter((event) => event.type === "tool.recorded"),
     ).toHaveLength(2);
+  });
+
+  it("executes MCP callbacks inside the runtime boundary and audits provider results without replay", async () => {
+    let runtimeResult: unknown;
+    const harness = createHarness({
+      script: async (_request, { executeToolCall }) => {
+        runtimeResult = await executeToolCall(
+          call("writeFile", { filePath: "result.txt", content: "done" }),
+        );
+        return [
+          {
+            type: "tool_result",
+            toolCallId: "provider-json-rpc-audit",
+            result: runtimeResult,
+          },
+          { type: "completed" },
+        ];
+      },
+    });
+
+    await expect(
+      harness.runtime.execute(withTools(harness.request, "writeFile")),
+    ).resolves.toEqual({
+      status: "completed",
+    });
+    expect(runtimeResult).toMatchObject({ ok: true, tool: "writeFile" });
+    expect(harness.executeTool).toHaveBeenCalledOnce();
+    expect(harness.durableToolEffects.executeOnce).toHaveBeenCalledOnce();
+    expect(
+      harness.events.filter(
+        (event) =>
+          event.type === "tool.recorded" &&
+          event.payload.status === "completed",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("suspends an MCP effect on the approval broker and revalidates before execution", async () => {
+    const requestApproval = vi.fn(({ approval }) => ({
+      approved: true,
+      id: approval.approvalId,
+      resolvedBy: "user-1",
+      scope: "once",
+    }));
+    const harness = createHarness({
+      policy: { categories: { file_write: "approval" } },
+      requestApproval,
+      script: async (_request, { executeToolCall }) => {
+        await executeToolCall(
+          call("writeFile", { filePath: "approved.txt", content: "yes" }),
+        );
+        return [{ type: "completed" }];
+      },
+    });
+
+    await expect(
+      harness.runtime.execute(withTools(harness.request, "writeFile")),
+    ).resolves.toEqual({
+      status: "completed",
+    });
+    expect(requestApproval).toHaveBeenCalledOnce();
+    expect(harness.executeTool).toHaveBeenCalledOnce();
+    expect(harness.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["approval.requested", "approval.resolved"]),
+    );
+  });
+
+  it.each([
+    ["rejection", "User rejected the effect"],
+    ["timeout", "Permission request expired"],
+    ["cancellation", "Permission request was cancelled"],
+  ])("fails closed on MCP approval %s", async (_label, reason) => {
+    const harness = createHarness({
+      policy: { categories: { command: "approval" } },
+      requestApproval: ({ approval }) => ({
+        approved: false,
+        id: approval.approvalId,
+        reason,
+        scope: "once",
+      }),
+      script: async (_request, { executeToolCall }) => {
+        await executeToolCall(call("runCommand", { command: "touch bypass" }));
+        return [{ type: "completed" }];
+      },
+    });
+
+    await expect(
+      harness.runtime.execute(withTools(harness.request, "runCommand")),
+    ).resolves.toMatchObject({ status: "failed" });
+    expect(harness.executeTool).not.toHaveBeenCalled();
+    expect(
+      harness.events.filter((event) => event.type === "failure.recorded"),
+    ).toHaveLength(1);
   });
 
   it("records partial tool failure and stops the provider run", async () => {
@@ -408,7 +522,7 @@ describe("Cly Dev durable execution runtime", () => {
     });
     harness.executeTool.mockRejectedValueOnce(new Error("command failed"));
     await expect(
-      harness.runtime.execute(harness.request),
+      harness.runtime.execute(withTools(harness.request, "runCommand")),
     ).resolves.toMatchObject({ status: "failed" });
     expect(harness.events.map((event) => event.type)).toContain(
       "failure.recorded",
@@ -419,6 +533,26 @@ describe("Cly Dev durable execution runtime", () => {
           event.type === "tool.recorded" && event.payload.status === "failed",
       ),
     ).toBeTruthy();
+  });
+
+  it("fails closed when a provider invokes a tool outside the request declaration", async () => {
+    const harness = createHarness({
+      script: async (_request, { executeToolCall }) => {
+        await executeToolCall(
+          call("writeFile", { filePath: "undeclared.txt", content: "no" }),
+        );
+        return [{ type: "completed" }];
+      },
+    });
+
+    await expect(
+      harness.runtime.execute(withTools(harness.request, "readFile")),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "TOOL_NOT_DECLARED" },
+    });
+    expect(harness.executeTool).not.toHaveBeenCalled();
+    expect(harness.durableToolEffects.executeOnce).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -570,6 +704,106 @@ describe("Cly Dev durable execution runtime", () => {
       harness.events.filter((event) => event.type === "cost.recorded"),
     ).toHaveLength(2);
     expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("keeps usage and durable provider events collision-free across approval resume", async () => {
+    const toolCall = call("writeFile", {
+      filePath: "resume.txt",
+      content: "approved",
+    });
+    let attempt = 0;
+    const harness = createHarness({
+      policy: { categories: { file_write: "approval" } },
+      script: () => {
+        attempt += 1;
+        return attempt === 1
+          ? [
+              { type: "usage", inputTokens: 6, outputTokens: 1 },
+              { type: "tool_call", ...toolCall },
+            ]
+          : [
+              { type: "usage", inputTokens: 6, outputTokens: 1 },
+              { type: "completed" },
+            ];
+      },
+    });
+
+    const first = await harness.runtime.execute({
+      ...harness.request,
+      budget: { maxInputTokens: 10 },
+    });
+    expect(first).toMatchObject({ status: "awaiting_approval" });
+    harness.approvals.set(first.approval.approvalId, {
+      ...first.approval,
+      state: "approved",
+      resolvedBy: "user-1",
+    });
+
+    await expect(
+      harness.runtime.resume({
+        ...harness.request,
+        budget: { maxInputTokens: 10 },
+        approvals: {
+          [toolCall.toolCallId]: {
+            approvalId: first.approval.approvalId,
+          },
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "BUDGET_EXHAUSTED" },
+    });
+    const usageEvents = harness.events.filter(
+      (event) => event.type === "cost.recorded",
+    );
+    expect(usageEvents).toHaveLength(2);
+    expect(new Set(usageEvents.map((event) => event.idempotencyKey)).size).toBe(
+      2,
+    );
+  });
+
+  it("waits for the durable running transition before provider cancellation", async () => {
+    let releaseRunning: (() => void) | undefined;
+    const runningBarrier = new Promise<void>((resolve) => {
+      releaseRunning = resolve;
+    });
+    const providerCancel = vi.fn();
+    const harness = createHarness({
+      beforeAppend: (event) =>
+        event.type === "session.state.changed" &&
+        event.payload.state === "running"
+          ? runningBarrier
+          : undefined,
+      providerOptions: { onCancel: providerCancel },
+      script: [{ type: "wait_until_canceled" }, { type: "completed" }],
+    });
+
+    const execution = harness.runtime.execute(harness.request);
+    await vi.waitFor(() => expect(harness.appendEvent).toHaveBeenCalledOnce());
+    const cancellation = harness.runtime.cancel({
+      projectId: harness.request.projectId,
+      sessionId: harness.request.sessionId,
+      requestId: harness.request.requestId,
+    });
+    await Promise.resolve();
+    expect(providerCancel).not.toHaveBeenCalled();
+
+    releaseRunning?.();
+    await cancellation;
+    await expect(execution).resolves.toMatchObject({ status: "canceled" });
+    expect(providerCancel).toHaveBeenCalledOnce();
+    const runningIndex = harness.events.findIndex(
+      (event) =>
+        event.type === "session.state.changed" &&
+        event.payload.state === "running",
+    );
+    const canceledIndex = harness.events.findIndex(
+      (event) =>
+        event.type === "session.state.changed" &&
+        event.payload.state === "canceled",
+    );
+    expect(runningIndex).toBeGreaterThanOrEqual(0);
+    expect(canceledIndex).toBeGreaterThan(runningIndex);
   });
 
   it("rejects declared effectful tools before starting a provider that cannot intercept effects", async () => {

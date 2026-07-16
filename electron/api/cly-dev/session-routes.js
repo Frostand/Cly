@@ -55,8 +55,10 @@ export function registerClyDevSessionRoutes(
     getRepository = () => createClyDevSessionRepository({ db: getDatabase() }),
     getRuntime,
     runner,
+    claudeRunner,
     executeTool,
     durableToolEffects,
+    requestApproval,
     now,
   } = {},
 ) {
@@ -67,8 +69,10 @@ export function registerClyDevSessionRoutes(
       productionRuntime = createProductionClyDevRuntime({
         db: getDatabase(),
         runner,
+        claudeRunner,
         executeTool,
         durableToolEffects,
+        requestApproval,
         now,
       });
     }

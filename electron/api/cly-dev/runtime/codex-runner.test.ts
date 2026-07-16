@@ -159,6 +159,8 @@ describe("signed-in Codex Cly Dev runner", () => {
   it.each([
     "runCommand",
     "writeFile",
+    "permissions",
+    "futureNativeEffect",
   ])("fails closed when the app-server stream reports a provider-executed %s effect", async (toolName) => {
     const db = createRunnerDb();
     const runner = createSignedInCodexRunner({
@@ -196,6 +198,42 @@ describe("signed-in Codex Cly Dev runner", () => {
       toolCalls: false,
       interceptBeforeEffect: false,
     });
+    db.close();
+  });
+
+  it("fails closed on a provider-executed output frame without a preceding visible input", async () => {
+    const db = createRunnerDb();
+    const runner = createSignedInCodexRunner({
+      db,
+      streamResponse: () =>
+        new Response(
+          [
+            `data: ${JSON.stringify({
+              type: "tool-output-available",
+              providerExecuted: true,
+              toolCallId: "hidden-native-effect",
+              toolName: "unknownNativeTool",
+              output: { ok: true },
+            })}`,
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+        ),
+    });
+
+    await expect(async () => {
+      for await (const _event of runner.stream({
+        executionId: "native-output-only",
+        clientRequestId: "native-request",
+        projectId: "project-1",
+        sessionId: "session-1",
+        prompt: "Do not bypass",
+        model: "gpt-test",
+        contextBytes: "{}",
+      })) {
+        // Provider-owned native effects must never become accepted audit output.
+      }
+    }).rejects.toThrow(/provider-executed effect/i);
     db.close();
   });
 });

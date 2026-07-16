@@ -215,7 +215,8 @@ export function createClyDevProviderAdapter(definition) {
     getAuthentication: (...args) => definition.getAuthentication(...args),
     listModels: (...args) => definition.listModels(...args),
     getCapabilities: (...args) => definition.getCapabilities(...args),
-    async *stream(request, { signal } = {}) {
+    async *stream(request, context = {}) {
+      const { signal } = context;
       let terminal = false;
       try {
         if (signal?.aborted) {
@@ -223,7 +224,7 @@ export function createClyDevProviderAdapter(definition) {
           yield { type: "canceled" };
           return;
         }
-        const stream = definition.stream(request, { signal });
+        const stream = definition.stream(request, { ...context, signal });
         if (!stream || typeof stream[Symbol.asyncIterator] !== "function") {
           throw invalidStream(
             "Provider stream() must return an async iterable.",

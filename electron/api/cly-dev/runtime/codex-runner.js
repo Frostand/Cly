@@ -76,6 +76,15 @@ async function* decodeProviderEvents(response, signal) {
   let buffer = "";
   const cumulativeUsage = { inputTokens: 0, outputTokens: 0 };
   const mapEvent = (event) => {
+    if (
+      event?.providerExecuted === true &&
+      typeof event?.type === "string" &&
+      event.type.startsWith("tool-")
+    ) {
+      throw new Error(
+        "Codex reported a provider-executed effect; Cly Dev cannot verify pre-effect interception.",
+      );
+    }
     if (event?.type === "text-delta") {
       return { type: "text", text: event.delta ?? "" };
     }
@@ -93,15 +102,6 @@ async function* decodeProviderEvents(response, signal) {
         toolCallId: event.toolCallId,
         result: event.output,
       };
-    }
-    if (
-      event?.type === "tool-input-available" &&
-      event.providerExecuted === true &&
-      ["runCommand", "writeFile"].includes(event.toolName)
-    ) {
-      throw new Error(
-        "Codex reported a provider-executed effect; Cly Dev cannot verify pre-effect interception.",
-      );
     }
     if (event?.type === "message-metadata") {
       const usage = event.messageMetadata?.usage;

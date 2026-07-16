@@ -18,7 +18,10 @@ const headers = {
   "content-type": "application/json",
 };
 
-const createFixture = (metadata: Record<string, unknown> = {}) => {
+const createFixture = (
+  metadata: Record<string, unknown> = {},
+  provider = { id: "openai-codex", model: "test-model" },
+) => {
   const directory = mkdtempSync(path.join(tmpdir(), "cly-dev-production-"));
   const db = getStateDatabase(path.join(directory, "state.sqlite"));
   db.prepare(
@@ -66,7 +69,7 @@ const createFixture = (metadata: Record<string, unknown> = {}) => {
       idempotencyKey: "session-key",
       id: "session-1",
       title: "Session",
-      provider: { id: "openai-codex", model: "test-model" },
+      provider,
       commit: { sha: "a".repeat(40) },
       state: "running",
     },
@@ -207,6 +210,101 @@ describe("production Cly Dev execution composition", () => {
         )
         .get(),
     ).toEqual({ status: "completed" });
+  });
+
+  it("selects Claude by session and resolves MCP effects through the shared approval broker", async () => {
+    const { db, repository } = createFixture(
+      { clyDevPolicy: { categories: { file_write: "approval" } } },
+      { id: "anthropic", model: "sonnet" },
+    );
+    let exposedRuntimeToolExecutor = false;
+    const claudeRunner = {
+      getAuthentication: () => ({ status: "authenticated" }),
+      listModels: () => [{ id: "sonnet" }],
+      getCapabilities: () => ({
+        streaming: true,
+        reasoning: true,
+        toolCalls: true,
+        interceptBeforeEffect: true,
+      }),
+      async *stream(_request, context) {
+        exposedRuntimeToolExecutor =
+          typeof context.executeToolCall === "function";
+        await context.executeToolCall({
+          toolCallId: `claude-${"a".repeat(64)}`,
+          tool: "writeFile",
+          arguments: {
+            filePath: "claude-approved.txt",
+            content: "approved",
+          },
+        });
+        yield { type: "completed" };
+      },
+      cancel: vi.fn(),
+    };
+    const codexStream = vi.fn();
+    const runner = {
+      getAuthentication: () => ({ status: "authenticated" }),
+      listModels: () => [{ id: "test-model" }],
+      getCapabilities: () => ({
+        streaming: true,
+        reasoning: false,
+        toolCalls: false,
+        interceptBeforeEffect: false,
+      }),
+      stream: codexStream,
+      cancel: vi.fn(),
+    };
+    const executeTool = vi.fn(() => ({ written: true }));
+    const app = createApiApp(TOKEN, {
+      clyDev: {
+        claudeRunner,
+        executeTool,
+        getDatabase: () => db,
+        now: () => NOW,
+        runner,
+      },
+    });
+    const executeResponse = app.request(
+      "/api/projects/project-1/cly-dev/sessions/session-1/execute",
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(requestBody({ requestId: "claude-broker-1" })),
+      },
+    );
+    await vi.waitFor(() => {
+      expect(
+        repository
+          .listEvents("project-1", "session-1")
+          .some((event) => event.type === "approval.requested"),
+      ).toBe(true);
+    });
+    const approval = repository
+      .listEvents("project-1", "session-1")
+      .find((event) => event.type === "approval.requested");
+    const brokerResponse = await app.request("/api/tool-approval-response", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        approved: true,
+        id: approval.payload.approvalId,
+        scope: "once",
+      }),
+    });
+
+    expect(brokerResponse.status).toBe(200);
+    expect(await (await executeResponse).json()).toEqual({
+      status: "completed",
+    });
+    expect(exposedRuntimeToolExecutor).toBe(true);
+    expect(codexStream).not.toHaveBeenCalled();
+    expect(executeTool).toHaveBeenCalledOnce();
+    expect(
+      repository
+        .listEvents("project-1", "session-1")
+        .filter((event) => event.type === "approval.resolved"),
+    ).toHaveLength(1);
   });
 
   it("keeps concurrent cancellation scoped to the exact request", async () => {

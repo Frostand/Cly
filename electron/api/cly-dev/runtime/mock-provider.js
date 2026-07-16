@@ -33,8 +33,8 @@ const abortableWait = (milliseconds, signal) =>
     signal.addEventListener("abort", cancel, { once: true });
   });
 
-const scriptFor = (script, request) => {
-  if (typeof script === "function") return script(request);
+const scriptFor = (script, request, context) => {
+  if (typeof script === "function") return script(request, context);
   if (Array.isArray(script)) return script;
   return (
     script?.[request.executionId] ??
@@ -65,7 +65,8 @@ export function createDeterministicMockProvider(script, options = {}) {
         ...options.capabilities,
       };
     },
-    async *stream(request, { signal } = {}) {
+    async *stream(request, context = {}) {
+      const { signal } = context;
       const controller = new AbortController();
       const executionId = request.executionId ?? request.requestId;
       const cancel = () => controller.abort();
@@ -73,7 +74,7 @@ export function createDeterministicMockProvider(script, options = {}) {
       if (signal?.aborted) controller.abort();
       active.set(executionId, controller);
       try {
-        for (const event of await scriptFor(script, request)) {
+        for (const event of await scriptFor(script, request, context)) {
           if (controller.signal.aborted) throw abortError();
           if (event.type === "delay") {
             await abortableWait(event.ms, controller.signal);
