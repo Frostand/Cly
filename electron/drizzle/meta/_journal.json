@@ -127,6 +127,13 @@
       "when": 1784145600000,
       "tag": "0017_cly_dev_tool_effects",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1784149200000,
+      "tag": "0018_cly_dev_handoff_materialization",
+      "breakpoints": true
     }
   ]
 }

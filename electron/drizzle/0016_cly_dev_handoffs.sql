@@ -12,11 +12,8 @@ CREATE TABLE IF NOT EXISTS cly_dev_handoffs (
   inspection_json TEXT NOT NULL,
   exported_at TEXT NOT NULL,
   imported_at TEXT,
-  materialized_session_id TEXT,
-  materialized_at TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE cascade,
-  FOREIGN KEY (materialized_session_id, project_id) REFERENCES cly_dev_sessions(id, project_id),
   CHECK(direction IN ('export','import')),
   CHECK(protocol = 'cly.dev.handoff'),
   CHECK(schema_version = 1),
@@ -27,19 +24,12 @@ CREATE TABLE IF NOT EXISTS cly_dev_handoffs (
   CHECK(json_valid(research_fingerprint_json) AND json_type(research_fingerprint_json) = 'object'),
   CHECK(json_valid(inspection_json) AND json_type(inspection_json) = 'object'),
   CHECK((direction = 'export' AND imported_at IS NULL) OR (direction = 'import' AND imported_at IS NOT NULL)),
-  CHECK((direction = 'export' AND materialized_session_id IS NULL AND materialized_at IS NULL)
-     OR (direction = 'import' AND ((materialized_session_id IS NULL AND materialized_at IS NULL)
-       OR (materialized_session_id IS NOT NULL AND materialized_at IS NOT NULL)))),
   UNIQUE(id, project_id)
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS cly_dev_handoffs_import_identity_unique
   ON cly_dev_handoffs(project_id, integrity_digest)
   WHERE direction = 'import';
---> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS cly_dev_handoffs_materialized_session_unique
-  ON cly_dev_handoffs(project_id, materialized_session_id)
-  WHERE materialized_session_id IS NOT NULL;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS idx_cly_dev_handoffs_project_created
   ON cly_dev_handoffs(project_id, direction, created_at DESC, id);

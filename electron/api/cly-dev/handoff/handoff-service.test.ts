@@ -3,13 +3,18 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { hashHandoffPayload } from "./canonical-json.js";
 import { createClyDevHandoffRepository } from "./handoff-repository.js";
 import { createClyDevHandoffService } from "./handoff-service.js";
 
 const openDatabases: DatabaseSync[] = [];
-const migration = ["0015_cly_dev_sessions.sql", "0016_cly_dev_handoffs.sql"]
+const migration = [
+  "0015_cly_dev_sessions.sql",
+  "0016_cly_dev_handoffs.sql",
+  "0017_cly_dev_tool_effects.sql",
+  "0018_cly_dev_handoff_materialization.sql",
+]
   .map((name) =>
     readFileSync(new URL(`../../../drizzle/${name}`, import.meta.url), "utf8"),
   )
@@ -129,6 +134,64 @@ describe("Cly Dev handoff service", () => {
     expect(
       result.payload.approvals.every((approval) => approval.evidenceOnly),
     ).toBe(true);
+  });
+
+  it("re-inspects the exact envelope instead of trusting forged compatibility", async () => {
+    const materializeImport = vi.fn(({ record }) => ({ record }));
+    const { service, repository } = setup(inspectionState(), ":memory:", {
+      materializeImport,
+    });
+    const trustedEnvelope = validEnvelope();
+    const trustedInspection = await service.inspectImport({
+      projectId: "project-1",
+      envelope: trustedEnvelope,
+    });
+    const differentEnvelope = validEnvelope();
+    differentEnvelope.payload.repository.commitSha = "d".repeat(40);
+    differentEnvelope.integrity.digest = hashHandoffPayload(
+      differentEnvelope.payload,
+    );
+
+    await expect(
+      service.importHandoff({
+        projectId: "project-1",
+        envelope: differentEnvelope,
+        inspection: trustedInspection,
+      }),
+    ).rejects.toThrow(/stale|refused/i);
+    expect(materializeImport).not.toHaveBeenCalled();
+    expect(repository.list("project-1", "import")).toEqual([]);
+  });
+
+  it("rejects a caller-forged compatible inspection for a corrupt envelope", async () => {
+    const materializeImport = vi.fn(({ record }) => ({ record }));
+    const { service, repository } = setup(inspectionState(), ":memory:", {
+      materializeImport,
+    });
+    const corrupt = validEnvelope();
+    corrupt.integrity.digest = "0".repeat(64);
+
+    await expect(
+      service.importHandoff({
+        projectId: "project-1",
+        envelope: corrupt,
+        inspection: {
+          compatible: true,
+          stale: [],
+          conflicts: [],
+          explanations: [],
+          envelope: validEnvelope(),
+          payload: validEnvelope().payload,
+          authority: {
+            source: "target-project",
+            permissions: inspectionState().permissions.current,
+            authorizedApprovalIds: [],
+          },
+        },
+      }),
+    ).rejects.toThrow(/integrity|refused/i);
+    expect(materializeImport).not.toHaveBeenCalled();
+    expect(repository.list("project-1", "import")).toEqual([]);
   });
 
   it("redacts restricted optional material before export", async () => {

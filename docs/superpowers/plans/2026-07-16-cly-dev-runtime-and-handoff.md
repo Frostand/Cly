@@ -128,3 +128,12 @@
 - [ ] **Step 6: Verify Task 2**
 
   Run `pnpm vitest run electron/api/cly-dev/handoff electron/api/cly-dev electron/db/schema.test.ts`; expect all tests and golden fixtures to pass. Run `pnpm biome check electron/api/cly-dev/handoff electron/db/schema.ts`; expect a clean result.
+
+### CLY-79 production integration evidence
+
+- Strict import authority: `importHandoff` always re-inspects the exact project/envelope; forged-compatible and different-envelope regressions are covered.
+- Strict source research: production export uses a dedicated source inspector and refuses missing, duplicate, unversioned, or unhashed referenced objects.
+- Restart-safe materialization: imports append idempotent structured summary/plan/progress/decision/remaining-work events and expose an exact project/session reverse link for the complete actionable payload, including open questions. Historical approvals remain evidence only and are not recreated.
+- Upgrade path: immutable `0016_cly_dev_handoffs.sql` is restored byte-for-byte; additive `0018_cly_dev_handoff_materialization.sql` preserves already-recorded handoffs and adds the materialized-session reverse index after runtime migration `0017`.
+- API authority: `createApiApp` registers handoff routes with distinct `clyDevHandoff` dependencies behind the existing Host/Origin/session-token/body/concurrency guards.
+- Verification on 2026-07-16: focused integration set `108/108`; full Vitest suite `541/541`; `pnpm typecheck` passed; full Biome `490` files passed.

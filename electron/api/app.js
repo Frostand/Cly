@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { registerAgentConfigurationRoutes } from "./agents/configuration-routes.js";
 import { registerChatRoutes } from "./chat-routes.js";
+import { registerClyDevHandoffRoutes } from "./cly-dev/handoff/handoff-routes.js";
 import { registerClyDevSessionRoutes } from "./cly-dev/session-routes.js";
 import { registerPrImpactReviewRoutes } from "./github/routes.js";
 import { registerLiteratureRoutes } from "./literature/routes.js";
@@ -45,6 +46,7 @@ export function createApiApp(
     maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
     maxConcurrentRequests = DEFAULT_MAX_CONCURRENT_REQUESTS,
     clyDev,
+    clyDevHandoff,
     registerAdditionalRoutes,
   } = {},
 ) {
@@ -100,6 +102,7 @@ export function createApiApp(
   registerToolApprovalRoutes(guardedApp);
   registerAgentConfigurationRoutes(guardedApp);
   registerClyDevSessionRoutes(guardedApp, clyDev);
+  registerClyDevHandoffRoutes(guardedApp, clyDevHandoff);
   registerProviderRoutes(guardedApp);
   registerChatRoutes(guardedApp);
   registerLiteratureRoutes(guardedApp);

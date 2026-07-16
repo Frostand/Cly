@@ -136,6 +136,16 @@ export function createClyDevHandoffRepository({
         .get(projectId, digest);
       return row ? recordFromRow(row) : null;
     },
+    findImportByMaterializedSession(projectId, sessionId) {
+      const row = db
+        .prepare(
+          `SELECT * FROM cly_dev_handoffs
+           WHERE project_id = ? AND direction = 'import'
+             AND materialized_session_id = ?`,
+        )
+        .get(projectId, sessionId);
+      return row ? recordFromRow(row) : null;
+    },
     linkMaterializedSession(projectId, handoffId, sessionId) {
       const existing = get(projectId, handoffId);
       if (existing.direction !== "import") {

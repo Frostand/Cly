@@ -109,7 +109,7 @@ export function createClyDevHandoffRouteComposition({
   const getSessions = () => sessions;
   const aggregateAccess = createClyDevHandoffAggregateAccess({
     getSessionRepository: getSessions,
-    inspectResearch: inspectSourceResearch ?? inspectResearch,
+    inspectResearch: inspectSourceResearch,
     inspectPermissions: inspectSourcePermissions,
     getProviderRequirements,
   });

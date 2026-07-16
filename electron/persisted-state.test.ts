@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -215,6 +215,8 @@ describe("persisted research storage", () => {
     closePersistedStateDatabase();
     const throughClyDev = new DatabaseSync(databasePath);
     throughClyDev.exec("PRAGMA foreign_keys = OFF");
+    throughClyDev.exec("DROP TABLE cly_dev_tool_effects");
+    throughClyDev.exec("DROP TABLE cly_dev_handoffs");
     for (const table of [...agentContextTables].reverse())
       throughClyDev.exec(`DROP TABLE ${table}`);
     throughClyDev
@@ -244,7 +246,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784145600000 });
+    ).toEqual({ createdAt: 1784149200000 });
     expect(
       upgraded
         .prepare(
@@ -253,6 +255,72 @@ describe("persisted research storage", () => {
         .get(),
     ).toEqual({ name: "cly_dev_tool_effects" });
     expectAgentContextDatabaseContract(upgraded);
+  });
+
+  it("upgrades an already-recorded immutable 0016 handoff table through 0018", () => {
+    const databasePath = createDatabasePath();
+    getStateDatabase(databasePath);
+    closePersistedStateDatabase();
+
+    const throughRuntime = new DatabaseSync(databasePath);
+    throughRuntime.exec("PRAGMA foreign_keys = OFF");
+    throughRuntime.exec("DROP TABLE cly_dev_handoffs");
+    throughRuntime.exec(
+      readFileSync(
+        new URL("./drizzle/0016_cly_dev_handoffs.sql", import.meta.url),
+        "utf8",
+      ).replaceAll("--> statement-breakpoint", ""),
+    );
+    throughRuntime.exec(`
+      INSERT OR IGNORE INTO projects
+        (id, path, normalized_path, name, status, sort_order, metadata, created_at, updated_at)
+      VALUES
+        ('handoff-upgrade-project', '/tmp/handoff-upgrade', '/tmp/handoff-upgrade',
+         'Handoff upgrade', 'open', 0, '{}', '2026-07-16', '2026-07-16');
+      INSERT INTO cly_dev_handoffs
+        (id, project_id, direction, protocol, schema_version, minimum_reader_version,
+         canonical_payload_json, integrity_digest, repository_fingerprint_json,
+         research_fingerprint_json, inspection_json, exported_at, imported_at, created_at)
+      VALUES
+        ('legacy-handoff', 'handoff-upgrade-project', 'export', 'cly.dev.handoff', 1, 1,
+         '{}', '${"a".repeat(64)}', '{}', '{}', '{}',
+         '2026-07-16T12:00:00.000Z', NULL, '2026-07-16T12:00:00.000Z');
+    `);
+    throughRuntime
+      .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
+      .run(1784145600000);
+    expect(
+      throughRuntime
+        .prepare("PRAGMA table_info(cly_dev_handoffs)")
+        .all()
+        .map((row) => row.name),
+    ).not.toContain("materialized_session_id");
+    throughRuntime.close();
+
+    const upgraded = getStateDatabase(databasePath);
+    expect(
+      upgraded
+        .prepare("PRAGMA table_info(cly_dev_handoffs)")
+        .all()
+        .map((row) => row.name),
+    ).toEqual(
+      expect.arrayContaining(["materialized_session_id", "materialized_at"]),
+    );
+    expect(
+      upgraded
+        .prepare(
+          "SELECT id, materialized_session_id AS materializedSessionId FROM cly_dev_handoffs WHERE id = ?",
+        )
+        .get("legacy-handoff"),
+    ).toEqual({ id: "legacy-handoff", materializedSessionId: null });
+    expect(
+      upgraded
+        .prepare(
+          "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
+        )
+        .get(),
+    ).toEqual({ createdAt: 1784149200000 });
+    expect(upgraded.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
   });
 
   it("configures a bounded wait for concurrent SQLite writers", () => {

@@ -64,13 +64,33 @@ function payloadFromAggregate(aggregate) {
   const researchObjects = new Map(
     (research.objects ?? []).map((object) => [object.id, object]),
   );
-  const handoffEntries = entries.flatMap((entry) => {
-    if (entry.kind !== "research_object") return [entry];
-    if (entry.version && entry.contentHash) return [entry];
+  const referencedResearchObjectIds = new Set([
+    ...(task.researchObjectIds ?? []),
+    ...entries
+      .filter((entry) => entry.kind === "research_object")
+      .map((entry) => entry.researchObjectId),
+  ]);
+  for (const objectId of referencedResearchObjectIds) {
+    const object = researchObjects.get(objectId);
+    if (
+      !object ||
+      !nonemptyString(object.version) ||
+      !knownContentHash(object.contentHash)
+    ) {
+      throw new Error(
+        `Source research object ${objectId} requires a version and content hash for handoff export.`,
+      );
+    }
+  }
+  const handoffEntries = entries.map((entry) => {
+    if (entry.kind !== "research_object") return entry;
+    if (entry.version && entry.contentHash) return entry;
     const object = researchObjects.get(entry.researchObjectId);
-    return object
-      ? [{ ...entry, version: object.version, contentHash: object.contentHash }]
-      : [];
+    return {
+      ...entry,
+      version: object.version,
+      contentHash: object.contentHash,
+    };
   });
   if (session.provider && aggregate.providerRequirements?.required !== true) {
     throw new Error(
@@ -888,7 +908,10 @@ export function createClyDevHandoffService({
       typeof inputOrProjectId === "string"
         ? { projectId: inputOrProjectId, envelope: possibleEnvelope }
         : inputOrProjectId;
-    const inspection = input.inspection ?? (await inspectImport(input));
+    const inspection = await inspectImport({
+      projectId: input.projectId,
+      envelope: input.envelope,
+    });
     if (!inspection.compatible || !inspection.envelope) {
       const explanation = inspection.conflicts
         .map((conflict) => conflict.message)

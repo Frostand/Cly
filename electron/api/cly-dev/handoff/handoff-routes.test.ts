@@ -5,8 +5,11 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
+import { API_SESSION_TOKEN_HEADER, createApiApp } from "../../app.js";
 import { createClyDevSessionRepository } from "../session-repository.js";
 import { hashHandoffPayload } from "./canonical-json.js";
+import { getClyDevMaterializedAggregate } from "./handoff-aggregate.js";
+import { createClyDevHandoffRepository } from "./handoff-repository.js";
 import { registerClyDevHandoffRoutes } from "./handoff-routes.js";
 
 const openDatabases: DatabaseSync[] = [];
@@ -24,14 +27,21 @@ const validEnvelope = () => {
   return envelope;
 };
 
-function setup() {
+function setup({
+  sourceResearchInspector = undefined,
+}: {
+  sourceResearchInspector?: null | (() => unknown);
+} = {}) {
   const directory = mkdtempSync(path.join(tmpdir(), "cly-handoff-routes-"));
-  const db = new DatabaseSync(path.join(directory, "state.sqlite"));
+  const databasePath = path.join(directory, "state.sqlite");
+  const db = new DatabaseSync(databasePath);
   openDatabases.push(db);
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec("CREATE TABLE projects (id TEXT PRIMARY KEY NOT NULL);");
   db.exec(migration("0015_cly_dev_sessions.sql"));
   db.exec(migration("0016_cly_dev_handoffs.sql"));
+  db.exec(migration("0017_cly_dev_tool_effects.sql"));
+  db.exec(migration("0018_cly_dev_handoff_materialization.sql"));
   db.prepare("INSERT INTO projects (id) VALUES (?), (?)").run(
     "source-project",
     "target-project",
@@ -122,6 +132,30 @@ function setup() {
     actor: { kind: "agent", id: "source-agent" },
     payload: { items: ["Verify the linked resumable session"] },
   });
+  sessions.appendEvent("source-project", source.session.id, {
+    schemaVersion: 1,
+    payloadVersion: 1,
+    idempotencyKey: "source-progress",
+    type: "progress.recorded",
+    transferability: "local-only",
+    occurredAt: now(),
+    actor: { kind: "agent", id: "source-agent" },
+    payload: { completed: 2, total: 3, label: "Production integration" },
+  });
+  sessions.appendEvent("source-project", source.session.id, {
+    schemaVersion: 1,
+    payloadVersion: 1,
+    idempotencyKey: "source-decision",
+    type: "decision.recorded",
+    transferability: "local-only",
+    occurredAt: now(),
+    actor: { kind: "agent", id: "source-agent" },
+    payload: {
+      decisionId: "decision-1",
+      summary: "Persist actionable state",
+      rationale: "Resume must survive process loss",
+    },
+  });
   const targetWorkspace = sessions.createWorkspace("target-project", {
     schemaVersion: 1,
     idempotencyKey: "target-workspace",
@@ -153,8 +187,7 @@ function setup() {
     },
     capabilities: ["tool_calls", "structured_output"],
   };
-  const app = new Hono();
-  registerClyDevHandoffRoutes(app, {
+  const routeOptions = {
     getDatabase: () => db,
     getSessionRepository: () => sessions,
     projectExists: ({ projectId }) =>
@@ -178,15 +211,31 @@ function setup() {
       required: true,
       capabilities: ["tool_calls", "structured_output"],
     }),
-    inspectSourceResearch: () => inspection.research,
+    ...(sourceResearchInspector === null
+      ? {}
+      : {
+          inspectSourceResearch:
+            sourceResearchInspector ?? (() => inspection.research),
+        }),
     resolveTargetWorkspace: () => targetWorkspace,
     resolveTargetProvider: () => ({
       id: "target-provider",
       model: "target-model",
     }),
     now,
-  });
-  return { app, db, inspection, sessions, source, targetWorkspace };
+  };
+  const app = new Hono();
+  registerClyDevHandoffRoutes(app, routeOptions);
+  return {
+    app,
+    databasePath,
+    db,
+    inspection,
+    routeOptions,
+    sessions,
+    source,
+    targetWorkspace,
+  };
 }
 
 afterEach(() => {
@@ -386,5 +435,138 @@ describe("Cly Dev handoff routes", () => {
     expect(await response.json()).toEqual({
       error: expect.objectContaining({ code: "invalid_request" }),
     });
+  });
+
+  it("requires a dedicated source research inspector and complete fingerprints", async () => {
+    const withoutSourceInspector = setup({ sourceResearchInspector: null });
+    const missingInspectorResponse = await withoutSourceInspector.app.request(
+      "/api/projects/source-project/cly-dev/handoffs/export",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionId: withoutSourceInspector.source.session.id,
+        }),
+      },
+    );
+    expect(missingInspectorResponse.status).toBe(409);
+    expect(
+      withoutSourceInspector.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM cly_dev_handoffs WHERE direction = 'export'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+
+    const incomplete = setup({
+      sourceResearchInspector: () => ({ objects: [], impact: [] }),
+    });
+    const incompleteResponse = await incomplete.app.request(
+      "/api/projects/source-project/cly-dev/handoffs/export",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: incomplete.source.session.id }),
+      },
+    );
+    expect(incompleteResponse.status).toBe(409);
+    expect(
+      incomplete.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM cly_dev_handoffs WHERE direction = 'export'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("reopens actionable state through a project-scoped reverse handoff link", async () => {
+    const { app, databasePath } = setup();
+    const envelope = validEnvelope();
+    const response = await app.request(
+      "/api/projects/target-project/cly-dev/handoffs/import",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ envelope }),
+      },
+    );
+    expect(response.status).toBe(201);
+    const imported = await response.json();
+
+    const reopened = new DatabaseSync(databasePath);
+    reopened.exec("PRAGMA foreign_keys = ON;");
+    openDatabases.push(reopened);
+    const sessions = createClyDevSessionRepository({ db: reopened });
+    const handoffs = createClyDevHandoffRepository({ db: reopened });
+    const linked = handoffs.findImportByMaterializedSession(
+      "target-project",
+      imported.materialized.session.id,
+    );
+    expect(linked).toEqual(
+      expect.objectContaining({
+        id: imported.record.id,
+        materializedSessionId: imported.materialized.session.id,
+      }),
+    );
+    expect(
+      handoffs.findImportByMaterializedSession(
+        "source-project",
+        imported.materialized.session.id,
+      ),
+    ).toBeNull();
+
+    const aggregate = getClyDevMaterializedAggregate(
+      sessions,
+      "target-project",
+      imported.materialized.session.id,
+      handoffs,
+    );
+    expect(aggregate.actionableState).toEqual(
+      expect.objectContaining({
+        goal: envelope.payload.goal,
+        plan: envelope.payload.plan,
+        progress: envelope.payload.progress,
+        decisions: envelope.payload.decisions,
+        openQuestions: envelope.payload.openQuestions,
+        remainingWork: envelope.payload.remainingWork,
+      }),
+    );
+    expect(
+      sessions
+        .listEvents("target-project", imported.materialized.session.id, 0, 100)
+        .map((event) => event.type),
+    ).toEqual(
+      expect.arrayContaining([
+        "summary.recorded",
+        "plan.recorded",
+        "progress.recorded",
+        "decision.recorded",
+        "remaining_work.recorded",
+      ]),
+    );
+    expect(
+      sessions.getSnapshot("target-project", imported.materialized.session.id)
+        .approvals,
+    ).toEqual([]);
+  });
+
+  it("registers handoff routes behind the createApiApp authority boundary", async () => {
+    const { routeOptions, source } = setup();
+    const token = "handoff-route-token";
+    const api = createApiApp(token, { clyDevHandoff: routeOptions });
+    const url =
+      "http://127.0.0.1/api/projects/source-project/cly-dev/handoffs/export";
+    const request = (authenticated: boolean) =>
+      api.request(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(authenticated ? { [API_SESSION_TOKEN_HEADER]: token } : {}),
+        },
+        body: JSON.stringify({ sessionId: source.session.id }),
+      });
+
+    expect((await request(false)).status).toBe(401);
+    expect((await request(true)).status).toBe(200);
   });
 });

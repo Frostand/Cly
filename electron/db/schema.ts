@@ -1540,15 +1540,6 @@ export const clyDevHandoffs = sqliteTable(
       "cly_dev_handoffs_import_timestamp",
       sql`(${table.direction} = 'export' AND ${table.importedAt} IS NULL) OR (${table.direction} = 'import' AND ${table.importedAt} IS NOT NULL)`,
     ),
-    check(
-      "cly_dev_handoffs_materialization",
-      sql`(${table.direction} = 'export' AND ${table.materializedSessionId} IS NULL AND ${table.materializedAt} IS NULL) OR (${table.direction} = 'import' AND ((${table.materializedSessionId} IS NULL AND ${table.materializedAt} IS NULL) OR (${table.materializedSessionId} IS NOT NULL AND ${table.materializedAt} IS NOT NULL)))`,
-    ),
-    foreignKey({
-      columns: [table.materializedSessionId, table.projectId],
-      foreignColumns: [clyDevSessions.id, clyDevSessions.projectId],
-      name: "cly_dev_handoffs_materialized_session_project_fk",
-    }),
     uniqueIndex("cly_dev_handoffs_id_project_unique").on(
       table.id,
       table.projectId,

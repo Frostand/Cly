@@ -29,6 +29,73 @@ const assertTargetWorkspace = (workspace, projectId, repository) => {
   }
 };
 
+const eventBase = (identity, suffix, occurredAt) => ({
+  schemaVersion: 1,
+  payloadVersion: 1,
+  idempotencyKey: `${identity}:event:${suffix}`,
+  transferability: "local-only",
+  occurredAt,
+  actor: { kind: "system", id: "cly-handoff-import" },
+});
+
+const materializeActionableEvents = (
+  sessions,
+  projectId,
+  sessionId,
+  identity,
+  payload,
+  importedAt,
+) => {
+  for (const summary of payload.summaries) {
+    sessions.appendEvent(projectId, sessionId, {
+      ...eventBase(identity, `summary:${summary.id}`, summary.createdAt),
+      type: "summary.recorded",
+      payload: { title: summary.title, sections: summary.sections },
+    });
+  }
+  if (payload.plan.steps.length) {
+    sessions.appendEvent(projectId, sessionId, {
+      ...eventBase(identity, "plan", importedAt),
+      type: "plan.recorded",
+      payload: payload.plan,
+    });
+  }
+  const completed = payload.progress.completedItems.length;
+  sessions.appendEvent(projectId, sessionId, {
+    ...eventBase(identity, "progress", importedAt),
+    type: "progress.recorded",
+    payload: {
+      completed,
+      total: Math.max(
+        completed,
+        completed + payload.remainingWork.length,
+        payload.plan.steps.length,
+      ),
+      label: payload.progress.currentItem ?? payload.progress.status,
+    },
+  });
+  for (const decision of payload.decisions) {
+    sessions.appendEvent(projectId, sessionId, {
+      ...eventBase(identity, `decision:${decision.id}`, decision.decidedAt),
+      type: "decision.recorded",
+      payload: {
+        decisionId: decision.id,
+        summary: decision.summary,
+        rationale: decision.rationale,
+      },
+    });
+  }
+  if (payload.remainingWork.length) {
+    sessions.appendEvent(projectId, sessionId, {
+      ...eventBase(identity, "remaining-work", importedAt),
+      type: "remaining_work.recorded",
+      payload: {
+        items: payload.remainingWork.map((item) => item.description),
+      },
+    });
+  }
+};
+
 export function createClyDevHandoffMaterializer({
   getSessionRepository,
   handoffRepository,
@@ -64,13 +131,23 @@ export function createClyDevHandoffMaterializer({
       );
     }
     const sessions = getSessionRepository();
+    const identity = `handoff:${record.integrity.digest}`;
     if (record.materializedSessionId) {
+      materializeActionableEvents(
+        sessions,
+        projectId,
+        record.materializedSessionId,
+        identity,
+        payload,
+        record.importedAt,
+      );
       return {
         record,
         materialized: getClyDevMaterializedAggregate(
           sessions,
           projectId,
           record.materializedSessionId,
+          handoffRepository,
         ),
       };
     }
@@ -90,7 +167,6 @@ export function createClyDevHandoffMaterializer({
       throw new Error("A current target provider and model are required.");
     }
 
-    const identity = `handoff:${record.integrity.digest}`;
     const contextManifest = sessions.createContextManifest(
       projectId,
       workspace.id,
@@ -120,6 +196,14 @@ export function createClyDevHandoffMaterializer({
       commit: { sha: payload.repository.commitSha },
       state: "resumable",
     });
+    materializeActionableEvents(
+      sessions,
+      projectId,
+      session.id,
+      identity,
+      payload,
+      record.importedAt,
+    );
     const linkedRecord = handoffRepository.linkMaterializedSession(
       projectId,
       record.id,
@@ -127,12 +211,12 @@ export function createClyDevHandoffMaterializer({
     );
     return {
       record: linkedRecord,
-      materialized: {
-        workspace,
-        contextManifest,
-        task,
-        session: sessions.getSnapshot(projectId, session.id),
-      },
+      materialized: getClyDevMaterializedAggregate(
+        sessions,
+        projectId,
+        session.id,
+        handoffRepository,
+      ),
     };
   };
 }

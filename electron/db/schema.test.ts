@@ -14,6 +14,7 @@ import {
   agentContextRevisions,
   agentContextTransmissionApprovals,
   agentRoleConfigurations,
+  clyDevHandoffs,
   clyDevToolEffects,
 } from "./schema.js";
 
@@ -116,6 +117,32 @@ describe("Cly Dev execution Drizzle schema", () => {
           { name: "session_id", order: "asc" },
           { name: "status", order: "asc" },
           { name: "claimed_at", order: "asc" },
+        ],
+      },
+    });
+  });
+
+  it("matches the project-scoped handoff materialization linkage in migration 0018", () => {
+    expect(
+      getTableConfig(clyDevHandoffs).columns.map((column) => column.name),
+    ).toEqual(
+      expect.arrayContaining(["materialized_session_id", "materialized_at"]),
+    );
+    expect(tableContract(clyDevHandoffs)).toMatchObject({
+      indexes: {
+        cly_dev_handoffs_import_identity_unique: [
+          { name: "project_id", order: "asc" },
+          { name: "integrity_digest", order: "asc" },
+        ],
+        cly_dev_handoffs_materialized_session_unique: [
+          { name: "project_id", order: "asc" },
+          { name: "materialized_session_id", order: "asc" },
+        ],
+        idx_cly_dev_handoffs_project_created: [
+          { name: "project_id", order: "asc" },
+          { name: "direction", order: "asc" },
+          { name: "created_at", order: "desc" },
+          { name: "id", order: "asc" },
         ],
       },
     });
