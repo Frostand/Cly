@@ -179,12 +179,13 @@
       ]
     },
     "providerRequirements": {
+      "required": true,
       "capabilities": ["tool_calls", "structured_output"]
     }
   },
   "integrity": {
     "algorithm": "sha256",
     "canonicalization": "cly-json-v1",
-    "digest": "cf04c8ea2812031a5119c0edc201d7dffe0e3111b9c51a85b45e36b968f6e74b"
+    "digest": "9ce49a2caeb101db257250c732beb2b51713ab06db3f200b4237da97be03a855"
   }
 }

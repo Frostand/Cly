@@ -225,6 +225,24 @@ describe("Cly Dev handoff service", () => {
     expect(missing.conflicts).toEqual([
       expect.objectContaining({ code: "project_not_found" }),
     ]);
+
+    const { service: mismatched } = setup(inspectionState(), ":memory:", {
+      projectExists: () => ({ id: "project-2" }),
+    });
+    const wrongProject = await mismatched.inspectImport({
+      projectId: "project-1",
+      envelope: validEnvelope(),
+    });
+    expect(wrongProject.compatible).toBe(false);
+    expect(wrongProject.conflicts).toEqual([
+      expect.objectContaining({ code: "project_identity_mismatch" }),
+    ]);
+    await expect(
+      mismatched.exportHandoff({
+        projectId: "project-1",
+        payload: validEnvelope().payload,
+      }),
+    ).rejects.toThrow(/project/i);
   });
 
   it("turns inspector errors and unavailable source state into blocking conflicts", async () => {
@@ -286,6 +304,33 @@ describe("Cly Dev handoff service", () => {
       ]),
     );
     expect(partialState.stale).toEqual([]);
+
+    const { service: malformedCommit } = setup(
+      inspectionState({
+        repository: {
+          ...inspectionState().repository,
+          commitSha: "unknown",
+        },
+      }),
+    );
+    const unknownCommit = await malformedCommit.inspectImport({
+      projectId: "project-1",
+      envelope: validEnvelope(),
+    });
+    expect(unknownCommit.compatible).toBe(false);
+    expect(unknownCommit.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "repository_state_unavailable",
+          field: "commitSha",
+        }),
+      ]),
+    );
+    expect(
+      unknownCommit.stale.some(
+        (item: { code: string }) => item.code === "repository_commit_changed",
+      ),
+    ).toBe(false);
   });
 
   it("requires current target authority and never reuses imported approvals", async () => {
@@ -390,9 +435,97 @@ describe("Cly Dev handoff service", () => {
         (item: { capability: string }) => item.capability,
       ),
     ).toEqual(providerFixture.expectedMissing);
+    expect(inspected.authority).toBeNull();
     await expect(
       service.importHandoff({ projectId: "project-1", envelope }),
     ).rejects.toThrow(/capabilit/i);
+  });
+
+  it("requires explicit provider requirements and provider inspection for resumption", async () => {
+    const source = validEnvelope().payload;
+    const { service } = setup();
+    await expect(
+      service.exportHandoff({
+        projectId: "project-1",
+        aggregate: {
+          workspace: {
+            repository: source.repository,
+            worktree: {
+              id: source.repository.worktreeId,
+              branch: source.repository.branch,
+            },
+          },
+          task: {
+            id: source.task.id,
+            title: source.task.title,
+            objective: source.goal.objective,
+          },
+          session: {
+            id: source.task.sessionId,
+            state: "resumable",
+            commit: { sha: source.repository.commitSha },
+            provider: { id: "provider-a", model: "model-a" },
+          },
+          contextManifest: source.contextManifest,
+          events: [],
+          research: source.research,
+          goal: source.goal,
+          plan: source.plan,
+          progress: source.progress,
+          permissions: source.permissions,
+          costs: source.costs,
+        },
+      }),
+    ).rejects.toThrow(/provider|requirements|capabilities/i);
+
+    const providerRequired = validEnvelope();
+    providerRequired.payload.providerRequirements = {
+      required: true,
+      capabilities: [],
+    };
+    providerRequired.integrity.digest = hashHandoffPayload(
+      providerRequired.payload,
+    );
+    const { service: noProviderInspector } = setup(
+      inspectionState(),
+      ":memory:",
+      { getProviderCapabilities: undefined },
+    );
+    const inspected = await noProviderInspector.inspectImport({
+      projectId: "project-1",
+      envelope: providerRequired,
+    });
+    expect(inspected.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "provider_capability_inspector_unavailable",
+        }),
+      ]),
+    );
+
+    const knownNone = validEnvelope().payload;
+    knownNone.task.state = "completed";
+    knownNone.providerRequirements = { required: false, capabilities: [] };
+    const exported = await service.exportHandoff({
+      projectId: "project-1",
+      payload: knownNone,
+    });
+    expect(exported.payload.providerRequirements).toEqual({
+      required: false,
+      capabilities: [],
+    });
+
+    const providerBackedKnownNone = validEnvelope().payload;
+    providerBackedKnownNone.providerRequirements = {
+      required: false,
+      capabilities: [],
+    };
+    await expect(
+      service.exportHandoff({
+        projectId: "project-1",
+        payload: providerBackedKnownNone,
+      }),
+    ).rejects.toThrow(/provider|resum/i);
   });
 
   it("exports the existing durable aggregate shape without provider or machine state", async () => {

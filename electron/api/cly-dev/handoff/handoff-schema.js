@@ -43,15 +43,22 @@ export const isRestrictedHandoffKey = (key) => {
     normalized === "pid"
   );
 };
+const isRecognizedRootRelativeWebRoute = (value) =>
+  typeof value === "string" &&
+  /^\/(?:api|v\d+|assets|static)(?:\/|$)[^\s]*$/i.test(value);
 export const isAbsoluteMachinePath = (value) =>
   typeof value === "string" &&
-  (value.startsWith("/") ||
+  ((value.startsWith("/") && !isRecognizedRootRelativeWebRoute(value)) ||
     value.startsWith("\\\\") ||
     /^[a-zA-Z]:[\\/]/.test(value) ||
     /^file:\/\//i.test(value));
 const containsCredentialValue = (value) =>
   typeof value === "string" &&
-  (/\b(?:proxy-)?authorization\s*:\s*(?:bearer|basic)\s+\S+/i.test(value) ||
+  (/\b(?:proxy-)?authorization\s*:\s*[^\s\r\n][^\r\n]*/i.test(value) ||
+    /\b(?:set-cookie|cookie)\s*:\s*[^\s\r\n][^\r\n]*/i.test(value) ||
+    /(?:^|[;\s])(?:session(?:_?id)?|connect\.sid|auth|jwt|remember_token)\s*=\s*[^;\s]+/i.test(
+      value,
+    ) ||
     /\b(?:bearer|basic)\s+[a-z0-9+/_.=-]{8,}/i.test(value) ||
     /\b(?:gh[pousr]_[a-z0-9]{20,}|xox[baprs]-[a-z0-9-]{16,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{20,}|sk-[a-z0-9_-]{16,}|glpat-[a-z0-9_-]{16,}|npm_[a-z0-9]{16,})\b/i.test(
       value,
@@ -66,12 +73,12 @@ const containsCredentialValue = (value) =>
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(value));
 const containsEnvironmentAssignment = (value) =>
   typeof value === "string" &&
-  /(?:^|[\s;&|])(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*[^\s;&|]+/.test(
-    value,
-  );
+  /(?:^|[\s;&|])(?:export\s+)?[A-Z][A-Z0-9_]{1,}\s*=\s*[^\s;&|]+/.test(value);
 const containsEmbeddedMachinePath = (value) =>
   typeof value === "string" &&
-  (/(?:^|[\s"'`=:(])\/(?!\/)(?:[^/\s"'`]+\/)+[^\s"'`]*/.test(value) ||
+  (/(?:^|[\s"'`=:(])\/(?!\/)(?!(?:api|v\d+|assets|static)(?:\/|$))(?:[^/\s"'`]+\/)+[^\s"'`]*/i.test(
+    value,
+  ) ||
     /(?:^|[\s"'`=:(])[a-zA-Z]:\\(?:Users|Documents and Settings|Windows|ProgramData|Temp)\\[^\s"'`]*/i.test(
       value,
     ) ||
@@ -343,9 +350,20 @@ export const clyDevHandoffPayloadSchema = z
         ),
       })
       .strict(),
-    providerRequirements: z
-      .object({ capabilities: z.array(id).max(1_000) })
-      .strict(),
+    providerRequirements: z.discriminatedUnion("required", [
+      z
+        .object({
+          required: z.literal(true),
+          capabilities: z.array(id).max(1_000),
+        })
+        .strict(),
+      z
+        .object({
+          required: z.literal(false),
+          capabilities: z.array(id).length(0),
+        })
+        .strict(),
+    ]),
   })
   .strict()
   .superRefine((payload, context) => {
@@ -361,6 +379,23 @@ export const clyDevHandoffPayloadSchema = z
         code: "custom",
         path: ["messages"],
         message: "Messages must be empty when conversation sync is excluded.",
+      });
+    }
+    if (
+      [
+        "queued",
+        "running",
+        "awaiting_approval",
+        "interrupted",
+        "resumable",
+      ].includes(payload.task.state) &&
+      !payload.providerRequirements.required
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["providerRequirements"],
+        message:
+          "Provider requirements must be explicit for resumable task state.",
       });
     }
   });
@@ -447,7 +482,7 @@ const emptyV1Payload = (legacy) => ({
   failures: [],
   costs: { currency: "USD", totalMinor: 0, items: [] },
   research: { objects: [], impact: [] },
-  providerRequirements: { capabilities: [] },
+  providerRequirements: { required: true, capabilities: [] },
 });
 
 export function migrateClyDevHandoffEnvelope(rawEnvelope) {

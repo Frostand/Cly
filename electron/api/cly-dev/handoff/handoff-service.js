@@ -72,6 +72,11 @@ function payloadFromAggregate(aggregate) {
       ? [{ ...entry, version: object.version, contentHash: object.contentHash }]
       : [];
   });
+  if (session.provider && aggregate.providerRequirements?.required !== true) {
+    throw new Error(
+      "Explicit provider requirements are required for provider-backed handoff export.",
+    );
+  }
   return {
     task: {
       id: task.id,
@@ -195,9 +200,7 @@ function payloadFromAggregate(aggregate) {
       })),
     },
     research,
-    providerRequirements: aggregate.providerRequirements ?? {
-      capabilities: [],
-    },
+    providerRequirements: aggregate.providerRequirements,
   };
 }
 
@@ -261,8 +264,13 @@ const knownGitHash = (value) =>
   typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(value);
 const knownContentHash = (value) =>
   typeof value === "string" && /^[a-f0-9]{40,128}$/i.test(value);
-const projectWasFound = (result) =>
-  result === true || result?.exists === true || Boolean(result?.id);
+const projectLookupStatus = (result, projectId) => {
+  if (result === true) return "found";
+  if (result && typeof result === "object" && "id" in result) {
+    return result.id === projectId ? "found" : "mismatch";
+  }
+  return "missing";
+};
 const filesystemScope = new Map([
   ["read-only", 0],
   ["workspace-write", 1],
@@ -323,7 +331,13 @@ export function createClyDevHandoffService({
         `Target project lookup failed before handoff export: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    if (!projectWasFound(found)) {
+    const status = projectLookupStatus(found, projectId);
+    if (status === "mismatch") {
+      throw new Error(
+        "The project lookup returned a record for a different project.",
+      );
+    }
+    if (status !== "found") {
       throw new Error("The target project was not found for handoff export.");
     }
   }
@@ -388,8 +402,7 @@ export function createClyDevHandoffService({
     const researchIsApplicable =
       envelope.payload.research.objects.length > 0 ||
       envelope.payload.research.impact.length > 0;
-    const providerIsApplicable =
-      envelope.payload.providerRequirements.capabilities.length > 0;
+    const providerIsApplicable = envelope.payload.providerRequirements.required;
 
     if (!validProjectId(input.projectId)) {
       const conflict = issue(
@@ -479,14 +492,25 @@ export function createClyDevHandoffService({
         ),
       );
     }
-    if (!conflicts.length && !projectWasFound(project)) {
-      conflicts.push(
-        issue(
-          "project_not_found",
-          `Target project ${input.projectId} was not found.`,
-          "Select an existing target project before importing this handoff.",
-        ),
-      );
+    if (!conflicts.length) {
+      const status = projectLookupStatus(project, input.projectId);
+      if (status === "mismatch") {
+        conflicts.push(
+          issue(
+            "project_identity_mismatch",
+            `The project lookup returned ${project.id} instead of ${input.projectId}.`,
+            "Select the exact target project and inspect the handoff again.",
+          ),
+        );
+      } else if (status !== "found") {
+        conflicts.push(
+          issue(
+            "project_not_found",
+            `Target project ${input.projectId} was not found.`,
+            "Select an existing target project before importing this handoff.",
+          ),
+        );
+      }
     }
     if (conflicts.length) {
       return {
@@ -549,7 +573,11 @@ export function createClyDevHandoffService({
         ["worktreeId", "repository_worktree_changed", "worktree"],
         ["commitSha", "repository_commit_changed", "commit"],
       ]) {
-        if (!nonemptyString(currentRepository[field])) {
+        const fieldIsKnown =
+          field === "commitSha"
+            ? knownGitHash(currentRepository[field])
+            : nonemptyString(currentRepository[field]);
+        if (!fieldIsKnown) {
           conflicts.push(
             issue(
               "repository_state_unavailable",
@@ -831,6 +859,7 @@ export function createClyDevHandoffService({
         )
       : [];
     const authority =
+      conflicts.length === 0 &&
       isPermissionRecord(currentPermissions) &&
       approvalInspection?.compatible === true
         ? {

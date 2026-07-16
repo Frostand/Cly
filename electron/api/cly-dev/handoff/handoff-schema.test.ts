@@ -87,6 +87,7 @@ describe("Cly Dev handoff schema", () => {
     const envelope = fixture("valid-v1.json");
     envelope.integrity.digest = hashHandoffPayload(envelope.payload);
     expect(envelope.payload.providerRequirements).toEqual({
+      required: true,
       capabilities: ["tool_calls", "structured_output"],
     });
     expect(JSON.stringify(envelope.payload)).not.toContain("openai");
@@ -109,7 +110,15 @@ describe("Cly Dev handoff schema", () => {
 
   it.each([
     "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature",
+    "Authorization: Token opaque-value",
+    "Authorization: Digest username=alice,response=abc",
+    "Authorization: Custom opaque-value",
     "Proxy-Authorization: Basic dXNlcjpwYXNzd29yZA==",
+    "Proxy-Authorization: Digest username=alice,response=abc",
+    "Cookie: session_id=opaque-value; auth=abc",
+    "Set-Cookie: session_id=opaque-value; HttpOnly",
+    "session_id=opaque-value; Path=/; HttpOnly",
+    "connect.sid=opaque-value; Secure",
     "GitHub token ghp_1234567890abcdefghijklmnop",
     "Slack xoxb-123456789012-abcdefghijklmnop",
     "AWS AKIAIOSFODNN7EXAMPLE",
@@ -132,5 +141,56 @@ describe("Cly Dev handoff schema", () => {
     const envelope = fixture("valid-v1.json");
     expect(envelope.payload.permissions.evidenceOnly).toBe(true);
     expect(envelope.payload.approvals[0].evidenceOnly).toBe(true);
+  });
+
+  it("requires explicit provider applicability and capability knowledge", () => {
+    const missingRequirements = fixture("valid-v1.json");
+    delete missingRequirements.payload.providerRequirements;
+    missingRequirements.integrity.digest = hashHandoffPayload(
+      missingRequirements.payload,
+    );
+    expect(() =>
+      clyDevHandoffEnvelopeSchema.parse(missingRequirements),
+    ).toThrow();
+
+    const missingCapabilities = fixture("valid-v1.json");
+    missingCapabilities.payload.providerRequirements = { required: true };
+    missingCapabilities.integrity.digest = hashHandoffPayload(
+      missingCapabilities.payload,
+    );
+    expect(() =>
+      clyDevHandoffEnvelopeSchema.parse(missingCapabilities),
+    ).toThrow();
+
+    const knownNone = fixture("valid-v1.json");
+    knownNone.payload.task.state = "completed";
+    knownNone.payload.providerRequirements = {
+      required: false,
+      capabilities: [],
+    };
+    knownNone.integrity.digest = hashHandoffPayload(knownNone.payload);
+    expect(clyDevHandoffEnvelopeSchema.parse(knownNone)).toEqual(knownNone);
+
+    const resumableKnownNone = fixture("valid-v1.json");
+    resumableKnownNone.payload.providerRequirements = {
+      required: false,
+      capabilities: [],
+    };
+    resumableKnownNone.integrity.digest = hashHandoffPayload(
+      resumableKnownNone.payload,
+    );
+    expect(() => clyDevHandoffEnvelopeSchema.parse(resumableKnownNone)).toThrow(
+      /provider|resum/i,
+    );
+  });
+
+  it("allows benign equations and recognized root-relative web routes", () => {
+    const envelope = fixture("valid-v1.json");
+    envelope.payload.constraints.push(
+      "Equation x=2 has one root",
+      "Request /api/v1/tasks after resuming",
+    );
+    envelope.integrity.digest = hashHandoffPayload(envelope.payload);
+    expect(clyDevHandoffEnvelopeSchema.parse(envelope)).toEqual(envelope);
   });
 });
