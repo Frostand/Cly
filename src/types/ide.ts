@@ -523,6 +523,7 @@ export interface DesktopApi {
   };
 
   openExternal: (url: string) => Promise<boolean>;
+  launchProviderLogin: (provider: AiProvider) => Promise<boolean>;
   writeClipboardText: (text: string) => Promise<boolean>;
   saveTextFile: (payload: {
     contents: string;

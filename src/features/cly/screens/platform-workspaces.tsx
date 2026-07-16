@@ -5,6 +5,7 @@ import {
   CircleDot,
   Clock3,
   Code2,
+  Copy,
   FileCheck2,
   GitBranch,
   Laptop,
@@ -28,6 +29,7 @@ import {
 import {
   Badge,
   Button,
+  Dialog,
   EmptyState,
   Metric,
   PageHeader,
@@ -36,6 +38,8 @@ import {
 } from "../components/primitives";
 import { ClySplitPane } from "../components/toolkit";
 import type { DevSection } from "../domain/types";
+import { capabilityUnavailableMessage } from "../services/capabilities";
+import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { ReviewerCapsuleDialog } from "./research-workspaces";
 
@@ -433,7 +437,7 @@ const DEV_SECTION_META: Record<
     title: "Projects",
     description:
       "Development workspaces connected to research intent and evidence.",
-    action: "Open project",
+    action: "Open research workspace",
   },
   repositories: {
     title: "Repositories",
@@ -462,7 +466,7 @@ const DEV_SECTION_META: Record<
     title: "Agents",
     description:
       "Provider, model, context, tool, permission, and budget policies.",
-    action: "Configure agent",
+    action: "Configure agents",
   },
   machines: {
     title: "Machines",
@@ -492,7 +496,7 @@ const DEV_SECTION_META: Record<
     title: "Settings",
     description:
       "Development sync, execution, provider, and approval preferences.",
-    action: "Open settings",
+    action: "Open system settings",
   },
 };
 
@@ -705,12 +709,15 @@ function useDevRecords(section: DevSection): DevRecord[] {
 export function DevWorkspaceScreen() {
   const section = useClyStore((state) => state.activeDevSection);
   const setScreen = useClyStore((state) => state.setScreen);
-  const notify = useClyStore((state) => state.notify);
   const data = useClyStore((state) => state.data);
   const records = useDevRecords(section);
   const meta = DEV_SECTION_META[section];
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(records[0]?.id ?? "");
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoffCopyState, setHandoffCopyState] = useState<
+    "idle" | "copied" | "error"
+  >("idle");
   useEffect(() => {
     setQuery("");
     setSelectedId(records[0]?.id ?? "");
@@ -725,14 +732,48 @@ export function DevWorkspaceScreen() {
   const activeSessions = data.agentSessions.filter((session) =>
     ["running", "waiting_approval"].includes(session.status),
   ).length;
+  const supportsPrimaryAction = [
+    "projects",
+    "sessions",
+    "agents",
+    "pull-requests",
+    "context",
+    "settings",
+  ].includes(section);
+  const handoffSummary = selected
+    ? [
+        `Goal: ${selected.title}`,
+        `Status: ${selected.status}`,
+        `Owner: ${selected.owner}`,
+        `Context: Explicit project pack`,
+        `Research impact: ${selected.impact}`,
+        `Next review: One research review remains open`,
+      ].join("\n")
+    : "No development record is selected.";
+
+  const openNewSession = () => {
+    if (!isClyDemoRuntime) return;
+    const store = useClyStore.getState();
+    store.setDevSection("sessions");
+    store.setAgentSessionsMode("overview");
+    store.setNewAgentSessionOpen(true);
+  };
 
   const runPrimaryAction = () => {
+    if (section === "projects") {
+      setScreen("overview");
+      return;
+    }
     if (section === "sessions") {
       useClyStore.setState({
         activeProduct: "dev",
         activeScreen: "agents",
         agentSessionsMode: "overview",
       });
+      return;
+    }
+    if (section === "agents") {
+      setScreen("models");
       return;
     }
     if (section === "pull-requests") {
@@ -747,10 +788,15 @@ export function DevWorkspaceScreen() {
       setScreen("settings");
       return;
     }
-    notify(
-      meta.action,
-      `${selected?.title ?? meta.title} is ready for inspection.`,
-    );
+  };
+
+  const copyHandoffSummary = async () => {
+    try {
+      await navigator.clipboard.writeText(handoffSummary);
+      setHandoffCopyState("copied");
+    } catch {
+      setHandoffCopyState("error");
+    }
   };
 
   return (
@@ -766,13 +812,13 @@ export function DevWorkspaceScreen() {
             </StatusIndicator>
             <Button
               variant="primary"
-              onClick={() => {
-                useClyStore.getState().setDevSection("sessions");
-                notify(
-                  "Session setup ready",
-                  "Select provider, machine, context, permissions, and budget.",
-                );
-              }}
+              disabled={!isClyDemoRuntime}
+              title={
+                isClyDemoRuntime
+                  ? "Create a new agent session"
+                  : capabilityUnavailableMessage("agents.execute")
+              }
+              onClick={openNewSession}
             >
               <Plus /> New session
             </Button>
@@ -787,25 +833,11 @@ export function DevWorkspaceScreen() {
           <GitBranch /> main · clean
         </span>
         <span>
-          <TestTube2 /> 482 tests passed
+          <FileCheck2 /> 12 open changes
         </span>
         <span>
-          <ShieldCheck /> Research impact review required
+          <ShieldCheck /> 1 approval waiting · 4 research links
         </span>
-      </div>
-      <div className="cly-metric-row">
-        <Metric
-          label="Active sessions"
-          value={activeSessions}
-          detail="Across 1 machine"
-        />
-        <Metric label="Open changes" value="12" detail="3 files need review" />
-        <Metric label="Approvals" value="1" detail="Network action waiting" />
-        <Metric
-          label="Research impact"
-          value="4"
-          detail="Objects may need review"
-        />
       </div>
       <ClySplitPane
         id={`dev-${section}`}
@@ -869,6 +901,16 @@ export function DevWorkspaceScreen() {
                 }
               />
               <div className="cly-platform-inspector-body">
+                {!supportsPrimaryAction ? (
+                  <div className="cly-dev-preview-note" role="note">
+                    <LockKeyhole aria-hidden="true" />
+                    <span>
+                      <strong>Preview only</strong>
+                      Actions for {meta.title.toLowerCase()} are not connected
+                      yet. The available details below are read-only.
+                    </span>
+                  </div>
+                ) : null}
                 <section>
                   <h3>Execution state</h3>
                   <dl className="cly-platform-details">
@@ -923,26 +965,65 @@ export function DevWorkspaceScreen() {
                     </li>
                   </ul>
                 </section>
-                <div className="cly-dev-inspector-actions">
+              </div>
+              <div className="cly-dev-inspector-actions">
+                {supportsPrimaryAction ? (
                   <Button variant="primary" onClick={runPrimaryAction}>
                     <Play /> {meta.action}
                   </Button>
+                ) : (
                   <Button
-                    onClick={() =>
-                      notify(
-                        "Handoff prepared",
-                        "Goal, status, files, tests, decisions, and research impact are ready for another provider.",
-                      )
-                    }
+                    disabled
+                    title={`${meta.title} actions are not connected yet.`}
                   >
-                    <RefreshCw /> Prepare handoff
+                    <LockKeyhole /> Not connected yet
                   </Button>
-                </div>
+                )}
+                <Button
+                  onClick={() => {
+                    setHandoffCopyState("idle");
+                    setHandoffOpen(true);
+                  }}
+                >
+                  <RefreshCw /> Prepare handoff
+                </Button>
               </div>
             </article>
           ) : null
         }
       />
+      <Dialog
+        open={handoffOpen}
+        title="Handoff summary"
+        description="Review the exact local context before copying it to another provider."
+        onClose={() => setHandoffOpen(false)}
+        footer={
+          <>
+            <Button onClick={() => setHandoffOpen(false)}>Close</Button>
+            <Button variant="primary" onClick={() => void copyHandoffSummary()}>
+              <Copy /> Copy summary
+            </Button>
+          </>
+        }
+      >
+        <div className="cly-dev-handoff-dialog">
+          <div>
+            <span>Selected record</span>
+            <strong>{selected?.title ?? "No selection"}</strong>
+          </div>
+          <pre>{handoffSummary}</pre>
+          {handoffCopyState !== "idle" ? (
+            <p
+              role="status"
+              data-tone={handoffCopyState === "copied" ? "success" : "danger"}
+            >
+              {handoffCopyState === "copied"
+                ? "Summary copied to the clipboard."
+                : "The summary could not be copied. Select the text and copy it manually."}
+            </p>
+          ) : null}
+        </div>
+      </Dialog>
     </div>
   );
 }

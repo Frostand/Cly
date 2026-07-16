@@ -1,4 +1,5 @@
 import "./load-env.js";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -759,6 +760,59 @@ ipcMain.handle("shell:open-external", (_event, { url }) => {
 
   shell.openExternal(url);
   return true;
+});
+
+const PROVIDER_LOGIN_COMMANDS = {
+  anthropic: "claude",
+  cursor: "agent login",
+  openai: "codex login",
+  opencode: "opencode auth login",
+};
+
+const launchProviderLogin = (provider) => {
+  const command = PROVIDER_LOGIN_COMMANDS[provider];
+  if (!command) {
+    return false;
+  }
+
+  try {
+    if (process.platform === "darwin") {
+      const script = `tell application "Terminal" to do script ${JSON.stringify(command)}`;
+      const child = spawn("osascript", ["-e", script], {
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      return true;
+    }
+
+    if (process.platform === "win32") {
+      const child = spawn(
+        "cmd.exe",
+        ["/c", "start", "", "cmd.exe", "/k", command],
+        {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: false,
+        },
+      );
+      child.unref();
+      return true;
+    }
+
+    const child = spawn("x-terminal-emulator", ["-e", "sh", "-lc", command], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+ipcMain.handle("providers:launch-login", (_event, { provider } = {}) => {
+  return launchProviderLogin(provider);
 });
 
 ipcMain.handle("terminal:get-default-shell", () => {

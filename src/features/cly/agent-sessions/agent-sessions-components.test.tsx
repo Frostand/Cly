@@ -217,6 +217,42 @@ describe("Agent Sessions workspace", () => {
     expect(within(menu).getByText("$2.84 · 58.2k tokens")).toBeVisible();
   });
 
+  it("opens real context and rename actions from the working session", async () => {
+    const user = userEvent.setup();
+    useClyStore.setState({
+      agentSessionsMode: "chat",
+      selectedAgentSessionId: "session-01",
+    });
+    render(<AgentSessionsScreen />);
+
+    const header = document.querySelector(".agent-session-header");
+    expect(header).not.toBeNull();
+    await user.click(
+      within(header as HTMLElement).getByRole("button", {
+        name: "Claim Audit Pack",
+      }),
+    );
+    expect(screen.getByLabelText("Live file observation")).toBeVisible();
+
+    const trigger = within(header as HTMLElement).getByLabelText(
+      "Session menu",
+    );
+    await user.click(trigger);
+    await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const dialog = screen.getByRole("dialog", { name: "Rename session" });
+    const name = within(dialog).getByLabelText("Session name");
+    await user.clear(name);
+    await user.type(name, "Calibration evidence audit");
+    await user.click(within(dialog).getByRole("button", { name: "Save name" }));
+
+    expect(
+      useClyStore
+        .getState()
+        .data.agentSessions.find((session) => session.id === "session-01")
+        ?.title,
+    ).toBe("Calibration evidence audit");
+  });
+
   it("keeps the complete Cly Dev task identity discoverable in Chat", () => {
     useClyStore.setState({
       agentSessionsMode: "chat",

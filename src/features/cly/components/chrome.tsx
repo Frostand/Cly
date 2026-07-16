@@ -133,10 +133,9 @@ export function Titlebar() {
     try {
       if (activeProduct === "dev") {
         setDevSection("sessions");
-        notify(
-          "Session setup ready",
-          "Choose a provider, machine, context package, permissions, and budget.",
-        );
+        const state = useClyStore.getState();
+        state.setAgentSessionsMode("overview");
+        state.setNewAgentSessionOpen(true);
         return;
       }
       const screen = useClyStore.getState().activeScreen;
@@ -550,8 +549,10 @@ export function CommandPalette() {
         disabled: !isClyDemoRuntime,
         reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
-          useClyStore.getState().setScreen("agents");
-          useClyStore.getState().setNewAgentSessionOpen(true);
+          const state = useClyStore.getState();
+          state.setDevSection("sessions");
+          state.setAgentSessionsMode("overview");
+          state.setNewAgentSessionOpen(true);
         },
       },
       {

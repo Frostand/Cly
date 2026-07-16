@@ -9982,3 +9982,473 @@
     }
   }
 }
+
+/* Cly Dev usability pass: readable working density, honest actions, and
+ * stable master/detail behavior at the minimum Electron window size. */
+@layer v4 {
+  .cly-shell[data-product="dev"] .cly-route-transition {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .cly-route-dev {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 18px;
+  }
+
+  .cly-route-dev > .cly-workspace-header {
+    min-height: 58px;
+    flex: none;
+    margin-bottom: 8px;
+    padding-bottom: 12px;
+  }
+
+  .cly-route-dev .cly-workspace-heading h1 {
+    font-size: 24px;
+  }
+
+  .cly-route-dev .cly-workspace-heading > p {
+    font-size: 12px;
+  }
+
+  .cly-route-dev .cly-workspace-actions .cly-btn,
+  .cly-route-dev .cly-workspace-actions .cly-status-indicator {
+    min-height: 32px;
+    font-size: 11px;
+  }
+
+  .cly-route-dev .cly-dev-statebar {
+    min-height: 40px;
+    flex: none;
+    gap: 18px;
+    margin-bottom: 10px;
+    padding-inline: 10px;
+    font-size: 10px;
+  }
+
+  .cly-route-dev .cly-platform-split {
+    height: auto;
+    min-height: 360px;
+    max-height: none;
+    flex: 1;
+    border: 1px solid var(--cly-divider);
+    border-radius: 8px;
+  }
+
+  .cly-route-dev .cly-platform-list-pane {
+    padding-right: 0;
+  }
+
+  .cly-route-dev .cly-toolbar {
+    min-height: 44px;
+    gap: 10px;
+    padding: 5px 10px;
+  }
+
+  .cly-route-dev .cly-platform-list-pane .cly-search-input {
+    width: min(390px, 58%);
+    min-height: 32px;
+  }
+
+  .cly-route-dev .cly-inline-metadata {
+    font-size: 9.5px;
+  }
+
+  .cly-route-dev .cly-dev-record-list > button {
+    min-height: 82px;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 12px;
+  }
+
+  .cly-route-dev .cly-dev-record-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .cly-route-dev .cly-dev-record-icon svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .cly-route-dev .cly-dev-record-copy {
+    gap: 4px;
+  }
+
+  .cly-route-dev .cly-dev-record-copy strong {
+    font-size: 12px;
+  }
+
+  .cly-route-dev .cly-dev-record-copy small {
+    font-size: 10.5px;
+  }
+
+  .cly-route-dev .cly-dev-record-copy em {
+    font-size: 9px;
+  }
+
+  .cly-route-dev .cly-dev-record-list .cly-status-indicator {
+    font-size: 9.5px;
+  }
+
+  .cly-route-dev .cly-platform-inspector .cly-pane-header {
+    min-height: 64px;
+    padding-inline: 14px;
+  }
+
+  .cly-route-dev .cly-platform-inspector .cly-pane-header strong {
+    font-size: 11.5px;
+  }
+
+  .cly-route-dev .cly-platform-inspector .cly-pane-header span {
+    font-size: 9.5px;
+  }
+
+  .cly-route-dev .cly-platform-inspector-body {
+    padding: 18px;
+  }
+
+  .cly-route-dev .cly-dev-inspector {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .cly-route-dev .cly-platform-inspector-body h3 {
+    margin-bottom: 10px;
+    font-size: 9.5px;
+  }
+
+  .cly-route-dev .cly-platform-details {
+    margin-top: 8px;
+  }
+
+  .cly-route-dev .cly-platform-details > div {
+    min-height: 40px;
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .cly-route-dev .cly-platform-details dt {
+    font-size: 9.5px;
+  }
+
+  .cly-route-dev .cly-platform-details dd,
+  .cly-route-dev .cly-platform-checks li {
+    font-size: 10.5px;
+  }
+
+  .cly-route-dev .cly-dev-impact-chain span {
+    padding: 6px 8px;
+    font-size: 9.5px;
+  }
+
+  .cly-dev-preview-note {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    margin-bottom: 18px;
+    border-left: 2px solid var(--cly-info);
+    background: var(--cly-info-soft);
+    padding: 10px 12px;
+    color: var(--cly-text-muted);
+    font-size: 10.5px;
+    line-height: 1.45;
+  }
+
+  .cly-dev-preview-note svg {
+    margin-top: 2px;
+    color: var(--cly-info);
+  }
+
+  .cly-dev-preview-note span,
+  .cly-dev-preview-note strong {
+    display: block;
+  }
+
+  .cly-dev-preview-note strong {
+    margin-bottom: 2px;
+    color: var(--cly-text);
+  }
+
+  .cly-route-dev .cly-dev-inspector-actions {
+    margin: 0;
+    padding: 12px 18px;
+    border-top: 1px solid var(--cly-border-soft);
+    background: color-mix(in srgb, var(--cly-surface) 94%, transparent);
+    backdrop-filter: blur(10px);
+  }
+
+  .cly-route-dev .cly-dev-inspector-actions .cly-btn {
+    min-height: 32px;
+    font-size: 10.5px;
+  }
+
+  .cly-dev-handoff-dialog {
+    display: grid;
+    gap: 12px;
+  }
+
+  .cly-dev-handoff-dialog > div {
+    display: grid;
+    gap: 3px;
+  }
+
+  .cly-dev-handoff-dialog > div span {
+    color: var(--cly-text-faint);
+    font-size: 10px;
+  }
+
+  .cly-dev-handoff-dialog pre {
+    overflow: auto;
+    margin: 0;
+    border: 1px solid var(--cly-divider);
+    border-radius: 7px;
+    background: var(--cly-workspace);
+    padding: 12px;
+    color: var(--cly-text-muted);
+    font: 10.5px / 1.65 var(--cly-mono);
+    white-space: pre-wrap;
+  }
+
+  .cly-dev-handoff-dialog [role="status"] {
+    margin: 0;
+    color: var(--cly-success);
+    font-size: 10.5px;
+  }
+
+  .cly-dev-handoff-dialog [role="status"][data-tone="danger"] {
+    color: var(--cly-danger);
+  }
+
+  /* Active Cly Dev work needs readable type, not metadata-sized type. */
+  .agent-chat-mode {
+    grid-template-rows: 44px auto minmax(0, 1fr);
+  }
+
+  .agent-session-header {
+    gap: 10px;
+    padding-inline: 10px;
+  }
+
+  .agent-session-switcher select {
+    font-size: 11px;
+  }
+
+  .agent-session-header-status > span,
+  .agent-session-header-status .cly-status-indicator {
+    font-size: 9.5px;
+  }
+
+  .agent-session-header-meta {
+    font-size: 9px;
+  }
+
+  .cly-dev-task-identity {
+    padding: 9px 10px 8px;
+  }
+
+  .cly-dev-identity-group {
+    gap: 3px;
+    padding: 8px 10px;
+  }
+
+  .cly-dev-identity-group > legend {
+    font-size: 8.5px;
+  }
+
+  .cly-dev-identity-group strong {
+    font-size: 10.5px;
+  }
+
+  .cly-dev-identity-group small {
+    font-size: 9px;
+  }
+
+  .cly-dev-task-controls {
+    gap: 10px;
+    padding: 0 10px 9px;
+  }
+
+  .cly-dev-workspace-modes label,
+  .cly-dev-task-actions .cly-btn,
+  .cly-dev-task-state,
+  .cly-dev-task-state .cly-btn {
+    font-size: 9.5px;
+  }
+
+  .cly-dev-workspace-modes label,
+  .cly-dev-task-actions .cly-btn {
+    min-height: 28px;
+  }
+
+  .agent-conversation {
+    grid-template-rows: 40px minmax(0, 1fr);
+  }
+
+  .agent-conversation-toolbar strong {
+    font-size: 11px;
+  }
+
+  .agent-conversation-toolbar span,
+  .agent-conversation-search input {
+    font-size: 9.5px;
+  }
+
+  .agent-transcript {
+    padding: 14px clamp(18px, 3vw, 38px) 54px;
+  }
+
+  .agent-transcript-date,
+  .agent-message-system,
+  .agent-message-tags span {
+    font-size: 9.5px;
+  }
+
+  .agent-message-user p,
+  .agent-message-orchestrator > p,
+  .agent-message-delegation p,
+  .agent-message-artifact p,
+  .agent-message-approval p,
+  .agent-message-alert p {
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .agent-message-meta strong,
+  .agent-message-author strong {
+    font-size: 10.5px;
+  }
+
+  .agent-message-system time,
+  .agent-message-meta time,
+  .agent-message-author time {
+    font-size: 9px;
+  }
+
+  .agent-message-orchestrator h3,
+  .agent-message-delegation h3,
+  .agent-message-artifact h3,
+  .agent-message-approval h3,
+  .agent-message-alert h3 {
+    font-size: 12px;
+  }
+
+  .agent-composer-shell {
+    padding-inline: clamp(14px, 2vw, 28px);
+  }
+
+  .agent-context-strip {
+    min-height: 30px;
+    font-size: 9px;
+  }
+
+  .agent-composer textarea {
+    min-height: 68px;
+    padding: 11px 12px 6px;
+    font-size: 12px;
+  }
+
+  .agent-composer-select,
+  .agent-enter-setting,
+  .agent-send-hint {
+    font-size: 8.5px;
+  }
+
+  .agent-workbench {
+    grid-template-rows: 38px minmax(0, 1fr);
+  }
+
+  .agent-workbench-tab {
+    padding-inline: 9px;
+    font-size: 10px;
+  }
+
+  .agent-surface-toolbar strong,
+  .agent-pane > header strong {
+    font-size: 10.5px;
+  }
+
+  .agent-surface-toolbar span,
+  .agent-pane > header span,
+  .agent-pane-model,
+  .agent-pane-progress strong,
+  .agent-pane-now span,
+  .agent-pane-transcript p,
+  .agent-pane dl > div {
+    font-size: 8.5px;
+  }
+
+  .agent-pane {
+    padding: 12px;
+  }
+
+  .agent-pane-task span {
+    font-size: 8px;
+  }
+
+  .agent-pane-task strong,
+  .agent-pane-now strong {
+    font-size: 9.5px;
+  }
+
+  .agent-steer input {
+    height: 29px;
+    font-size: 9.5px;
+  }
+
+  @media (max-width: 1120px) {
+    .cly-app:has(.cly-shell[data-product="dev"]) .cly-titlebar,
+    .cly-app:has(.cly-shell[data-agent-mode="chat"]) .cly-titlebar {
+      grid-template-columns: minmax(230px, 1fr) auto;
+    }
+
+    .cly-app:has(.cly-shell[data-product="dev"]) button.cly-global-search,
+    .cly-app:has(.cly-shell[data-agent-mode="chat"]) button.cly-global-search {
+      display: none;
+    }
+
+    .cly-shell[data-agent-mode="chat"] {
+      --cly-sidebar-width: 60px;
+    }
+
+    .cly-shell[data-agent-mode="chat"] .cly-product-switcher {
+      grid-template-columns: 1fr;
+      margin-inline: 7px;
+    }
+
+    .cly-shell[data-agent-mode="chat"]
+      .cly-product-switcher
+      button:not([aria-selected="true"]),
+    .cly-shell[data-agent-mode="chat"] .cly-product-switcher span,
+    .cly-shell[data-agent-mode="chat"] .cly-sidebar-group-label,
+    .cly-shell[data-agent-mode="chat"] .cly-sidebar-item span,
+    .cly-shell[data-agent-mode="chat"] .cly-nav-count,
+    .cly-shell[data-agent-mode="chat"] .cly-sidebar-footer span,
+    .cly-shell[data-agent-mode="chat"] .cly-sidebar-footer kbd {
+      display: none;
+    }
+
+    .cly-shell[data-agent-mode="chat"] .cly-sidebar-item {
+      justify-content: center;
+      padding-inline: 0;
+    }
+
+    .agent-chat-split {
+      --agent-workbench-width: 42%;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .cly-route-dev {
+      height: auto;
+      min-height: 100%;
+      overflow: visible;
+    }
+
+    .cly-route-dev .cly-platform-split {
+      flex: none;
+    }
+  }
+}
