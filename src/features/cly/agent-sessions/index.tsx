@@ -1,9 +1,11 @@
-import { Bot, Laptop, RotateCw } from "lucide-react";
+import { AppWindow, ArrowLeft, Bot, Laptop, RotateCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { getDesktopApi } from "../../../lib/electron";
 import { Button, EmptyState, PageHeader } from "../components/primitives";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { DeviceSyncPanel } from "./device-sync-panel";
+import { LiveClyDevWorkbench } from "./live-workbench";
 import { productionAgentSessionServices } from "./production-services";
 import { ResumeTaskDialog } from "./resume-task-dialog";
 
@@ -22,6 +24,9 @@ export function AgentSessionsScreen() {
 
 function ProductionAgentSessionsScreen() {
   const [resumeOpen, setResumeOpen] = useState(false);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+    null,
+  );
   const projectId = useClyStore((state) => state.activeProjectId);
   const sessions = useClyStore((state) => state.clyDevSessions);
   const loading = useClyStore((state) => state.clyDevSessionsLoading);
@@ -40,6 +45,46 @@ function ProductionAgentSessionsScreen() {
     );
     await load(projectId);
   };
+
+  const selectedSession =
+    sessions.find((session) => session.id === selectedSessionId) ?? null;
+
+  if (selectedSession) {
+    return (
+      <div
+        className="cly-page agent-sessions-root cly-live-session-page"
+        data-mode="production"
+      >
+        <PageHeader
+          kicker="Live session"
+          title={selectedSession.title}
+          description={`${selectedSession.state} · ${selectedSession.lastSequence} durable events · ${selectedSession.providerId}`}
+          actions={
+            <>
+              <Button onClick={() => setSelectedSessionId(null)}>
+                <ArrowLeft size={13} aria-hidden="true" /> Sessions
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() =>
+                  void getDesktopApi()?.detachWorkspace({
+                    sessionId: selectedSession.id,
+                  })
+                }
+              >
+                <AppWindow size={13} aria-hidden="true" /> Detach workspace
+              </Button>
+            </>
+          }
+        />
+        <LiveClyDevWorkbench
+          projectId={projectId}
+          sessionId={selectedSession.id}
+          windowRole="agent"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="cly-page agent-sessions-root" data-mode="production">
@@ -80,7 +125,7 @@ function ProductionAgentSessionsScreen() {
           className="agent-overview-list"
         >
           {sessions.map((session) => (
-            <article className="agent-session-row" key={session.id}>
+            <article className="cly-durable-session-row" key={session.id}>
               <div>
                 <strong>
                   {typeof session.title === "string"
@@ -92,11 +137,19 @@ function ProductionAgentSessionsScreen() {
                   {session.providerId}
                 </p>
               </div>
-              {session.state === "resumable" ? (
-                <button type="button" onClick={() => void resume(session.id)}>
-                  Queue resume
-                </button>
-              ) : null}
+              <div>
+                {session.state === "resumable" ? (
+                  <Button onClick={() => void resume(session.id)}>
+                    Queue resume
+                  </Button>
+                ) : null}
+                <Button
+                  variant="primary"
+                  onClick={() => setSelectedSessionId(session.id)}
+                >
+                  Open workspace
+                </Button>
+              </div>
             </article>
           ))}
         </section>

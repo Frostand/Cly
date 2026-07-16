@@ -279,19 +279,15 @@ test("validates Cly Dev identity, workspace ownership, restoration, and fallback
   ).toBeVisible();
 
   await page.getByRole("radio", { name: "Inline workspace" }).click();
-  await page
-    .getByRole("button", { name: "Detach workspace (prototype)" })
-    .click();
+  await page.getByRole("button", { name: "Detach workspace" }).click();
   await expect(
     page.getByTestId("agent-sessions-chat").getByRole("status"),
-  ).toContainText("Detached workspace intent recorded");
+  ).toContainText("Developer workspace detached");
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Reattach workspace (prototype)" }),
+    page.getByRole("button", { name: "Reattach workspace" }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Reattach workspace (prototype)" })
-    .click();
+  await page.getByRole("button", { name: "Reattach workspace" }).click();
   await expect(page.getByLabel("Session workbench")).toBeVisible();
 
   await page

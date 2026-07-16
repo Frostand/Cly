@@ -9,6 +9,7 @@ import {
   getStateDatabase,
 } from "../../persisted-state.js";
 import { createMemoryDeviceKeyVault } from "./device-key-vault.js";
+import { normalizeDurableOutboundContext } from "./runtime/outbound-context.js";
 import { createClyDevSessionRepository } from "./session-repository.js";
 import { encryptSyncEnvelope } from "./sync-crypto.js";
 import { createClyDevSyncRepository } from "./sync-repository.js";
@@ -118,13 +119,23 @@ function seedSession(
     transferability: "transferable",
     payload: { role: "user", body: "Approved handoff message" },
   });
-  repository.appendEvent("project-a", aggregate.session.id, {
-    ...base,
-    idempotencyKey: "shared-context",
-    type: "context.manifest.recorded",
-    transferability: "transferable",
-    payload: { manifestId: "context-1" },
-  });
+  repository.appendEvent(
+    "project-a",
+    aggregate.session.id,
+    {
+      ...base,
+      idempotencyKey: "shared-context",
+      type: "context.manifest.recorded",
+      transferability: "transferable",
+      payload: { manifestId: "context-1" },
+    },
+    {
+      outboundContext: normalizeDurableOutboundContext(
+        repository.getOutboundContext("project-a", aggregate.session.id)
+          .preview,
+      ).envelope,
+    },
+  );
   return aggregate;
 }
 
@@ -180,7 +191,9 @@ describe("Cly Dev sync service", () => {
       ),
     );
     expect(JSON.stringify(records)).toContain("Approved handoff message");
-    expect(JSON.stringify(records)).toContain("Approved context");
+    expect(JSON.stringify(records)).toContain(
+      "Cly Dev transferable context v1",
+    );
     expect(JSON.stringify(records)).not.toContain("Never sync this message");
     expect(JSON.stringify(records)).not.toContain("/tmp/a/private");
   });

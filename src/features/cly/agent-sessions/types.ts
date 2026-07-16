@@ -165,6 +165,52 @@ export interface ClyDevSessionOverviewPage {
   nextOffset: number | null;
 }
 
+export interface ClyDevWorkbenchTestCommand {
+  id: string;
+  label: string;
+  command: string;
+  script: string;
+}
+
+export interface ClyDevWorkbenchContext {
+  workspace: ClyDevWorkspace;
+  task: ClyDevTask;
+  session: ClyDevSessionRecord;
+  snapshot: ClyDevSessionSnapshot;
+  events: ClyDevSessionEvent[];
+  testCommands: ClyDevWorkbenchTestCommand[];
+  processIds: string[];
+}
+
+export interface ClyDevCommandRequest {
+  status: "approved" | "approval_required";
+  requestId: string;
+  approval: null | {
+    approvalId: string;
+    projectId: string;
+    sessionId: string;
+    toolCallId: string;
+    tool: string;
+    category: string;
+    argumentsHash: string;
+    contextHash: string;
+    expiresAt: string;
+  };
+}
+
+export interface ClyDevCommandResult {
+  requestId: string;
+  command: string;
+  cwd: string;
+  exitCode: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+  status: "completed" | "failed" | "canceled";
+  truncated: boolean;
+  duplicate?: boolean;
+}
+
 export interface ClyDevContextManifest {
   id: string;
   projectId: string;

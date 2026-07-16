@@ -1228,21 +1228,13 @@ function stripMigrationDirectives(statement) {
 }
 
 function getPendingDrizzleMigrations(database, migrations) {
-  const lastMigration = database
-    .prepare(
-      `
-        SELECT created_at
-        FROM __drizzle_migrations
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-    )
-    .get();
-  const lastMigrationTimestamp = Number(lastMigration?.created_at ?? 0);
-
-  return migrations.filter(
-    (migration) => lastMigrationTimestamp < migration.folderMillis,
+  const appliedHashes = new Set(
+    database
+      .prepare("SELECT hash FROM __drizzle_migrations")
+      .all()
+      .map((row) => row.hash),
   );
+  return migrations.filter((migration) => !appliedHashes.has(migration.hash));
 }
 
 function quoteSqlString(value) {
