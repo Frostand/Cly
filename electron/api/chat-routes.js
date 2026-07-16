@@ -18,6 +18,7 @@ import {
   getCursorCliUnavailableMessage,
   isCursorCliAvailable,
 } from "./providers/cursor-cli.js";
+import { createContextRepository } from "./research/context-repository.js";
 import { createObligationService } from "./research/obligation-service.js";
 import { isCliCommandAvailable } from "./shared/cli.js";
 
@@ -165,7 +166,21 @@ export const registerChatRoutes = (
   {
     getDatabase = getStateDatabase,
     getObligationService = (database) => createObligationService(database),
+    getContextRepository = (database) =>
+      createContextRepository({ db: database }),
     resolveProjectPath = resolvePersistedProjectPath,
+    providerStreams = {
+      openai: streamCodexAppServerResponse,
+      opencode: streamOpenCodeResponse,
+      cursor: streamCursorResponse,
+      anthropic: streamClaudeResponse,
+    },
+    providerValidators = {
+      openai: validateCodexReady,
+      opencode: validateOpenCodeReady,
+      cursor: validateCursorReady,
+      anthropic: validateClaudeReady,
+    },
   } = {},
 ) => {
   app.post("/api/chat-title", async (c) => {
@@ -273,6 +288,7 @@ export const registerChatRoutes = (
       remoteConversationModelSpeed,
       remoteConversationProjectPath,
       threadId,
+      managedContext,
     } = parsed.data;
     const resolvedChatId = chatId ?? threadId;
     const resolvedProjectPath =
@@ -289,7 +305,7 @@ export const registerChatRoutes = (
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(reasoningLabel ? { reasoningLabel } : {}),
     };
-    const projectReferencesPrompt =
+    let projectReferencesPrompt =
       formatProjectReferencesForPrompt(projectReferences);
 
     const projectPathError = await validateProjectPath(resolvedProjectPath);
@@ -298,25 +314,77 @@ export const registerChatRoutes = (
     }
 
     const database = getDatabase();
-    const transmission = evaluateProviderTransmission(
-      {
+    let transmission;
+    if (managedContext) {
+      if (projectReferences.length > 0) {
+        return c.json(
+          {
+            error:
+              "Renderer-supplied project references cannot broaden a managed context manifest.",
+          },
+          400,
+        );
+      }
+      const resolvedProjectId = resolveEvaluationProjectId(
+        database,
         projectId,
-        projectPath: resolvedProjectPath,
-        provider,
-      },
-      { database, obligationService: getObligationService(database) },
-    );
-    if (transmission.evaluation.decision !== "allow") {
-      return blockedTransmissionResponse(c, transmission.evaluation);
+        resolvedProjectPath,
+      );
+      if (!resolvedProjectId) {
+        return blockedTransmissionResponse(c, {
+          decision: "block",
+          alerts: [{ rationale: "Managed context project binding failed." }],
+        });
+      }
+      try {
+        const manifest = getContextRepository(database).loadManifestForEgress(
+          resolvedProjectId,
+          managedContext.manifestId,
+          {
+            sha256: managedContext.sha256,
+            provider,
+            model,
+            configurationId: managedContext.configurationId,
+            roleId: managedContext.roleId,
+          },
+        );
+        projectReferencesPrompt = manifest.canonicalPayload;
+        transmission = {
+          projectId: resolvedProjectId,
+          evaluation: { decision: "allow" },
+        };
+      } catch (error) {
+        return c.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Managed context verification failed.",
+          },
+          409,
+        );
+      }
+    } else {
+      transmission = evaluateProviderTransmission(
+        {
+          projectId,
+          projectPath: resolvedProjectPath,
+          provider,
+        },
+        { database, obligationService: getObligationService(database) },
+      );
+      if (transmission.evaluation.decision !== "allow") {
+        return blockedTransmissionResponse(c, transmission.evaluation);
+      }
     }
 
     if (provider === "openai") {
-      const codexError = await validateCodexReady();
+      const codexError = await providerValidators.openai();
       if (codexError) {
         return c.text(codexError.message, codexError.status);
       }
 
-      return streamCodexAppServerResponse({
+      return providerStreams.openai({
         abortSignal: c.req.raw.signal,
         chatId: resolvedChatId,
         codexPermissionMode,
@@ -332,12 +400,12 @@ export const registerChatRoutes = (
     }
 
     if (provider === "opencode") {
-      const openCodeError = await validateOpenCodeReady();
+      const openCodeError = await providerValidators.opencode();
       if (openCodeError) {
         return c.text(openCodeError.message, openCodeError.status);
       }
 
-      return streamOpenCodeResponse({
+      return providerStreams.opencode({
         abortSignal: c.req.raw.signal,
         agentMode,
         codexPermissionMode,
@@ -351,12 +419,12 @@ export const registerChatRoutes = (
     }
 
     if (provider === "cursor") {
-      const cursorError = await validateCursorReady();
+      const cursorError = await providerValidators.cursor();
       if (cursorError) {
         return c.text(cursorError.message, cursorError.status);
       }
 
-      return streamCursorResponse({
+      return providerStreams.cursor({
         abortSignal: c.req.raw.signal,
         codexPermissionMode,
         messages,
@@ -372,12 +440,12 @@ export const registerChatRoutes = (
       });
     }
 
-    const claudeError = await validateClaudeReady();
+    const claudeError = await providerValidators.anthropic();
     if (claudeError) {
       return c.text(claudeError.message, claudeError.status);
     }
 
-    return streamClaudeResponse({
+    return providerStreams.anthropic({
       agentMode,
       claudePermissionMode,
       messages,

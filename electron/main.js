@@ -61,14 +61,20 @@ const APP_ID = "ai.cly.cly";
 const APP_USER_DATA_DIR_NAME = "cly";
 const isolatedE2eUserDataPath =
   process.env.CLY_E2E === "1" ? process.env.CLY_E2E_USER_DATA_PATH?.trim() : "";
+const isolatedE2eSessionDataPath =
+  process.env.CLY_E2E === "1"
+    ? process.env.CLY_E2E_SESSION_DATA_PATH?.trim()
+    : "";
 const APP_USER_DATA_PATH =
   isolatedE2eUserDataPath ||
   path.join(app.getPath("appData"), APP_USER_DATA_DIR_NAME);
-const APP_SESSION_DATA_PATH = path.join(
-  app.getPath("temp"),
-  APP_USER_DATA_DIR_NAME,
-  `session-${process.pid}`,
-);
+const APP_SESSION_DATA_PATH =
+  isolatedE2eSessionDataPath ||
+  path.join(
+    app.getPath("temp"),
+    APP_USER_DATA_DIR_NAME,
+    `session-${process.pid}`,
+  );
 const LIGHT_WINDOW_BACKGROUND = "#ffffff";
 const DARK_WINDOW_BACKGROUNDS = {
   neutral: "#0a0a0a",
@@ -325,8 +331,8 @@ async function createMainWindow() {
   mainWindow = new BrowserWindow({
     backgroundColor: getWindowBackground(),
     height: 1080,
-    minHeight: 720,
-    minWidth: 1180,
+    minHeight: 700,
+    minWidth: 1024,
     icon:
       process.platform === "darwin" || !existsSync(appIconPath)
         ? undefined

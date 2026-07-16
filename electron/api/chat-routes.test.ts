@@ -84,4 +84,136 @@ describe("chat project authority", () => {
       expect.objectContaining({ kind: "provider-transmission" }),
     );
   });
+
+  it("loads only a persisted byte-identical managed manifest and rejects renderer broadening", async () => {
+    const canonicalPayload =
+      '{"destination":{"model":"test-model","provider":"openai"},"entries":[],"schemaVersion":1}';
+    const loadManifestForEgress = vi.fn(() => ({ canonicalPayload }));
+    const openai = vi.fn(() => new Response("managed-response"));
+    const app = new Hono();
+    registerChatRoutes(app, {
+      getDatabase: () => database,
+      getObligationService: () => ({ safeEvaluateOperation: vi.fn() }),
+      getContextRepository: () => ({ loadManifestForEgress }),
+      resolveProjectPath: () => null,
+      providerValidators: {
+        openai: async () => null,
+        opencode: async () => null,
+        cursor: async () => null,
+        anthropic: async () => null,
+      },
+      providerStreams: {
+        openai,
+        opencode: vi.fn(),
+        cursor: vi.fn(),
+        anthropic: vi.fn(),
+      },
+    });
+    const managedContext = {
+      manifestId: "manifest-1",
+      sha256: "a".repeat(64),
+      configurationId: "configuration-1",
+      roleId: "researcher",
+    };
+    const response = await app.request(
+      createChatRequest({ projectId: "project-a", managedContext }),
+    );
+    expect(response.status).toBe(200);
+    expect(loadManifestForEgress).toHaveBeenCalledWith(
+      "project-a",
+      "manifest-1",
+      {
+        sha256: "a".repeat(64),
+        provider: "openai",
+        model: "test-model",
+        configurationId: "configuration-1",
+        roleId: "researcher",
+      },
+    );
+    expect(openai).toHaveBeenCalledWith(
+      expect.objectContaining({ projectReferencesPrompt: canonicalPayload }),
+    );
+
+    const broadened = await app.request(
+      createChatRequest({
+        projectId: "project-a",
+        managedContext,
+        projectReferences: [{ kind: "file", path: "/tmp/broader.txt" }],
+      }),
+    );
+    expect(broadened.status).toBe(400);
+    expect(openai).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when a managed manifest binding is mismatched", async () => {
+    const loadManifestForEgress = vi.fn(() => {
+      throw new Error("Persisted context manifest egress binding mismatch.");
+    });
+    const app = new Hono();
+    registerChatRoutes(app, {
+      getDatabase: () => database,
+      getObligationService: () => ({ safeEvaluateOperation: vi.fn() }),
+      getContextRepository: () => ({ loadManifestForEgress }),
+      resolveProjectPath: () => null,
+    });
+    const response = await app.request(
+      createChatRequest({
+        projectId: "project-a",
+        managedContext: {
+          manifestId: "manifest-1",
+          sha256: "b".repeat(64),
+          configurationId: "configuration-1",
+          roleId: "researcher",
+        },
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "Persisted context manifest egress binding mismatch.",
+    });
+  });
+
+  it.each([
+    "Persisted context manifest cannot leave a local-only project.",
+    "Persisted context manifest references context that is now deleted.",
+  ])("never calls the provider after managed-context revocation: %s", async (message) => {
+    const openai = vi.fn(() => new Response("must-not-run"));
+    const app = new Hono();
+    registerChatRoutes(app, {
+      getDatabase: () => database,
+      getObligationService: () => ({ safeEvaluateOperation: vi.fn() }),
+      getContextRepository: () => ({
+        loadManifestForEgress: vi.fn(() => {
+          throw new Error(message);
+        }),
+      }),
+      resolveProjectPath: () => null,
+      providerValidators: {
+        openai: async () => null,
+        opencode: async () => null,
+        cursor: async () => null,
+        anthropic: async () => null,
+      },
+      providerStreams: {
+        openai,
+        opencode: vi.fn(),
+        cursor: vi.fn(),
+        anthropic: vi.fn(),
+      },
+    });
+    const response = await app.request(
+      createChatRequest({
+        projectId: "project-a",
+        managedContext: {
+          manifestId: "manifest-1",
+          sha256: "c".repeat(64),
+          configurationId: "configuration-1",
+          roleId: "researcher",
+        },
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: message });
+    expect(openai).not.toHaveBeenCalled();
+  });
 });

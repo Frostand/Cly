@@ -1,537 +1,945 @@
 import {
-  Archive,
-  ArrowDown,
-  ArrowUp,
-  Box,
+  AlertTriangle,
+  ArchiveRestore,
+  CheckCircle2,
   Eye,
-  GitBranch,
+  FileText,
+  Lock,
   Pin,
   PinOff,
-  RotateCcw,
-  Sparkles,
+  ShieldAlert,
   Trash2,
+  Unlock,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { DisclosureRow } from "../components/design-system";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Button,
   EmptyState,
   PageHeader,
   Panel,
-  SearchInput,
-  Section,
-  Segmented,
-  Toggle,
-  toneForStatus,
 } from "../components/primitives";
-import { ClySplitPane } from "../components/toolkit";
-import { type BudgetSegment, TokenBudgetBar } from "../components/visuals";
-import { calculateContextBudget } from "../domain/logic";
-import type { ContextItem } from "../domain/types";
-import { capabilityUnavailableMessage } from "../services/capabilities";
+import type {
+  AgentContextItem,
+  ContextManifestPreview,
+  ContextOriginClass,
+  ContextTransmissionApproval,
+  PersistedContextManifest,
+} from "../domain/agent-context";
 import { projectServices } from "../services/project-services";
-import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 
-const modelOptions = [
-  "GPT-5 · 128k",
-  "Claude Sonnet · 200k",
-  "Local model · 32k",
-] as const;
-const capacities = {
-  "GPT-5 · 128k": 128000,
-  "Claude Sonnet · 200k": 200000,
-  "Local model · 32k": 32000,
+const actor = {
+  actorId: "local-user",
+  producerProcess: "cly-renderer",
+  producerModel: null,
 };
 
+const originLabels: Record<ContextOriginClass, string> = {
+  approved_fact: "Approved project memory",
+  inferred_fact: "Inferred proposals",
+  source_passage: "Source passages",
+  file: "Project files",
+  conversation: "Conversations",
+  graph_object: "Research graph objects",
+};
+
+const originOrder = Object.keys(originLabels) as ContextOriginClass[];
+const emptyAgentConfigurations = [] as const;
+
+const describeTime = (value: string | null) =>
+  value ? new Date(value).toLocaleString() : "Not checked";
+
+const firstRevision = (item: AgentContextItem) =>
+  item.approvedRevision ?? item.proposedRevisions[0] ?? null;
+
 export function ContextScreen() {
-  const items = useClyStore((s) => s.data.contextItems);
-  const packs = useClyStore((s) => s.data.contextPacks);
-  const selectedId = useClyStore((s) => s.selectedId);
-  const setSelected = useClyStore((s) => s.setSelected);
-  const updateItem = useClyStore((s) => s.updateContextItem);
-  const notify = useClyStore((s) => s.notify);
-  const [query, setQuery] = useState("");
-  const [model, setModel] = useState<(typeof modelOptions)[number]>(
-    modelOptions[0],
+  const projectId = useClyStore((state) => state.activeProjectId);
+  const snapshot = useClyStore((state) => state.agentContext);
+  const snapshotProjectId = useClyStore((state) => state.agentContextProjectId);
+  const contextLoading = useClyStore((state) => state.agentContextLoading);
+  const contextHydrationError = useClyStore((state) => state.agentContextError);
+  const retryHydration = useClyStore((state) => state.loadFromApi);
+  const legacyItems = useClyStore((state) => state.data.contextItems);
+  const fixtureMode = useClyStore((state) => state.fixtureMode);
+  const updateLegacyItem = useClyStore((state) => state.updateContextItem);
+  const configurations = useClyStore(
+    (state) => state.data.agentConfigurations ?? emptyAgentConfigurations,
   );
-  const [previewMode, setPreviewMode] = useState<"Composer" | "Agent preview">(
-    "Composer",
+  const notify = useClyStore((state) => state.notify);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(
+    () =>
+      new Set(snapshot.packs[0]?.entries.map((entry) => entry.itemId) ?? []),
   );
-  const budget = useMemo(
-    () => calculateContextBudget(items, capacities[model]),
-    [items, model],
+  const [selectedPackId, setSelectedPackId] = useState<string | null>(
+    () => snapshot.packs[0]?.id ?? null,
   );
-  const budgetSegments = useMemo<BudgetSegment[]>(() => {
-    const tones: BudgetSegment["tone"][] = [
-      "accent",
-      "info",
-      "success",
-      "warning",
-      "danger",
-    ];
-    return Object.entries(
-      items
-        .filter((item) => item.included)
-        .reduce<Record<string, number>>((result, item) => {
-          result[item.category] = (result[item.category] ?? 0) + item.tokens;
-          return result;
-        }, {}),
-    ).map(([label, value], index) => ({
-      label,
-      value,
-      tone: tones[index % tones.length],
-    }));
-  }, [items]);
-  const selected = items
-    .filter((item) => item.included)
-    .sort((a, b) => a.priority - b.priority);
-  const filtered = items.filter(
-    (item) =>
-      !query ||
-      `${item.name} ${item.category} ${item.type}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
+  const [selectionProjectId, setSelectionProjectId] = useState<string | null>(
+    snapshotProjectId,
+  );
+  const [preview, setPreview] = useState<ContextManifestPreview | null>(null);
+  const [approval, setApproval] = useState<ContextTransmissionApproval | null>(
+    null,
+  );
+  const [persistedManifest, setPersistedManifest] =
+    useState<PersistedContextManifest | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
+  const [purpose, setPurpose] = useState("research-assistance");
+  const [collaborators, setCollaborators] = useState("");
+  const [residency, setResidency] = useState("");
+  const [license, setLicense] = useState("");
+  const [approvalRationale, setApprovalRationale] = useState("");
+  const [approvalExpiresAt, setApprovalExpiresAt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
+
+  useEffect(
+    () => () => {
+      requestGeneration.current += 1;
+    },
+    [],
   );
 
-  const applyPack = (itemIds: string[], name: string) => {
-    items.forEach((item) => {
-      updateItem(item.id, { included: itemIds.includes(item.id) });
-    });
-    notify(
-      "Context pack applied",
-      `${name} selected ${itemIds.length} context objects.`,
+  useEffect(() => {
+    if (
+      snapshotProjectId !== projectId ||
+      selectionProjectId === snapshotProjectId
+    )
+      return;
+    const pack = snapshot.packs[0] ?? null;
+    setSelectedItemIds(
+      new Set(pack?.entries.map((entry) => entry.itemId) ?? []),
+    );
+    setSelectedPackId(pack?.id ?? null);
+    setPreview(null);
+    setApproval(null);
+    setPersistedManifest(null);
+    setIdempotencyKey(null);
+    setError(null);
+    setSelectionProjectId(snapshotProjectId);
+  }, [projectId, selectionProjectId, snapshot.packs, snapshotProjectId]);
+
+  const selectedPack =
+    snapshot.packs.find((pack) => pack.id === selectedPackId) ??
+    snapshot.packs[0] ??
+    null;
+  const configuration =
+    configurations.find(
+      (candidate) => candidate.id === selectedPack?.configurationId,
+    ) ?? configurations[0];
+  const role =
+    configuration?.roles.find(
+      (candidate) => candidate.id === selectedPack?.roleId,
+    ) ?? configuration?.roles[0];
+
+  const manifestRequest =
+    selectedPack && configuration && role
+      ? {
+          packId: selectedPack.id,
+          configurationId: configuration.id,
+          roleId: role.id,
+          provider: role.provider,
+          model: role.model,
+          purpose,
+          collaborators: collaborators
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean),
+          residency: residency.trim() || null,
+          license: license.trim() || null,
+        }
+      : null;
+  const manifestScopeKey = JSON.stringify([
+    projectId,
+    snapshotProjectId,
+    manifestRequest,
+    selectedPack?.revision,
+    configuration?.revision,
+  ]);
+
+  useEffect(() => {
+    void manifestScopeKey;
+    requestGeneration.current += 1;
+    setPreview(null);
+    setApproval(null);
+    setPersistedManifest(null);
+    setIdempotencyKey(null);
+    setBusy(false);
+    setError(null);
+  }, [manifestScopeKey]);
+
+  const groups = useMemo(() => {
+    const result = new Map<ContextOriginClass, AgentContextItem[]>();
+    for (const origin of originOrder) result.set(origin, []);
+    for (const item of snapshot.items) {
+      const revision = firstRevision(item);
+      if (revision) result.get(revision.originClass)?.push(item);
+    }
+    return result;
+  }, [snapshot.items]);
+
+  const perform = async (
+    operation: () => Promise<unknown>,
+    success: string,
+  ) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await operation();
+      notify(success);
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "Context update failed.";
+      setError(message);
+      notify("Context update failed", message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const lifecycle = (
+    item: AgentContextItem,
+    action: "pin" | "unpin" | "lock" | "unlock" | "delete" | "restore",
+  ) =>
+    perform(
+      () =>
+        projectServices.context.setLifecycle(
+          projectId,
+          item.id,
+          action,
+          item.version,
+          actor,
+        ),
+      `Context ${action} recorded`,
+    );
+
+  const savePack = async () => {
+    if (!configuration || !role) {
+      setError(
+        "Create an agent configuration and role before saving a context pack.",
+      );
+      return;
+    }
+    const entries = snapshot.items
+      .filter((item) => selectedItemIds.has(item.id) && item.approvedRevision)
+      .map((item) => {
+        const approvedRevision = item.approvedRevision;
+        if (!approvedRevision)
+          throw new Error(
+            "Only approved revisions can be saved in a context pack.",
+          );
+        const current = selectedPack?.entries.find(
+          (entry) => entry.itemId === item.id,
+        );
+        return {
+          itemId: item.id,
+          revisionId: approvedRevision.id,
+          representation: current?.representation ?? ("raw" as const),
+          selectionReason:
+            current?.selectionReason ?? "Selected in Context Composer",
+          sensitivity: approvedRevision.sensitivity,
+        };
+      });
+    await perform(
+      () =>
+        projectServices.context.savePack(projectId, {
+          ...(selectedPack
+            ? { id: selectedPack.id, expectedRevision: selectedPack.revision }
+            : {}),
+          name: selectedPack?.name ?? "Primary context pack",
+          configurationId: configuration.id,
+          roleId: role.id,
+          entries,
+          actor,
+        }),
+      "Exact context pack saved",
     );
   };
 
-  const move = (item: ContextItem, direction: -1 | 1) =>
-    updateItem(item.id, { priority: Math.max(1, item.priority + direction) });
+  const previewManifest = async () => {
+    if (!manifestRequest) {
+      setError("Save a context pack before previewing provider transmission.");
+      return;
+    }
+    const generation = requestGeneration.current + 1;
+    requestGeneration.current = generation;
+    setPreview(null);
+    setApproval(null);
+    setPersistedManifest(null);
+    setIdempotencyKey(null);
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await projectServices.context.preview(
+        projectId,
+        manifestRequest,
+      );
+      if (requestGeneration.current !== generation) return;
+      setPreview(next);
+      setApproval(null);
+      setPersistedManifest(null);
+      setIdempotencyKey(`context-${globalThis.crypto.randomUUID()}`);
+    } catch (caught) {
+      if (requestGeneration.current !== generation) return;
+      setError(caught instanceof Error ? caught.message : "Preview failed.");
+    } finally {
+      if (requestGeneration.current === generation) setBusy(false);
+    }
+  };
+
+  const createApproval = async () => {
+    if (!preview || !role || preview.restrictedReferenceIds.length === 0)
+      return;
+    if (!approvalRationale.trim()) {
+      setError("Enter a rationale before approving restricted transmission.");
+      return;
+    }
+    const generation = requestGeneration.current;
+    const previewSha256 = preview.sha256;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await projectServices.context.createTransmissionApproval(
+        projectId,
+        {
+          manifestSha256: preview.sha256,
+          provider: role.provider,
+          model: role.model,
+          restrictedReferenceIds: preview.restrictedReferenceIds,
+          actorId: actor.actorId,
+          rationale: approvalRationale.trim(),
+          expiresAt: approvalExpiresAt
+            ? new Date(approvalExpiresAt).toISOString()
+            : null,
+        },
+      );
+      if (
+        requestGeneration.current !== generation ||
+        next.manifestSha256 !== previewSha256
+      )
+        return;
+      setApproval(next);
+      notify(
+        "Restricted transmission approved",
+        "Approval is bound to this exact preview hash.",
+      );
+    } catch (caught) {
+      if (requestGeneration.current !== generation) return;
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Approval could not be recorded.",
+      );
+    } finally {
+      if (requestGeneration.current === generation) setBusy(false);
+    }
+  };
+
+  const persistPreview = async () => {
+    if (!preview || !manifestRequest || !idempotencyKey) return;
+    const restricted = preview.restrictedReferenceIds.length > 0;
+    if (restricted && approval?.state !== "approved") {
+      setError(
+        "Restricted context requires an exact live approval before persistence.",
+      );
+      return;
+    }
+    const generation = requestGeneration.current;
+    const previewSha256 = preview.sha256;
+    setBusy(true);
+    setError(null);
+    try {
+      const manifest = await projectServices.context.persist(projectId, {
+        ...manifestRequest,
+        idempotencyKey,
+        expectedSha256: preview.sha256,
+        transmissionApprovalId: approval?.id ?? null,
+      });
+      if (
+        requestGeneration.current !== generation ||
+        manifest.sha256 !== previewSha256
+      )
+        return;
+      setPersistedManifest(manifest);
+      notify("Immutable context manifest persisted", manifest.sha256);
+    } catch (caught) {
+      if (requestGeneration.current !== generation) return;
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Manifest persistence failed.",
+      );
+    } finally {
+      if (requestGeneration.current === generation) setBusy(false);
+    }
+  };
+
+  const revokeApproval = async () => {
+    const approvalId =
+      approval?.id ?? persistedManifest?.transmissionApprovalId ?? null;
+    if (!approvalId) return;
+    const generation = requestGeneration.current;
+    setBusy(true);
+    setError(null);
+    try {
+      await projectServices.context.revokeTransmissionApproval(
+        projectId,
+        approvalId,
+        {
+          actorId: actor.actorId,
+          rationale: "Revoked from Context Composer",
+        },
+      );
+      if (requestGeneration.current !== generation) return;
+      setApproval((current) =>
+        current ? { ...current, state: "revoked" } : current,
+      );
+      notify("Transmission approval revoked");
+    } catch (caught) {
+      if (requestGeneration.current !== generation) return;
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Approval revocation failed.",
+      );
+    } finally {
+      if (requestGeneration.current === generation) setBusy(false);
+    }
+  };
 
   return (
     <div className="cly-page cly-page-wide cly-route-context">
       <PageHeader
         kicker="Workspace"
         title="Context Composer"
-        description="Choose exactly what an agent receives."
+        description="Review approved memory, proposals, exact revisions, and the byte-identical provider payload."
         actions={
           <>
-            <Segmented
-              value={previewMode}
-              options={["Composer", "Agent preview"] as const}
-              onChange={setPreviewMode}
-              label="Context view"
-            />
+            <Button
+              disabled={
+                busy || contextLoading || Boolean(contextHydrationError)
+              }
+              onClick={() => void previewManifest()}
+            >
+              <Eye size={15} /> Preview transmission
+            </Button>
             <Button
               variant="primary"
-              disabled={!isClyDemoRuntime}
-              title={capabilityUnavailableMessage("context.edit")}
-              onClick={() =>
-                notify(
-                  "Context pack saved",
-                  `${selected.length} items · ${budget.tokens.toLocaleString()} estimated tokens`,
-                )
+              disabled={
+                busy || contextLoading || Boolean(contextHydrationError)
               }
+              onClick={() => void savePack()}
             >
-              Save pack
+              Save exact pack
             </Button>
           </>
         }
       />
-      {items.length === 0 ? (
+
+      {error ? (
+        <div className="cly-inline-alert" role="alert">
+          <AlertTriangle size={16} /> {error}
+        </div>
+      ) : null}
+
+      {contextLoading ? (
+        <Panel>
+          <div className="cly-inline-alert" role="status" aria-live="polite">
+            Loading durable project context…
+          </div>
+        </Panel>
+      ) : contextHydrationError ? (
+        <Panel>
+          <div className="cly-inline-alert" role="alert">
+            <AlertTriangle size={16} />
+            <span>
+              <strong>Durable context could not load</strong>
+              <br />
+              {contextHydrationError}
+            </span>
+          </div>
+          <Button onClick={() => void retryHydration(projectId)}>
+            Retry context loading
+          </Button>
+        </Panel>
+      ) : snapshot.items.length === 0 && fixtureMode !== "empty" ? (
+        <Panel>
+          <h2 className="cly-section-heading">Demo context selection</h2>
+          <p className="cly-muted">
+            Fixture selections are local previews. Production projects use the
+            durable revision controls shown in this workspace.
+          </p>
+          {legacyItems.map((item) => (
+            <div className="cly-context-row" key={item.id}>
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label={`${item.included ? "Exclude" : "Include"} ${item.name}`}
+                aria-checked={item.included}
+                checked={item.included}
+                onChange={(event) =>
+                  updateLegacyItem(item.id, { included: event.target.checked })
+                }
+              />
+              <strong>{item.name}</strong>
+              <span>{item.representation}</span>
+              <span>{item.tokens.toLocaleString()}</span>
+            </div>
+          ))}
+          <p>
+            <strong>
+              {legacyItems
+                .filter((item) => item.included)
+                .reduce((total, item) => total + item.tokens, 0)
+                .toLocaleString()}{" "}
+              tokens
+            </strong>
+          </p>
+        </Panel>
+      ) : snapshot.items.length === 0 ? (
         <EmptyState
-          title="No context objects"
-          description="Add research objects to build a context pack."
-          action={
-            <Button
-              variant="primary"
-              disabled={!isClyDemoRuntime}
-              title={capabilityUnavailableMessage("context.edit")}
-            >
-              Add custom note
-            </Button>
-          }
+          title="No durable context yet"
+          description="Approved memory and inferred proposals created for this project will appear here without being merged together."
         />
       ) : (
-        <ClySplitPane
-          id="context-composer"
-          className="cly-context-layout"
-          secondarySize={34}
-          primaryMin="440px"
-          secondaryMin="280px"
-          secondaryMax="46%"
-          label="Resize context and budget"
-          primary={
-            <div>
-              {previewMode === "Composer" ? (
-                <>
-                  <div className="cly-filterbar">
-                    <SearchInput
-                      value={query}
-                      onChange={setQuery}
-                      placeholder="Filter context objects…"
-                    />
-                    <span className="cly-muted cly-small">
-                      {filtered.length} objects · sorted by priority
-                    </span>
-                  </div>
+        <div className="cly-context-durable-layout">
+          <main aria-label="Project memory and context">
+            {originOrder.map((origin) => {
+              const items = groups.get(origin) ?? [];
+              if (items.length === 0) return null;
+              return (
+                <section key={origin} aria-labelledby={`context-${origin}`}>
+                  <h2 id={`context-${origin}`} className="cly-section-heading">
+                    {originLabels[origin]} <Badge>{items.length}</Badge>
+                  </h2>
                   <Panel>
-                    {filtered.map((item) => (
-                      <div
-                        className="cly-context-row"
-                        key={item.id}
-                        data-selected={selectedId === item.id}
-                      >
-                        <Toggle
-                          pressed={item.included}
-                          onChange={(included) =>
-                            void projectServices.context.setIncluded(
-                              item.id,
-                              included,
-                            )
-                          }
-                          label={`${item.included ? "Exclude" : "Include"} ${item.name}`}
-                          disabled={!isClyDemoRuntime}
-                          reason={capabilityUnavailableMessage("context.edit")}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setSelected(item.id)}
-                          style={{
-                            minWidth: 0,
-                            border: 0,
-                            background: "transparent",
-                            color: "inherit",
-                            textAlign: "left",
-                            cursor: "pointer",
-                          }}
+                    {items.map((item) => {
+                      const revision = firstRevision(item);
+                      if (!revision) return null;
+                      const proposalCount = item.proposedRevisions.length;
+                      const selected = selectedItemIds.has(item.id);
+                      const transmitted = snapshot.manifests.some((manifest) =>
+                        manifest.entries.some(
+                          (entry) => entry.itemId === item.id,
+                        ),
+                      );
+                      return (
+                        <article
+                          className="cly-context-revision-card"
+                          data-selected={selected}
+                          key={item.id}
                         >
-                          <div className="cly-list-title">{item.name}</div>
-                          <div className="cly-list-detail">
-                            {item.category} · {item.source} · {item.confidence}%
-                            confidence
+                          <div className="cly-context-revision-heading">
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={
+                                  !item.approvedRevision ||
+                                  Boolean(item.deletedAt)
+                                }
+                                onChange={(event) => {
+                                  const next = new Set(selectedItemIds);
+                                  if (event.target.checked) next.add(item.id);
+                                  else next.delete(item.id);
+                                  setSelectedItemIds(next);
+                                }}
+                              />
+                              <strong>{item.label}</strong>
+                            </label>
+                            <div className="cly-cluster">
+                              <Badge>{revision.verificationState}</Badge>
+                              <Badge>{revision.sensitivity}</Badge>
+                              {item.approvedRevision ? (
+                                <Badge>
+                                  <CheckCircle2 size={12} /> Approved r
+                                  {item.approvedRevision.revision}
+                                </Badge>
+                              ) : (
+                                <Badge>
+                                  <ShieldAlert size={12} /> Proposal only
+                                </Badge>
+                              )}
+                            </div>
                           </div>
-                        </button>
-                        <button
-                          className="cly-btn"
-                          type="button"
-                          disabled={!isClyDemoRuntime}
-                          title={capabilityUnavailableMessage("context.edit")}
-                          onClick={() =>
-                            void projectServices.context.setRepresentation(
-                              item.id,
-                              item.representation === "Raw" ? "Summary" : "Raw",
-                            )
-                          }
-                          aria-label={`Use ${item.representation === "Raw" ? "summary" : "raw"} representation for ${item.name}`}
-                        >
-                          {item.representation}
-                        </button>
-                        <div>
-                          <div className="cly-strong cly-small">
-                            {item.tokens.toLocaleString()}
-                          </div>
-                          <div className="cly-faint" style={{ fontSize: 9 }}>
-                            tokens
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          iconOnly
-                          aria-label={`${item.pinned ? "Unpin" : "Pin"} ${item.name}`}
-                          disabled={!isClyDemoRuntime}
-                          title={capabilityUnavailableMessage("context.edit")}
-                          onClick={() =>
-                            void projectServices.context.setPinned(
-                              item.id,
-                              !item.pinned,
-                            )
-                          }
-                        >
-                          {item.pinned ? (
-                            <Pin size={13} />
-                          ) : (
-                            <PinOff size={13} />
-                          )}
-                        </Button>
-                      </div>
-                    ))}
+                          <p>{revision.content}</p>
+                          <dl className="cly-context-provenance-grid">
+                            <div>
+                              <dt>Origin</dt>
+                              <dd>{originLabels[revision.originClass]}</dd>
+                            </div>
+                            <div>
+                              <dt>Confidence</dt>
+                              <dd>
+                                {revision.confidence === null
+                                  ? "Not scored"
+                                  : `${Math.round(revision.confidence * 100)}%`}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Last checked</dt>
+                              <dd>{describeTime(revision.lastCheckedAt)}</dd>
+                            </div>
+                            <div>
+                              <dt>Producer</dt>
+                              <dd>
+                                {revision.producerProcess}
+                                {revision.producerModel
+                                  ? ` · ${revision.producerModel}`
+                                  : ""}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Evidence</dt>
+                              <dd>
+                                {revision.evidenceRefs.length
+                                  ? revision.evidenceRefs.join(", ")
+                                  : "No linked evidence"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Transmission</dt>
+                              <dd>
+                                {revision.sensitivity === "local_only"
+                                  ? "Excluded by construction"
+                                  : transmitted
+                                    ? "Persisted in immutable manifest"
+                                    : "Not transmitted"}
+                              </dd>
+                            </div>
+                          </dl>
+                          {proposalCount > 0 && item.approvedRevision ? (
+                            <div className="cly-context-proposals">
+                              <strong>
+                                {proposalCount} proposal
+                                {proposalCount === 1 ? "" : "s"} retained
+                                separately
+                              </strong>
+                              {item.proposedRevisions.map((proposal) => (
+                                <div key={proposal.id}>
+                                  <span>
+                                    {proposal.content}{" "}
+                                    <Badge>{proposal.verificationState}</Badge>
+                                    <small>
+                                      {proposal.producerProcess}
+                                      {proposal.producerModel
+                                        ? ` · ${proposal.producerModel}`
+                                        : ""}
+                                    </small>
+                                  </span>
+                                  <Button
+                                    disabled={
+                                      busy ||
+                                      item.locked ||
+                                      Boolean(item.deletedAt)
+                                    }
+                                    onClick={() =>
+                                      void perform(
+                                        () =>
+                                          projectServices.context.approveRevision(
+                                            projectId,
+                                            item.id,
+                                            proposal.id,
+                                            item.version,
+                                            actor,
+                                          ),
+                                        "Proposal approved as a new pointer",
+                                      )
+                                    }
+                                  >
+                                    Approve r{proposal.revision}
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                          {item.previouslyApprovedRevisions.length > 0 ? (
+                            <div className="cly-context-proposals">
+                              <strong>Previously approved history</strong>
+                              {item.previouslyApprovedRevisions.map(
+                                (historical) => (
+                                  <div key={historical.id}>
+                                    <span>
+                                      {historical.content}{" "}
+                                      <Badge>
+                                        Previously approved r
+                                        {historical.revision}
+                                      </Badge>
+                                      <small>
+                                        Immutable approval history ·{" "}
+                                        {historical.producerProcess}
+                                      </small>
+                                    </span>
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          ) : null}
+                          <fieldset
+                            className="cly-context-lifecycle-actions"
+                            aria-label={`Lifecycle controls for ${item.label}`}
+                          >
+                            <Button
+                              disabled={
+                                busy || item.locked || Boolean(item.deletedAt)
+                              }
+                              onClick={() =>
+                                void lifecycle(
+                                  item,
+                                  item.pinned ? "unpin" : "pin",
+                                )
+                              }
+                            >
+                              {item.pinned ? (
+                                <PinOff size={14} />
+                              ) : (
+                                <Pin size={14} />
+                              )}
+                              {item.pinned ? "Unpin" : "Pin"}
+                            </Button>
+                            <Button
+                              disabled={busy || Boolean(item.deletedAt)}
+                              onClick={() =>
+                                void lifecycle(
+                                  item,
+                                  item.locked ? "unlock" : "lock",
+                                )
+                              }
+                            >
+                              {item.locked ? (
+                                <Unlock size={14} />
+                              ) : (
+                                <Lock size={14} />
+                              )}
+                              {item.locked ? "Unlock" : "Lock"}
+                            </Button>
+                            <Button
+                              disabled={busy || item.locked}
+                              onClick={() =>
+                                void lifecycle(
+                                  item,
+                                  item.deletedAt ? "restore" : "delete",
+                                )
+                              }
+                            >
+                              {item.deletedAt ? (
+                                <ArchiveRestore size={14} />
+                              ) : (
+                                <Trash2 size={14} />
+                              )}
+                              {item.deletedAt ? "Restore" : "Delete"}
+                            </Button>
+                          </fieldset>
+                        </article>
+                      );
+                    })}
                   </Panel>
+                </section>
+              );
+            })}
+          </main>
+
+          <aside aria-label="Context pack and provider preview">
+            <Panel>
+              <h2 className="cly-section-heading">Transmission scope</h2>
+              <label>
+                Purpose
+                <input
+                  aria-label="Transmission purpose"
+                  value={purpose}
+                  onChange={(event) => setPurpose(event.target.value)}
+                />
+              </label>
+              <label>
+                Collaborators
+                <input
+                  aria-label="Transmission collaborators"
+                  placeholder="Comma-separated identities"
+                  value={collaborators}
+                  onChange={(event) => setCollaborators(event.target.value)}
+                />
+              </label>
+              <label>
+                Residency
+                <input
+                  aria-label="Transmission residency"
+                  placeholder="Optional"
+                  value={residency}
+                  onChange={(event) => setResidency(event.target.value)}
+                />
+              </label>
+              <label>
+                License
+                <input
+                  aria-label="Transmission license"
+                  placeholder="Optional"
+                  value={license}
+                  onChange={(event) => setLicense(event.target.value)}
+                />
+              </label>
+            </Panel>
+            <Panel>
+              <h2 className="cly-section-heading">
+                <FileText size={16} /> Ordered context pack
+              </h2>
+              {selectedPack ? (
+                <>
+                  <p>
+                    <strong>{selectedPack.name}</strong>
+                  </p>
+                  <p className="cly-muted">
+                    Policy: {selectedPack.configurationId} /{" "}
+                    {selectedPack.roleId}
+                  </p>
+                  <ol>
+                    {selectedPack.entries.map((entry) => (
+                      <li key={entry.revisionId}>
+                        <strong>{entry.referenceId}</strong>
+                        <div>{entry.selectionReason}</div>
+                        <small>
+                          {entry.representation} · exact revision{" "}
+                          {entry.revisionId}
+                        </small>
+                      </li>
+                    ))}
+                  </ol>
                 </>
               ) : (
-                <Panel>
-                  <div className="cly-panel-header">
-                    <div>
-                      <strong>Exact agent context preview</strong>
-                      <div className="cly-muted cly-small">
-                        Ordered content envelope · secrets and excluded items
-                        are not shown
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() =>
-                        notify(
-                          "Preview copied",
-                          "The context manifest was copied as fixture text.",
-                        )
-                      }
-                    >
-                      Copy manifest
-                    </Button>
-                  </div>
-                  <div className="cly-panel-body cly-stack">
-                    {selected.map((item, index) => (
-                      <div className="cly-callout" key={item.id}>
-                        <div className="cly-row-between">
-                          <div className="cly-row">
-                            <span className="cly-faint cly-mono">
-                              {String(index + 1).padStart(2, "0")}
-                            </span>
-                            <strong>{item.name}</strong>
-                            <Badge tone={toneForStatus(item.freshness)}>
-                              {item.freshness}
-                            </Badge>
-                          </div>
-                          <span className="cly-muted cly-small">
-                            {item.representation} ·{" "}
-                            {item.tokens.toLocaleString()} tokens
-                          </span>
-                        </div>
-                        <p
-                          className="cly-muted cly-small"
-                          style={{ margin: "7px 0 0" }}
-                        >
-                          Source: {item.source}. Linked objects:{" "}
-                          {item.linkedIds.join(", ")}.
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </Panel>
+                <p className="cly-muted">
+                  Select approved revisions, then save a pack.
+                </p>
               )}
-
-              <Section
-                title="Context packs"
-                subtitle="Task-focused selections with a transparent, editable manifest"
-              >
-                <div className="cly-context-pack-list">
-                  {packs.map((pack) => (
-                    <Panel className="cly-panel-body" key={pack.id}>
-                      <div className="cly-row">
-                        <Box size={14} />
-                        <strong>{pack.name}</strong>
-                      </div>
-                      <p
-                        className="cly-muted cly-small"
-                        style={{ minHeight: 32 }}
-                      >
-                        {pack.description}
-                      </p>
-                      <div className="cly-row-between">
-                        <span className="cly-faint cly-small">
-                          {pack.itemIds.length} objects
-                        </span>
-                        <Button
-                          onClick={() => applyPack(pack.itemIds, pack.name)}
-                          disabled={!isClyDemoRuntime}
-                          title={capabilityUnavailableMessage("context.edit")}
-                        >
-                          Apply
-                        </Button>
-                      </div>
-                    </Panel>
-                  ))}
-                </div>
-              </Section>
-            </div>
-          }
-          secondary={
-            <aside className="cly-stack">
-              <Panel className="cly-panel-body">
-                <div className="cly-row-between">
+            </Panel>
+            {preview ? (
+              <Panel>
+                <h2 className="cly-section-heading">Provider transmission</h2>
+                <dl className="cly-context-preview-summary">
                   <div>
-                    <div className="cly-page-kicker">Context budget</div>
-                    <strong>{model}</strong>
+                    <dt>Destination</dt>
+                    <dd>
+                      {role?.provider} / {role?.model}
+                    </dd>
                   </div>
-                  <strong>{Math.round(budget.ratio * 100)}% selected</strong>
-                </div>
-                <div style={{ marginTop: 13 }}>
-                  <TokenBudgetBar
-                    segments={budgetSegments}
-                    capacity={budget.capacity}
-                  />
-                </div>
-                <select
-                  className="cly-select"
-                  aria-label="Selected model capacity"
-                  value={model}
-                  onChange={(event) =>
-                    setModel(event.target.value as typeof model)
-                  }
-                  style={{ marginTop: 13 }}
-                >
-                  {modelOptions.map((option) => (
-                    <option key={option}>{option}</option>
-                  ))}
-                </select>
-                <div className="cly-divider" style={{ margin: "13px 0" }} />
-                <dl className="cly-detail-grid">
-                  <dt>Selected</dt>
-                  <dd>{budget.tokens.toLocaleString()} tokens</dd>
-                  <dt>Capacity</dt>
-                  <dd>{budget.capacity.toLocaleString()} tokens</dd>
-                  <dt>Usage class</dt>
-                  <dd>
-                    {budget.ratio > 0.75
-                      ? "Very High"
-                      : budget.ratio > 0.45
-                        ? "High"
-                        : budget.ratio > 0.2
-                          ? "Medium"
-                          : "Low"}
-                  </dd>
-                  <dt>Stale items</dt>
-                  <dd>{budget.staleCount}</dd>
+                  <div>
+                    <dt>Selected</dt>
+                    <dd>{preview.entries.length} revisions</dd>
+                  </div>
+                  <div>
+                    <dt>Server estimate</dt>
+                    <dd>{preview.totalTokens.toLocaleString()} tokens</dd>
+                  </div>
+                  <div>
+                    <dt>SHA-256</dt>
+                    <dd>
+                      <code>{preview.sha256}</code>
+                    </dd>
+                  </div>
                 </dl>
-                {budget.ratio > 0.75 ? (
+                {preview.privacyWarnings.map((warning) => (
                   <div
-                    className="cly-callout"
-                    data-tone="warning"
-                    style={{ marginTop: 12 }}
+                    className="cly-inline-alert"
+                    role="status"
+                    key={`${warning.code}-${warning.referenceIds.join("-")}`}
                   >
-                    Context is near the warning threshold. Compress raw sources
-                    or remove redundant history.
+                    <ShieldAlert size={15} />{" "}
+                    <span>
+                      <strong>{warning.code}</strong>
+                      <br />
+                      {warning.message}
+                    </span>
                   </div>
+                ))}
+                {preview.excluded.length ? (
+                  <details>
+                    <summary>{preview.excluded.length} excluded</summary>
+                    <ul>
+                      {preview.excluded.map((entry) => (
+                        <li key={`${entry.referenceId}-${entry.reason}`}>
+                          <strong>{entry.referenceId}</strong>: {entry.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+                <details>
+                  <summary>Canonical payload sent byte-for-byte</summary>
+                  <pre className="cly-context-canonical-preview">
+                    {preview.canonicalPayload}
+                  </pre>
+                </details>
+                {preview.restrictedReferenceIds.length > 0 ? (
+                  <fieldset
+                    className="cly-context-lifecycle-actions"
+                    aria-label="Restricted transmission approval"
+                  >
+                    <legend>Restricted transmission approval</legend>
+                    <label>
+                      Rationale
+                      <textarea
+                        aria-label="Restricted approval rationale"
+                        value={approvalRationale}
+                        onChange={(event) =>
+                          setApprovalRationale(event.target.value)
+                        }
+                      />
+                    </label>
+                    <label>
+                      Optional expiry
+                      <input
+                        aria-label="Restricted approval expiry"
+                        type="datetime-local"
+                        value={approvalExpiresAt}
+                        onChange={(event) =>
+                          setApprovalExpiresAt(event.target.value)
+                        }
+                      />
+                    </label>
+                    <Button
+                      disabled={busy || approval?.state === "approved"}
+                      onClick={() => void createApproval()}
+                    >
+                      Approve exact restricted preview
+                    </Button>
+                    {approval ? (
+                      <p role="status">
+                        Approval {approval.id}: {approval.state}
+                      </p>
+                    ) : null}
+                  </fieldset>
+                ) : null}
+                <div className="cly-context-lifecycle-actions">
+                  <Button
+                    variant="primary"
+                    disabled={
+                      busy ||
+                      (preview.restrictedReferenceIds.length > 0 &&
+                        approval?.state !== "approved")
+                    }
+                    onClick={() => void persistPreview()}
+                  >
+                    Persist immutable manifest
+                  </Button>
+                  {approval?.state === "approved" ||
+                  persistedManifest?.transmissionApprovalId ? (
+                    <Button
+                      disabled={busy}
+                      onClick={() => void revokeApproval()}
+                    >
+                      Revoke transmission approval
+                    </Button>
+                  ) : null}
+                </div>
+                {persistedManifest ? (
+                  <p role="status">
+                    Manifest {persistedManifest.id} persisted with SHA-256{" "}
+                    <code>{persistedManifest.sha256}</code>.
+                  </p>
                 ) : null}
               </Panel>
-
-              <Panel>
-                <div className="cly-panel-header">
-                  <strong>Selected context</strong>
-                  <span className="cly-faint cly-small">
-                    {selected.length} items
-                  </span>
-                </div>
-                <div style={{ maxHeight: 330, overflowY: "auto" }}>
-                  {selected.map((item) => (
-                    <div className="cly-list-row" key={item.id}>
-                      <div>
-                        <div className="cly-list-title">{item.name}</div>
-                        <div className="cly-list-detail">
-                          Priority {item.priority} ·{" "}
-                          {item.tokens.toLocaleString()} tokens
-                        </div>
-                      </div>
-                      <div className="cly-row">
-                        <Button
-                          variant="ghost"
-                          iconOnly
-                          disabled={!isClyDemoRuntime}
-                          title={capabilityUnavailableMessage("context.edit")}
-                          onClick={() => move(item, -1)}
-                          aria-label={`Move ${item.name} up`}
-                        >
-                          <ArrowUp size={12} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          iconOnly
-                          disabled={!isClyDemoRuntime}
-                          title={capabilityUnavailableMessage("context.edit")}
-                          onClick={() => move(item, 1)}
-                          aria-label={`Move ${item.name} down`}
-                        >
-                          <ArrowDown size={12} />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Panel>
-
-              <DisclosureRow
-                title="Item actions"
-                detail="Preview, compress, branch, or archive"
-              >
-                <div className="cly-grid-2">
-                  <Button
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage("context.edit")}
-                    onClick={() =>
-                      notify(
-                        "Preview opened",
-                        "Select a context object to inspect its linked evidence and representation.",
-                      )
-                    }
-                  >
-                    <Eye size={13} /> Preview
-                  </Button>
-                  <Button
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage("context.edit")}
-                    onClick={() =>
-                      notify(
-                        "Context compressed",
-                        "Raw content was replaced with a fixture summary; the original remains restorable.",
-                      )
-                    }
-                  >
-                    <Sparkles size={13} /> Compress
-                  </Button>
-                  <Button
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage("context.edit")}
-                    onClick={() =>
-                      notify(
-                        "Original restored",
-                        "The raw fixture representation is active again.",
-                      )
-                    }
-                  >
-                    <RotateCcw size={13} /> Restore
-                  </Button>
-                  <Button
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage("context.edit")}
-                    onClick={() =>
-                      notify(
-                        "Context branched",
-                        "A custom context pack branch was created in this mock session.",
-                      )
-                    }
-                  >
-                    <GitBranch size={13} /> Branch
-                  </Button>
-                  <Button
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage("context.edit")}
-                    onClick={() =>
-                      notify(
-                        "Item archived",
-                        "Archived items remain traceable but are excluded from agent context.",
-                      )
-                    }
-                  >
-                    <Archive size={13} /> Archive
-                  </Button>
-                  <Button
-                    variant="danger"
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage("context.edit")}
-                    onClick={() =>
-                      notify(
-                        "Forget requires confirmation",
-                        "This prototype does not delete project evidence. The future service will use an explicit confirmation flow.",
-                      )
-                    }
-                  >
-                    <Trash2 size={13} /> Forget
-                  </Button>
-                </div>
-              </DisclosureRow>
-            </aside>
-          }
-        />
+            ) : null}
+          </aside>
+        </div>
       )}
     </div>
   );

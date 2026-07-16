@@ -1,5 +1,198 @@
 export type AgentSessionsMode = "overview" | "chat";
 
+export interface ClyDevTaskIdentity {
+  project: { id: string; name: string };
+  repository: { name: string; remote?: string };
+  workspace: { branch: string; worktree?: string; commit?: string };
+  machine: { id: string; name: string };
+  provider: {
+    id: string;
+    model: string;
+    reasoningLevel: "low" | "medium" | "high";
+  };
+  budget: {
+    usedTokens: number;
+    maxTokens: number;
+    usedCostMinorUnits: number;
+    maxCostMinorUnits: number;
+  };
+  objective: { title: string; issueId?: string };
+  researchImpact: {
+    summary: string;
+    objectIds: string[];
+    risk: "low" | "medium" | "high";
+  };
+}
+
+export type ClyDevWorkspaceMode =
+  | "agent-only"
+  | "inline-workspace"
+  | "detached-workspace"
+  | "external-editor";
+
+export type ClyDevTaskState =
+  | "first-run"
+  | "empty"
+  | "loading"
+  | "streaming"
+  | "awaiting-approval"
+  | "failed"
+  | "canceled"
+  | "interrupted-resumable"
+  | "unsupported";
+
+export type ClyDevConnectionState = "connected" | "offline" | "reconnecting";
+
+export type ClyDevSessionState =
+  | "queued"
+  | "running"
+  | "awaiting_approval"
+  | "completed"
+  | "canceled"
+  | "failed"
+  | "interrupted"
+  | "resumable";
+
+export interface ClyDevActor {
+  kind: "user" | "agent" | "tool" | "system";
+  id: string;
+}
+
+export interface ClyDevEventInput {
+  schemaVersion: 1;
+  payloadVersion: 1;
+  idempotencyKey: string;
+  type: string;
+  transferability: "local-only" | "transferable";
+  occurredAt: string;
+  actor: ClyDevActor;
+  payload: Record<string, unknown>;
+}
+
+export interface ClyDevSessionEvent extends ClyDevEventInput {
+  id: string;
+  projectId: string;
+  sessionId: string;
+  sequence: number;
+  recordedAt: string;
+  provenance: ClyDevProvenance;
+  outboundEnvelope: Record<string, unknown> | null;
+  outboundSha256: string | null;
+}
+
+export interface ClyDevProvenance {
+  repository: { id: string; remoteUrl?: string };
+  worktree: { id: string; branch: string; baseRef?: string };
+  commit: { sha: string };
+  machine: { id: string; platform: "darwin" | "linux" | "win32" };
+  provider: { id: string; model: string };
+  research: { objectIds: string[] };
+}
+
+export interface ClyDevWorkspace {
+  id: string;
+  projectId: string;
+  name: string;
+  schemaVersion: 1;
+  idempotencyKey: string;
+  repository: ClyDevProvenance["repository"];
+  worktree: ClyDevProvenance["worktree"];
+  machine: ClyDevProvenance["machine"];
+  localOnly: { repositoryPath: string; worktreePath: string };
+  createdAt: string;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
+export interface ClyDevTask {
+  id: string;
+  projectId: string;
+  workspaceId: string;
+  title: string;
+  objective: string;
+  researchObjectIds: string[];
+  schemaVersion: 1;
+  idempotencyKey: string;
+  createdAt: string;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
+export interface ClyDevSessionRecord {
+  id: string;
+  projectId: string;
+  taskId: string;
+  title: string;
+  contextManifestId: string;
+  schemaVersion: 1;
+  idempotencyKey: string;
+  provider: ClyDevProvenance["provider"];
+  providerId: string;
+  model: string;
+  commit: ClyDevProvenance["commit"];
+  state: ClyDevSessionState;
+  createdAt: string;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
+export interface ClyDevApproval {
+  id: string;
+  projectId: string;
+  sessionId: string;
+  state: "pending" | "approved" | "rejected" | "canceled";
+  requestSequence: number;
+  resolutionSequence: number | null;
+  requestedAt: string;
+  resolvedAt: string | null;
+  [key: string]: unknown;
+}
+
+export interface ClyDevSessionSnapshot extends ClyDevSessionRecord {
+  lastSequence: number;
+  approvals: ClyDevApproval[];
+  process: null;
+}
+
+export interface ClyDevSessionOverview extends ClyDevSessionRecord {
+  lastSequence: number;
+  pendingApprovalCount: number;
+  process: null;
+}
+
+export interface ClyDevSessionOverviewPage {
+  items: ClyDevSessionOverview[];
+  nextOffset: number | null;
+}
+
+export interface ClyDevContextManifest {
+  id: string;
+  projectId: string;
+  workspaceId: string;
+  schemaVersion: 1;
+  idempotencyKey: string;
+  localOnly: {
+    absolutePaths: string[];
+    environmentVariableNames: string[];
+    notes: string[];
+    uncommittedFilePaths: string[];
+  };
+  transferable: {
+    summary: string;
+    entries: Array<Record<string, string>>;
+  };
+  createdAt: string;
+}
+
+export interface ClyDevOutboundContext {
+  preview: Record<string, unknown>;
+  egress: Record<string, unknown>;
+  previewBytes: string;
+  egressBytes: string;
+  previewSha256: string;
+  egressSha256: string;
+}
+
 export type AgentRole =
   | "orchestrator"
   | "implementation"
@@ -39,6 +232,74 @@ export interface AgentPermissions {
   requiresApprovalForNetwork: boolean;
 }
 
+export type ReasoningLevel = "low" | "medium" | "high";
+
+export interface AgentResourceBudget {
+  maxInputTokens: number;
+  maxOutputTokens: number;
+  maxCostMinorUnits: number;
+  maxRuntimeMs: number;
+}
+
+export interface AgentUsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  costMinorUnits: number;
+  runtimeMs: number;
+}
+
+export interface AgentSchedulerUsageTotals {
+  /** Usage accepted against the configured role and aggregate caps. */
+  accepted: AgentUsageTotals;
+  /** Raw provider-reported usage, including amounts rejected above a cap. */
+  providerReported: AgentUsageTotals;
+  /** Peak simultaneous reservation held by active workers. */
+  reserved: AgentUsageTotals;
+}
+
+export interface AgentRoleConfiguration {
+  id: string;
+  role: AgentRole;
+  instanceCount: number;
+  maxParallel: number;
+  provider: string;
+  model: string;
+  reasoningLevel: ReasoningLevel;
+  budget: AgentResourceBudget;
+  allowedTools: string[];
+  allowedContextSources: string[];
+  allowedFileGlobs: string[];
+  permissions: AgentPermissions;
+  approvalCheckpoints: string[];
+  fallbackModel?: string;
+}
+
+export interface AgentConfigurationInput {
+  name: string;
+  maxParallel: number;
+  maxTotalBudget: AgentResourceBudget;
+  partialFailurePolicy: "continue" | "cancel_remaining";
+  roles: AgentRoleConfiguration[];
+}
+
+export interface AgentConfiguration extends AgentConfigurationInput {
+  id: string;
+  projectId: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentConfigurationEstimate {
+  inputTokens: number;
+  outputTokens: number;
+  costMinorUnits: number;
+  runtimeMs: number;
+  inaccessibleContext: string[];
+  inaccessibleTools: string[];
+  reasons: string[];
+}
+
 export type AgentContextMode =
   | "full_project"
   | "explicit_pack"
@@ -55,11 +316,18 @@ export interface AgentIdentity {
   provider: string;
   model: string;
   reasoningLevel: "Low" | "Medium" | "High";
+  instanceCount?: number;
+  maxParallel?: number;
+  budget?: AgentResourceBudget;
   contextPackId?: string;
   contextPackName: string;
   contextMode: AgentContextMode;
   permissions: AgentPermissions;
   tools: string[];
+  allowedContextSources?: string[];
+  allowedFileGlobs?: string[];
+  approvalCheckpoints?: string[];
+  partialFailurePolicy?: "continue" | "cancel_remaining";
   worktree?: string;
   status: AgentStatus;
   task: string;
@@ -206,6 +474,9 @@ export interface AgentSession {
   projectId: string;
   title: string;
   objective: string;
+  identity: ClyDevTaskIdentity;
+  workspaceMode: ClyDevWorkspaceMode;
+  taskState: ClyDevTaskState;
   orchestrator: AgentIdentity;
   delegatedAgents: AgentIdentity[];
   tasks: AgentTask[];
@@ -228,7 +499,7 @@ export interface AgentSession {
   workbenchWidth: number;
   draft: string;
   usageEstimate: string;
-  connectionState: "connected" | "offline" | "reconnecting";
+  connectionState: ClyDevConnectionState;
   approvals: AgentApproval[];
   artifacts: string[];
   relatedResearchObject: string;

@@ -282,16 +282,15 @@ export function Inspector() {
                     <Link2 size={13} /> Trace linked objects
                   </Button>
                   <Button
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage("context.edit")}
-                    onClick={() =>
+                    onClick={() => {
+                      setScreen("context");
                       notify(
-                        "Added to context",
-                        "The fixture object is represented in the active Context Composer preview.",
-                      )
-                    }
+                        "Context composer opened",
+                        "Choose an approved durable revision or create one from the context workspace.",
+                      );
+                    }}
                   >
-                    <Pin size={13} /> Add to context
+                    <Pin size={13} /> Open in context
                   </Button>
                   <Button
                     disabled={!isClyDemoRuntime}

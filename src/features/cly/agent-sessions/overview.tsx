@@ -292,6 +292,9 @@ export function OverviewSessionRow({
       </div>
       <div className="agent-session-meta">
         <span>
+          {session.identity.repository.name} · {session.identity.machine.name}
+        </span>
+        <span>
           <GitBranch size={11} /> {session.branch}
         </span>
         <span>

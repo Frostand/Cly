@@ -1,6 +1,6 @@
 # Agent workbench
 
-The Chat workbench is resizable, collapsible, maximizable, keyboard reachable, and persisted per session.
+The inline Chat workbench is resizable, collapsible, maximizable, keyboard reachable, and persisted per session. It is an optional projection: conversation, composer, plan/progress, approvals, context, and compact test/diff inspection remain usable when the workbench is hidden.
 
 Implemented tab surfaces:
 
@@ -10,4 +10,4 @@ Implemented tab surfaces:
 - **Agents:** tiled live sessions and topology views with model, reasoning, context access, task, permissions, worktree, transcript, usage, status, progress, steering, and configuration.
 - **Live Files:** read-only file observation with changed ranges, follow-agent, auto-scroll, diff overlay, edit timeline, and corresponding-diff navigation.
 
-Tabs can be opened, selected, closed, dragged/reordered, duplicated, pinned, unpinned, and moved through their tab menus. Split and external-window actions remain future service capabilities.
+Tabs can be opened, selected, closed, dragged/reordered, duplicated, pinned, unpinned, and moved through their tab menus. Agent-only and inline modes work in the prototype. Detach, reattach, and external-editor controls are explicitly labeled prototype intents; native window creation and deep-link execution remain CLY-78 service capabilities. Cly Core, not either renderer, owns canonical tab and session state.

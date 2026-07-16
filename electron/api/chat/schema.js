@@ -40,6 +40,15 @@ export const chatRequestBodySchema = z.object({
   chatId: z.string().min(1).optional(),
   projectId: z.string().min(1).optional(),
   threadId: z.string().min(1).optional(),
+  managedContext: z
+    .object({
+      manifestId: z.string().trim().min(1).max(500),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      configurationId: z.string().trim().min(1).max(500),
+      roleId: z.string().trim().min(1).max(500),
+    })
+    .strict()
+    .optional(),
 });
 
 export const formatProjectReferencesForPrompt = (projectReferences) => {

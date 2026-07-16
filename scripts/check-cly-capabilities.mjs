@@ -43,6 +43,29 @@ for (const capability of inventory) {
   }
 }
 
+const durableSessions = inventory.find(
+  (capability) => capability.id === "agents.sessions-durable",
+);
+if (
+  durableSessions?.state !== "production" ||
+  durableSessions?.action !==
+    "Persist and inspect durable agent session state" ||
+  durableSessions?.api !==
+    "GET /api/projects/:projectId/cly-dev/sessions; POST /api/projects/:projectId/cly-dev/session-aggregates"
+) {
+  failures.push(
+    "agents.sessions-durable must advertise only production-ready durable persistence and inspection through real session routes",
+  );
+}
+const agentExecution = inventory.find(
+  (capability) => capability.id === "agents.execute",
+);
+if (agentExecution?.state === "production") {
+  failures.push(
+    "agents.execute cannot be production until process execution and approval gating are connected",
+  );
+}
+
 const productionRoots = [
   join(root, "src/features/cly/components"),
   join(root, "src/features/cly/screens"),

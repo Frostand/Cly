@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   Archive,
   ArrowDown,
   ArrowRight,
@@ -8,6 +9,7 @@ import {
   Circle,
   Clock3,
   Code2,
+  ExternalLink,
   FilePlus2,
   GitBranch,
   History,
@@ -30,12 +32,18 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { Badge, Button } from "../components/primitives";
+import { Badge, Button, Dialog } from "../components/primitives";
 import { ClySplitPane } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
 import { demoAgentSessionServices } from "./demo-services";
-import { AgentSessionsModeSwitcher } from "./shared";
-import type { AgentMessage as AgentMessageType, AgentSession } from "./types";
+import { AgentSessionsModeSwitcher, ClyDevTaskIdentitySurface } from "./shared";
+import type {
+  AgentMessage as AgentMessageType,
+  AgentSession,
+  ClyDevWorkspaceMode,
+  DiffTabState,
+  TerminalTabState,
+} from "./types";
 import { sessionStatusLabel, toneForAgentStatus } from "./utils";
 import { AgentWorkbench } from "./workbench";
 
@@ -125,17 +133,55 @@ function EmptyChatMode({ sessions }: { sessions: AgentSession[] }) {
 }
 
 function ActiveChatMode({ session }: { session: AgentSession }) {
+  const [inspection, setInspection] = useState<"tests" | "diff" | null>(null);
+  const inspectionTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeInspection = () => {
+    setInspection(null);
+    requestAnimationFrame(() => inspectionTriggerRef.current?.focus());
+  };
   const chat = (
     <section className="agent-chat-pane" aria-label="Orchestrator conversation">
       <Conversation session={session} />
+      {inspection ? (
+        <TaskInspection
+          session={session}
+          kind={inspection}
+          onClose={closeInspection}
+        />
+      ) : null}
       <ChatComposer session={session} />
     </section>
   );
   const workbench = <AgentWorkbench session={session} />;
+  const inlineWorkspace = session.workspaceMode === "inline-workspace";
   return (
-    <div className="agent-chat-mode" data-testid="agent-sessions-chat">
+    <div
+      className="agent-chat-mode"
+      data-testid="agent-sessions-chat"
+      onKeyDownCapture={(event) => {
+        if (inspection && event.key === "Escape") {
+          event.preventDefault();
+          closeInspection();
+        }
+      }}
+    >
       <SessionHeader session={session} />
-      {session.workbenchMaximized ? (
+      <div className="cly-dev-task-bar">
+        <ClyDevTaskIdentitySurface session={session} />
+        <TaskWorkspaceControls
+          session={session}
+          onInspect={(kind, trigger) => {
+            inspectionTriggerRef.current = trigger;
+            setInspection(kind);
+          }}
+        />
+        <TaskStateBanner session={session} />
+      </div>
+      {!inlineWorkspace ? (
+        <div className="agent-chat-split" data-agent-only="true">
+          {chat}
+        </div>
+      ) : session.workbenchMaximized ? (
         <div className="agent-chat-split" data-maximized="true">
           {workbench}
         </div>
@@ -161,6 +207,230 @@ function ActiveChatMode({ session }: { session: AgentSession }) {
   );
 }
 
+function TaskWorkspaceControls({
+  session,
+  onInspect,
+}: {
+  session: AgentSession;
+  onInspect: (kind: "tests" | "diff", trigger: HTMLButtonElement) => void;
+}) {
+  const update = useClyStore((state) => state.updateAgentSession);
+  const notify = useClyStore((state) => state.notify);
+  const setMode = (workspaceMode: ClyDevWorkspaceMode) =>
+    update(session.id, (current) => ({ ...current, workspaceMode }));
+  const modes: Array<[ClyDevWorkspaceMode, string]> = [
+    ["agent-only", "Agent only"],
+    ["inline-workspace", "Inline workspace"],
+    ["detached-workspace", "Detached prototype intent"],
+    ["external-editor", "External-editor prototype intent"],
+  ];
+  return (
+    <div className="cly-dev-task-controls">
+      <div
+        className="cly-dev-workspace-modes"
+        role="radiogroup"
+        aria-label="Task workspace mode"
+      >
+        {modes.map(([mode, label]) => (
+          <label key={mode}>
+            <input
+              type="radio"
+              name={`task-workspace-mode-${session.id}`}
+              value={mode}
+              checked={session.workspaceMode === mode}
+              onChange={() => setMode(mode)}
+            />
+            <span>{label}</span>
+          </label>
+        ))}
+      </div>
+      <div
+        className="cly-dev-task-actions"
+        role="toolbar"
+        aria-label="Task tools"
+      >
+        <Button
+          variant="ghost"
+          data-cly-agent-action="inspect-tests"
+          onClick={(event) => onInspect("tests", event.currentTarget)}
+        >
+          Inspect tests
+        </Button>
+        <Button
+          variant="ghost"
+          data-cly-agent-action="inspect-diff"
+          onClick={(event) => onInspect("diff", event.currentTarget)}
+        >
+          Inspect diff
+        </Button>
+        {session.workspaceMode === "inline-workspace" ? (
+          <Button onClick={() => setMode("detached-workspace")}>
+            <AppWindow size={12} /> Detach workspace (prototype)
+          </Button>
+        ) : null}
+        {session.workspaceMode === "detached-workspace" ? (
+          <Button onClick={() => setMode("inline-workspace")}>
+            Reattach workspace (prototype)
+          </Button>
+        ) : null}
+        {session.workspaceMode === "external-editor" ? (
+          <Button
+            onClick={() =>
+              notify(
+                "External editor intent recorded",
+                `Prototype deep link for ${session.identity.workspace.branch}.`,
+              )
+            }
+          >
+            <ExternalLink size={12} /> Open editor (prototype)
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TaskStateBanner({ session }: { session: AgentSession }) {
+  const update = useClyStore((state) => state.updateAgentSession);
+  const failedAgent = session.delegatedAgents.find(
+    (agent) => agent.status === "failed",
+  );
+  const messages: string[] = [];
+  if (session.connectionState === "offline") {
+    messages.push(
+      "Offline — saved conversation and inspection evidence remain available",
+    );
+  } else if (session.connectionState === "reconnecting") {
+    messages.push("Reconnecting — new direction will wait for Core");
+  }
+  if (session.taskState === "first-run") {
+    messages.push("Task has not started — review its identity before starting");
+  } else if (session.taskState === "empty") {
+    messages.push("No task activity yet — send direction in the composer");
+  } else if (session.taskState === "interrupted-resumable") {
+    messages.push(
+      "Task was interrupted and can be resumed from its saved checkpoint",
+    );
+  } else if (session.taskState === "awaiting-approval") {
+    messages.push(
+      "Awaiting approval — review the inline approval event to continue",
+    );
+  } else if (session.taskState === "loading") {
+    messages.push("Loading task state from Core");
+  } else if (session.taskState === "failed") {
+    messages.push("Task failed — inspect retained evidence before retrying");
+  } else if (session.taskState === "canceled") {
+    messages.push("Task canceled — conversation and evidence are retained");
+  } else if (session.taskState === "unsupported") {
+    messages.push("Task configuration is unsupported on this machine");
+  }
+  if (failedAgent) {
+    messages.push(`Delegated agent failed — ${failedAgent.lastAction}`);
+  }
+  if (session.workspaceMode === "detached-workspace") {
+    messages.push(
+      "Detached workspace intent recorded — inline workspace remains the fallback",
+    );
+  } else if (session.workspaceMode === "external-editor") {
+    messages.push(
+      "External-editor deep-link mode selected — no editor has been opened yet",
+    );
+  }
+  if (!messages.length) return null;
+  const isAlert = session.taskState === "failed" || Boolean(failedAgent);
+  return (
+    <div
+      className="cly-dev-task-state"
+      role={isAlert ? "alert" : "status"}
+      aria-live={isAlert ? "assertive" : "polite"}
+    >
+      <span>{messages.join(" · ")}</span>
+      {session.taskState === "first-run" ? (
+        <Button
+          data-cly-agent-action="start-task"
+          onClick={() =>
+            update(session.id, (current) => ({
+              ...current,
+              connectionState: "connected",
+              status: "running",
+              taskState: "streaming",
+            }))
+          }
+        >
+          Start task
+        </Button>
+      ) : null}
+      {session.taskState === "interrupted-resumable" ? (
+        <Button
+          data-cly-agent-action="resume-task"
+          onClick={() =>
+            update(session.id, (current) => ({
+              ...current,
+              connectionState: "connected",
+              status: "running",
+              taskState: "streaming",
+            }))
+          }
+        >
+          Resume task
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskInspection({
+  session,
+  kind,
+  onClose,
+}: {
+  session: AgentSession;
+  kind: "tests" | "diff";
+  onClose: () => void;
+}) {
+  const terminal = session.workbenchTabs.find((tab) => tab.type === "terminal")
+    ?.state as TerminalTabState | undefined;
+  const diff = session.workbenchTabs.find((tab) => tab.type === "diff")
+    ?.state as DiffTabState | undefined;
+  return (
+    <section
+      className="cly-dev-inline-inspection"
+      aria-label={kind === "tests" ? "Test inspection" : "Diff inspection"}
+    >
+      <header>
+        <strong>{kind === "tests" ? "Tests" : "Diff"}</strong>
+        <Button
+          iconOnly
+          variant="ghost"
+          aria-label="Close inspection"
+          onClick={onClose}
+        >
+          <X size={12} />
+        </Button>
+      </header>
+      {kind === "tests" ? (
+        <pre>
+          {terminal?.lines.join("\n") ??
+            "No retained test output for this task."}
+        </pre>
+      ) : diff?.files.length ? (
+        <div>
+          {diff.files.map((file) => (
+            <article key={file.path}>
+              <strong>{file.path}</strong>
+              <span>
+                +{file.additions} −{file.deletions} · {file.risk}
+              </span>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p>No retained diff for this task.</p>
+      )}
+    </section>
+  );
+}
+
 export function SessionHeader({ session }: { session: AgentSession }) {
   const sessions = useClyStore((state) => state.data.agentSessions);
   const openSession = useClyStore((state) => state.openAgentSession);
@@ -169,145 +439,210 @@ export function SessionHeader({ session }: { session: AgentSession }) {
   const pause = useClyStore((state) => state.pauseAgentSession);
   const stop = useClyStore((state) => state.stopAgentSession);
   const archive = useClyStore((state) => state.archiveAgentSession);
+  const destructiveConfirmation = useClyStore(
+    (state) => state.agentDestructiveConfirmation,
+  );
+  const setDestructiveConfirmation = useClyStore(
+    (state) => state.setAgentDestructiveConfirmation,
+  );
   const notify = useClyStore((state) => state.notify);
+  const confirmation =
+    destructiveConfirmation?.sessionId === session.id
+      ? destructiveConfirmation
+      : null;
+  const confirmDestructiveAction = () => {
+    if (!confirmation) return;
+    if (confirmation.action === "stop") {
+      stop(session.id);
+      notify("Session stopped", "Conversation and evidence are retained.");
+    } else {
+      archive(session.id);
+      notify("Session archived", "The session remains available in History.");
+    }
+    setDestructiveConfirmation(null);
+  };
   return (
-    <header className="agent-session-header">
-      <AgentSessionsModeSwitcher compact />
-      <div className="agent-session-switcher">
-        <span className="agent-avatar">
-          <Bot size={12} />
-        </span>
-        <select
-          aria-label="Switch agent session"
-          value={session.id}
-          onChange={(event) => openSession(event.target.value)}
-        >
-          {sessions.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.title}
-            </option>
-          ))}
-        </select>
-        <ChevronDown size={11} />
-      </div>
-      <div className="agent-session-header-status">
-        <i data-state={session.connectionState} />
-        <span>{session.orchestrator.name}</span>
-        <Badge tone={toneForAgentStatus(session.status)}>
-          {sessionStatusLabel[session.status]}
-        </Badge>
-      </div>
-      <div className="agent-session-header-meta">
-        <span>
-          {session.orchestrator.model} · {session.orchestrator.reasoningLevel}
-        </span>
-        <button
-          type="button"
-          onClick={() =>
-            notify("Context Composer opened", session.contextSummary)
-          }
-        >
-          {session.activeContextPackName}
-        </button>
-        <span>
-          <Users size={11} /> {session.delegatedAgents.length}
-        </span>
-        <span>
-          <GitBranch size={11} /> {session.branch}
-        </span>
-        <span>
-          <Clock3 size={11} /> {session.elapsed}
-        </span>
-        <span>{session.usageEstimate}</span>
-      </div>
-      <div className="agent-session-header-actions">
-        {session.approvals.some((approval) => approval.state === "pending") ? (
-          <Button
-            className="agent-approval-inbox"
+    <>
+      <header className="agent-session-header">
+        <AgentSessionsModeSwitcher compact />
+        <div className="agent-session-switcher">
+          <span className="agent-avatar">
+            <Bot size={12} />
+          </span>
+          <select
+            aria-label="Switch agent session"
+            value={session.id}
+            onChange={(event) => openSession(event.target.value)}
+          >
+            {sessions.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={11} />
+        </div>
+        <div className="agent-session-header-status">
+          <i data-state={session.connectionState} />
+          <span>{session.orchestrator.name}</span>
+          <Badge tone={toneForAgentStatus(session.status)}>
+            {sessionStatusLabel[session.status]}
+          </Badge>
+        </div>
+        <div className="agent-session-header-meta">
+          <span>
+            {session.orchestrator.model} · {session.orchestrator.reasoningLevel}
+          </span>
+          <button
+            type="button"
             onClick={() =>
-              notify(
-                "Approvals inbox",
-                "Pending approvals are shown inline in this conversation.",
-              )
+              notify("Context Composer opened", session.contextSummary)
             }
           >
-            <ShieldAlert size={13} />
-            <span>
-              {session.approvals.filter((a) => a.state === "pending").length}
-            </span>
-          </Button>
-        ) : null}
-        <Button
-          iconOnly
-          variant="ghost"
-          aria-label="Configure agent team"
-          onClick={() => setConfig(session.orchestrator.id)}
-        >
-          <Settings2 size={14} />
-        </Button>
-        <Button
-          iconOnly
-          variant="ghost"
-          aria-label="New session"
-          onClick={() => setNewOpen(true)}
-        >
-          <Plus size={14} />
-        </Button>
-        <Button
-          iconOnly
-          variant="ghost"
-          aria-label={
-            session.status === "paused" ? "Resume session" : "Pause session"
-          }
-          onClick={() => pause(session.id)}
-        >
-          {session.status === "paused" ? (
-            <Sparkles size={14} />
-          ) : (
-            <Pause size={14} />
-          )}
-        </Button>
-        <details className="agent-session-menu">
-          <summary aria-label="Session menu" aria-haspopup="menu">
-            <MoreHorizontal size={14} />
-          </summary>
-          <div role="menu">
-            <div className="agent-session-menu-meta">
-              <span>
-                <GitBranch size={11} /> {session.branch}
-              </span>
-              <span>
-                <Clock3 size={11} /> {session.elapsed}
-              </span>
-              <span>{session.usageEstimate}</span>
-            </div>
-            <button
-              type="button"
-              role="menuitem"
+            {session.activeContextPackName}
+          </button>
+          <span>
+            <Users size={11} /> {session.delegatedAgents.length}
+          </span>
+          <span>
+            <GitBranch size={11} /> {session.branch}
+          </span>
+          <span>
+            <Clock3 size={11} /> {session.elapsed}
+          </span>
+          <span>{session.usageEstimate}</span>
+        </div>
+        <div className="agent-session-header-actions">
+          {session.approvals.some(
+            (approval) => approval.state === "pending",
+          ) ? (
+            <Button
+              className="agent-approval-inbox"
               onClick={() =>
-                notify("Rename session", "Fixture rename control opened.")
+                notify(
+                  "Approvals inbox",
+                  "Pending approvals are shown inline in this conversation.",
+                )
               }
             >
-              <MessageSquareText size={12} /> Rename
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => stop(session.id)}
-            >
-              <StopCircle size={12} /> Stop session
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => archive(session.id)}
-            >
-              <Archive size={12} /> Archive
-            </button>
-          </div>
-        </details>
-      </div>
-    </header>
+              <ShieldAlert size={13} />
+              <span>
+                {session.approvals.filter((a) => a.state === "pending").length}
+              </span>
+            </Button>
+          ) : null}
+          <Button
+            iconOnly
+            variant="ghost"
+            aria-label="Configure agent team"
+            onClick={() => setConfig(session.orchestrator.id)}
+          >
+            <Settings2 size={14} />
+          </Button>
+          <Button
+            iconOnly
+            variant="ghost"
+            aria-label="New session"
+            onClick={() => setNewOpen(true)}
+          >
+            <Plus size={14} />
+          </Button>
+          <Button
+            iconOnly
+            variant="ghost"
+            aria-label={
+              session.status === "paused" ? "Resume session" : "Pause session"
+            }
+            onClick={() => pause(session.id)}
+          >
+            {session.status === "paused" ? (
+              <Sparkles size={14} />
+            ) : (
+              <Pause size={14} />
+            )}
+          </Button>
+          <details className="agent-session-menu">
+            <summary aria-label="Session menu" aria-haspopup="menu">
+              <MoreHorizontal size={14} />
+            </summary>
+            <div role="menu">
+              <div className="agent-session-menu-meta">
+                <span>
+                  <GitBranch size={11} /> {session.branch}
+                </span>
+                <span>
+                  <Clock3 size={11} /> {session.elapsed}
+                </span>
+                <span>{session.usageEstimate}</span>
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() =>
+                  notify("Rename session", "Fixture rename control opened.")
+                }
+              >
+                <MessageSquareText size={12} /> Rename
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                data-cly-agent-action="request-stop"
+                onClick={() =>
+                  setDestructiveConfirmation({
+                    sessionId: session.id,
+                    action: "stop",
+                  })
+                }
+              >
+                <StopCircle size={12} /> Stop session
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                data-cly-agent-action="request-archive"
+                onClick={() =>
+                  setDestructiveConfirmation({
+                    sessionId: session.id,
+                    action: "archive",
+                  })
+                }
+              >
+                <Archive size={12} /> Archive
+              </button>
+            </div>
+          </details>
+        </div>
+      </header>
+      <Dialog
+        open={Boolean(confirmation)}
+        title={
+          confirmation?.action === "archive"
+            ? "Archive session?"
+            : "Stop session?"
+        }
+        description="This confirmation is owned by the canonical agent window. Workspace and editor surfaces cannot confirm it."
+        onClose={() => setDestructiveConfirmation(null)}
+        footer={
+          <>
+            <Button onClick={() => setDestructiveConfirmation(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={confirmDestructiveAction}>
+              {confirmation?.action === "archive"
+                ? "Archive session"
+                : "Stop session"}
+            </Button>
+          </>
+        }
+      >
+        <p>
+          {confirmation?.action === "archive"
+            ? "Move this session to History. Its conversation and evidence remain available."
+            : "Stop active agent work. Its conversation and evidence remain available."}
+        </p>
+      </Dialog>
+    </>
   );
 }
 
@@ -394,9 +729,17 @@ export function AgentMessage({
   message: AgentMessageType;
 }) {
   const [expanded, setExpanded] = useState(!message.collapsed);
+  const approvalResultRef = useRef<HTMLDivElement | null>(null);
   const resolveApproval = useClyStore((state) => state.resolveAgentApproval);
   const openTab = useClyStore((state) => state.openWorkbenchTab);
   const notify = useClyStore((state) => state.notify);
+  const resolveAndFocus = (
+    approvalId: string,
+    resolution: "approved" | "rejected",
+  ) => {
+    resolveApproval(session.id, approvalId, resolution);
+    requestAnimationFrame(() => approvalResultRef.current?.focus());
+  };
   if (message.type === "system") {
     return (
       <div className="agent-message-system">
@@ -493,9 +836,8 @@ export function AgentMessage({
             <div className="agent-inline-actions">
               <Button
                 variant="primary"
-                onClick={() =>
-                  resolveApproval(session.id, approval.id, "approved")
-                }
+                data-cly-agent-action="approve"
+                onClick={() => resolveAndFocus(approval.id, "approved")}
               >
                 <ShieldAlert size={12} /> Approve
               </Button>
@@ -511,17 +853,26 @@ export function AgentMessage({
               </Button>
               <Button
                 variant="danger"
-                onClick={() =>
-                  resolveApproval(session.id, approval.id, "rejected")
-                }
+                data-cly-agent-action="reject"
+                onClick={() => resolveAndFocus(approval.id, "rejected")}
               >
                 Reject
               </Button>
             </div>
           ) : (
-            <Badge tone={message.status === "approved" ? "success" : "danger"}>
-              {message.status}
-            </Badge>
+            <div
+              ref={approvalResultRef}
+              className="agent-approval-result-focus"
+              role="status"
+              tabIndex={-1}
+              aria-label={`Approval ${message.status}`}
+            >
+              <Badge
+                tone={message.status === "approved" ? "success" : "danger"}
+              >
+                {message.status}
+              </Badge>
+            </div>
           )}
         </div>
       </article>

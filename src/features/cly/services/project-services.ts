@@ -1,3 +1,7 @@
+import type {
+  AgentConfiguration,
+  AgentConfigurationInput,
+} from "../agent-sessions/types";
 import { extractLiteratureMetadata } from "../domain/literature-enrichment";
 import {
   deterministicSemanticRanker,
@@ -46,6 +50,18 @@ const activeProjectId = () => {
   return state.activeProjectId;
 };
 
+const localActor = {
+  actorId: "local-user",
+  producerProcess: "cly-renderer",
+  producerModel: null,
+};
+
+const refreshAgentContext = async (projectId: string) => {
+  const snapshot = await apiClient.fetchAgentContext(projectId);
+  useClyStore.getState().setAgentContextSnapshot(projectId, snapshot);
+  return snapshot;
+};
+
 export const projectServices: ClyServices = {
   projects: {
     async switchProject(projectId) {
@@ -58,14 +74,76 @@ export const projectServices: ClyServices = {
         useClyStore.getState().updateContextItem(itemId, { included });
         return;
       }
-      throw new CapabilityUnavailableError("context.edit");
+      const projectId = activeProjectId();
+      const snapshot = useClyStore.getState().agentContext;
+      const pack = snapshot.packs[0];
+      if (!pack)
+        throw new Error(
+          "Create a durable context pack before changing inclusion.",
+        );
+      const item = snapshot.items.find((candidate) => candidate.id === itemId);
+      const revision = item?.approvedRevision;
+      if (!item || !revision)
+        throw new Error("Only an approved context revision can be selected.");
+      const entries = included
+        ? [
+            ...pack.entries.map((entry) => ({
+              itemId: entry.itemId,
+              revisionId: entry.revisionId,
+              representation: entry.representation,
+              selectionReason: entry.selectionReason,
+              sensitivity: entry.sensitivity,
+            })),
+            ...(!pack.entries.some((entry) => entry.itemId === itemId)
+              ? [
+                  {
+                    itemId,
+                    revisionId: revision.id,
+                    representation: "raw" as const,
+                    selectionReason: "Selected in Context Composer",
+                    sensitivity: revision.sensitivity,
+                  },
+                ]
+              : []),
+          ]
+        : pack.entries
+            .filter((entry) => entry.itemId !== itemId)
+            .map((entry) => ({
+              itemId: entry.itemId,
+              revisionId: entry.revisionId,
+              representation: entry.representation,
+              selectionReason: entry.selectionReason,
+              sensitivity: entry.sensitivity,
+            }));
+      await apiClient.saveAgentContextPack(projectId, {
+        id: pack.id,
+        name: pack.name,
+        configurationId: pack.configurationId,
+        roleId: pack.roleId,
+        expectedRevision: pack.revision,
+        entries,
+        actor: localActor,
+      });
+      await refreshAgentContext(projectId);
     },
     async setPinned(itemId, pinned) {
       if (isClyDemoRuntime) {
         useClyStore.getState().updateContextItem(itemId, { pinned });
         return;
       }
-      throw new CapabilityUnavailableError("context.edit");
+      const projectId = activeProjectId();
+      const item = useClyStore
+        .getState()
+        .agentContext.items.find((candidate) => candidate.id === itemId);
+      if (!item) throw new Error("Context item was not found.");
+      await apiClient.updateAgentContextLifecycle(
+        projectId,
+        itemId,
+        pinned ? "pin" : "unpin",
+        item.version,
+        localActor,
+      );
+      await refreshAgentContext(projectId);
     },
     async setRepresentation(itemId, representation) {
       if (isClyDemoRuntime) {
@@ -75,7 +153,99 @@ export const projectServices: ClyServices = {
         });
         return;
       }
-      throw new CapabilityUnavailableError("context.edit");
+      const projectId = activeProjectId();
+      const snapshot = useClyStore.getState().agentContext;
+      const pack = snapshot.packs.find((candidate) =>
+        candidate.entries.some((entry) => entry.itemId === itemId),
+      );
+      if (!pack) throw new Error("Context item is not selected in a pack.");
+      await apiClient.saveAgentContextPack(projectId, {
+        id: pack.id,
+        name: pack.name,
+        configurationId: pack.configurationId,
+        roleId: pack.roleId,
+        expectedRevision: pack.revision,
+        entries: pack.entries.map((entry) => ({
+          itemId: entry.itemId,
+          revisionId: entry.revisionId,
+          representation:
+            entry.itemId === itemId
+              ? representation === "Summary"
+                ? "summary"
+                : "raw"
+              : entry.representation,
+          selectionReason: entry.selectionReason,
+          sensitivity: entry.sensitivity,
+        })),
+        actor: localActor,
+      });
+      await refreshAgentContext(projectId);
+    },
+    async hydrate(projectId) {
+      return refreshAgentContext(projectId);
+    },
+    async proposeRevision(projectId, itemId, expectedVersion, revision, actor) {
+      const item = await apiClient.proposeAgentContextRevision(
+        projectId,
+        itemId,
+        { expectedVersion, revision, actor },
+      );
+      await refreshAgentContext(projectId);
+      return item;
+    },
+    async approveRevision(
+      projectId,
+      itemId,
+      revisionId,
+      expectedVersion,
+      actor,
+    ) {
+      const item = await apiClient.approveAgentContextRevision(
+        projectId,
+        itemId,
+        revisionId,
+        expectedVersion,
+        actor,
+      );
+      await refreshAgentContext(projectId);
+      return item;
+    },
+    async setLifecycle(projectId, itemId, action, expectedVersion, actor) {
+      const item = await apiClient.updateAgentContextLifecycle(
+        projectId,
+        itemId,
+        action,
+        expectedVersion,
+        actor,
+      );
+      await refreshAgentContext(projectId);
+      return item;
+    },
+    async savePack(projectId, input) {
+      const pack = await apiClient.saveAgentContextPack(projectId, input);
+      await refreshAgentContext(projectId);
+      return pack;
+    },
+    preview(projectId, input) {
+      return apiClient.previewAgentContextManifest(projectId, input);
+    },
+    async persist(projectId, input) {
+      const manifest = await apiClient.persistAgentContextManifest(
+        projectId,
+        input,
+      );
+      await refreshAgentContext(projectId);
+      return manifest;
+    },
+    createTransmissionApproval(projectId, input) {
+      return apiClient.createAgentContextTransmissionApproval(projectId, input);
+    },
+    revokeTransmissionApproval(projectId, approvalId, input) {
+      return apiClient.revokeAgentContextTransmissionApproval(
+        projectId,
+        approvalId,
+        input,
+      );
     },
   },
   agents: {
@@ -102,6 +272,54 @@ export const projectServices: ClyServices = {
         return;
       }
       throw new CapabilityUnavailableError("agents.execute");
+    },
+    async listConfigurations(projectId) {
+      return apiClient.fetchAgentConfigurations(projectId);
+    },
+    async saveConfiguration(projectId, configuration) {
+      const input: AgentConfigurationInput = {
+        name: configuration.name,
+        maxParallel: configuration.maxParallel,
+        maxTotalBudget: configuration.maxTotalBudget,
+        partialFailurePolicy: configuration.partialFailurePolicy,
+        roles: configuration.roles,
+      };
+      const persisted =
+        "revision" in configuration && "id" in configuration
+          ? await apiClient.updateAgentConfiguration(
+              projectId,
+              configuration.id,
+              configuration.revision,
+              input,
+            )
+          : await apiClient.createAgentConfiguration(projectId, input);
+      stateForProject(projectId)?.setAgentConfigurations([
+        ...(stateForProject(projectId)?.data.agentConfigurations ?? []).filter(
+          (item: AgentConfiguration) => item.id !== persisted.id,
+        ),
+        persisted,
+      ]);
+      return persisted;
+    },
+    async removeConfiguration(projectId, configurationId, expectedRevision) {
+      await apiClient.removeAgentConfiguration(
+        projectId,
+        configurationId,
+        expectedRevision,
+      );
+      const state = stateForProject(projectId);
+      state?.setAgentConfigurations(
+        (state.data.agentConfigurations ?? []).filter(
+          (item) => item.id !== configurationId,
+        ),
+      );
+    },
+    async estimateConfiguration(projectId, configurationId, configuration) {
+      return apiClient.estimateAgentConfiguration(
+        projectId,
+        configurationId,
+        configuration,
+      );
     },
   },
   experiments: {

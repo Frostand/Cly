@@ -3,6 +3,34 @@ import type {
   ExperimentDefinitionVersion,
   ExperimentLineage,
 } from "../../research/contracts/experiment-provenance";
+import type {
+  AgentConfiguration,
+  AgentConfigurationEstimate,
+  AgentConfigurationInput,
+  ClyDevContextManifest,
+  ClyDevEventInput,
+  ClyDevOutboundContext,
+  ClyDevSessionEvent,
+  ClyDevSessionOverviewPage,
+  ClyDevSessionRecord,
+  ClyDevSessionSnapshot,
+  ClyDevSessionState,
+  ClyDevTask,
+  ClyDevWorkspace,
+} from "../agent-sessions/types";
+import type {
+  AgentContextActor,
+  AgentContextItem,
+  AgentContextPack,
+  AgentContextRevision,
+  AgentContextSnapshot,
+  ContextManifestPreview,
+  ContextManifestRequest,
+  ContextRepresentation,
+  ContextSensitivity,
+  ContextTransmissionApproval,
+  PersistedContextManifest,
+} from "../domain/agent-context";
 import type { LiteraturePaper } from "../domain/literature-search";
 import type {
   DatasetObligation,
@@ -216,8 +244,215 @@ export const apiClient = {
     });
   },
 
+  fetchAgentConfigurations(projectId: string) {
+    return request<AgentConfiguration[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations`,
+    );
+  },
+
+  createAgentConfiguration(projectId: string, input: AgentConfigurationInput) {
+    return request<AgentConfiguration>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  updateAgentConfiguration(
+    projectId: string,
+    configurationId: string,
+    expectedRevision: number,
+    input: AgentConfigurationInput,
+  ) {
+    return request<AgentConfiguration>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations/${encodeURIComponent(configurationId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ ...input, expectedRevision }),
+      },
+    );
+  },
+
+  removeAgentConfiguration(
+    projectId: string,
+    configurationId: string,
+    expectedRevision: number,
+  ) {
+    return request<{ id: string; revision: number }>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations/${encodeURIComponent(configurationId)}`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ expectedRevision }),
+      },
+    );
+  },
+
+  estimateAgentConfiguration(
+    projectId: string,
+    configurationId: string,
+    configuration?: AgentConfigurationInput,
+  ) {
+    return request<AgentConfigurationEstimate>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-configurations/${encodeURIComponent(configurationId)}/estimate`,
+      {
+        method: "POST",
+        body: JSON.stringify(configuration ? { configuration } : {}),
+      },
+    );
+  },
+
   fetchResearchData(projectId: string) {
     return request<ResearchData>(projectPath(projectId));
+  },
+
+  fetchAgentContext(projectId: string) {
+    return request<AgentContextSnapshot>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context`,
+    );
+  },
+
+  createAgentContextItem(
+    projectId: string,
+    input: {
+      label: string;
+      revision: Omit<
+        AgentContextRevision,
+        "id" | "projectId" | "itemId" | "revision" | "createdAt"
+      >;
+      approve: boolean;
+      actor: AgentContextActor;
+    },
+  ) {
+    return request<AgentContextItem>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/items`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  proposeAgentContextRevision(
+    projectId: string,
+    itemId: string,
+    input: {
+      expectedVersion: number;
+      revision: Omit<
+        AgentContextRevision,
+        "id" | "projectId" | "itemId" | "revision" | "createdAt"
+      >;
+      actor: AgentContextActor;
+    },
+  ) {
+    return request<AgentContextItem>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/items/${encodeURIComponent(itemId)}/revisions`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  approveAgentContextRevision(
+    projectId: string,
+    itemId: string,
+    revisionId: string,
+    expectedVersion: number,
+    actor: AgentContextActor,
+  ) {
+    return request<AgentContextItem>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/items/${encodeURIComponent(itemId)}/revisions/${encodeURIComponent(revisionId)}/approve`,
+      {
+        method: "POST",
+        body: JSON.stringify({ expectedVersion, actor }),
+      },
+    );
+  },
+
+  updateAgentContextLifecycle(
+    projectId: string,
+    itemId: string,
+    action: "pin" | "unpin" | "lock" | "unlock" | "delete" | "restore",
+    expectedVersion: number,
+    actor: AgentContextActor,
+  ) {
+    return request<AgentContextItem>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/items/${encodeURIComponent(itemId)}/lifecycle`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action, expectedVersion, actor }),
+      },
+    );
+  },
+
+  saveAgentContextPack(
+    projectId: string,
+    input: {
+      id?: string;
+      name: string;
+      configurationId: string;
+      roleId: string;
+      expectedRevision?: number;
+      entries: Array<{
+        itemId: string;
+        revisionId: string;
+        representation: ContextRepresentation;
+        selectionReason: string;
+        sensitivity: ContextSensitivity;
+      }>;
+      actor: AgentContextActor;
+    },
+  ) {
+    return request<AgentContextPack>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/packs`,
+      { method: "PUT", body: JSON.stringify(input) },
+    );
+  },
+
+  previewAgentContextManifest(
+    projectId: string,
+    input: ContextManifestRequest,
+  ) {
+    return request<ContextManifestPreview>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/manifests/preview`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  persistAgentContextManifest(
+    projectId: string,
+    input: ContextManifestRequest & {
+      idempotencyKey: string;
+      expectedSha256: string;
+      transmissionApprovalId: string | null;
+    },
+  ) {
+    return request<PersistedContextManifest>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/manifests`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  createAgentContextTransmissionApproval(
+    projectId: string,
+    input: {
+      manifestSha256: string;
+      provider: string;
+      model: string;
+      restrictedReferenceIds: string[];
+      actorId: string;
+      rationale: string;
+      expiresAt: string | null;
+    },
+  ) {
+    return request<ContextTransmissionApproval>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/approvals`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  revokeAgentContextTransmissionApproval(
+    projectId: string,
+    approvalId: string,
+    input: { actorId: string; rationale: string },
+  ) {
+    return request<{ id: string; state: "revoked" }>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/approvals/${encodeURIComponent(approvalId)}/revoke`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
   },
 
   fetchExperimentLineages(projectId: string) {
@@ -636,6 +871,206 @@ export const apiClient = {
     return request<{ removed: boolean }>(
       `/api/projects/${encodeURIComponent(projectId)}/literature/reading-lists/${encodeURIComponent(listId)}/sources/${encodeURIComponent(sourceId)}`,
       { method: "DELETE" },
+    );
+  },
+
+  fetchClyDevWorkspaces(projectId: string) {
+    return request<ClyDevWorkspace[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces`,
+    );
+  },
+
+  createClyDevWorkspace(
+    projectId: string,
+    input: {
+      schemaVersion: 1;
+      idempotencyKey: string;
+      id?: string;
+      name: string;
+      repository: { id: string; remoteUrl?: string };
+      worktree: { id: string; branch: string; baseRef?: string };
+      machine: {
+        id: string;
+        platform: "darwin" | "linux" | "win32";
+        architecture?: string;
+      };
+      localOnly: { repositoryPath: string; worktreePath: string };
+    },
+  ) {
+    return request<ClyDevWorkspace>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  createClyDevContextManifest(
+    projectId: string,
+    workspaceId: string,
+    input: {
+      schemaVersion: 1;
+      idempotencyKey: string;
+      id?: string;
+      localOnly: {
+        absolutePaths?: string[];
+        environmentVariableNames?: string[];
+        notes?: string[];
+        uncommittedFilePaths?: string[];
+      };
+      transferable: {
+        summary: string;
+        entries: Array<Record<string, string>>;
+      };
+    },
+  ) {
+    return request<ClyDevContextManifest>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces/${encodeURIComponent(workspaceId)}/context-manifests`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  fetchClyDevTasks(projectId: string, workspaceId: string) {
+    return request<ClyDevTask[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces/${encodeURIComponent(workspaceId)}/tasks`,
+    );
+  },
+
+  createClyDevTask(
+    projectId: string,
+    workspaceId: string,
+    input: {
+      schemaVersion: 1;
+      idempotencyKey: string;
+      id?: string;
+      title: string;
+      objective: string;
+      researchObjectIds?: string[];
+    },
+  ) {
+    return request<ClyDevTask>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/workspaces/${encodeURIComponent(workspaceId)}/tasks`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  fetchClyDevSessionOverviews(projectId: string, offset = 0, limit = 50) {
+    return request<ClyDevSessionOverviewPage>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions?offset=${offset}&limit=${limit}`,
+    );
+  },
+
+  createClyDevSession(
+    projectId: string,
+    taskId: string,
+    input: {
+      schemaVersion: 1;
+      idempotencyKey: string;
+      id?: string;
+      title: string;
+      contextManifestId: string;
+      provider: { id: string; model: string };
+      commit: { sha: string };
+      state?: ClyDevSessionState;
+    },
+  ) {
+    return request<ClyDevSessionRecord>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/tasks/${encodeURIComponent(taskId)}/sessions`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  createClyDevSessionAggregate(
+    projectId: string,
+    input: {
+      workspace: {
+        schemaVersion: 1;
+        idempotencyKey: string;
+        id?: string;
+        name: string;
+        repository: { id: string; remoteUrl?: string };
+        worktree: { id: string; branch: string; baseRef?: string };
+        machine: {
+          id: string;
+          platform: "darwin" | "linux" | "win32";
+          architecture?: string;
+        };
+        localOnly: { repositoryPath: string; worktreePath: string };
+      };
+      contextManifest: {
+        schemaVersion: 1;
+        idempotencyKey: string;
+        id?: string;
+        localOnly: {
+          absolutePaths?: string[];
+          environmentVariableNames?: string[];
+          notes?: string[];
+          uncommittedFilePaths?: string[];
+        };
+        transferable: {
+          summary: string;
+          entries: Array<Record<string, string>>;
+        };
+      };
+      task: {
+        schemaVersion: 1;
+        idempotencyKey: string;
+        id?: string;
+        title: string;
+        objective: string;
+        researchObjectIds?: string[];
+      };
+      session: {
+        schemaVersion: 1;
+        idempotencyKey: string;
+        id?: string;
+        title: string;
+        provider: { id: string; model: string };
+        commit: { sha: string };
+        state?: ClyDevSessionState;
+      };
+    },
+  ) {
+    return request<{
+      workspace: ClyDevWorkspace;
+      contextManifest: ClyDevContextManifest;
+      task: ClyDevTask;
+      session: ClyDevSessionRecord;
+    }>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/session-aggregates`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  fetchClyDevSessionSnapshot(projectId: string, sessionId: string) {
+    return request<ClyDevSessionSnapshot>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}`,
+    );
+  },
+
+  fetchClyDevOutboundContext(projectId: string, sessionId: string) {
+    return request<ClyDevOutboundContext>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/context-envelope`,
+    );
+  },
+
+  fetchClyDevSessionEvents(
+    projectId: string,
+    sessionId: string,
+    afterSequence = 0,
+    limit = 100,
+  ) {
+    return request<ClyDevSessionEvent[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/events?afterSequence=${afterSequence}&limit=${limit}`,
+    );
+  },
+
+  appendClyDevSessionEvent(
+    projectId: string,
+    sessionId: string,
+    event: ClyDevEventInput,
+  ) {
+    return request<ClyDevSessionEvent>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/events`,
+      { method: "POST", body: JSON.stringify(event) },
     );
   },
 };

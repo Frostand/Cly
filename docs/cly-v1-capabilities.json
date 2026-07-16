@@ -142,12 +142,12 @@
   {
     "id": "context.edit",
     "route": "context",
-    "action": "Edit context inclusion, pinning, and representation",
-    "state": "unavailable",
-    "service": null,
-    "api": null,
-    "test": null,
-    "reason": "Context editing is unavailable until project-scoped context manifests are persisted with provenance."
+    "action": "Inspect revisions and edit project-scoped context packs",
+    "state": "production",
+    "service": "projectServices.context",
+    "api": "GET/POST/PUT /api/projects/:projectId/agent-context",
+    "test": "electron/api/research/context-repository.test.ts",
+    "reason": null
   },
   {
     "id": "notebooks.import",
@@ -222,22 +222,32 @@
   {
     "id": "agents.configure",
     "route": "models-agents",
-    "action": "Save an agent preset",
-    "state": "unavailable",
-    "service": null,
-    "api": null,
-    "test": null,
-    "reason": "Agent presets are unavailable until they are project-scoped and persisted."
+    "action": "Save an agent configuration",
+    "state": "production",
+    "service": "projectServices.agents.saveConfiguration",
+    "api": "GET/POST/PUT/DELETE /api/projects/:projectId/agent-configurations",
+    "test": "electron/api/agents/configuration-repository.test.ts",
+    "reason": null
+  },
+  {
+    "id": "agents.sessions-durable",
+    "route": "agent-sessions",
+    "action": "Persist and inspect durable agent session state",
+    "state": "production",
+    "service": "productionAgentSessionServices",
+    "api": "GET /api/projects/:projectId/cly-dev/sessions; POST /api/projects/:projectId/cly-dev/session-aggregates",
+    "test": "src/features/cly/agent-sessions/production-services.test.ts",
+    "reason": null
   },
   {
     "id": "agents.execute",
     "route": "agent-sessions",
     "action": "Start, pause, stop, or approve an agent session",
-    "state": "read-only-preview",
+    "state": "unavailable",
     "service": null,
     "api": null,
     "test": null,
-    "reason": "Agent Sessions is a read-only preview until a durable runtime and explicit approval service are connected."
+    "reason": "Process start, pause, stop, resume, and approval-gated tool execution remain unavailable until the CLY-76 runtime is connected."
   },
   {
     "id": "agents.workbench",

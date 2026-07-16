@@ -16,12 +16,17 @@ const canonicalize = (value) => {
   return value;
 };
 
-const hashApprovalAction = (request) =>
+export const hashApprovalAction = (request) =>
   createHash("sha256")
     .update(JSON.stringify(canonicalize(request)))
     .digest("hex");
 
-const inferApprovalScope = ({ id, projectId, request, runId }) => ({
+export const createToolApprovalBinding = ({
+  id,
+  projectId,
+  request,
+  runId,
+}) => ({
   actionHash: hashApprovalAction(request),
   projectId:
     projectId ??
@@ -67,7 +72,12 @@ export const waitForToolApproval = ({
   new Promise((resolve) => {
     let settled = false;
     const expiresAt = Date.now() + expiresInMs;
-    const binding = inferApprovalScope({ id, projectId, request, runId });
+    const binding = createToolApprovalBinding({
+      id,
+      projectId,
+      request,
+      runId,
+    });
     let expirationTimer;
 
     const finish = (response) => {
@@ -79,7 +89,7 @@ export const waitForToolApproval = ({
       clearTimeout(expirationTimer);
       signal?.removeEventListener("abort", handleAbort);
       pendingToolApprovals.delete(id);
-      resolve(response);
+      resolve({ ...response, ...binding, expiresAt });
     };
 
     const handleAbort = () => {

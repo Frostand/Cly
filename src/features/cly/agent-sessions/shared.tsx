@@ -12,6 +12,7 @@ import { Badge, Button, Dialog, Segmented } from "../components/primitives";
 import { useClyStore } from "../store/cly-store";
 import type {
   AgentIdentity,
+  AgentSession,
   AgentSessionsMode,
   NewAgentSessionInput,
 } from "./types";
@@ -41,6 +42,107 @@ export function AgentSessionsModeSwitcher({
         label="Agent Sessions mode"
       />
     </div>
+  );
+}
+
+const formatTokens = (value: number) =>
+  new Intl.NumberFormat("en", { notation: "compact" }).format(value);
+
+const formatCost = (minorUnits: number) => `$${(minorUnits / 100).toFixed(2)}`;
+
+export function ClyDevTaskIdentitySurface({
+  session,
+}: {
+  session: AgentSession;
+}) {
+  const identity = session.identity;
+  return (
+    <section className="cly-dev-task-identity" aria-label="Task identity">
+      <div className="cly-dev-identity-groups">
+        <IdentityGroup label="Project" value={identity.project.name} />
+        <IdentityGroup
+          label="Repository"
+          value={identity.repository.name}
+          detail={identity.repository.remote}
+        />
+        <IdentityGroup
+          label="Workspace"
+          value={identity.workspace.branch}
+          detail={
+            identity.workspace.worktree ??
+            identity.workspace.commit ??
+            "Primary checkout"
+          }
+          mono
+        />
+        <IdentityGroup
+          label="Machine"
+          value={identity.machine.name}
+          detail={identity.machine.id}
+        />
+        <IdentityGroup
+          label="Provider"
+          value={`${identity.provider.model} · ${identity.provider.reasoningLevel}`}
+          detail={identity.provider.id}
+        />
+        <IdentityGroup
+          label="Budget"
+          value={`${formatTokens(identity.budget.usedTokens)} / ${formatTokens(identity.budget.maxTokens)} tokens`}
+          detail={`${formatCost(identity.budget.usedCostMinorUnits)} / ${formatCost(identity.budget.maxCostMinorUnits)}`}
+        />
+        <IdentityGroup
+          label="Objective"
+          value={identity.objective.title}
+          detail={identity.objective.issueId}
+        />
+        <IdentityGroup
+          label="Research impact"
+          value={identity.researchImpact.summary}
+          detail={`${identity.researchImpact.risk} risk · ${identity.researchImpact.objectIds.length} objects`}
+        />
+      </div>
+    </section>
+  );
+}
+
+function IdentityGroup({
+  label,
+  value,
+  detail,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  mono?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <fieldset
+      className="cly-dev-identity-group"
+      title={[value, detail].filter(Boolean).join(" · ")}
+    >
+      <legend>{label}</legend>
+      <button
+        type="button"
+        className="cly-dev-identity-summary"
+        aria-label={`${expanded ? "Hide" : "Show"} full ${label} identity`}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span>
+          <strong data-mono={mono}>{value}</strong>
+          {detail ? <small>{detail}</small> : null}
+        </span>
+        <ChevronDown size={11} aria-hidden="true" />
+      </button>
+      {expanded ? (
+        <div className="cly-dev-identity-detail">
+          <strong data-mono={mono}>{value}</strong>
+          {detail ? <small>{detail}</small> : null}
+        </div>
+      ) : null}
+    </fieldset>
   );
 }
 
@@ -336,6 +438,88 @@ export function AgentConfigurationSheet() {
                 })
               }
             />
+            <label className="agent-field">
+              <span>Instance count</span>
+              <input
+                type="number"
+                min={1}
+                value={active.instanceCount ?? 1}
+                onChange={(event) =>
+                  setDraft({
+                    ...active,
+                    instanceCount: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="agent-field">
+              <span>Role parallel cap</span>
+              <input
+                type="number"
+                min={1}
+                value={active.maxParallel ?? 1}
+                onChange={(event) =>
+                  setDraft({
+                    ...active,
+                    maxParallel: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            {(
+              [
+                ["maxInputTokens", "Input token cap", 32000],
+                ["maxOutputTokens", "Output token cap", 8000],
+                ["maxCostMinorUnits", "Cost cap (minor units)", 500],
+                ["maxRuntimeMs", "Runtime cap (ms)", 2700000],
+              ] as const
+            ).map(([key, label, fallback]) => (
+              <label className="agent-field" key={key}>
+                <span>{label}</span>
+                <input
+                  type="number"
+                  min={key === "maxRuntimeMs" ? 1 : 0}
+                  value={active.budget?.[key] ?? fallback}
+                  onChange={(event) =>
+                    setDraft({
+                      ...active,
+                      budget: {
+                        maxInputTokens: active.budget?.maxInputTokens ?? 32000,
+                        maxOutputTokens: active.budget?.maxOutputTokens ?? 8000,
+                        maxCostMinorUnits:
+                          active.budget?.maxCostMinorUnits ?? 500,
+                        maxRuntimeMs: active.budget?.maxRuntimeMs ?? 2700000,
+                        [key]: Number(event.target.value),
+                      },
+                    })
+                  }
+                />
+              </label>
+            ))}
+            {(
+              [
+                ["tools", "Allowed tools"],
+                ["allowedContextSources", "Context sources"],
+                ["allowedFileGlobs", "File globs"],
+                ["approvalCheckpoints", "Approval checkpoints"],
+              ] as const
+            ).map(([key, label]) => (
+              <label className="agent-field" key={key}>
+                <span>{label}</span>
+                <input
+                  value={(active[key] ?? []).join(", ")}
+                  onChange={(event) =>
+                    setDraft({
+                      ...active,
+                      [key]: event.target.value
+                        .split(",")
+                        .map((item) => item.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                />
+              </label>
+            ))}
             <label className="agent-field agent-field-wide">
               <span>Task</span>
               <textarea
