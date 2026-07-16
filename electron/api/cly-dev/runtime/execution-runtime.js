@@ -39,8 +39,16 @@ const outboundContextSchema = z
   .strict();
 const forbiddenContextKey =
   /(?:password|secret|token|credential|api[_-]?key|environment(?:value|values)|absolute(?:path|paths)|cache|dataset|process|terminal|local[_-]?only|providerconfig)/i;
-const forbiddenContextString =
-  /(?:^\s*(?:\/|[a-z]:[\\/]|\\\\)|-----BEGIN [^-]*PRIVATE KEY-----|\bbearer\s+\S+|\b(?:api[_-]?key|token|password|secret|credential)\s*[:=]\s*\S+)/i;
+const forbiddenContextStrings = [
+  /(?:^|[\s("'`[{=:,])\/(?!\/)(?:[^/\s"'<>]+\/)*[^/\s"'<>]+/i,
+  /(?:^|[\s("'`[{=,])(?:[a-z]:[\\/]|\\\\)[^\s"'<>]+/i,
+  /-----BEGIN [^-]*(?:PRIVATE|SECRET) KEY-----/i,
+  /\bauthorization\s*[:=]\s*(?:(?:bearer|basic)\s+)?\S+/i,
+  /\b(?:bearer|basic)\s+[a-z0-9+/._~=-]{4,}/i,
+  /\b(?:sk-(?:ant-)?[a-z0-9_-]{6,}|gh[pousr]_[a-z0-9]{10,}|github_pat_[a-z0-9_]{10,}|akia[0-9a-z]{16}|aiza[0-9a-z_-]{20,}|xox[baprs]-[a-z0-9-]{8,}|npm_[a-z0-9]{10,}|eyj[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,})\b/i,
+  /\b(?:api[_ -]?key|access[_ -]?key|credential|secret|token|password|auth(?:entication)?)\b\s*(?::|=|\bis\b|\bwas\b|\bvalue\b|\bof\b)\s*["']?\S+/i,
+  /\b(?:openai|anthropic|github|gitlab|aws|azure|google|slack|npm)\s+(?:api\s+)?(?:key|token|credential|secret)\s*(?::|=|\bis\b)\s*["']?\S+/i,
+];
 const CAPABILITY_FIELDS = [
   "streaming",
   "reasoning",
@@ -99,7 +107,9 @@ const normalizeOutbound = (outbound) => {
 };
 
 const hasForbiddenContextMaterial = (value) => {
-  if (typeof value === "string") return forbiddenContextString.test(value);
+  if (typeof value === "string") {
+    return forbiddenContextStrings.some((pattern) => pattern.test(value));
+  }
   if (Array.isArray(value)) return value.some(hasForbiddenContextMaterial);
   if (!value || typeof value !== "object") return false;
   return Object.entries(value).some(
@@ -250,6 +260,10 @@ const stableToolKey = ({ projectId, sessionId, requestId }, toolCallId) =>
   `cly-dev:${projectId}:${sessionId}:${requestId}:tool:${toolCallId}`;
 const executionScopeKey = ({ projectId, sessionId, requestId }) =>
   JSON.stringify([projectId, sessionId, requestId]);
+const providerExecutionId = (scope) =>
+  `cly-dev-execution-${createHash("sha256")
+    .update(executionScopeKey(scope))
+    .digest("hex")}`;
 
 const getApproval = (approvals, toolCallId) => {
   if (typeof approvals === "function") return approvals(toolCallId);
@@ -372,9 +386,10 @@ export function createClyDevExecutionRuntime(options = {}) {
     request.signal?.addEventListener("abort", abortFromCaller, { once: true });
     if (request.signal?.aborted) controller.abort();
     const activeKey = executionScopeKey(request);
-    const activeControllers = active.get(activeKey) ?? new Set();
-    activeControllers.add(controller);
-    active.set(activeKey, activeControllers);
+    const scopedProviderExecutionId = providerExecutionId(request);
+    const activeExecutions = active.get(activeKey) ?? new Map();
+    activeExecutions.set(controller, scopedProviderExecutionId);
+    active.set(activeKey, activeExecutions);
 
     try {
       const requestVersionError = validateRequestVersion(request);
@@ -476,6 +491,9 @@ export function createClyDevExecutionRuntime(options = {}) {
 
       const providerRequest = {
         ...request,
+        clientRequestId: request.requestId,
+        executionId: scopedProviderExecutionId,
+        requestId: scopedProviderExecutionId,
         signal: undefined,
         context: outbound.egress,
         contextBytes: outbound.egressBytes,
@@ -539,7 +557,7 @@ export function createClyDevExecutionRuntime(options = {}) {
             );
             const exhausted = budgetFailure(request.budget, event);
             if (exhausted) {
-              await provider.cancel(request.requestId);
+              await provider.cancel(scopedProviderExecutionId);
               controller.abort();
               return appendFailure(
                 request,
@@ -595,7 +613,7 @@ export function createClyDevExecutionRuntime(options = {}) {
                 "UNSUPPORTED_PROVIDER_CAPABILITY",
                 "The provider emitted a tool call without declaring tool-call support.",
               );
-              await provider.cancel(request.requestId);
+              await provider.cancel(scopedProviderExecutionId);
               controller.abort();
               return appendFailure(
                 request,
@@ -637,7 +655,7 @@ export function createClyDevExecutionRuntime(options = {}) {
               );
             }
             if (gateDecision.type === "pending") {
-              await provider.cancel(request.requestId);
+              await provider.cancel(scopedProviderExecutionId);
               controller.abort();
               return {
                 status: "awaiting_approval",
@@ -667,7 +685,7 @@ export function createClyDevExecutionRuntime(options = {}) {
               );
             }
             if (gateDecision.type !== "allow") {
-              await provider.cancel(request.requestId);
+              await provider.cancel(scopedProviderExecutionId);
               controller.abort();
               const denied = new RuntimeError(
                 gateDecision.code ?? "TOOL_EFFECT_DENIED",
@@ -780,7 +798,7 @@ export function createClyDevExecutionRuntime(options = {}) {
                   now,
                 }),
               );
-              await provider.cancel(request.requestId);
+              await provider.cancel(scopedProviderExecutionId);
               controller.abort();
               return appendFailure(request, normalized, `${resultKey}:failure`);
             }
@@ -816,9 +834,9 @@ export function createClyDevExecutionRuntime(options = {}) {
       }
     } finally {
       request.signal?.removeEventListener("abort", abortFromCaller);
-      const controllers = active.get(activeKey);
-      controllers?.delete(controller);
-      if (controllers?.size === 0) active.delete(activeKey);
+      const executions = active.get(activeKey);
+      executions?.delete(controller);
+      if (executions?.size === 0) active.delete(activeKey);
     }
   };
 
@@ -838,10 +856,11 @@ export function createClyDevExecutionRuntime(options = {}) {
           "Cancellation requires projectId, sessionId, and requestId scope.",
         );
       }
-      for (const controller of active.get(executionScopeKey(scope)) ?? []) {
+      const executions = active.get(executionScopeKey(scope)) ?? new Map();
+      for (const [controller, executionId] of executions) {
         controller.abort();
+        await provider.cancel(executionId);
       }
-      await provider.cancel(scope.requestId);
     },
   });
 }

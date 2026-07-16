@@ -36,7 +36,13 @@ const abortableWait = (milliseconds, signal) =>
 const scriptFor = (script, request) => {
   if (typeof script === "function") return script(request);
   if (Array.isArray(script)) return script;
-  return script?.[request.requestId] ?? script?.default ?? [];
+  return (
+    script?.[request.executionId] ??
+    script?.[request.clientRequestId] ??
+    script?.[request.requestId] ??
+    script?.default ??
+    []
+  );
 };
 
 export function createDeterministicMockProvider(script, options = {}) {
@@ -61,11 +67,11 @@ export function createDeterministicMockProvider(script, options = {}) {
     },
     async *stream(request, { signal } = {}) {
       const controller = new AbortController();
-      const requestId = request.requestId;
+      const executionId = request.executionId ?? request.requestId;
       const cancel = () => controller.abort();
       signal?.addEventListener("abort", cancel, { once: true });
       if (signal?.aborted) controller.abort();
-      active.set(requestId, controller);
+      active.set(executionId, controller);
       try {
         for (const event of await scriptFor(script, request)) {
           if (controller.signal.aborted) throw abortError();
@@ -81,11 +87,11 @@ export function createDeterministicMockProvider(script, options = {}) {
         }
       } finally {
         signal?.removeEventListener("abort", cancel);
-        active.delete(requestId);
+        active.delete(executionId);
       }
     },
-    async cancel(requestId) {
-      active.get(requestId)?.abort();
+    async cancel(executionId) {
+      active.get(executionId)?.abort();
     },
     normalizeError: normalizeProviderError,
   });

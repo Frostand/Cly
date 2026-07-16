@@ -251,6 +251,36 @@ describe("reviewed Cly Dev security invariants", () => {
   it.each([
     ["secret field", { manifest: { secret: "sk-private" } }],
     ["absolute path", { manifest: { summary: "/Users/alice/private.txt" } }],
+    [
+      "embedded Unix absolute path",
+      { manifest: { summary: "Failure at /Users/alice/private.txt" } },
+    ],
+    [
+      "embedded Windows absolute path",
+      {
+        manifest: {
+          summary: String.raw`Failure at C:\Users\alice\private.txt`,
+        },
+      },
+    ],
+    [
+      "credential prose",
+      { manifest: { summary: "credential is sk-private-value" } },
+    ],
+    [
+      "authorization material",
+      { manifest: { summary: "Authorization: Basic dXNlcjpwYXNz" } },
+    ],
+    [
+      "known provider token",
+      {
+        manifest: { summary: "Observed token ghp_1234567890abcdefghijklmnop" },
+      },
+    ],
+    [
+      "private key material",
+      { manifest: { summary: "-----BEGIN OPENSSH PRIVATE KEY-----" } },
+    ],
     ["environment value", { manifest: { environmentValue: "private" } }],
     ["process cache", { process: { cache: "private" } }],
     [
@@ -406,6 +436,56 @@ describe("reviewed Cly Dev security invariants", () => {
       requestId: request.requestId,
     });
     await expect(running).resolves.toMatchObject({ status: "canceled" });
+  });
+
+  it("isolates provider cancellation for identical request ids in different projects", async () => {
+    const strict = createStrictAppender();
+    const provider = createDeterministicMockProvider([
+      { type: "wait_until_canceled" },
+      { type: "completed" },
+    ]);
+    const runtime = createClyDevExecutionRuntime({
+      provider,
+      appendEvent: strict.appendEvent,
+      buildOutboundContext: async () => outboundFor(),
+      approvalGate: createApprovalGate({ projectPolicy: { default: "deny" } }),
+      executeTool: vi.fn(),
+      durableToolEffects: createAtomicEffects(),
+      now: () => initialTime,
+    });
+    const firstRequest = { ...request, projectId: "project-1" };
+    const secondRequest = { ...request, projectId: "project-2" };
+    let secondSettled = false;
+    const first = runtime.execute(firstRequest);
+    const second = runtime.execute(secondRequest).then((result) => {
+      secondSettled = true;
+      return result;
+    });
+    await vi.waitFor(
+      () =>
+        expect(
+          strict.events.filter(
+            (event) => event.type === "context.manifest.recorded",
+          ),
+        ).toHaveLength(2),
+      { timeout: 1_000 },
+    );
+
+    await runtime.cancel({
+      projectId: firstRequest.projectId,
+      sessionId: firstRequest.sessionId,
+      requestId: firstRequest.requestId,
+    });
+    await expect(first).resolves.toMatchObject({ status: "canceled" });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(secondSettled).toBe(false);
+
+    await runtime.cancel({
+      projectId: secondRequest.projectId,
+      sessionId: secondRequest.sessionId,
+      requestId: secondRequest.requestId,
+    });
+    await expect(second).resolves.toMatchObject({ status: "canceled" });
   });
 
   it("removes mock-provider delay abort listeners after a settled wait", async () => {

@@ -40,9 +40,9 @@ export function createProductionClyDevProvider({
       if (!runner) throw unavailable();
       yield* runner.stream(request, context);
     },
-    async cancel(requestId) {
+    async cancel(executionId) {
       if (!runner) return;
-      await runner.cancel(requestId);
+      await runner.cancel(executionId);
     },
     normalizeError,
   });
