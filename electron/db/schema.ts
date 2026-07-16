@@ -1433,3 +1433,430 @@ export const clyDevApprovals = sqliteTable(
     ),
   ],
 );
+
+export const agentContextItems = sqliteTable(
+  "agent_context_items",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    approvedRevisionId: text("approved_revision_id"),
+    pinned: integer("pinned").notNull().default(0),
+    locked: integer("locked").notNull().default(0),
+    deletedAt: text("deleted_at"),
+    version: integer("version").notNull().default(1),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_context_items_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    index("idx_agent_context_items_project_updated").on(
+      table.projectId,
+      sql`${table.updatedAt} DESC`,
+      table.id,
+    ),
+    check("agent_context_items_pinned", sql`${table.pinned} IN (0, 1)`),
+    check("agent_context_items_locked", sql`${table.locked} IN (0, 1)`),
+    check("agent_context_items_version", sql`${table.version} >= 1`),
+  ],
+);
+
+export const agentContextRevisions = sqliteTable(
+  "agent_context_revisions",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    itemId: text("item_id").notNull(),
+    revision: integer("revision").notNull(),
+    originClass: text("origin_class").notNull(),
+    referenceId: text("reference_id").notNull(),
+    content: text("content").notNull(),
+    confidence: real("confidence"),
+    evidenceRefsJson: text("evidence_refs_json").notNull(),
+    lastCheckedAt: text("last_checked_at"),
+    producerProcess: text("producer_process").notNull(),
+    producerModel: text("producer_model"),
+    verificationState: text("verification_state").notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.itemId, table.projectId],
+      foreignColumns: [agentContextItems.id, agentContextItems.projectId],
+      name: "agent_context_revisions_item_project_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("agent_context_revisions_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("agent_context_revisions_item_revision_unique").on(
+      table.itemId,
+      table.revision,
+    ),
+    index("idx_agent_context_revisions_item").on(
+      table.projectId,
+      table.itemId,
+      sql`${table.revision} DESC`,
+    ),
+    check(
+      "agent_context_revisions_origin",
+      sql`${table.originClass} IN ('approved_fact','inferred_fact','source_passage','file','conversation','graph_object')`,
+    ),
+    check(
+      "agent_context_revisions_confidence",
+      sql`${table.confidence} IS NULL OR (${table.confidence} >= 0 AND ${table.confidence} <= 1)`,
+    ),
+    check(
+      "agent_context_revisions_evidence_json",
+      sql`json_valid(${table.evidenceRefsJson}) AND json_type(${table.evidenceRefsJson}) = 'array'`,
+    ),
+    check(
+      "agent_context_revisions_verification",
+      sql`${table.verificationState} IN ('unverified','verified','stale','conflicted')`,
+    ),
+    check(
+      "agent_context_revisions_sensitivity",
+      sql`${table.sensitivity} IN ('standard','restricted','local_only')`,
+    ),
+    check("agent_context_revisions_number", sql`${table.revision} >= 1`),
+  ],
+);
+
+export const agentContextPacks = sqliteTable(
+  "agent_context_packs",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    name: text("name").notNull(),
+    configurationId: text("configuration_id").notNull(),
+    roleId: text("role_id").notNull(),
+    revision: integer("revision").notNull().default(1),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.id],
+      name: "agent_context_packs_project_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.configurationId, table.projectId],
+      foreignColumns: [agentConfigurations.id, agentConfigurations.projectId],
+      name: "agent_context_packs_configuration_project_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.configurationId, table.roleId],
+      foreignColumns: [
+        agentRoleConfigurations.configurationId,
+        agentRoleConfigurations.id,
+      ],
+      name: "agent_context_packs_configuration_role_fk",
+    }),
+    uniqueIndex("agent_context_packs_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("agent_context_packs_project_name_unique").on(
+      table.projectId,
+      table.name,
+    ),
+    check("agent_context_packs_revision", sql`${table.revision} >= 1`),
+  ],
+);
+
+export const agentContextPackEntries = sqliteTable(
+  "agent_context_pack_entries",
+  {
+    packId: text("pack_id").notNull(),
+    projectId: text("project_id").notNull(),
+    position: integer("position").notNull(),
+    itemId: text("item_id").notNull(),
+    revisionId: text("revision_id").notNull(),
+    representation: text("representation").notNull(),
+    selectionReason: text("selection_reason").notNull(),
+    sensitivity: text("sensitivity").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.packId, table.position] }),
+    foreignKey({
+      columns: [table.packId, table.projectId],
+      foreignColumns: [agentContextPacks.id, agentContextPacks.projectId],
+      name: "agent_context_pack_entries_pack_project_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.itemId, table.projectId],
+      foreignColumns: [agentContextItems.id, agentContextItems.projectId],
+      name: "agent_context_pack_entries_item_project_fk",
+    }),
+    foreignKey({
+      columns: [table.revisionId, table.projectId],
+      foreignColumns: [
+        agentContextRevisions.id,
+        agentContextRevisions.projectId,
+      ],
+      name: "agent_context_pack_entries_revision_project_fk",
+    }),
+    check("agent_context_pack_entries_position", sql`${table.position} >= 0`),
+    check(
+      "agent_context_pack_entries_representation",
+      sql`${table.representation} IN ('raw','summary')`,
+    ),
+    check(
+      "agent_context_pack_entries_sensitivity",
+      sql`${table.sensitivity} IN ('standard','restricted','local_only')`,
+    ),
+  ],
+);
+
+export const agentContextTransmissionApprovals = sqliteTable(
+  "agent_context_transmission_approvals",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    manifestSha256: text("manifest_sha256").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    restrictedReferenceIdsJson: text("restricted_reference_ids_json").notNull(),
+    actorId: text("actor_id").notNull(),
+    rationale: text("rationale").notNull(),
+    state: text("state").notNull(),
+    expiresAt: text("expires_at"),
+    createdAt: text("created_at").notNull(),
+    revokedAt: text("revoked_at"),
+  },
+  (table) => [
+    uniqueIndex("agent_context_approvals_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    check(
+      "agent_context_approvals_sha",
+      sql`length(${table.manifestSha256}) = 64 AND ${table.manifestSha256} = lower(${table.manifestSha256}) AND ${table.manifestSha256} NOT GLOB '*[^0-9a-f]*'`,
+    ),
+    check(
+      "agent_context_approvals_references_json",
+      sql`json_valid(${table.restrictedReferenceIdsJson}) AND json_type(${table.restrictedReferenceIdsJson}) = 'array'`,
+    ),
+    check(
+      "agent_context_approvals_state",
+      sql`${table.state} IN ('approved','revoked')`,
+    ),
+    check(
+      "agent_context_approvals_revocation_state",
+      sql`(${table.state} = 'approved' AND ${table.revokedAt} IS NULL) OR (${table.state} = 'revoked' AND ${table.revokedAt} IS NOT NULL)`,
+    ),
+    check(
+      "agent_context_approvals_expiry",
+      sql`${table.expiresAt} IS NULL OR julianday(${table.expiresAt}) IS NOT NULL`,
+    ),
+  ],
+);
+
+export const agentContextManifests = sqliteTable(
+  "agent_context_manifests",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    packId: text("pack_id").notNull(),
+    configurationId: text("configuration_id").notNull(),
+    roleId: text("role_id").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    canonicalPayload: text("canonical_payload").notNull(),
+    sha256: text("sha256").notNull(),
+    totalTokens: integer("total_tokens").notNull(),
+    entryCount: integer("entry_count").notNull(),
+    excludedJson: text("excluded_json").notNull(),
+    privacyWarningsJson: text("privacy_warnings_json").notNull(),
+    selectedObjectIdsJson: text("selected_object_ids_json").notNull(),
+    obligationOperationJson: text("obligation_operation_json").notNull(),
+    obligationOperationHash: text("obligation_operation_hash").notNull(),
+    obligationEvaluationHash: text("obligation_evaluation_hash").notNull(),
+    transmissionApprovalId: text("transmission_approval_id"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.id],
+      name: "agent_context_manifests_project_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.packId, table.projectId],
+      foreignColumns: [agentContextPacks.id, agentContextPacks.projectId],
+      name: "agent_context_manifests_pack_project_fk",
+    }),
+    foreignKey({
+      columns: [table.configurationId, table.projectId],
+      foreignColumns: [agentConfigurations.id, agentConfigurations.projectId],
+      name: "agent_context_manifests_configuration_project_fk",
+    }),
+    foreignKey({
+      columns: [table.configurationId, table.roleId],
+      foreignColumns: [
+        agentRoleConfigurations.configurationId,
+        agentRoleConfigurations.id,
+      ],
+      name: "agent_context_manifests_configuration_role_fk",
+    }),
+    foreignKey({
+      columns: [table.transmissionApprovalId, table.projectId],
+      foreignColumns: [
+        agentContextTransmissionApprovals.id,
+        agentContextTransmissionApprovals.projectId,
+      ],
+      name: "agent_context_manifests_approval_project_fk",
+    }),
+    uniqueIndex("agent_context_manifests_id_project_unique").on(
+      table.id,
+      table.projectId,
+    ),
+    uniqueIndex("agent_context_manifests_idempotency_unique").on(
+      table.projectId,
+      table.idempotencyKey,
+    ),
+    check("agent_context_manifests_schema", sql`${table.schemaVersion} = 1`),
+    check(
+      "agent_context_manifests_sha",
+      sql`length(${table.sha256}) = 64 AND ${table.sha256} = lower(${table.sha256}) AND ${table.sha256} NOT GLOB '*[^0-9a-f]*'`,
+    ),
+    check("agent_context_manifests_tokens", sql`${table.totalTokens} >= 0`),
+    check("agent_context_manifests_entry_count", sql`${table.entryCount} >= 0`),
+    check(
+      "agent_context_manifests_excluded_json",
+      sql`json_valid(${table.excludedJson}) AND json_type(${table.excludedJson}) = 'array'`,
+    ),
+    check(
+      "agent_context_manifests_canonical_json",
+      sql`json_valid(${table.canonicalPayload}) AND json_type(${table.canonicalPayload}) = 'object'`,
+    ),
+    check(
+      "agent_context_manifests_canonical_entry_count",
+      sql`${table.entryCount} = json_array_length(json_extract(${table.canonicalPayload}, '$.entries'))`,
+    ),
+    check(
+      "agent_context_manifests_warnings_json",
+      sql`json_valid(${table.privacyWarningsJson}) AND json_type(${table.privacyWarningsJson}) = 'array'`,
+    ),
+    check(
+      "agent_context_manifests_objects_json",
+      sql`json_valid(${table.selectedObjectIdsJson}) AND json_type(${table.selectedObjectIdsJson}) = 'array'`,
+    ),
+    check(
+      "agent_context_manifests_operation_json",
+      sql`json_valid(${table.obligationOperationJson}) AND json_type(${table.obligationOperationJson}) = 'object'`,
+    ),
+    check(
+      "agent_context_manifests_operation_hash",
+      sql`length(${table.obligationOperationHash}) = 64 AND ${table.obligationOperationHash} = lower(${table.obligationOperationHash}) AND ${table.obligationOperationHash} NOT GLOB '*[^0-9a-f]*'`,
+    ),
+    check(
+      "agent_context_manifests_evaluation_hash",
+      sql`length(${table.obligationEvaluationHash}) = 64 AND ${table.obligationEvaluationHash} = lower(${table.obligationEvaluationHash}) AND ${table.obligationEvaluationHash} NOT GLOB '*[^0-9a-f]*'`,
+    ),
+  ],
+);
+
+export const agentContextManifestEntries = sqliteTable(
+  "agent_context_manifest_entries",
+  {
+    manifestId: text("manifest_id").notNull(),
+    projectId: text("project_id").notNull(),
+    position: integer("position").notNull(),
+    itemId: text("item_id").notNull(),
+    revisionId: text("revision_id").notNull(),
+    kind: text("kind").notNull(),
+    referenceId: text("reference_id").notNull(),
+    representation: text("representation").notNull(),
+    tokenEstimate: integer("token_estimate").notNull(),
+    selectionReason: text("selection_reason").notNull(),
+    sensitivity: text("sensitivity").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.manifestId, table.position] }),
+    foreignKey({
+      columns: [table.manifestId, table.projectId],
+      foreignColumns: [
+        agentContextManifests.id,
+        agentContextManifests.projectId,
+      ],
+      name: "agent_context_manifest_entries_manifest_project_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.itemId, table.projectId],
+      foreignColumns: [agentContextItems.id, agentContextItems.projectId],
+      name: "agent_context_manifest_entries_item_project_fk",
+    }),
+    foreignKey({
+      columns: [table.revisionId, table.projectId],
+      foreignColumns: [
+        agentContextRevisions.id,
+        agentContextRevisions.projectId,
+      ],
+      name: "agent_context_manifest_entries_revision_project_fk",
+    }),
+    check(
+      "agent_context_manifest_entries_position",
+      sql`${table.position} >= 0`,
+    ),
+    check(
+      "agent_context_manifest_entries_tokens",
+      sql`${table.tokenEstimate} >= 0`,
+    ),
+    check(
+      "agent_context_manifest_entries_kind",
+      sql`${table.kind} IN ('approved_fact','inferred_fact','source_passage','file','conversation','graph_object')`,
+    ),
+    check(
+      "agent_context_manifest_entries_representation",
+      sql`${table.representation} IN ('raw','summary')`,
+    ),
+    check(
+      "agent_context_manifest_entries_sensitivity",
+      sql`${table.sensitivity} IN ('standard','restricted')`,
+    ),
+  ],
+);
+
+export const agentContextAuditEvents = sqliteTable(
+  "agent_context_audit_events",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    itemId: text("item_id"),
+    packId: text("pack_id"),
+    manifestId: text("manifest_id"),
+    action: text("action").notNull(),
+    actorId: text("actor_id").notNull(),
+    producerProcess: text("producer_process").notNull(),
+    producerModel: text("producer_model"),
+    beforeRevisionId: text("before_revision_id"),
+    afterRevisionId: text("after_revision_id"),
+    metadataJson: text("metadata_json").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("idx_agent_context_audit_project_created").on(
+      table.projectId,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "agent_context_audit_metadata_json",
+      sql`json_valid(${table.metadataJson})`,
+    ),
+  ],
+);

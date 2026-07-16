@@ -142,12 +142,12 @@
   {
     "id": "context.edit",
     "route": "context",
-    "action": "Edit context inclusion, pinning, and representation",
-    "state": "unavailable",
-    "service": null,
-    "api": null,
-    "test": null,
-    "reason": "Context editing is unavailable until project-scoped context manifests are persisted with provenance."
+    "action": "Inspect revisions and edit project-scoped context packs",
+    "state": "production",
+    "service": "projectServices.context",
+    "api": "GET/POST/PUT /api/projects/:projectId/agent-context",
+    "test": "electron/api/research/context-repository.test.ts",
+    "reason": null
   },
   {
     "id": "notebooks.import",

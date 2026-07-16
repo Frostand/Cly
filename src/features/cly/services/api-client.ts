@@ -18,6 +18,19 @@ import type {
   ClyDevTask,
   ClyDevWorkspace,
 } from "../agent-sessions/types";
+import type {
+  AgentContextActor,
+  AgentContextItem,
+  AgentContextPack,
+  AgentContextRevision,
+  AgentContextSnapshot,
+  ContextManifestPreview,
+  ContextManifestRequest,
+  ContextRepresentation,
+  ContextSensitivity,
+  ContextTransmissionApproval,
+  PersistedContextManifest,
+} from "../domain/agent-context";
 import type { LiteraturePaper } from "../domain/literature-search";
 import type {
   DatasetObligation,
@@ -289,6 +302,157 @@ export const apiClient = {
 
   fetchResearchData(projectId: string) {
     return request<ResearchData>(projectPath(projectId));
+  },
+
+  fetchAgentContext(projectId: string) {
+    return request<AgentContextSnapshot>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context`,
+    );
+  },
+
+  createAgentContextItem(
+    projectId: string,
+    input: {
+      label: string;
+      revision: Omit<
+        AgentContextRevision,
+        "id" | "projectId" | "itemId" | "revision" | "createdAt"
+      >;
+      approve: boolean;
+      actor: AgentContextActor;
+    },
+  ) {
+    return request<AgentContextItem>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/items`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  proposeAgentContextRevision(
+    projectId: string,
+    itemId: string,
+    input: {
+      expectedVersion: number;
+      revision: Omit<
+        AgentContextRevision,
+        "id" | "projectId" | "itemId" | "revision" | "createdAt"
+      >;
+      actor: AgentContextActor;
+    },
+  ) {
+    return request<AgentContextItem>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/items/${encodeURIComponent(itemId)}/revisions`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  approveAgentContextRevision(
+    projectId: string,
+    itemId: string,
+    revisionId: string,
+    expectedVersion: number,
+    actor: AgentContextActor,
+  ) {
+    return request<AgentContextItem>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/items/${encodeURIComponent(itemId)}/revisions/${encodeURIComponent(revisionId)}/approve`,
+      {
+        method: "POST",
+        body: JSON.stringify({ expectedVersion, actor }),
+      },
+    );
+  },
+
+  updateAgentContextLifecycle(
+    projectId: string,
+    itemId: string,
+    action: "pin" | "unpin" | "lock" | "unlock" | "delete" | "restore",
+    expectedVersion: number,
+    actor: AgentContextActor,
+  ) {
+    return request<AgentContextItem>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/items/${encodeURIComponent(itemId)}/lifecycle`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action, expectedVersion, actor }),
+      },
+    );
+  },
+
+  saveAgentContextPack(
+    projectId: string,
+    input: {
+      id?: string;
+      name: string;
+      configurationId: string;
+      roleId: string;
+      expectedRevision?: number;
+      entries: Array<{
+        itemId: string;
+        revisionId: string;
+        representation: ContextRepresentation;
+        selectionReason: string;
+        sensitivity: ContextSensitivity;
+      }>;
+      actor: AgentContextActor;
+    },
+  ) {
+    return request<AgentContextPack>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/packs`,
+      { method: "PUT", body: JSON.stringify(input) },
+    );
+  },
+
+  previewAgentContextManifest(
+    projectId: string,
+    input: ContextManifestRequest,
+  ) {
+    return request<ContextManifestPreview>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/manifests/preview`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  persistAgentContextManifest(
+    projectId: string,
+    input: ContextManifestRequest & {
+      idempotencyKey: string;
+      expectedSha256: string;
+      transmissionApprovalId: string | null;
+    },
+  ) {
+    return request<PersistedContextManifest>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/manifests`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  createAgentContextTransmissionApproval(
+    projectId: string,
+    input: {
+      manifestSha256: string;
+      provider: string;
+      model: string;
+      restrictedReferenceIds: string[];
+      actorId: string;
+      rationale: string;
+      expiresAt: string | null;
+    },
+  ) {
+    return request<ContextTransmissionApproval>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/approvals`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  revokeAgentContextTransmissionApproval(
+    projectId: string,
+    approvalId: string,
+    input: { actorId: string; rationale: string },
+  ) {
+    return request<{ id: string; state: "revoked" }>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-context/approvals/${encodeURIComponent(approvalId)}/revoke`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
   },
 
   fetchExperimentLineages(projectId: string) {

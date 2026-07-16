@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentContextSnapshot } from "../domain/agent-context";
 import { createCostLedgerFixture } from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
+import { apiClient } from "../services/api-client";
 import { mockServices } from "../services/mock-services";
 import { resolveInitialFixtureMode, useClyStore } from "./cly-store";
 
@@ -18,6 +20,7 @@ describe("Cly UI store", () => {
   });
 
   beforeEach(() => {
+    vi.restoreAllMocks();
     const data = createFixtureRepository("active");
     const costs = createCostLedgerFixture("active", data);
     useClyStore.setState({
@@ -38,10 +41,22 @@ describe("Cly UI store", () => {
       preregistrations: [],
       preregistrationsLoading: false,
       preregistrationsError: null,
+      agentContext: { items: [], packs: [], manifests: [] },
+      agentContextProjectId: null,
+      agentContextLoading: false,
+      agentContextError: null,
     });
   });
 
   it("switches projects and navigation state", () => {
+    useClyStore.setState({
+      agentContext: {
+        items: [{ id: "old-project-item" }],
+        packs: [],
+        manifests: [],
+      } as unknown as ReturnType<typeof useClyStore.getState>["agentContext"],
+      agentContextProjectId: "project-cly",
+    });
     useClyStore.getState().setActiveProject("project-cells");
     useClyStore.getState().setScreen("experiments");
 
@@ -49,6 +64,191 @@ describe("Cly UI store", () => {
     expect(useClyStore.getState().activeScreen).toBe("experiments");
     expect(useClyStore.getState().costLedger.entries).toEqual([]);
     expect(useClyStore.getState().claimCosts).toEqual({});
+    expect(useClyStore.getState().agentContext).toEqual({
+      items: [],
+      packs: [],
+      manifests: [],
+    });
+    expect(useClyStore.getState().agentContextProjectId).toBeNull();
+    expect(useClyStore.getState().agentContextLoading).toBe(true);
+  });
+
+  it("ignores stale agent-context hydration after a project switch", () => {
+    const projectA = {
+      items: [],
+      packs: [],
+      manifests: [
+        {
+          id: "manifest-a",
+          projectId: "project-cly",
+        },
+      ],
+    } as unknown as ReturnType<typeof useClyStore.getState>["agentContext"];
+    const projectB = {
+      items: [],
+      packs: [],
+      manifests: [],
+    };
+
+    useClyStore.setState({ activeProjectId: "project-cells" });
+    useClyStore.getState().setAgentContextSnapshot("project-cly", projectA);
+    expect(useClyStore.getState().agentContextProjectId).toBeNull();
+
+    useClyStore.getState().setAgentContextSnapshot("project-cells", projectB);
+    expect(useClyStore.getState().agentContextProjectId).toBe("project-cells");
+    expect(useClyStore.getState().agentContext).toEqual(projectB);
+  });
+
+  it("records optional context hydration failure, clears loading, and recovers on retry", async () => {
+    vi.spyOn(apiClient, "ensureProject").mockResolvedValue({
+      id: "project-cly",
+      name: "Cly",
+      path: "/tmp/cly",
+      metadata: {},
+    });
+    vi.spyOn(apiClient, "fetchResearchData").mockResolvedValue({
+      objects: [],
+      relationships: [],
+    });
+    const fetchContext = vi
+      .spyOn(apiClient, "fetchAgentContext")
+      .mockRejectedValueOnce(new Error("Context endpoint unavailable."))
+      .mockResolvedValueOnce({ items: [], packs: [], manifests: [] });
+
+    const first = useClyStore.getState().loadFromApi("project-cly");
+    expect(useClyStore.getState().agentContextLoading).toBe(true);
+    await expect(first).resolves.toBe(true);
+    expect(useClyStore.getState()).toMatchObject({
+      agentContextLoading: false,
+      agentContextError: "Context endpoint unavailable.",
+      agentContextProjectId: null,
+    });
+
+    await expect(
+      useClyStore.getState().loadFromApi("project-cly"),
+    ).resolves.toBe(true);
+    expect(fetchContext).toHaveBeenCalledTimes(2);
+    expect(useClyStore.getState()).toMatchObject({
+      agentContextLoading: false,
+      agentContextError: null,
+      agentContextProjectId: "project-cly",
+      agentContext: { items: [], packs: [], manifests: [] },
+    });
+  });
+
+  it("keeps successful context hydration when required research hydration fails", async () => {
+    vi.spyOn(apiClient, "ensureProject").mockResolvedValue({
+      id: "project-cly",
+      name: "Cly",
+      path: "/tmp/cly",
+      metadata: {},
+    });
+    vi.spyOn(apiClient, "fetchResearchData").mockRejectedValue(
+      new Error("Research endpoint unavailable."),
+    );
+    const context: AgentContextSnapshot = {
+      items: [],
+      packs: [],
+      manifests: [],
+    };
+    vi.spyOn(apiClient, "fetchAgentContext").mockResolvedValue(context);
+
+    await expect(
+      useClyStore.getState().loadFromApi("project-cly"),
+    ).resolves.toBe(false);
+    expect(useClyStore.getState()).toMatchObject({
+      agentContext: context,
+      agentContextProjectId: "project-cly",
+      agentContextLoading: false,
+      agentContextError: null,
+    });
+  });
+
+  it("ignores a late optional-context failure from the prior project", async () => {
+    vi.spyOn(apiClient, "ensureProject").mockImplementation((project) =>
+      Promise.resolve({
+        id: project.id,
+        name: project.name,
+        path: project.path,
+        metadata: {},
+      }),
+    );
+    vi.spyOn(apiClient, "fetchResearchData").mockResolvedValue({
+      objects: [],
+      relationships: [],
+    });
+    let rejectOld: (reason: Error) => void = () => undefined;
+    const oldRequest = new Promise<AgentContextSnapshot>((_resolve, reject) => {
+      rejectOld = reject;
+    });
+    const projectB: AgentContextSnapshot = {
+      items: [],
+      packs: [],
+      manifests: [],
+    };
+    vi.spyOn(apiClient, "fetchAgentContext").mockImplementation((projectId) =>
+      projectId === "project-cly" ? oldRequest : Promise.resolve(projectB),
+    );
+
+    const oldLoad = useClyStore.getState().loadFromApi("project-cly");
+    useClyStore.setState({
+      activeProjectId: "project-cells",
+      agentContext: { items: [], packs: [], manifests: [] },
+      agentContextProjectId: null,
+      agentContextLoading: true,
+      agentContextError: null,
+    });
+    await expect(
+      useClyStore.getState().loadFromApi("project-cells"),
+    ).resolves.toBe(true);
+    rejectOld(new Error("Late old-project failure"));
+    await expect(oldLoad).resolves.toBe(false);
+    expect(useClyStore.getState()).toMatchObject({
+      activeProjectId: "project-cells",
+      agentContext: projectB,
+      agentContextProjectId: "project-cells",
+      agentContextLoading: false,
+      agentContextError: null,
+    });
+  });
+
+  it("ignores a late optional-context success from the prior project", async () => {
+    vi.spyOn(apiClient, "ensureProject").mockImplementation((project) =>
+      Promise.resolve({ ...project, metadata: {} }),
+    );
+    vi.spyOn(apiClient, "fetchResearchData").mockResolvedValue({
+      objects: [],
+      relationships: [],
+    });
+    let resolveOld: (snapshot: AgentContextSnapshot) => void = () => undefined;
+    const oldRequest = new Promise<AgentContextSnapshot>((resolve) => {
+      resolveOld = resolve;
+    });
+    const projectB: AgentContextSnapshot = {
+      items: [],
+      packs: [],
+      manifests: [],
+    };
+    vi.spyOn(apiClient, "fetchAgentContext").mockImplementation((projectId) =>
+      projectId === "project-cly" ? oldRequest : Promise.resolve(projectB),
+    );
+
+    const oldLoad = useClyStore.getState().loadFromApi("project-cly");
+    useClyStore.setState({ activeProjectId: "project-cells" });
+    await useClyStore.getState().loadFromApi("project-cells");
+    resolveOld({
+      items: [{ id: "stale-item" }],
+      packs: [],
+      manifests: [],
+    } as unknown as AgentContextSnapshot);
+    await expect(oldLoad).resolves.toBe(false);
+    expect(useClyStore.getState()).toMatchObject({
+      activeProjectId: "project-cells",
+      agentContext: projectB,
+      agentContextProjectId: "project-cells",
+      agentContextLoading: false,
+      agentContextError: null,
+    });
   });
 
   it("hydrates persisted runs, the cost ledger, and claim totals together", async () => {

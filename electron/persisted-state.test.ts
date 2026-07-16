@@ -50,7 +50,204 @@ function seedResearchProjects(database: DatabaseSync) {
   `);
 }
 
+function foreignKeyContract(database: DatabaseSync, table: string) {
+  const rows = database.prepare(`PRAGMA foreign_key_list(${table})`).all() as {
+    id: number;
+    seq: number;
+    table: string;
+    from: string;
+    to: string;
+    on_delete: string;
+  }[];
+  return [...Map.groupBy(rows, (row) => row.id).values()].map((group) => ({
+    columns: group
+      .toSorted((left, right) => left.seq - right.seq)
+      .map((row) => row.from),
+    foreignColumns: group
+      .toSorted((left, right) => left.seq - right.seq)
+      .map((row) => row.to),
+    foreignTable: group[0]?.table,
+    onDelete: group[0]?.on_delete,
+  }));
+}
+
+function indexContract(database: DatabaseSync, indexName: string) {
+  return (
+    database.prepare(`PRAGMA index_xinfo(${indexName})`).all() as {
+      name: string;
+      desc: number;
+      key: number;
+    }[]
+  )
+    .filter((row) => row.key === 1)
+    .map((row) => ({ name: row.name, order: row.desc ? "desc" : "asc" }));
+}
+
+function expectAgentContextDatabaseContract(database: DatabaseSync) {
+  expect(foreignKeyContract(database, "agent_context_packs")).toEqual(
+    expect.arrayContaining([
+      {
+        columns: ["project_id"],
+        foreignColumns: ["id"],
+        foreignTable: "projects",
+        onDelete: "CASCADE",
+      },
+      {
+        columns: ["configuration_id", "project_id"],
+        foreignColumns: ["id", "project_id"],
+        foreignTable: "agent_configurations",
+        onDelete: "CASCADE",
+      },
+      {
+        columns: ["configuration_id", "role_id"],
+        foreignColumns: ["configuration_id", "id"],
+        foreignTable: "agent_role_configurations",
+        onDelete: "NO ACTION",
+      },
+    ]),
+  );
+  expect(foreignKeyContract(database, "agent_context_manifests")).toEqual(
+    expect.arrayContaining([
+      {
+        columns: ["configuration_id", "role_id"],
+        foreignColumns: ["configuration_id", "id"],
+        foreignTable: "agent_role_configurations",
+        onDelete: "NO ACTION",
+      },
+      {
+        columns: ["transmission_approval_id", "project_id"],
+        foreignColumns: ["id", "project_id"],
+        foreignTable: "agent_context_transmission_approvals",
+        onDelete: "NO ACTION",
+      },
+    ]),
+  );
+  expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+  expect(
+    indexContract(database, "idx_agent_context_items_project_updated"),
+  ).toEqual([
+    { name: "project_id", order: "asc" },
+    { name: "updated_at", order: "desc" },
+    { name: "id", order: "asc" },
+  ]);
+  expect(indexContract(database, "idx_agent_context_revisions_item")).toEqual([
+    { name: "project_id", order: "asc" },
+    { name: "item_id", order: "asc" },
+    { name: "revision", order: "desc" },
+  ]);
+  expect(
+    database.prepare("PRAGMA table_info(agent_context_manifests)").all(),
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: "entry_count", notnull: 1 }),
+      expect.objectContaining({
+        name: "obligation_operation_json",
+        notnull: 1,
+      }),
+      expect.objectContaining({
+        name: "obligation_operation_hash",
+        notnull: 1,
+      }),
+    ]),
+  );
+}
+
 describe("persisted research storage", () => {
+  const agentContextTables = [
+    "agent_context_items",
+    "agent_context_revisions",
+    "agent_context_packs",
+    "agent_context_pack_entries",
+    "agent_context_manifests",
+    "agent_context_manifest_entries",
+    "agent_context_transmission_approvals",
+    "agent_context_audit_events",
+  ];
+
+  it("installs every agent-context table and immutable trigger on a clean database", () => {
+    const database = getStateDatabase(createDatabasePath());
+    const tables = database
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'agent_context_%' ORDER BY name",
+      )
+      .all()
+      .map((row) => row.name);
+    expect(tables).toEqual([...agentContextTables].sort());
+    expect(
+      database
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'agent_context_%' ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
+    ).toEqual([
+      "agent_context_approval_immutable_delete",
+      "agent_context_approval_initial_state",
+      "agent_context_approval_scope_immutable",
+      "agent_context_approval_transition",
+      "agent_context_approved_revision_insert",
+      "agent_context_approved_revision_update",
+      "agent_context_audit_immutable_delete",
+      "agent_context_audit_immutable_update",
+      "agent_context_manifest_approval_binding",
+      "agent_context_manifest_entries_immutable_delete",
+      "agent_context_manifest_entries_immutable_update",
+      "agent_context_manifest_entry_current_approval",
+      "agent_context_manifest_entry_position",
+      "agent_context_manifest_entry_revision_scope",
+      "agent_context_manifest_pack_policy_binding",
+      "agent_context_manifest_restricted_approval",
+      "agent_context_manifest_seal",
+      "agent_context_manifests_immutable_delete",
+      "agent_context_manifests_immutable_update",
+      "agent_context_pack_entry_current_approval_insert",
+      "agent_context_pack_entry_current_approval_update",
+      "agent_context_pack_entry_revision_scope",
+      "agent_context_revisions_immutable_delete",
+      "agent_context_revisions_immutable_update",
+    ]);
+    expectAgentContextDatabaseContract(database);
+  });
+
+  it("applies reserved migration 0014 after an existing database through 0015", () => {
+    const databasePath = createDatabasePath();
+    getStateDatabase(databasePath);
+    closePersistedStateDatabase();
+    const throughClyDev = new DatabaseSync(databasePath);
+    throughClyDev.exec("PRAGMA foreign_keys = OFF");
+    for (const table of [...agentContextTables].reverse())
+      throughClyDev.exec(`DROP TABLE ${table}`);
+    throughClyDev
+      .prepare("DELETE FROM __drizzle_migrations WHERE created_at > ?")
+      .run(1784134800000);
+    expect(
+      throughClyDev
+        .prepare(
+          "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
+        )
+        .get(),
+    ).toEqual({ createdAt: 1784134800000 });
+    throughClyDev.close();
+
+    const upgraded = getStateDatabase(databasePath);
+    expect(
+      upgraded
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'agent_context_%' ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
+    ).toEqual([...agentContextTables].sort());
+    expect(
+      upgraded
+        .prepare(
+          "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
+        )
+        .get(),
+    ).toEqual({ createdAt: 1784138400000 });
+    expectAgentContextDatabaseContract(upgraded);
+  });
+
   it("configures a bounded wait for concurrent SQLite writers", () => {
     const database = getStateDatabase(createDatabasePath());
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
+import { registerContextRoutes } from "./context-routes.js";
 import { createCostLedgerRepository } from "./cost-ledger-repository.js";
 import { registerCostLedgerRoutes } from "./cost-ledger-routes.js";
 import { registerExperimentProvenanceRoutes } from "./experiment-provenance-routes.js";
@@ -172,6 +173,7 @@ export function registerResearchRoutes(
   registerCostLedgerRoutes(app, {
     getRepository: getCostLedgerRepository,
   });
+  registerContextRoutes(app);
   registerExperimentProvenanceRoutes(app, { getRepository });
   registerPreregistrationRoutes(app, { getRepository });
   registerObligationRoutes(app, { getService: getObligationService });

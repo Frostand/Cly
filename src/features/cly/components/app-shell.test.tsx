@@ -391,7 +391,12 @@ describe("Cly application shell", () => {
 
   it("includes and excludes a context item and recalculates budget", async () => {
     const user = userEvent.setup();
-    useClyStore.setState({ activeScreen: "context" });
+    useClyStore.setState({
+      activeScreen: "context",
+      loadFromApi: vi.fn().mockResolvedValue(true),
+      agentContextLoading: false,
+      agentContextError: null,
+    });
     render(<ClyAppShell />);
 
     const toggle = screen.getByRole("switch", {

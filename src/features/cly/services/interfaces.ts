@@ -3,6 +3,19 @@ import type {
   AgentConfigurationEstimate,
   AgentConfigurationInput,
 } from "../agent-sessions/types";
+import type {
+  AgentContextActor,
+  AgentContextItem,
+  AgentContextPack,
+  AgentContextRevision,
+  AgentContextSnapshot,
+  ContextManifestPreview,
+  ContextManifestRequest,
+  ContextRepresentation,
+  ContextSensitivity,
+  ContextTransmissionApproval,
+  PersistedContextManifest,
+} from "../domain/agent-context";
 import type { LiteratureSearchResult } from "../domain/literature-search";
 import type {
   AgentPreset,
@@ -30,6 +43,78 @@ export interface ContextService {
     itemId: string,
     representation: ContextItem["representation"],
   ): Promise<void>;
+  hydrate(projectId: string): Promise<AgentContextSnapshot>;
+  proposeRevision(
+    projectId: string,
+    itemId: string,
+    expectedVersion: number,
+    revision: Omit<
+      AgentContextRevision,
+      "id" | "projectId" | "itemId" | "revision" | "createdAt"
+    >,
+    actor: AgentContextActor,
+  ): Promise<AgentContextItem>;
+  approveRevision(
+    projectId: string,
+    itemId: string,
+    revisionId: string,
+    expectedVersion: number,
+    actor: AgentContextActor,
+  ): Promise<AgentContextItem>;
+  setLifecycle(
+    projectId: string,
+    itemId: string,
+    action: "pin" | "unpin" | "lock" | "unlock" | "delete" | "restore",
+    expectedVersion: number,
+    actor: AgentContextActor,
+  ): Promise<AgentContextItem>;
+  savePack(
+    projectId: string,
+    input: {
+      id?: string;
+      name: string;
+      configurationId: string;
+      roleId: string;
+      expectedRevision?: number;
+      entries: Array<{
+        itemId: string;
+        revisionId: string;
+        representation: ContextRepresentation;
+        selectionReason: string;
+        sensitivity: ContextSensitivity;
+      }>;
+      actor: AgentContextActor;
+    },
+  ): Promise<AgentContextPack>;
+  preview(
+    projectId: string,
+    input: ContextManifestRequest,
+  ): Promise<ContextManifestPreview>;
+  persist(
+    projectId: string,
+    input: ContextManifestRequest & {
+      idempotencyKey: string;
+      expectedSha256: string;
+      transmissionApprovalId: string | null;
+    },
+  ): Promise<PersistedContextManifest>;
+  createTransmissionApproval(
+    projectId: string,
+    input: {
+      manifestSha256: string;
+      provider: string;
+      model: string;
+      restrictedReferenceIds: string[];
+      actorId: string;
+      rationale: string;
+      expiresAt: string | null;
+    },
+  ): Promise<ContextTransmissionApproval>;
+  revokeTransmissionApproval(
+    projectId: string,
+    approvalId: string,
+    input: { actorId: string; rationale: string },
+  ): Promise<{ id: string; state: "revoked" }>;
 }
 
 export interface AgentService {

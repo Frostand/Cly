@@ -3,7 +3,18 @@
 import { getTableName } from "drizzle-orm";
 import { getTableConfig, SQLiteDialect } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
-import { agentConfigurations, agentRoleConfigurations } from "./schema.js";
+import {
+  agentConfigurations,
+  agentContextAuditEvents,
+  agentContextItems,
+  agentContextManifestEntries,
+  agentContextManifests,
+  agentContextPackEntries,
+  agentContextPacks,
+  agentContextRevisions,
+  agentContextTransmissionApprovals,
+  agentRoleConfigurations,
+} from "./schema.js";
 
 const dialect = new SQLiteDialect();
 
@@ -153,6 +164,126 @@ describe("agent configuration Drizzle schema", () => {
       uniqueConstraints: {
         agent_roles_position_unique: ["configuration_id", "position"],
       },
+    });
+  });
+});
+
+describe("agent context Drizzle schema", () => {
+  it("declares every migration table with its checks, indexes, and relational bindings", () => {
+    const contracts = Object.fromEntries(
+      [
+        agentContextItems,
+        agentContextRevisions,
+        agentContextPacks,
+        agentContextPackEntries,
+        agentContextTransmissionApprovals,
+        agentContextManifests,
+        agentContextManifestEntries,
+        agentContextAuditEvents,
+      ].map((table) => [getTableName(table), tableContract(table)]),
+    );
+
+    expect(Object.keys(contracts)).toEqual([
+      "agent_context_items",
+      "agent_context_revisions",
+      "agent_context_packs",
+      "agent_context_pack_entries",
+      "agent_context_transmission_approvals",
+      "agent_context_manifests",
+      "agent_context_manifest_entries",
+      "agent_context_audit_events",
+    ]);
+    expect(contracts.agent_context_items.indexes).toMatchObject({
+      idx_agent_context_items_project_updated: [
+        { name: "project_id", order: "asc" },
+        { name: "updated_at", order: "desc" },
+        { name: "id", order: "asc" },
+      ],
+    });
+    expect(contracts.agent_context_revisions).toMatchObject({
+      checkSql: {
+        agent_context_revisions_evidence_json:
+          "json_valid(evidence_refs_json) AND json_type(evidence_refs_json) = 'array'",
+        agent_context_revisions_number: "revision >= 1",
+        agent_context_revisions_sensitivity:
+          "sensitivity IN ('standard','restricted','local_only')",
+      },
+      indexes: {
+        idx_agent_context_revisions_item: [
+          { name: "project_id", order: "asc" },
+          { name: "item_id", order: "asc" },
+          { name: "revision", order: "desc" },
+        ],
+      },
+    });
+    expect(contracts.agent_context_packs.foreignKeys).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          columns: ["configuration_id", "role_id"],
+          foreignColumns: ["configuration_id", "id"],
+          foreignTable: "agent_role_configurations",
+          name: "agent_context_packs_configuration_role_fk",
+        }),
+      ]),
+    );
+    expect(contracts.agent_context_pack_entries).toMatchObject({
+      checkSql: {
+        agent_context_pack_entries_position: "position >= 0",
+        agent_context_pack_entries_representation:
+          "representation IN ('raw','summary')",
+        agent_context_pack_entries_sensitivity:
+          "sensitivity IN ('standard','restricted','local_only')",
+      },
+      primaryKeys: [["pack_id", "position"]],
+    });
+    expect(
+      contracts.agent_context_transmission_approvals.checkSql,
+    ).toMatchObject({
+      agent_context_approvals_expiry:
+        "expires_at IS NULL OR julianday(expires_at) IS NOT NULL",
+      agent_context_approvals_references_json:
+        "json_valid(restricted_reference_ids_json) AND json_type(restricted_reference_ids_json) = 'array'",
+      agent_context_approvals_revocation_state:
+        "(state = 'approved' AND revoked_at IS NULL) OR (state = 'revoked' AND revoked_at IS NOT NULL)",
+      agent_context_approvals_state: "state IN ('approved','revoked')",
+    });
+    expect(contracts.agent_context_manifests.foreignKeys).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          columns: ["configuration_id", "role_id"],
+          foreignColumns: ["configuration_id", "id"],
+          foreignTable: "agent_role_configurations",
+          name: "agent_context_manifests_configuration_role_fk",
+        }),
+        expect.objectContaining({
+          columns: ["transmission_approval_id", "project_id"],
+          foreignColumns: ["id", "project_id"],
+          foreignTable: "agent_context_transmission_approvals",
+          name: "agent_context_manifests_approval_project_fk",
+        }),
+      ]),
+    );
+    expect(contracts.agent_context_manifests.checkSql).toMatchObject({
+      agent_context_manifests_canonical_entry_count:
+        "entry_count = json_array_length(json_extract(canonical_payload, '$.entries'))",
+      agent_context_manifests_canonical_json:
+        "json_valid(canonical_payload) AND json_type(canonical_payload) = 'object'",
+      agent_context_manifests_operation_json:
+        "json_valid(obligation_operation_json) AND json_type(obligation_operation_json) = 'object'",
+      agent_context_manifests_evaluation_hash:
+        "length(obligation_evaluation_hash) = 64 AND obligation_evaluation_hash = lower(obligation_evaluation_hash) AND obligation_evaluation_hash NOT GLOB '*[^0-9a-f]*'",
+    });
+    expect(contracts.agent_context_manifest_entries).toMatchObject({
+      checkSql: {
+        agent_context_manifest_entries_kind:
+          "kind IN ('approved_fact','inferred_fact','source_passage','file','conversation','graph_object')",
+        agent_context_manifest_entries_sensitivity:
+          "sensitivity IN ('standard','restricted')",
+      },
+      primaryKeys: [["manifest_id", "position"]],
+    });
+    expect(contracts.agent_context_audit_events.checkSql).toEqual({
+      agent_context_audit_metadata_json: "json_valid(metadata_json)",
     });
   });
 });

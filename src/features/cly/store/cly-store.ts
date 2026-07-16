@@ -14,6 +14,10 @@ import type {
   WorkbenchTab,
   WorkbenchTabType,
 } from "../agent-sessions/types";
+import type {
+  AgentContextSnapshot,
+  AgentContextItem as DurableContextItem,
+} from "../domain/agent-context";
 import { findDuplicateSource } from "../domain/literature-search";
 import type {
   DatasetObligation,
@@ -115,6 +119,10 @@ interface ClyState {
   clyDevSessions: ClyDevSessionOverview[];
   clyDevSessionsLoading: boolean;
   clyDevSessionsError: string | null;
+  agentContext: AgentContextSnapshot;
+  agentContextProjectId: string | null;
+  agentContextLoading: boolean;
+  agentContextError: string | null;
   agentSessionsMode: AgentSessionsMode;
   selectedAgentSessionId: string | null;
   selectedOverviewSessionId: string | null;
@@ -156,6 +164,10 @@ interface ClyState {
   notify: (title: string, detail?: string) => void;
   dismissToast: (id: string) => void;
   loadFromApi: (projectId?: string) => Promise<boolean>;
+  setAgentContextSnapshot: (
+    projectId: string,
+    snapshot: AgentContextSnapshot,
+  ) => void;
   loadClyDevSessions: (projectId?: string) => Promise<boolean>;
   loadObligations: (projectId?: string) => Promise<boolean>;
   saveDatasetObligation: (
@@ -771,8 +783,8 @@ const mapResearchData = (
     integrations: [],
     nextSteps: [],
     decisions: [],
-    contextItems: [],
-    contextPacks: [],
+    contextItems: baseData.contextItems,
+    contextPacks: baseData.contextPacks,
     agentPresets: [],
     agentSessions: [],
     reports: [],
@@ -831,6 +843,65 @@ const clearPersistedResearchData = (
   activity: [],
 });
 
+const emptyAgentContext = (): AgentContextSnapshot => ({
+  items: [],
+  packs: [],
+  manifests: [],
+});
+
+const mapAgentContextItem = (
+  item: DurableContextItem,
+  packs: AgentContextSnapshot["packs"],
+): ContextItem => {
+  const revision = item.approvedRevision ?? item.proposedRevisions[0] ?? null;
+  const packEntry = packs
+    .flatMap((pack) => pack.entries)
+    .find((entry) => entry.itemId === item.id);
+  return {
+    id: item.id,
+    name: item.label,
+    category: revision?.originClass ?? "approved_fact",
+    type: revision?.verificationState ?? "unverified",
+    tokens: revision
+      ? Math.max(
+          1,
+          Math.ceil(new TextEncoder().encode(revision.content).length / 4),
+        )
+      : 0,
+    freshness:
+      revision?.verificationState === "stale"
+        ? "Stale"
+        : revision?.verificationState === "conflicted"
+          ? "Aging"
+          : "Fresh",
+    representation: packEntry?.representation === "summary" ? "Summary" : "Raw",
+    included: Boolean(packEntry),
+    pinned: item.pinned,
+    confidence: Math.round((revision?.confidence ?? 0) * 100),
+    source: revision
+      ? `${revision.producerProcess}${revision.producerModel ? ` · ${revision.producerModel}` : ""}`
+      : "No approved revision",
+    linkedIds: revision?.evidenceRefs ?? [],
+    priority: (packEntry?.position ?? 0) + 1,
+  };
+};
+
+const applyAgentContextSnapshot = (
+  data: ClyRepositoryData,
+  snapshot: AgentContextSnapshot,
+): ClyRepositoryData => ({
+  ...data,
+  contextItems: snapshot.items.map((item) =>
+    mapAgentContextItem(item, snapshot.packs),
+  ),
+  contextPacks: snapshot.packs.map((pack) => ({
+    id: pack.id,
+    name: pack.name,
+    description: `${pack.entries.length} exact revisions · ${pack.configurationId}/${pack.roleId}`,
+    itemIds: pack.entries.map((entry) => entry.itemId),
+  })),
+});
+
 export const useClyStore = create<ClyState>((set, get) => ({
   data: initialData,
   fixtureMode: initialFixtureMode,
@@ -869,6 +940,10 @@ export const useClyStore = create<ClyState>((set, get) => ({
   clyDevSessions: [],
   clyDevSessionsLoading: false,
   clyDevSessionsError: null,
+  agentContext: emptyAgentContext(),
+  agentContextProjectId: null,
+  agentContextLoading: false,
+  agentContextError: null,
   agentSessionsMode: savedAgentSessionIsValid
     ? (saved.agentSessionsMode ?? "overview")
     : "overview",
@@ -922,6 +997,10 @@ export const useClyStore = create<ClyState>((set, get) => ({
     set((state) => ({
       activeProjectId,
       data: clearPersistedResearchData(state.data),
+      agentContext: emptyAgentContext(),
+      agentContextProjectId: null,
+      agentContextLoading: true,
+      agentContextError: null,
       lineageSuggestions: [],
       lineageMeasurement: null,
       decisionBriefs: [],
@@ -1043,12 +1122,63 @@ export const useClyStore = create<ClyState>((set, get) => ({
     set((state) => ({
       toasts: state.toasts.filter((toast) => toast.id !== id),
     })),
+  setAgentContextSnapshot: (projectId, snapshot) => {
+    if (get().activeProjectId !== projectId) return;
+    set((state) => ({
+      agentContext: snapshot,
+      agentContextProjectId: projectId,
+      agentContextLoading: false,
+      agentContextError: null,
+      data: applyAgentContextSnapshot(state.data, snapshot),
+    }));
+  },
   loadFromApi: async (requestedProjectId) => {
     const projectId = requestedProjectId ?? get().activeProjectId;
     const project = get().data.projects.find((item) => item.id === projectId);
     if (!project) return false;
+    if (get().activeProjectId === projectId)
+      set({ agentContextLoading: true, agentContextError: null });
+    let contextHydrationStarted = false;
     try {
       await apiClient.ensureProject(project);
+      const researchHydration = Promise.all([
+        apiClient.fetchResearchData(projectId),
+        apiClient.fetchExperimentLineages(projectId).catch(() => []),
+        apiClient.fetchAgentConfigurations(projectId).catch(() => undefined),
+        apiClient.fetchLineageSuggestions(projectId).catch(() => []),
+        apiClient.fetchDecisionBriefs(projectId).catch(() => undefined),
+        apiClient.fetchPreregistrations(projectId).catch(() => undefined),
+        apiClient.fetchObligations(projectId).catch(() => undefined),
+        apiClient.fetchCostLedger(projectId).catch(() => emptyCostLedger()),
+        apiClient.fetchClaimCosts(projectId).catch(() => []),
+      ]);
+      contextHydrationStarted = true;
+      const contextHydration = apiClient
+        .fetchAgentContext(projectId)
+        .then((snapshot) => {
+          if (get().activeProjectId === projectId)
+            set((state) => ({
+              agentContext: snapshot,
+              agentContextProjectId: projectId,
+              agentContextLoading: false,
+              agentContextError: null,
+              data: applyAgentContextSnapshot(state.data, snapshot),
+            }));
+          return { snapshot, error: null };
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Durable context could not load.";
+          if (get().activeProjectId === projectId)
+            set({
+              agentContextProjectId: null,
+              agentContextLoading: false,
+              agentContextError: message,
+            });
+          return { snapshot: undefined, error: message };
+        });
       const [
         researchData,
         experimentLineages,
@@ -1059,36 +1189,47 @@ export const useClyStore = create<ClyState>((set, get) => ({
         obligationSummary,
         costLedger,
         claimCostList,
-      ] = await Promise.all([
-        apiClient.fetchResearchData(projectId),
-        apiClient.fetchExperimentLineages(projectId).catch(() => []),
-        apiClient.fetchAgentConfigurations(projectId).catch(() => undefined),
-        // Lineage reconstruction is additive. Older or temporarily unavailable
-        // APIs must not prevent hydration of the canonical research graph.
-        apiClient.fetchLineageSuggestions(projectId).catch(() => []),
-        // Brief loading is optional and must never prevent canonical graph hydration.
-        apiClient.fetchDecisionBriefs(projectId).catch(() => undefined),
-        // Preregistration is additive for databases created before CLY-66.
-        apiClient.fetchPreregistrations(projectId).catch(() => undefined),
-        apiClient.fetchObligations(projectId).catch(() => undefined),
-        apiClient.fetchCostLedger(projectId).catch(() => emptyCostLedger()),
-        apiClient.fetchClaimCosts(projectId).catch(() => []),
-      ]);
+      ] = await researchHydration;
+      const agentContextResult = await contextHydration;
       if (get().activeProjectId !== projectId) return false;
+      const agentContext = agentContextResult.snapshot;
       set((state) => ({
         data: hydrateAgentSessionLayouts(
-          agentConfigurations
-            ? {
-                ...mapResearchData(
-                  state.data,
-                  researchData,
-                  experimentLineages,
-                ),
-                agentConfigurations,
-              }
-            : mapResearchData(state.data, researchData, experimentLineages),
+          agentContext
+            ? applyAgentContextSnapshot(
+                agentConfigurations
+                  ? {
+                      ...mapResearchData(
+                        state.data,
+                        researchData,
+                        experimentLineages,
+                      ),
+                      agentConfigurations,
+                    }
+                  : mapResearchData(
+                      state.data,
+                      researchData,
+                      experimentLineages,
+                    ),
+                agentContext,
+              )
+            : agentConfigurations
+              ? {
+                  ...mapResearchData(
+                    state.data,
+                    researchData,
+                    experimentLineages,
+                  ),
+                  agentConfigurations,
+                }
+              : mapResearchData(state.data, researchData, experimentLineages),
           state.agentSessionLayouts,
         ),
+        ...(agentContext
+          ? { agentContext, agentContextProjectId: projectId }
+          : { agentContextProjectId: null }),
+        agentContextError: agentContextResult.error,
+        agentContextLoading: false,
         fixtureMode: "empty",
         lineageSuggestions,
         lineageMeasurement: null,
@@ -1130,6 +1271,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
         errorName: error instanceof Error ? error.name : "UnknownError",
         operation: "hydrate-project-research",
       });
+      if (get().activeProjectId === projectId && !contextHydrationStarted)
+        set({ agentContextLoading: false, agentContextError: message });
       get().notify("Research data could not load", message);
       return false;
     }
