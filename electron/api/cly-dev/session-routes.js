@@ -15,6 +15,7 @@ import {
   clyDevTaskInputSchema,
   clyDevWorkspaceInputSchema,
 } from "./session-schema.js";
+import { resolveClyDevWorkspaceAuthority } from "./workspace-authority.js";
 
 async function parseBody(c, schema) {
   try {
@@ -56,9 +57,11 @@ export function registerClyDevSessionRoutes(
     getRuntime,
     runner,
     claudeRunner,
+    authorizeCommand,
     executeTool,
     durableToolEffects,
     requestApproval,
+    resolveWorkspaceAuthority = resolveClyDevWorkspaceAuthority,
     now,
   } = {},
 ) {
@@ -70,6 +73,7 @@ export function registerClyDevSessionRoutes(
         db: getDatabase(),
         runner,
         claudeRunner,
+        authorizeCommand,
         executeTool,
         durableToolEffects,
         requestApproval,
@@ -78,14 +82,24 @@ export function registerClyDevSessionRoutes(
     }
     return productionRuntime;
   };
+  const assertSessionWorkspaceAuthority = async (projectId, sessionId) => {
+    const source = getRepository().getHandoffSource(projectId, sessionId);
+    return resolveWorkspaceAuthority({
+      projectId,
+      localOnly: source.workspace.localOnly,
+    });
+  };
   const executeRequest = (operation) => async (c) => {
     const body = await parseBody(c, clyDevExecutionRequestSchema);
     if (body.error) return body.error;
     try {
+      const projectId = c.req.param("projectId");
+      const sessionId = c.req.param("sessionId");
+      await assertSessionWorkspaceAuthority(projectId, sessionId);
       const result = await resolveRuntime()[operation]({
         ...body.data,
-        projectId: c.req.param("projectId"),
-        sessionId: c.req.param("sessionId"),
+        projectId,
+        sessionId,
         signal: c.req.raw.signal,
       });
       return c.json(result);
@@ -130,12 +144,29 @@ export function registerClyDevSessionRoutes(
   app.post("/api/projects/:projectId/cly-dev/workspaces", async (c) => {
     const body = await parseBody(c, clyDevWorkspaceInputSchema);
     if (body.error) return body.error;
-    return respond(
-      c,
-      () =>
-        getRepository().createWorkspace(c.req.param("projectId"), body.data),
-      201,
-    );
+    try {
+      const projectId = c.req.param("projectId");
+      const localOnly = await resolveWorkspaceAuthority({
+        projectId,
+        localOnly: body.data.localOnly,
+      });
+      return c.json(
+        getRepository().createWorkspace(projectId, {
+          ...body.data,
+          localOnly,
+        }),
+        201,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Cly Dev workspace authority failed.";
+      return c.text(
+        message,
+        /not found|unknown project/i.test(message) ? 404 : 400,
+      );
+    }
   });
   app.get(
     "/api/projects/:projectId/cly-dev/workspaces/:workspaceId/tasks",
@@ -208,15 +239,29 @@ export function registerClyDevSessionRoutes(
   app.post("/api/projects/:projectId/cly-dev/session-aggregates", async (c) => {
     const body = await parseBody(c, clyDevSessionAggregateInputSchema);
     if (body.error) return body.error;
-    return respond(
-      c,
-      () =>
-        getRepository().createSessionAggregate(
-          c.req.param("projectId"),
-          body.data,
-        ),
-      201,
-    );
+    try {
+      const projectId = c.req.param("projectId");
+      const localOnly = await resolveWorkspaceAuthority({
+        projectId,
+        localOnly: body.data.workspace.localOnly,
+      });
+      return c.json(
+        getRepository().createSessionAggregate(projectId, {
+          ...body.data,
+          workspace: { ...body.data.workspace, localOnly },
+        }),
+        201,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Cly Dev workspace authority failed.";
+      return c.text(
+        message,
+        /not found|unknown project/i.test(message) ? 404 : 400,
+      );
+    }
   });
   app.post(
     "/api/projects/:projectId/cly-dev/tasks/:taskId/sessions",

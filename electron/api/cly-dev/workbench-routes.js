@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
 import { createClyDevWorkbenchService } from "./workbench-service.js";
+import { resolveClyDevWorkspaceAuthority } from "./workspace-authority.js";
 
 const commandSchema = z.object({
   requestId: z.string().trim().min(1).max(200).optional(),
@@ -33,12 +34,21 @@ const errorResponse = (c, error) => {
 
 export function registerClyDevWorkbenchRoutes(
   app,
-  { getDatabase = getStateDatabase, getService } = {},
+  {
+    getDatabase = getStateDatabase,
+    getService,
+    authorizeCommand,
+    resolveWorkspaceAuthority = resolveClyDevWorkspaceAuthority,
+  } = {},
 ) {
   let service;
   const resolveService = () => {
     if (getService) return getService();
-    service ??= createClyDevWorkbenchService({ db: getDatabase() });
+    service ??= createClyDevWorkbenchService({
+      db: getDatabase(),
+      authorizeCommand,
+      resolveWorkspaceAuthority,
+    });
     return service;
   };
 

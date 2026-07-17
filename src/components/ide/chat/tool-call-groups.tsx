@@ -43,6 +43,7 @@ export type ToolApprovalResponder = (response: {
   id: string;
   approved: boolean;
   reason?: string;
+  signature?: string;
   scope?: "once" | "session";
 }) => void;
 

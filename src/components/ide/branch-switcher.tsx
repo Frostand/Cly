@@ -43,13 +43,11 @@ const matchesBranchName = (left: string, right: string) =>
 interface BranchSwitcherProps {
   onCreateWorktree?: () => void;
   projectId: string;
-  projectPath: string;
 }
 
 const BranchSwitcherImpl = ({
   onCreateWorktree,
   projectId,
-  projectPath,
 }: BranchSwitcherProps) => {
   const gitRefreshKey = useIdeStore(
     (s) => s.projectGitRefreshKeys[projectId] ?? 0,
@@ -67,7 +65,7 @@ const BranchSwitcherImpl = ({
     loading,
     refresh,
     switching,
-  } = useProjectGitBranches(projectPath, gitRefreshKey);
+  } = useProjectGitBranches(projectId, gitRefreshKey);
 
   const [open, setOpen] = useState(false);
   const [createBranchOpen, setCreateBranchOpen] = useState(false);

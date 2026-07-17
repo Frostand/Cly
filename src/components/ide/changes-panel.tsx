@@ -100,7 +100,6 @@ const ChangesPanelImpl = ({
     useState<Record<string, string[]>>({});
 
   const projectId = activeProject?.id ?? null;
-  const projectPath = activeProject?.path ?? null;
   const gitRefreshKey = useIdeStore((s) =>
     projectId ? (s.projectGitRefreshKeys[projectId] ?? 0) : 0,
   );
@@ -114,7 +113,7 @@ const ChangesPanelImpl = ({
     loading: statusLoading,
     status: gitStatus,
     statusRefreshToken,
-  } = useProjectGitStatus(projectPath, gitRefreshKey);
+  } = useProjectGitStatus(projectId, gitRefreshKey);
   const hasStaleGitStatus = statusLoading && gitStatus !== null;
   const hasFreshGitStatus = statusRefreshToken === gitRefreshKey;
 
@@ -246,7 +245,6 @@ const ChangesPanelImpl = ({
     if (
       diffLoadProcessingRef.current ||
       !projectId ||
-      !projectPath ||
       diffLoadQueueRef.current.length === 0
     ) {
       return;
@@ -277,7 +275,7 @@ const ChangesPanelImpl = ({
         body: JSON.stringify({
           filePath: nextFilePath,
           previousPath: change.previousPath,
-          projectPath,
+          projectId,
           status: change.status,
         }),
         headers: { "Content-Type": "application/json" },
@@ -377,11 +375,11 @@ const ChangesPanelImpl = ({
         void processQueuedDiffLoads();
       }
     }
-  }, [projectId, projectPath]);
+  }, [projectId]);
 
   const queueDiffLoad = useCallback(
     (filePath: string, priority = false, force = false) => {
-      if (!projectId || !projectPath) {
+      if (!projectId) {
         return;
       }
 
@@ -427,7 +425,7 @@ const ChangesPanelImpl = ({
 
       void processQueuedDiffLoads();
     },
-    [gitRefreshKey, processQueuedDiffLoads, projectId, projectPath],
+    [gitRefreshKey, processQueuedDiffLoads, projectId],
   );
 
   useEffect(() => {
@@ -629,7 +627,6 @@ const ChangesPanelImpl = ({
     async (change: ProjectGitStatusEntry) => {
       if (
         !projectId ||
-        !projectPath ||
         revertingPaths[change.path] ||
         hiddenRevertedPathSet.has(change.path)
       ) {
@@ -654,7 +651,7 @@ const ChangesPanelImpl = ({
           body: JSON.stringify({
             filePath: change.path,
             previousPath: change.previousPath,
-            projectPath,
+            projectId,
             status: change.status,
           }),
           headers: { "Content-Type": "application/json" },
@@ -682,7 +679,6 @@ const ChangesPanelImpl = ({
       clearCachedDiffForPath,
       hiddenRevertedPathSet,
       projectId,
-      projectPath,
       revertingPaths,
     ],
   );

@@ -275,7 +275,7 @@ export const createProjectLifecycleActions = (
       body: JSON.stringify({
         baseRef: options.baseRef ?? null,
         branchName: options.branchName,
-        projectPath: parentProject.path,
+        projectId: parentProject.id,
       }),
       headers: { "Content-Type": "application/json" },
       method: "POST",

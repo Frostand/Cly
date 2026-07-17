@@ -86,7 +86,9 @@ export function createClyDevWorkbenchService({
   db,
   repository = db ? createClyDevSessionRepository({ db }) : undefined,
   approvalGate,
+  authorizeCommand,
   executeTool,
+  resolveWorkspaceAuthority = async ({ localOnly }) => localOnly,
   now = () => new Date().toISOString(),
 } = {}) {
   if (!db) throw new Error("A SQLite database is required.");
@@ -100,17 +102,28 @@ export function createClyDevWorkbenchService({
         productionClyDevLoaders.loadApproval(db, approvalId, scope),
       now,
     });
-  const executor = executeTool ?? createProjectScopedToolExecutor({ db });
+  const executor =
+    executeTool ?? createProjectScopedToolExecutor({ db, authorizeCommand });
 
-  const loadScope = (projectId, sessionId) => {
+  const loadScope = async (projectId, sessionId) => {
     const source = repository.getHandoffSource(projectId, sessionId);
-    const root = source.workspace.localOnly?.worktreePath;
+    const localOnly = await resolveWorkspaceAuthority({
+      projectId,
+      localOnly: source.workspace.localOnly,
+    });
+    const root = localOnly?.worktreePath;
     if (typeof root !== "string" || !path.isAbsolute(root)) {
       throw new Error(
         "The Cly Dev worktree path is unavailable on this machine.",
       );
     }
-    return { root: path.resolve(root), source };
+    return {
+      root: path.resolve(root),
+      source: {
+        ...source,
+        workspace: { ...source.workspace, localOnly },
+      },
+    };
   };
 
   const toolCallFor = ({ command, requestId }) => ({
@@ -127,7 +140,7 @@ export function createClyDevWorkbenchService({
 
   return Object.freeze({
     async getContext(projectId, sessionId) {
-      const { root, source } = loadScope(projectId, sessionId);
+      const { root, source } = await loadScope(projectId, sessionId);
       return {
         workspace: source.workspace,
         task: source.task,
@@ -150,7 +163,7 @@ export function createClyDevWorkbenchService({
       requestId = randomUUID(),
       command,
     }) {
-      loadScope(projectId, sessionId);
+      await loadScope(projectId, sessionId);
       const toolCall = toolCallFor({ command, requestId });
       const contextHash = contextHashFor(projectId, sessionId);
       const decision = await gate.evaluate({
@@ -195,7 +208,7 @@ export function createClyDevWorkbenchService({
       command,
       approvalId,
     }) {
-      const { root } = loadScope(projectId, sessionId);
+      const { root } = await loadScope(projectId, sessionId);
       const recorded = repository.findEventByIdempotencyKey(
         projectId,
         sessionId,

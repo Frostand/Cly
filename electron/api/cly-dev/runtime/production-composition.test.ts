@@ -7,6 +7,7 @@ import {
   closePersistedStateDatabase,
   getStateDatabase,
 } from "../../../persisted-state.js";
+import { projectAuthorityRegistry } from "../../../project-authority-registry.js";
 import { API_SESSION_TOKEN_HEADER, createApiApp } from "../../app.js";
 import { createClyDevSessionRepository } from "../session-repository.js";
 import { deriveTransferableContextSummary } from "./execution-runtime.js";
@@ -74,6 +75,10 @@ const createFixture = (
       state: "running",
     },
   });
+  projectAuthorityRegistry.hydrate({
+    projects: [{ id: "project-1", path: directory }],
+    closedProjects: [],
+  });
   return { db, repository };
 };
 
@@ -87,7 +92,10 @@ const requestBody = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-afterEach(() => closePersistedStateDatabase());
+afterEach(() => {
+  projectAuthorityRegistry.hydrate({ projects: [], closedProjects: [] });
+  closePersistedStateDatabase();
+});
 
 describe("production Cly Dev execution composition", () => {
   it("registers strict routes and completes a durably approved provider/tool flow", async () => {

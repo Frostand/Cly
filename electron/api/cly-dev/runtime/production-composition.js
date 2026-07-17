@@ -54,6 +54,7 @@ export function createProductionClyDevRuntime({
   provider,
   claudeProvider,
   approvalGate,
+  authorizeCommand,
   executeTool,
   durableToolEffects,
   requestApproval,
@@ -80,7 +81,7 @@ export function createProductionClyDevRuntime({
       ...(now ? { now } : {}),
     });
   const productionExecuteTool =
-    executeTool ?? createProjectScopedToolExecutor({ db });
+    executeTool ?? createProjectScopedToolExecutor({ db, authorizeCommand });
   const productionDurableEffects =
     durableToolEffects ??
     createDurableToolEffects({ db, ...(now ? { now } : {}) });

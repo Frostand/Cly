@@ -8,6 +8,7 @@ import {
   isCanonicalProviderModelId,
 } from "../runtime/provider-contract.js";
 import { createClyDevSessionRepository } from "../session-repository.js";
+import { resolveClyDevWorkspaceAuthority } from "../workspace-authority.js";
 import { canonicalJson } from "./canonical-json.js";
 
 const EFFECT_CATEGORIES = [
@@ -98,6 +99,7 @@ export function createProductionClyDevHandoffDependencies({
   db = getStateDatabase(),
   runner,
   runGit = runGitCommand,
+  resolveWorkspaceAuthority = resolveClyDevWorkspaceAuthority,
   now,
 } = {}) {
   if (!db) throw new Error("A SQLite database is required.");
@@ -107,7 +109,7 @@ export function createProductionClyDevHandoffDependencies({
   });
   const productionRunner = runner ?? createSignedInCodexRunner({ db });
 
-  const findWorkspace = (projectId, repository) => {
+  const findWorkspace = async (projectId, repository) => {
     const workspace = sessions
       .listWorkspaces(projectId)
       .find(
@@ -122,7 +124,11 @@ export function createProductionClyDevHandoffDependencies({
     if (typeof workspace.localOnly?.worktreePath !== "string") {
       throw new Error("The target worktree path is unavailable.");
     }
-    return workspace;
+    const localOnly = await resolveWorkspaceAuthority({
+      projectId,
+      localOnly: workspace.localOnly,
+    });
+    return { ...workspace, localOnly };
   };
 
   const git = async (cwd, args) => {
@@ -134,7 +140,7 @@ export function createProductionClyDevHandoffDependencies({
   };
 
   const inspectRepository = async ({ projectId, repository }) => {
-    const workspace = findWorkspace(projectId, repository);
+    const workspace = await findWorkspace(projectId, repository);
     const cwd = workspace.localOnly.worktreePath;
     return {
       id: workspace.repository.id,

@@ -305,8 +305,8 @@ export const TerminalPanel = ({
       terminalSizeRef.current = { cols, rows };
       getDesktopApi()?.resizeTerminal({
         cols,
-        projectId: sessionId,
         rows,
+        sessionId,
       });
     };
 
@@ -351,7 +351,7 @@ export const TerminalPanel = ({
 
       api.sendTerminalInput({
         data,
-        projectId: sessionId,
+        sessionId,
       });
     });
 

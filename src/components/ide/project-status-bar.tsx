@@ -152,7 +152,7 @@ export const ProjectBranchFooter = ({
     (s) => s.projectGitRefreshKeys[project.id] ?? 0,
   );
   const { branch, isRepo, loading } = useProjectGitStatus(
-    project.path,
+    project.id,
     gitRefreshKey,
   );
   const [createWorktreeOpen, setCreateWorktreeOpen] = useState(false);
@@ -186,7 +186,6 @@ export const ProjectBranchFooter = ({
                 isRepo ? () => setCreateWorktreeOpen(true) : undefined
               }
               projectId={project.id}
-              projectPath={project.path}
             />
           ) : null}
         </div>

@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { createOpencode } from "@opencode-ai/sdk";
 import { execCliCommand, isCliCommandAvailable } from "../shared/cli.js";
 import { readCodexChatGptAuthTokens } from "./codex-auth.js";
+import { updateGenericPassword } from "./macos-keychain.js";
 
 const OPENAI_CODEX_CHATGPT_USAGE_URL =
   "https://chatgpt.com/backend-api/wham/usage";
@@ -843,21 +844,20 @@ const writeClaudeCredentials = async (
 
   const serialized = JSON.stringify(nextCredentials);
   if (credentials.storage?.type === "keychain") {
-    await execFileAsync("security", [
-      "add-generic-password",
-      "-U",
-      "-a",
-      process.env.USER || "claude",
-      "-s",
-      credentials.storage.service,
-      "-w",
-      serialized,
-    ]);
+    await updateGenericPassword({
+      account: process.env.USER || "claude",
+      password: serialized,
+      service: credentials.storage.service,
+    });
     return;
   }
 
   if (credentials.storage?.path) {
-    await fs.writeFile(credentials.storage.path, serialized, "utf8");
+    await fs.writeFile(credentials.storage.path, serialized, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    await fs.chmod(credentials.storage.path, 0o600);
   }
 };
 

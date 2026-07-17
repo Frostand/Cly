@@ -18,6 +18,7 @@ import {
   resolveCodexCliLaunch,
 } from "./codex-cli-launch.js";
 import { getCodexErrorDetail } from "./codex-prompt.js";
+import { getOpenCodeServerConfig } from "./opencode-permissions.js";
 
 const CHAT_TITLE_MAX_LENGTH = 60;
 const CHAT_TITLE_PROMPT_MAX_CHARS = 12_000;
@@ -225,6 +226,7 @@ const generateClaudeChatTitle = async ({ model, projectPath, promptText }) => {
       ...(claudeExecutablePath
         ? { pathToClaudeCodeExecutable: claudeExecutablePath }
         : {}),
+      allowedTools: [],
       continue: false,
       cwd: projectPath,
       persistSession: false,
@@ -271,6 +273,7 @@ const generateOpenCodeChatTitle = async ({
 
   try {
     opencode = await createOpencode({
+      config: getOpenCodeServerConfig("plan", "default"),
       hostname: "127.0.0.1",
       port: 0,
       signal: requestAbortController.signal,

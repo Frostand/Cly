@@ -164,7 +164,7 @@ const useProjectIconScanner = ({
 
     for (const project of scanTargets) {
       void fetch("/api/project-icon", {
-        body: JSON.stringify({ projectPath: project.path }),
+        body: JSON.stringify({ projectId: project.id }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
         signal: abortController.signal,
@@ -290,6 +290,7 @@ export const ProjectTabs = () => {
   const handleOpenProjectInEditor = useCallback(
     (
       project: {
+        id: string;
         path: string;
       },
       editorId: string,
@@ -300,6 +301,7 @@ export const ProjectTabs = () => {
 
       void desktopApi.openInEditor({
         editorId,
+        projectId: project.id,
         projectPath: project.path,
       });
     },
@@ -358,7 +360,7 @@ export const ProjectTabs = () => {
             <ProjectTabIcon
               icon={project.icon}
               projectName={project.name}
-              projectPath={project.path}
+              projectId={project.id}
             />
           </span>
         ) : null;

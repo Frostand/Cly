@@ -1,6 +1,13 @@
 import { spawn as spawnProcess } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
-import { app } from "electron";
+import {
+  accessSync,
+  existsSync,
+  constants as fileSystemConstants,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import path from "node:path";
 import { spawn as spawnPty } from "node-pty";
 
 function parseCommandParts(value) {
@@ -47,6 +54,101 @@ function formatShellCommand(command, args = []) {
   return [trimmedCommand, ...normalizedArgs].join(" ");
 }
 
+const UNIX_FALLBACK_SHELLS = ["/bin/zsh", "/bin/bash", "/bin/sh"];
+const WINDOWS_SHELL_NAMES = new Set(["cmd.exe", "powershell.exe", "pwsh.exe"]);
+
+const canonicalExecutable = (value) => {
+  try {
+    const canonicalPath = realpathSync(value);
+    if (!statSync(canonicalPath).isFile()) return null;
+    accessSync(canonicalPath, fileSystemConstants.X_OK);
+    return canonicalPath;
+  } catch {
+    return null;
+  }
+};
+
+const approvedUnixShells = () => {
+  const configuredShells = [...UNIX_FALLBACK_SHELLS];
+  try {
+    configuredShells.push(
+      ...readFileSync("/etc/shells", "utf8")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith("/") && !line.startsWith("/#")),
+    );
+  } catch {
+    // The fixed system fallbacks remain available when /etc/shells is absent.
+  }
+
+  return new Set(configuredShells.map(canonicalExecutable).filter(Boolean));
+};
+
+/**
+ * Accept only an operating-system shell executable, never renderer-supplied
+ * arguments. In particular, values such as `bash -c ...` and arbitrary
+ * project executables must not become the terminal process itself.
+ */
+export function resolveApprovedTerminalShell(value) {
+  const parsed = parseCommandParts(value);
+  if (!parsed || parsed.args.length > 0) return null;
+
+  if (process.platform === "win32") {
+    const shellName = path.win32.basename(parsed.command).toLowerCase();
+    if (!WINDOWS_SHELL_NAMES.has(shellName)) return null;
+
+    // Never rely on PATH/current-directory lookup from a project cwd: a
+    // repository containing powershell.exe or cmd.exe must not replace the
+    // operating-system shell.
+    if (!path.win32.isAbsolute(parsed.command)) return null;
+
+    const canonicalPath = canonicalExecutable(parsed.command);
+    if (!canonicalPath) return null;
+    const trustedRoots = [
+      process.env.SystemRoot,
+      process.env.ProgramFiles,
+      process.env["ProgramFiles(x86)"],
+    ]
+      .filter(Boolean)
+      .map((root) => path.win32.resolve(root).toLowerCase());
+    const normalizedPath = path.win32.resolve(canonicalPath).toLowerCase();
+    return trustedRoots.some(
+      (root) =>
+        normalizedPath === root || normalizedPath.startsWith(`${root}\\`),
+    )
+      ? canonicalPath
+      : null;
+  }
+
+  const canonicalPath = canonicalExecutable(parsed.command);
+  return canonicalPath && approvedUnixShells().has(canonicalPath)
+    ? canonicalPath
+    : null;
+}
+
+const getWindowsSystemShellPaths = () => {
+  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
+  const programFiles = process.env.ProgramFiles;
+  const candidates = [
+    systemRoot
+      ? path.win32.join(
+          systemRoot,
+          "System32",
+          "WindowsPowerShell",
+          "v1.0",
+          "powershell.exe",
+        )
+      : null,
+    programFiles
+      ? path.win32.join(programFiles, "PowerShell", "7", "pwsh.exe")
+      : null,
+    systemRoot ? path.win32.join(systemRoot, "System32", "cmd.exe") : null,
+  ];
+  return candidates
+    .map((candidate) => resolveApprovedTerminalShell(candidate))
+    .filter(Boolean);
+};
+
 function createTerminalStartupCommands(command) {
   const commands = [];
   if (typeof command === "string" && command.trim()) {
@@ -57,24 +159,20 @@ function createTerminalStartupCommands(command) {
 }
 
 function resolveTerminalCwd(cwd) {
-  if (typeof cwd !== "string") {
-    return app.getPath("home");
-  }
-
-  const trimmed = cwd.trim();
-  if (!trimmed) {
-    return app.getPath("home");
-  }
+  const trimmed = typeof cwd === "string" ? cwd.trim() : "";
+  if (!trimmed) throw new Error("Terminal project directory is required.");
 
   try {
     if (existsSync(trimmed) && statSync(trimmed).isDirectory()) {
       return trimmed;
     }
-  } catch {
-    // ignore and fall back
+  } catch (error) {
+    throw new Error("Terminal project directory is unavailable.", {
+      cause: error,
+    });
   }
 
-  return app.getPath("home");
+  throw new Error("Terminal project directory is unavailable.");
 }
 
 function buildTerminalShellCandidates(preferredShellPath) {
@@ -103,12 +201,19 @@ function buildTerminalShellCandidates(preferredShellPath) {
     });
   };
 
-  addCandidate(preferredShellPath, "configured shell");
-  addCandidate(process.env.SHELL, "SHELL environment");
+  addCandidate(
+    resolveApprovedTerminalShell(preferredShellPath),
+    "configured shell",
+  );
+  addCandidate(
+    resolveApprovedTerminalShell(process.env.SHELL),
+    "SHELL environment",
+  );
 
   if (process.platform === "win32") {
-    addCandidate("powershell.exe", "PowerShell fallback");
-    addCandidate("cmd.exe", "CMD fallback");
+    for (const shell of getWindowsSystemShellPaths()) {
+      addCandidate(shell, "Windows system shell fallback");
+    }
   } else if (process.platform === "darwin") {
     addCandidate("/bin/zsh", "macOS zsh fallback");
     addCandidate("/bin/bash", "bash fallback");
@@ -123,11 +228,10 @@ function buildTerminalShellCandidates(preferredShellPath) {
 
 function getPipeFallbackShell() {
   if (process.platform === "win32") {
-    return {
-      args: [],
-      command: "powershell.exe",
-      label: "PowerShell pipe fallback",
-    };
+    const command = getWindowsSystemShellPaths()[0];
+    return command
+      ? { args: [], command, label: "Windows system shell pipe fallback" }
+      : null;
   }
 
   if (existsSync("/bin/bash")) {
@@ -165,7 +269,6 @@ export function stopChildProcess(child) {
 }
 
 export function createProcessSessionManager({ sendToRenderer }) {
-  const runProcesses = new Map();
   const terminalSessions = new Map();
   const terminalTransports = new Map();
   const terminalShells = new Map();
@@ -191,20 +294,6 @@ export function createProcessSessionManager({ sendToRenderer }) {
 
   function getDefaultTerminalShellCommand() {
     return buildTerminalShellCandidates(undefined)[0]?.command ?? "";
-  }
-
-  function stopRunProcess(projectId) {
-    const child = runProcesses.get(projectId);
-    if (!child) {
-      return;
-    }
-
-    stopChildProcess(child);
-    runProcesses.delete(projectId);
-    sendToRenderer("runner:status", {
-      projectId,
-      status: "stopped",
-    });
   }
 
   function stopTerminalSession(projectId) {
@@ -233,88 +322,9 @@ export function createProcessSessionManager({ sendToRenderer }) {
   }
 
   function stopAllProcesses() {
-    for (const projectId of runProcesses.keys()) {
-      stopRunProcess(projectId);
-    }
-
     for (const projectId of terminalSessions.keys()) {
       stopTerminalSession(projectId);
     }
-  }
-
-  function startRunner({ command, cwd, projectId, projectName }) {
-    if (!projectId || !cwd || !command) {
-      throw new Error("Missing runner parameters.");
-    }
-
-    stopRunProcess(projectId);
-
-    const child = spawnProcess(command, {
-      cwd,
-      env: {
-        ...process.env,
-        FORCE_COLOR: "1",
-      },
-      shell: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    runProcesses.set(projectId, child);
-
-    sendToRenderer("runner:status", {
-      pid: child.pid,
-      projectId,
-      projectName,
-      status: "running",
-    });
-
-    child.stdout?.on("data", (chunk) => {
-      if (runProcesses.get(projectId) !== child) {
-        return;
-      }
-      sendToRenderer("runner:data", {
-        chunk: chunk.toString(),
-        projectId,
-        stream: "stdout",
-      });
-    });
-
-    child.stderr?.on("data", (chunk) => {
-      if (runProcesses.get(projectId) !== child) {
-        return;
-      }
-      sendToRenderer("runner:data", {
-        chunk: chunk.toString(),
-        projectId,
-        stream: "stderr",
-      });
-    });
-
-    child.on("close", (code, signal) => {
-      if (runProcesses.get(projectId) !== child) {
-        return;
-      }
-      runProcesses.delete(projectId);
-      sendToRenderer("runner:status", {
-        code,
-        projectId,
-        signal,
-        status: "stopped",
-      });
-    });
-
-    child.on("error", (error) => {
-      if (runProcesses.get(projectId) !== child) {
-        return;
-      }
-      sendToRenderer("runner:data", {
-        chunk: `[runner error] ${error.message}\n`,
-        projectId,
-        stream: "stderr",
-      });
-    });
-
-    return { pid: child.pid, status: "running" };
   }
 
   function startTerminal({ command, cwd, projectId, shellPath }) {
@@ -356,6 +366,19 @@ export function createProcessSessionManager({ sendToRenderer }) {
 
     if (!terminalSession || !chosenShell) {
       const pipeFallbackCandidate = getPipeFallbackShell();
+      if (!pipeFallbackCandidate) {
+        const detail =
+          spawnErrors.length > 0 ? `\r\n${spawnErrors.join("\r\n")}` : "";
+        sendToRenderer("terminal:data", {
+          chunk: `\r\n[terminal error] No approved operating-system shell is available.${detail}\r\n`,
+          projectId,
+        });
+        sendToRenderer("terminal:status", {
+          projectId,
+          status: "stopped",
+        });
+        return { status: "stopped" };
+      }
 
       let child;
       try {
@@ -618,10 +641,8 @@ export function createProcessSessionManager({ sendToRenderer }) {
   return {
     getDefaultTerminalShellCommand,
     resizeTerminal,
-    startRunner,
     startTerminal,
     stopAllProcesses,
-    stopRunProcess,
     stopTerminalSession,
     writeTerminalInput,
   };

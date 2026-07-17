@@ -12,6 +12,7 @@ import {
   closePersistedStateDatabase,
   getStateDatabase,
 } from "../../../persisted-state.js";
+import { projectAuthorityRegistry } from "../../../project-authority-registry.js";
 import { API_SESSION_TOKEN_HEADER, startApiServer } from "../../app.js";
 import { createClyDevSessionRepository } from "../session-repository.js";
 import { createProductionClyDevHandoffDependencies } from "./handoff-production.js";
@@ -22,6 +23,7 @@ let server: Awaited<ReturnType<typeof startApiServer>> | undefined;
 afterEach(async () => {
   await server?.close();
   server = undefined;
+  projectAuthorityRegistry.hydrate({ projects: [], closedProjects: [] });
   closePersistedStateDatabase();
   for (const directory of directories.splice(0)) {
     rmSync(directory, { force: true, recursive: true });
@@ -356,6 +358,10 @@ describe("production Cly Dev handoff startup", () => {
     const dependencies = createProductionClyDevHandoffDependencies({
       db,
       runner,
+    });
+    projectAuthorityRegistry.hydrate({
+      projects: [{ id: "project-1", path: repositoryPath }],
+      closedProjects: [],
     });
     const port = await getPort({ host: "127.0.0.1" });
     const token = "startup-authority";
