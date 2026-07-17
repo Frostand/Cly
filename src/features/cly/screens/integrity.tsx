@@ -448,16 +448,6 @@ export function ReproducibilityScreen() {
         <EmptyState
           title="No reproducibility audit"
           description="Run an audit across six reproducibility areas."
-          action={
-            <Button
-              variant="primary"
-              disabled={!isClyDemoRuntime || running}
-              title={capabilityUnavailableMessage("reproducibility.audit")}
-              onClick={() => void runAudit()}
-            >
-              Run audit
-            </Button>
-          }
         />
       ) : (
         <>

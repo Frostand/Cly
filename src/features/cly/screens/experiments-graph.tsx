@@ -312,11 +312,6 @@ export function ExperimentsScreen() {
           <EmptyState
             title="No experiments yet"
             description="Create a simulation, benchmark, analysis, or reproduction attempt."
-            action={
-              <Button variant="primary" onClick={() => setCreateOpen(true)}>
-                New experiment
-              </Button>
-            }
           />
         ) : null}
 
