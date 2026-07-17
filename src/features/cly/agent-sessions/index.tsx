@@ -110,14 +110,15 @@ function ProductionAgentSessionsScreen() {
       ) : error ? (
         <EmptyState
           icon={<Bot size={24} />}
-          title="Agent sessions could not load"
+          title="Agent sessions unavailable"
           description={error}
+          action={<Button onClick={() => void load(projectId)}>Retry</Button>}
         />
       ) : sessions.length === 0 ? (
         <EmptyState
           icon={<Bot size={24} />}
-          title="No durable sessions yet"
-          description="Sessions created through the local runtime API will appear here."
+          title="No agent sessions"
+          description="Durable sessions started for this project will appear here. Resume work from another machine when a session is available."
         />
       ) : (
         <section

@@ -2,8 +2,8 @@
 
 ## Shell
 
-1. Title and command bar: project, path, phase, search, agent/local state, notifications, fixture mode, create, inspector, settings.
-2. Grouped left sidebar: primary destination hierarchy.
+1. Title and command bar: project, path, search, activity, local state, fixture mode in development, and a selection-driven inspector control.
+2. Grouped left sidebar: project work in the scrolling hierarchy; Settings remains pinned in the footer.
 3. Main workspace: lists, tables, graphs, timelines, details, comparisons, and reports.
 4. Contextual inspector: selected-object metadata, links, context, and actions.
 5. Optional Activity drawer: agents, imports, audits, background work, and future terminal/log streams.
@@ -12,12 +12,17 @@
 
 | Group | Destinations |
 |---|---|
-| Workspace | Overview, Agent Sessions, Context |
-| Research | Research Graph, Experiments, Sources, Literature, Notebooks, Code Linker, Claims |
-| Integrity | Provenance, Reproducibility, Decisions, Next Steps |
-| System | Integrations, Models & Agents, Settings |
+| Project | Overview, Objectives |
+| Work | Agent Sessions, Context, Experiments, Costs |
+| Evidence | Sources, Literature, Notebooks, Code Linker, Research Graph, Claims |
+| Review | Data Obligations, Provenance, Reproducibility, Impact Review, Decisions, Next Steps, Reviewer Capsules |
+| Configuration | Integrations, Models & Agents |
+| Pinned footer | Settings, appearance, sidebar control |
 
 NotebookLM is a tab inside Literature because it is a source-bundle companion, not an independent system of record. Provider modes live inside Integrations. Agent topology lives in Models & Agents; running work lives in Agent Sessions.
+
+Route pages own their specific primary action. The global title bar does not
+duplicate creation controls or use an ambiguous **New** action.
 
 ## Selection model
 

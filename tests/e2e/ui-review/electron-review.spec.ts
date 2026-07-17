@@ -68,8 +68,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
     }
 
     await window.getByTestId("nav-overview").click();
-    const titlebar = window.locator(".cly-titlebar");
-    const settingsButton = titlebar.getByRole("button", { name: "Settings" });
+    const settingsButton = window.getByTestId("nav-settings");
     await expect(settingsButton).toBeVisible();
     await settingsButton.click();
     await expect(
@@ -348,17 +347,19 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
       ).toContainText("Audit primary claim evidence");
     });
 
-    await runScenario("7. Detach and reattach prototype", async () => {
+    await runScenario("7. Detach and reattach workspace", async () => {
       await window.getByRole("radio", { name: "Inline workspace" }).click();
-      await window
-        .getByRole("button", { name: "Detach workspace (prototype)" })
-        .click();
+      const workspaceOpened = app.waitForEvent("window");
+      await window.getByRole("button", { name: "Detach workspace" }).click();
+      const workspace = await workspaceOpened;
       await expect(
-        window.getByTestId("agent-sessions-chat").getByRole("status"),
-      ).toContainText("Detached workspace intent recorded");
-      await window
-        .getByRole("button", { name: "Reattach workspace (prototype)" })
-        .click();
+        workspace.getByRole("main", { name: "Detached developer workspace" }),
+      ).toBeVisible();
+      await expect(
+        window.getByRole("radio", { name: "Detached workspace" }),
+      ).toBeChecked();
+      await workspace.getByRole("button", { name: "Reattach" }).click();
+      await expect.poll(() => app.windows().length).toBe(1);
       await expect(window.getByLabel("Session workbench")).toBeVisible();
     });
 
@@ -458,9 +459,8 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
     label: string,
   ) => {
     await window.keyboard.press("Control+K");
-    await expect(
-      window.getByRole("dialog", { name: "Command palette" }),
-    ).toBeVisible();
+    const palette = window.getByRole("dialog", { name: "Command palette" });
+    await expect(palette).toBeVisible();
     await window.keyboard.type(label);
     await expect(window.getByText(label, { exact: true })).toBeVisible();
     await window.keyboard.press("Enter");
@@ -519,7 +519,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
     await runCommand(window, "Use Inline Workspace");
     await runCommand(window, "Detach Workspace (Prototype Intent)");
     await expect(
-      window.getByRole("button", { name: "Reattach workspace (prototype)" }),
+      window.getByRole("button", { name: "Reattach workspace" }),
     ).toBeVisible();
     await runCommand(window, "Reattach Workspace (Prototype Intent)");
     await expect(window.getByLabel("Session workbench")).toBeVisible();
