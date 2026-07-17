@@ -2,7 +2,6 @@ import * as RadixDialog from "@radix-ui/react-dialog";
 import { Command as CommandPrimitive } from "cmdk";
 import {
   Activity,
-  Bell,
   Check,
   CircleDot,
   Command as CommandIcon,
@@ -10,9 +9,7 @@ import {
   HardDrive,
   Info,
   PanelRight,
-  Plus,
   Search,
-  Settings,
   Sparkles,
   WifiOff,
   X,
@@ -110,83 +107,18 @@ async function setSelectedWorkspaceMode(workspaceMode: ClyDevWorkspaceMode) {
 }
 
 export function Titlebar() {
-  const project = useClyStore(
-    (s) =>
-      s.data.projects.find((item) => item.id === s.activeProjectId) ??
-      s.data.projects[0],
-  );
   const search = useClyStore((s) => s.globalSearch);
   const activeProduct = useClyStore((s) => s.activeProduct);
   const setCommandOpen = useClyStore((s) => s.setCommandPaletteOpen);
   const setFixtureOpen = useClyStore((s) => s.setFixtureSwitcherOpen);
-  const setScreen = useClyStore((s) => s.setScreen);
-  const setDevSection = useClyStore((s) => s.setDevSection);
   const toggleInspector = useClyStore((s) => s.toggleInspector);
+  const toggleActivity = useClyStore((s) => s.toggleActivity);
   const selectedId = useClyStore((s) => s.selectedId);
   const notify = useClyStore((s) => s.notify);
   const activeSessions = useClyStore(
     (s) =>
       s.data.agentSessions.filter((item) => item.status === "running").length,
   );
-
-  const createObject = async () => {
-    try {
-      if (activeProduct === "dev") {
-        setDevSection("sessions");
-        const state = useClyStore.getState();
-        state.setAgentSessionsMode("overview");
-        state.setNewAgentSessionOpen(true);
-        return;
-      }
-      const screen = useClyStore.getState().activeScreen;
-      if (screen === "claims") {
-        const claim = await projectServices.claims.create(
-          "New research claim — edit evidence and scope",
-        );
-        useClyStore.getState().setSelected(claim.id);
-        notify(
-          "Claim created",
-          "The new claim is unsupported until evidence is linked.",
-        );
-        return;
-      }
-      if (screen === "experiments") {
-        const experiment = await projectServices.experiments.create({
-          name: "Untitled experiment",
-          goal: "Define the research goal",
-          type: "Custom",
-        });
-        useClyStore.getState().setSelected(experiment.id);
-        notify(
-          "Experiment created",
-          "Complete configuration before scheduling a run.",
-        );
-        return;
-      }
-      if (screen === "sources") {
-        const source = await projectServices.sources.create({
-          title: "Untitled source",
-          type: "Paper",
-        });
-        useClyStore.getState().setSelected(source.id);
-        notify(
-          "Source created",
-          "Metadata extraction is simulated in this prototype.",
-        );
-        return;
-      }
-      notify(
-        "Create new research object",
-        "Choose New Claim, New Experiment, New Source, or New Decision from the command palette.",
-      );
-      setCommandOpen(true);
-    } catch (error) {
-      notify(
-        "Research object was not saved",
-        error instanceof Error ? error.message : "Unable to save the object.",
-      );
-    }
-  };
 
   return (
     <header className="cly-titlebar">
@@ -199,7 +131,7 @@ export function Titlebar() {
         data-testid="global-search"
       >
         <Search size={13} />
-        <span style={{ flex: 1, textAlign: "left" }}>
+        <span className="cly-global-search-label">
           {search ||
             (activeProduct === "dev"
               ? "Search code, sessions, issues, or run a command"
@@ -208,39 +140,26 @@ export function Titlebar() {
         <kbd>⌘K</kbd>
       </button>
       <div className="cly-title-actions cly-no-drag">
-        <Badge
-          className="cly-title-product-badge"
-          tone={activeProduct === "research" ? "info" : "success"}
-          square
-        >
-          {activeProduct === "research" ? "Research" : "Dev"}
-        </Badge>
-        {project && activeProduct === "research" ? (
-          <Badge className="cly-title-phase-badge" tone="info" square>
-            {project.phase}
-          </Badge>
-        ) : null}
-        <ClyTooltip label="Agent activity">
+        <ClyTooltip label="Activity">
           <Button
             variant="ghost"
             iconOnly
-            aria-label={`${activeSessions} active agent sessions`}
-            onClick={() =>
-              activeProduct === "dev"
-                ? setDevSection("sessions")
-                : setScreen("agents")
-            }
+            className="cly-title-activity"
+            aria-label={`Open activity, ${activeSessions} active agent sessions`}
+            onClick={toggleActivity}
           >
             <Activity size={14} />
             {activeSessions ? (
-              <span className="cly-sr-only">{activeSessions} active</span>
+              <span className="cly-title-activity-count" aria-hidden="true">
+                {activeSessions > 9 ? "9+" : activeSessions}
+              </span>
             ) : null}
           </Button>
         </ClyTooltip>
         <ClyTooltip label="Local-first status">
           <Button
             variant="ghost"
-            iconOnly
+            className="cly-title-local-status"
             aria-label="Local and cloud status"
             onClick={() =>
               notify(
@@ -250,21 +169,7 @@ export function Titlebar() {
             }
           >
             <HardDrive size={14} />
-          </Button>
-        </ClyTooltip>
-        <ClyTooltip label="Notifications">
-          <Button
-            variant="ghost"
-            iconOnly
-            aria-label="Notification center"
-            onClick={() =>
-              notify(
-                "No unread notifications",
-                "Agent and audit events remain available in the activity drawer.",
-              )
-            }
-          >
-            <Bell size={14} />
+            <span>Local</span>
           </Button>
         </ClyTooltip>
         {__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime ? (
@@ -279,46 +184,18 @@ export function Titlebar() {
             <CircleDot size={14} />
           </Button>
         ) : null}
-        <Button
-          variant="primary"
-          aria-label="Create new object"
-          disabled={activeProduct === "dev" && !isClyDemoRuntime}
-          title={
-            activeProduct === "dev" && !isClyDemoRuntime
-              ? capabilityUnavailableMessage("agents.execute")
-              : "Create new object"
-          }
-          onClick={createObject}
-        >
-          <Plus size={14} /> {activeProduct === "dev" ? "New session" : "New"}
-        </Button>
-        <ClyTooltip label="Toggle inspector">
-          <Button
-            variant="ghost"
-            iconOnly
-            aria-label="Toggle inspector"
-            onClick={() => {
-              if (selectedId) toggleInspector();
-              else
-                notify(
-                  "Nothing selected",
-                  "Select a source, claim, run, notebook, finding, or other research object to open its inspector.",
-                );
-            }}
-          >
-            <PanelRight size={14} />
-          </Button>
-        </ClyTooltip>
-        <ClyTooltip label="Settings">
-          <Button
-            variant="ghost"
-            iconOnly
-            aria-label="Settings"
-            onClick={() => setScreen("settings")}
-          >
-            <Settings size={14} />
-          </Button>
-        </ClyTooltip>
+        {selectedId ? (
+          <ClyTooltip label="Toggle inspector">
+            <Button
+              variant="ghost"
+              iconOnly
+              aria-label="Toggle inspector"
+              onClick={toggleInspector}
+            >
+              <PanelRight size={14} />
+            </Button>
+          </ClyTooltip>
+        ) : null}
       </div>
       <ProjectSwitcherPopover />
       <FixtureSwitcherPopover />

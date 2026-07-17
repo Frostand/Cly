@@ -68,8 +68,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
     }
 
     await window.getByTestId("nav-overview").click();
-    const titlebar = window.locator(".cly-titlebar");
-    const settingsButton = titlebar.getByRole("button", { name: "Settings" });
+    const settingsButton = window.getByTestId("nav-settings");
     await expect(settingsButton).toBeVisible();
     await settingsButton.click();
     await expect(
