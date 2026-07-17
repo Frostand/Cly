@@ -165,6 +165,25 @@
     column-gap: var(--cly-space-3);
   }
 
+  [cmdk-dialog] {
+    position: fixed;
+    z-index: 71;
+    top: 14vh;
+    left: 50%;
+    width: min(620px, calc(100vw - 36px));
+    max-height: 72vh;
+    transform: translateX(-50%);
+  }
+
+  [cmdk-dialog] > .cly-command-dialog {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    max-height: 72vh;
+    transform: none;
+  }
+
   .cly-global-search-label {
     min-width: 0;
     flex: 1;

@@ -1,4 +1,73 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+
+const mockAgentConfigurationApi = async (page: Page) => {
+  await page.route("**/agent-configurations**", async (route) => {
+    const request = route.request();
+    const input =
+      request.postDataJSON()?.configuration ?? request.postDataJSON();
+    if (request.url().endsWith("/estimate")) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          inputTokens: 12_000,
+          outputTokens: 4_000,
+          costMinorUnits: 250,
+          runtimeMs: 60_000,
+          inaccessibleContext: [],
+          inaccessibleTools: [],
+          reasons: [],
+        }),
+      });
+      return;
+    }
+    if (request.method() === "GET") {
+      await route.fulfill({ contentType: "application/json", body: "[]" });
+      return;
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...input,
+        id: "configuration-e2e",
+        projectId: "project-cly",
+        revision: 1,
+        createdAt: "2026-07-16T12:00:00.000Z",
+        updatedAt: "2026-07-16T12:00:00.000Z",
+      }),
+    });
+  });
+};
+
+const mockContextPackApi = async (page: Page) => {
+  let pack: Record<string, unknown> | null = null;
+  await page.route("**/agent-context**", async (route) => {
+    const request = route.request();
+    if (request.method() === "PUT" && request.url().endsWith("/packs")) {
+      const input = request.postDataJSON();
+      pack = {
+        ...input,
+        id: "context-pack-e2e",
+        projectId: "project-cly",
+        revision: 1,
+        createdAt: "2026-07-16T12:00:00.000Z",
+        updatedAt: "2026-07-16T12:00:00.000Z",
+      };
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(pack),
+      });
+      return;
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [],
+        packs: pack ? [pack] : [],
+        manifests: [],
+      }),
+    });
+  });
+};
 
 const destinations = [
   ["overview", "Neural surrogate reliability"],
@@ -62,6 +131,7 @@ test("launches Cly and navigates every major destination", async ({ page }) => {
 });
 
 test("completes the linked research workflow", async ({ page }) => {
+  await mockAgentConfigurationApi(page);
   // Create a claim from the command palette.
   await page.getByTestId("global-search").click();
   await page
@@ -107,6 +177,12 @@ test("completes the linked research workflow", async ({ page }) => {
   await page.getByRole("button", { name: "Evidence", exact: true }).click();
   await expect(page.getByText("Evidence path traced")).toBeVisible();
 
+  // Configure an agent before composing its exact context pack.
+  await page.getByTestId("nav-models").click();
+  await page.getByRole("button", { name: "Review estimate" }).click();
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect(page.getByText("Agent configuration saved")).toBeVisible();
+
   // Compose context.
   await page.getByTestId("nav-context").click();
   const contextToggle = page.getByRole("switch", {
@@ -116,13 +192,11 @@ test("completes the linked research workflow", async ({ page }) => {
   await expect(
     page.getByRole("switch", { name: "Exclude Raman et al. 2025" }),
   ).toBeChecked();
-  await page.getByRole("button", { name: "Save pack" }).click();
-  await expect(page.getByText("Context pack saved")).toBeVisible();
+  await mockContextPackApi(page);
+  await page.getByRole("button", { name: "Save exact pack" }).click();
+  await expect(page.getByText("Exact context pack saved")).toBeVisible();
 
-  // Save an agent preset and run an audit.
-  await page.getByTestId("nav-models").click();
-  await page.getByRole("button", { name: "Save preset" }).click();
-  await expect(page.getByText("Agent preset saved")).toBeVisible();
+  // Run an audit.
   await page.getByTestId("nav-reproducibility").click();
   await page.getByRole("button", { name: "Run audit" }).click();
   await expect(page.getByText("Reproducibility audit complete")).toBeVisible();
@@ -355,6 +429,7 @@ test("captures responsive visual fixtures", async ({ page }) => {
 test("filters and sorts data, configures providers, and persists preferences", async ({
   page,
 }) => {
+  await mockAgentConfigurationApi(page);
   await page.getByTestId("nav-sources").click();
   await page.getByLabel("Filter source type").selectOption("Paper");
   await page.getByLabel("Sort sources").selectOption("Newest");
@@ -372,8 +447,9 @@ test("filters and sorts data, configures providers, and persists preferences", a
   const firstModel = page.locator(".cly-agent-model").first();
   await firstModel.fill("Claude Sonnet");
   await expect(firstModel).toHaveValue("Claude Sonnet");
-  await page.getByRole("button", { name: "Save preset" }).click();
-  await expect(page.getByText("Agent preset saved")).toBeVisible();
+  await page.getByRole("button", { name: "Review estimate" }).click();
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect(page.getByText("Agent configuration saved")).toBeVisible();
 
   await page.getByTestId("nav-settings").click();
   await page.getByRole("radio", { name: "light" }).click();

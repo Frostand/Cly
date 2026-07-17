@@ -46,7 +46,7 @@ test("completes and recovers the production evidence loop with demos disabled", 
     await expect(
       window.getByRole("heading", { name: "Agent Sessions", level: 1 }),
     ).toBeVisible();
-    await expect(window.getByText("No durable sessions yet")).toBeVisible();
+    await expect(window.getByText("No agent sessions")).toBeVisible();
 
     await window.getByTestId("nav-notebooks").click();
     await expect(
