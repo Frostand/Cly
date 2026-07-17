@@ -85,7 +85,7 @@ const ProjectWorkspaceComponent = ({
     (s) => s.projectGitRefreshKeys[projectId] ?? 0,
   );
   const { status: projectGitStatus } = useProjectGitStatus(
-    project.path,
+    projectId,
     gitRefreshKey,
   );
 

@@ -21,15 +21,15 @@ const readResponseText = async (response: Response): Promise<string> => {
   return text.trim() || `Request failed (${response.status}).`;
 };
 
-const getProjectPathCacheKey = (projectPath: string | null | undefined) =>
-  projectPath?.trim() ?? "";
+const getProjectCacheKey = (projectId: string | null | undefined) =>
+  projectId?.trim() ?? "";
 
 export const useProjectGitBranches = (
-  projectPath: string | null | undefined,
+  projectId: string | null | undefined,
   refreshKey?: number,
 ) => {
   const refreshToken = refreshKey ?? 0;
-  const cacheKey = getProjectPathCacheKey(projectPath);
+  const cacheKey = getProjectCacheKey(projectId);
   const cachedEntry = cacheKey ? gitBranchesCache.get(cacheKey) : null;
   const [status, setStatus] = useState<ProjectGitBranchesResponse | null>(
     cachedEntry?.refreshToken === refreshToken
@@ -46,7 +46,7 @@ export const useProjectGitBranches = (
 
   const refresh = useCallback(
     async (signal?: AbortSignal, force = false) => {
-      if (!cacheKey || !projectPath) {
+      if (!cacheKey || !projectId) {
         setStatus(null);
         setError(null);
         setLoading(false);
@@ -72,7 +72,7 @@ export const useProjectGitBranches = (
           request = (async () => {
             try {
               const response = await fetch("/api/project-git-branches", {
-                body: JSON.stringify({ projectPath }),
+                body: JSON.stringify({ projectId }),
                 headers: { "Content-Type": "application/json" },
                 method: "POST",
               });
@@ -122,7 +122,7 @@ export const useProjectGitBranches = (
         }
       }
     },
-    [cacheKey, projectPath, refreshToken],
+    [cacheKey, projectId, refreshToken],
   );
 
   useEffect(() => {
@@ -136,7 +136,7 @@ export const useProjectGitBranches = (
 
   const checkoutBranch = useCallback(
     async (branchName: string, create = false) => {
-      if (!projectPath) {
+      if (!projectId) {
         throw new Error("No active project is selected.");
       }
 
@@ -148,7 +148,7 @@ export const useProjectGitBranches = (
           body: JSON.stringify({
             branchName,
             create,
-            projectPath,
+            projectId,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -179,7 +179,7 @@ export const useProjectGitBranches = (
         setSwitching(false);
       }
     },
-    [cacheKey, projectPath, refreshToken],
+    [cacheKey, projectId, refreshToken],
   );
 
   const clearError = useCallback(() => {

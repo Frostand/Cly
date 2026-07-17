@@ -305,8 +305,7 @@ const shouldResumeCursorSession = ({
       remoteConversationProjectPath === projectPath,
   );
 
-const buildCursorArgs = ({
-  codexPermissionMode,
+export const buildCursorArgs = ({
   model,
   modelSpeed,
   prompt,
@@ -333,9 +332,9 @@ const buildCursorArgs = ({
   }
 
   args.push("--model", normalizeCursorCliModel(model));
-  if (codexPermissionMode === "default") {
-    args.push("--mode", "plan");
-  }
+  // Cursor has no action interception in Cly yet. Keep every invocation
+  // plan-only even if a caller forges provider permission fields.
+  args.push("--mode", "plan");
   args.push("--force");
 
   args.push(prompt);
@@ -344,11 +343,12 @@ const buildCursorArgs = ({
 
 export const streamCursorResponse = ({
   abortSignal,
-  codexPermissionMode,
+  authorizeHostAction,
   messages,
   model,
   modelSpeed,
   projectReferencesPrompt,
+  projectId,
   projectPath,
   responseMessageMetadata,
   remoteConversationId,
@@ -599,7 +599,7 @@ export const streamCursorResponse = ({
         writeMetadata(responseMessageMetadata);
 
         void prepareCodexPromptAttachments(getLatestUserMessage(messages))
-          .then((attachments) => {
+          .then(async (attachments) => {
             if (finished || abortSignal?.aborted) {
               attachments?.cleanup?.();
               return null;
@@ -613,6 +613,21 @@ export const streamCursorResponse = ({
               projectPath,
             });
 
+            if (typeof authorizeHostAction !== "function") {
+              throw new Error(
+                "Native Cursor authorization is unavailable. The provider was not started.",
+              );
+            }
+            const authorized = await authorizeHostAction({
+              action: `Start a plan-only Cursor Agent turn.\n\n${prompt}`,
+              projectId,
+              provider: "cursor",
+              root: projectPath,
+            });
+            if (!authorized) {
+              throw new Error("The Cursor Agent run was canceled.");
+            }
+
             return Promise.all([
               resolveCursorCliLaunch(),
               Promise.resolve(prompt),
@@ -625,7 +640,6 @@ export const streamCursorResponse = ({
 
             const [launch, prompt] = preparedLaunch;
             const args = buildCursorArgs({
-              codexPermissionMode,
               model,
               modelSpeed,
               prompt,

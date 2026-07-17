@@ -56,6 +56,15 @@ describe("project-scoped Cly Dev tool executor", () => {
         metadata,
       ),
     ).rejects.toThrow(/outside of the project root/i);
+    await expect(
+      execute(
+        {
+          tool: "runCommand",
+          arguments: { command: "printf should-not-run" },
+        },
+        metadata,
+      ),
+    ).rejects.toThrow(/native command authorization is unavailable/i);
     db.close();
   });
 });

@@ -4,6 +4,88 @@ import { describe, expect, it, vi } from "vitest";
 import { registerClyDevSessionRoutes } from "./session-routes.js";
 
 describe("Cly Dev session routes", () => {
+  it("rejects a workspace before persistence when its root lacks project authority", async () => {
+    const createWorkspace = vi.fn();
+    const resolveWorkspaceAuthority = vi.fn(async () => {
+      throw new Error("projectPath does not match the persisted project.");
+    });
+    const app = new Hono();
+    registerClyDevSessionRoutes(app, {
+      getRepository: () => ({ createWorkspace }),
+      resolveWorkspaceAuthority,
+    });
+
+    const response = await app.request(
+      "/api/projects/project-a/cly-dev/workspaces",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          schemaVersion: 1,
+          idempotencyKey: "workspace-a",
+          name: "Workspace A",
+          repository: { id: "repository-a" },
+          worktree: { id: "worktree-a", branch: "main" },
+          machine: { id: "machine-a", platform: "darwin" },
+          localOnly: {
+            repositoryPath: "/authorized/project",
+            worktreePath: "/arbitrary/directory",
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(resolveWorkspaceAuthority).toHaveBeenCalledWith({
+      projectId: "project-a",
+      localOnly: {
+        repositoryPath: "/authorized/project",
+        worktreePath: "/arbitrary/directory",
+      },
+    });
+    expect(createWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("revalidates a persisted session root before provider execution", async () => {
+    const execute = vi.fn();
+    const app = new Hono();
+    registerClyDevSessionRoutes(app, {
+      getRepository: () => ({
+        getHandoffSource: () => ({
+          workspace: {
+            localOnly: {
+              repositoryPath: "/authorized/project",
+              worktreePath: "/stale/arbitrary/directory",
+            },
+          },
+        }),
+      }),
+      getRuntime: () => ({ cancel: vi.fn(), execute, resume: vi.fn() }),
+      resolveWorkspaceAuthority: async () => {
+        throw new Error("projectPath does not match the persisted project.");
+      },
+    });
+
+    const response = await app.request(
+      "/api/projects/project-a/cly-dev/sessions/session-a/execute",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          schemaVersion: 1,
+          payloadVersion: 1,
+          requestId: "request-a",
+          prompt: "Inspect the project",
+          mode: "read_only",
+          tools: [],
+        }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("passes bounded event and overview pagination through HTTP", async () => {
     const listEvents = vi.fn().mockReturnValue([]);
     const listSessionOverviews = vi

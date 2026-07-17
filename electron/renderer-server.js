@@ -53,6 +53,8 @@ export function createRendererServerManager({
   rendererProbeIntervalMs,
   rendererStartupTimeoutMs,
   rendererUrlFromEnv,
+  authorizeClyDevCommand,
+  authorizeProviderHostAction,
   createClyDevHandoffDependencies = createProductionClyDevHandoffDependencies,
   clyDevHandoffOptions,
 }) {
@@ -69,7 +71,10 @@ export function createRendererServerManager({
       port: apiServerPort,
       apiToken: apiSessionToken,
       allowedRendererOrigin: new URL(developmentRendererUrl).origin,
+      authorizeProviderHostAction,
+      clyDev: { authorizeCommand: authorizeClyDevCommand },
       clyDevHandoff,
+      clyDevWorkbench: { authorizeCommand: authorizeClyDevCommand },
     });
 
     if (isDevelopment) {

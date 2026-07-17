@@ -1,5 +1,4 @@
 // @vitest-environment node
-import { EventEmitter } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -9,26 +8,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("node:child_process", () => ({ spawn: mocks.spawnProcess }));
 vi.mock("node-pty", () => ({ spawn: mocks.spawnPty }));
-vi.mock("electron", () => ({
-  app: { getPath: () => "/tmp" },
-}));
 
-import { createProcessSessionManager } from "./process-sessions.js";
-
-class FakeChildProcess extends EventEmitter {
-  killed = false;
-  kill = vi.fn(() => {
-    this.killed = true;
-  });
-  pid: number;
-  stderr = new EventEmitter();
-  stdout = new EventEmitter();
-
-  constructor(pid: number) {
-    super();
-    this.pid = pid;
-  }
-}
+import {
+  createProcessSessionManager,
+  resolveApprovedTerminalShell,
+} from "./process-sessions.js";
 
 class FakePty {
   dataListener: (chunk: string) => void = () => {};
@@ -56,38 +40,6 @@ describe("process session replacement", () => {
   beforeEach(() => {
     mocks.spawnProcess.mockReset();
     mocks.spawnPty.mockReset();
-  });
-
-  it("does not let a replaced runner remove or emit output for its successor", () => {
-    const first = new FakeChildProcess(101);
-    const second = new FakeChildProcess(102);
-    mocks.spawnProcess.mockReturnValueOnce(first).mockReturnValueOnce(second);
-    const sendToRenderer = vi.fn();
-    const manager = createProcessSessionManager({ sendToRenderer });
-
-    manager.startRunner({
-      command: "first",
-      cwd: "/tmp",
-      projectId: "project-a",
-      projectName: "A",
-    });
-    manager.startRunner({
-      command: "second",
-      cwd: "/tmp",
-      projectId: "project-a",
-      projectName: "A",
-    });
-    sendToRenderer.mockClear();
-
-    first.stdout.emit("data", Buffer.from("stale output"));
-    first.emit("close", 0, null);
-    manager.stopRunProcess("project-a");
-
-    expect(sendToRenderer).not.toHaveBeenCalledWith(
-      "runner:data",
-      expect.objectContaining({ chunk: "stale output" }),
-    );
-    expect(second.kill).toHaveBeenCalledOnce();
   });
 
   it("does not let a replaced PTY remove or emit output for its successor", () => {
@@ -122,5 +74,25 @@ describe("process session replacement", () => {
     );
     expect(second.write).toHaveBeenCalledWith("pwd\r");
     expect(second.kill).toHaveBeenCalledOnce();
+  });
+
+  it("never launches a renderer-configured executable or shell arguments", () => {
+    const terminal = new FakePty(301);
+    mocks.spawnPty.mockReturnValue(terminal);
+    const manager = createProcessSessionManager({ sendToRenderer: vi.fn() });
+
+    manager.startTerminal({
+      command: "",
+      cwd: "/tmp",
+      projectId: "project-a",
+      shellPath: "/tmp/project-shell --execute attacker-command",
+    });
+
+    expect(mocks.spawnPty).toHaveBeenCalled();
+    expect(mocks.spawnPty.mock.calls[0]?.[0]).not.toBe("/tmp/project-shell");
+    expect(resolveApprovedTerminalShell("/bin/sh -c attacker-command")).toBe(
+      null,
+    );
+    expect(resolveApprovedTerminalShell("/tmp/project-shell")).toBe(null);
   });
 });

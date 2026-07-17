@@ -276,8 +276,8 @@ export const EmptyProjectWorkspace = () => {
                         <ProjectTabIcon
                           fallback={<Folder className="size-4" />}
                           icon={project.icon}
+                          projectId={project.id}
                           projectName={project.name}
-                          projectPath={project.path}
                         />
                       ) : (
                         <Folder className="size-4" />

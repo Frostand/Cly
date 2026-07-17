@@ -1,6 +1,9 @@
 import { createOpencode } from "@opencode-ai/sdk";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
-import { waitForToolApproval } from "../tool-approvals.js";
+import {
+  createToolApprovalChallenge,
+  waitForToolApproval,
+} from "../tool-approvals.js";
 import { writeCodexTextPart, writeCodexTodoListPart } from "./codex-common.js";
 import {
   buildCodexConversationPrompt,
@@ -9,6 +12,7 @@ import {
   prepareCodexPromptAttachments,
 } from "./codex-prompt.js";
 import { formatStreamError } from "./errors.js";
+import { getOpenCodeServerConfig } from "./opencode-permissions.js";
 
 const OPENCODE_SERVER_TIMEOUT_MS = 10000;
 const MAX_OPENCODE_TEXT_CHARS = 250_000;
@@ -71,18 +75,6 @@ const parseOpenCodeModel = (model) => {
   }
 
   return { modelID, providerID };
-};
-
-const getOpenCodeServerConfig = (codexPermissionMode) => {
-  if (codexPermissionMode === "auto-accept-edits") {
-    return {
-      permission: {
-        edit: "allow",
-      },
-    };
-  }
-
-  return {};
 };
 
 const extractOpenCodePartText = (part) => {
@@ -411,6 +403,7 @@ const getOpenCodeToolErrorText = (part) => {
 export const streamOpenCodeResponse = ({
   abortSignal,
   agentMode,
+  authorizeHostAction,
   codexPermissionMode,
   messages,
   model,
@@ -759,6 +752,16 @@ export const streamOpenCodeResponse = ({
 
           permissionIds.add(permission.id);
 
+          if (agentMode === "plan") {
+            await replyToOpenCodePermission({
+              client: opencode.client,
+              directory: projectPath,
+              permission,
+              response: "reject",
+            });
+            return;
+          }
+
           if (
             shouldAutoApproveOpenCodePermission({
               codexPermissionMode,
@@ -778,6 +781,18 @@ export const streamOpenCodeResponse = ({
             permission.callID || `opencode-permission-${permission.id}`;
           const approvalId = `opencode:${permission.id}`;
           const input = createOpenCodePermissionInput(permission);
+          const approvalRequest = {
+            directory: projectPath,
+            input,
+            toolName: permission.type || "permission",
+          };
+          const approvalProjectId = projectId ?? projectPath;
+          const challenge = createToolApprovalChallenge({
+            id: approvalId,
+            projectId: approvalProjectId,
+            request: approvalRequest,
+            runId: activeSessionId,
+          });
 
           writer.write({
             dynamic: true,
@@ -799,32 +814,42 @@ export const streamOpenCodeResponse = ({
           });
           writer.write({
             approvalId,
+            signature: challenge.signature,
             toolCallId,
             type: "tool-approval-request",
           });
 
           const approval = await waitForToolApproval({
             id: approvalId,
-            projectId: projectId ?? projectPath,
+            projectId: approvalProjectId,
             provider: "opencode",
-            request: {
-              directory: projectPath,
-              input,
-              toolName: permission.type || "permission",
-            },
+            request: approvalRequest,
             runId: activeSessionId,
             signal: abortSignal,
+            challenge,
           });
+
+          let hostAuthorized = false;
+          if (approval.approved && typeof authorizeHostAction === "function") {
+            try {
+              hostAuthorized = await authorizeHostAction({
+                action: JSON.stringify(approvalRequest, null, 2),
+                projectId: approvalProjectId,
+                provider: "opencode",
+                root: projectPath,
+              });
+            } catch {
+              hostAuthorized = false;
+            }
+          }
 
           await replyToOpenCodePermission({
             client: opencode.client,
             directory: projectPath,
             permission,
-            response: approval.approved
-              ? approval.scope === "session"
-                ? "always"
-                : "once"
-              : "reject",
+            // Never convert a renderer response into a durable provider-wide
+            // grant. Every host effect receives a fresh native confirmation.
+            response: approval.approved && hostAuthorized ? "once" : "reject",
           });
         };
 
@@ -961,7 +986,7 @@ export const streamOpenCodeResponse = ({
 
             const { modelID, providerID } = parseOpenCodeModel(model);
             opencode = await createOpencode({
-              config: getOpenCodeServerConfig(codexPermissionMode),
+              config: getOpenCodeServerConfig(agentMode, codexPermissionMode),
               hostname: "127.0.0.1",
               port: 0,
               signal: serverAbortController.signal,

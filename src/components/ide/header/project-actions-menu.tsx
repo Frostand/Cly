@@ -32,6 +32,7 @@ export const ProjectActionsMenu = ({
   isMacOs: boolean;
   onOpenInEditor: (
     project: {
+      id: string;
       path: string;
     },
     editorId: string,

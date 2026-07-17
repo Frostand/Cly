@@ -179,11 +179,13 @@ export function LiveClyDevWorkbench({
       const root = next.workspace.localOnly.worktreePath;
       const [fileResult, gitResult] = await Promise.all([
         postJson<{ files: string[] }>("/api/project-files", {
-          projectPath: root,
           directory: ".",
           maxResults: 2000,
+          projectId,
+          projectPath: root,
         }),
         postJson<ProjectGitStatusResponse>("/api/project-git-status", {
+          projectId,
           projectPath: root,
         }),
       ]);
@@ -222,8 +224,9 @@ export function LiveClyDevWorkbench({
     const controller = new AbortController();
     setSurfaceError(null);
     void postJson<{ content: string }>("/api/project-file", {
-      projectPath,
       filePath: selectedFile,
+      projectId,
+      projectPath,
     })
       .then((value) => {
         if (!controller.signal.aborted) setFileContent(value.content);
@@ -237,7 +240,7 @@ export function LiveClyDevWorkbench({
           );
       });
     return () => controller.abort();
-  }, [projectPath, selectedFile]);
+  }, [projectId, projectPath, selectedFile]);
 
   useEffect(() => {
     if (!projectPath || !selectedChange) {
@@ -247,9 +250,10 @@ export function LiveClyDevWorkbench({
     let active = true;
     setSurfaceError(null);
     void postJson<ProjectGitDiffResponse>("/api/project-git-diff", {
-      projectPath,
       filePath: selectedChange.path,
       previousPath: selectedChange.previousPath,
+      projectId,
+      projectPath,
       status: selectedChange.status,
     })
       .then((value) => {
@@ -264,7 +268,7 @@ export function LiveClyDevWorkbench({
     return () => {
       active = false;
     };
-  }, [projectPath, selectedChange]);
+  }, [projectId, projectPath, selectedChange]);
 
   const resolveApproval = async (
     approvalId: string,
@@ -444,10 +448,11 @@ export function LiveClyDevWorkbench({
                         variant="ghost"
                         onClick={() =>
                           void getDesktopApi()?.openInEditor({
-                            projectPath: projectPath ?? "",
                             editorId: editors[0].id,
                             filePath: selectedFile,
                             line: 1,
+                            projectId,
+                            projectPath: projectPath ?? "",
                           })
                         }
                       >

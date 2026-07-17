@@ -1211,7 +1211,8 @@ describe("agent context repository", () => {
       getDatabase: () => db,
       getObligationService: () => ({ safeEvaluateOperation: vi.fn() }),
       getContextRepository: () => repository,
-      resolveProjectPath: () => null,
+      resolveProjectPath: ({ projectId }) =>
+        projectId === "project-1" ? projectOne : null,
       providerValidators: {
         openai: async () => null,
         opencode: async () => null,

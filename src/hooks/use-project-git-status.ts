@@ -47,15 +47,15 @@ const readResponseText = async (response: Response): Promise<string> => {
   return text.trim() || `Request failed (${response.status}).`;
 };
 
-const getProjectPathCacheKey = (projectPath: string | null | undefined) =>
-  projectPath?.trim() ?? "";
+const getProjectCacheKey = (projectId: string | null | undefined) =>
+  projectId?.trim() ?? "";
 
 export const useProjectGitStatus = (
-  projectPath: string | null | undefined,
+  projectId: string | null | undefined,
   refreshKey?: number,
 ) => {
   const refreshToken = refreshKey ?? 0;
-  const cacheKey = getProjectPathCacheKey(projectPath);
+  const cacheKey = getProjectCacheKey(projectId);
   const cachedEntry = cacheKey ? gitStatusCache.get(cacheKey) : null;
   const [status, setStatus] = useState<ProjectGitStatusResponse | null>(
     cachedEntry?.refreshToken === refreshToken
@@ -74,7 +74,7 @@ export const useProjectGitStatus = (
 
   const refresh = useCallback(
     async (signal?: AbortSignal, force = false) => {
-      if (!cacheKey || !projectPath) {
+      if (!cacheKey || !projectId) {
         setStatus(null);
         setError(null);
         setStatusRefreshToken(null);
@@ -102,7 +102,7 @@ export const useProjectGitStatus = (
           request = (async () => {
             try {
               const response = await fetch("/api/project-git-status", {
-                body: JSON.stringify({ projectPath }),
+                body: JSON.stringify({ projectId }),
                 headers: { "Content-Type": "application/json" },
                 method: "POST",
               });
@@ -155,7 +155,7 @@ export const useProjectGitStatus = (
         }
       }
     },
-    [cacheKey, projectPath, refreshToken],
+    [cacheKey, projectId, refreshToken],
   );
 
   useEffect(() => {

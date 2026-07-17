@@ -15,6 +15,7 @@ type PullRequestDetailsCacheParams = {
   includeUnstaged: boolean;
   model: string;
   nextStep: ProjectGitCreatePrNextStep;
+  projectId: string;
   projectPath: string;
   provider: AiProvider;
   refreshToken: number;
@@ -63,6 +64,7 @@ const getPullRequestDetailsCacheKey = ({
   includeUnstaged,
   model,
   nextStep,
+  projectId,
   projectPath,
   provider,
   refreshToken,
@@ -84,6 +86,7 @@ const getPullRequestDetailsCacheKey = ({
     includeUnstaged,
     model,
     nextStep,
+    projectId,
     projectPath,
     provider,
     refreshToken,
@@ -116,7 +119,7 @@ export const generateCachedProjectPullRequestDetails = (
           includeUnstaged: params.includeUnstaged,
           model: params.model,
           nextStep: params.nextStep,
-          projectPath: params.projectPath,
+          projectId: params.projectId,
           provider: params.provider,
         }),
         headers: { "Content-Type": "application/json" },

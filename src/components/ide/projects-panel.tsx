@@ -69,7 +69,7 @@ const readResponseText = async (response: Response) => {
 const isMissingWorktreeError = (message: string) =>
   message.toLowerCase().includes("worktree was not found");
 
-const useAppManagedWorktrees = (projectPath: string, refreshKey: number) => {
+const useAppManagedWorktrees = (projectId: string, refreshKey: number) => {
   const [worktrees, setWorktrees] = useState<ProjectGitWorktreeInfo[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -80,7 +80,7 @@ const useAppManagedWorktrees = (projectPath: string, refreshKey: number) => {
       setLoading(true);
       try {
         const response = await fetch("/api/project-git-worktrees", {
-          body: JSON.stringify({ projectPath }),
+          body: JSON.stringify({ projectId }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
           signal: abortController.signal,
@@ -119,7 +119,7 @@ const useAppManagedWorktrees = (projectPath: string, refreshKey: number) => {
     void loadWorktrees();
 
     return () => abortController.abort();
-  }, [projectPath, refreshKey]);
+  }, [projectId, refreshKey]);
 
   return { loading, worktrees };
 };
@@ -152,7 +152,7 @@ export const ProjectSidebar = ({
     (s) => s.projectGitRefreshKeys[project.id] ?? 0,
   );
   const { loading: worktreesLoading, worktrees } = useAppManagedWorktrees(
-    project.path,
+    project.id,
     gitRefreshKey,
   );
 
@@ -274,7 +274,7 @@ export const ProjectSidebar = ({
       const response = await fetch("/api/project-git-worktree-remove", {
         body: JSON.stringify({
           force: false,
-          projectPath: project.path,
+          projectId: project.id,
           worktreePath: pendingRemoveWorktree.path,
         }),
         headers: { "Content-Type": "application/json" },
@@ -305,7 +305,6 @@ export const ProjectSidebar = ({
     bumpProjectGitRefreshKey,
     pendingRemoveWorktree,
     project.id,
-    project.path,
     purgeWorktreeProjectState,
   ]);
 

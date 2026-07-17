@@ -79,6 +79,7 @@ export type ToolApprovalHandler = (response: {
   id: string;
   approved: boolean;
   reason?: string;
+  signature?: string;
   scope?: "once" | "session";
 }) => void;
 
@@ -100,6 +101,10 @@ export const ActionApproval = ({
   state: ToolPart["state"];
 }) => {
   const approvalId = approval.id;
+  const approvalSignature =
+    "signature" in approval && typeof approval.signature === "string"
+      ? approval.signature
+      : undefined;
 
   if (state !== "approval-requested") {
     return null;
@@ -127,6 +132,7 @@ export const ActionApproval = ({
             onToolApproval({
               approved: false,
               id: approvalId,
+              signature: approvalSignature,
             })
           }
         >
@@ -139,6 +145,7 @@ export const ActionApproval = ({
             onToolApproval({
               approved: true,
               id: approvalId,
+              signature: approvalSignature,
               scope: "once",
             })
           }

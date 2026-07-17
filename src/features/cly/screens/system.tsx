@@ -110,6 +110,13 @@ const emptyHarnessState: HarnessState = {
   models: [],
 };
 
+const DEMO_HARNESS_MODELS: Record<HarnessId, HarnessState["models"]> = {
+  anthropic: [{ id: "claude-sonnet-demo", label: "Claude Sonnet (demo)" }],
+  cursor: [{ id: "cursor-agent-demo", label: "Cursor Agent (demo)" }],
+  openai: [{ id: "gpt-demo", label: "GPT (demo)" }],
+  opencode: [{ id: "opencode-demo", label: "OpenCode (demo)" }],
+};
+
 function HarnessesPanel() {
   const [active, setActive] = useState<HarnessId>("anthropic");
   const [states, setStates] = useState<Record<HarnessId, HarnessState>>({
@@ -120,6 +127,19 @@ function HarnessesPanel() {
   });
   const [loginStarted, setLoginStarted] = useState(false);
   const refresh = useCallback(async (provider: HarnessId) => {
+    if (__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime) {
+      setStates((current) => ({
+        ...current,
+        [provider]: {
+          error: null,
+          installed: true,
+          loading: false,
+          models: DEMO_HARNESS_MODELS[provider],
+        },
+      }));
+      return;
+    }
+
     setStates((current) => ({
       ...current,
       [provider]: { ...current[provider], loading: true },

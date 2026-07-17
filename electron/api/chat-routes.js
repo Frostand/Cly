@@ -1,4 +1,5 @@
 import { promises as fs, realpathSync } from "node:fs";
+import path from "node:path";
 import {
   getStateDatabase,
   resolvePersistedProjectPath,
@@ -13,6 +14,11 @@ import {
   formatProjectReferencesForPrompt,
 } from "./chat/schema.js";
 import { generateChatTitle } from "./chat/title.js";
+import {
+  createProjectAuthorityResolver,
+  ProjectAuthorityError,
+} from "./project-git/authority.js";
+import { resolveProjectPath as resolveProjectFilePath } from "./project-git/files.js";
 import { readCodexAccessToken } from "./providers/codex-auth.js";
 import {
   getCursorCliUnavailableMessage,
@@ -31,6 +37,38 @@ const validateProjectPath = async (projectPath) => {
   } catch {
     return { message: "Project path does not exist.", status: 400 };
   }
+};
+
+const validateProjectReferences = async (projectPath, references) => {
+  for (const reference of references) {
+    const submittedPath = reference?.path;
+    if (
+      typeof submittedPath !== "string" ||
+      !submittedPath.trim() ||
+      submittedPath.length > 4_096 ||
+      path.isAbsolute(submittedPath) ||
+      Array.from(submittedPath).some((character) => {
+        const codePoint = character.codePointAt(0);
+        return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+      })
+    ) {
+      return "Project references must use a safe relative project path.";
+    }
+
+    try {
+      const absolutePath = resolveProjectFilePath(projectPath, submittedPath);
+      const stats = await fs.stat(absolutePath);
+      if (
+        (reference.kind === "file" && !stats.isFile()) ||
+        (reference.kind === "folder" && !stats.isDirectory())
+      ) {
+        return `Project reference kind does not match: ${submittedPath}`;
+      }
+    } catch {
+      return `Project reference is unavailable or outside the project: ${submittedPath}`;
+    }
+  }
+  return null;
 };
 
 const validateCodexReady = async () => {
@@ -181,8 +219,22 @@ export const registerChatRoutes = (
       cursor: validateCursorReady,
       anthropic: validateClaudeReady,
     },
+    authorizeHostAction,
   } = {},
 ) => {
+  const resolveAuthorizedProjectPath = createProjectAuthorityResolver({
+    resolveProjectPathById: resolveProjectPath,
+  });
+  const authorityErrorResponse = (c, error) => {
+    if (error instanceof ProjectAuthorityError) {
+      return c.text(error.message, error.status);
+    }
+    return c.text(
+      error instanceof Error ? error.message : "Project authority failed.",
+      400,
+    );
+  };
+
   app.post("/api/chat-title", async (c) => {
     let rawBody;
     try {
@@ -196,8 +248,22 @@ export const registerChatRoutes = (
       return c.text(parsed.error.message, 400);
     }
 
-    const { fallbackModel, projectId, projectPath, promptText, provider } =
-      parsed.data;
+    const {
+      fallbackModel,
+      projectId,
+      projectPath: submittedProjectPath,
+      promptText,
+      provider,
+    } = parsed.data;
+    let projectPath;
+    try {
+      projectPath = await resolveAuthorizedProjectPath({
+        projectId,
+        projectPath: submittedProjectPath,
+      });
+    } catch (error) {
+      return authorityErrorResponse(c, error);
+    }
     const projectPathError = await validateProjectPath(projectPath);
     if (projectPathError) {
       return c.text(projectPathError.message, projectPathError.status);
@@ -278,7 +344,7 @@ export const registerChatRoutes = (
       modelSpeed,
       modelSpeedLabel,
       projectReferences,
-      projectPath,
+      projectPath: submittedProjectPath,
       projectId,
       provider,
       reasoningEffort,
@@ -291,11 +357,15 @@ export const registerChatRoutes = (
       managedContext,
     } = parsed.data;
     const resolvedChatId = chatId ?? threadId;
-    const resolvedProjectPath =
-      resolveProjectPath({
-        chatId: resolvedChatId,
+    let resolvedProjectPath;
+    try {
+      resolvedProjectPath = await resolveAuthorizedProjectPath({
         projectId,
-      }) ?? projectPath;
+        projectPath: submittedProjectPath,
+      });
+    } catch (error) {
+      return authorityErrorResponse(c, error);
+    }
     const responseMessageMetadata = {
       createdAt: new Date().toISOString(),
       model,
@@ -305,13 +375,19 @@ export const registerChatRoutes = (
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(reasoningLabel ? { reasoningLabel } : {}),
     };
-    let projectReferencesPrompt =
-      formatProjectReferencesForPrompt(projectReferences);
-
     const projectPathError = await validateProjectPath(resolvedProjectPath);
     if (projectPathError) {
       return c.text(projectPathError.message, projectPathError.status);
     }
+    const projectReferencesError = await validateProjectReferences(
+      resolvedProjectPath,
+      projectReferences,
+    );
+    if (projectReferencesError) {
+      return c.text(projectReferencesError, 400);
+    }
+    let projectReferencesPrompt =
+      formatProjectReferencesForPrompt(projectReferences);
 
     const database = getDatabase();
     let transmission;
@@ -408,6 +484,7 @@ export const registerChatRoutes = (
       return providerStreams.opencode({
         abortSignal: c.req.raw.signal,
         agentMode,
+        authorizeHostAction,
         codexPermissionMode,
         messages,
         model,
@@ -426,11 +503,12 @@ export const registerChatRoutes = (
 
       return providerStreams.cursor({
         abortSignal: c.req.raw.signal,
-        codexPermissionMode,
+        authorizeHostAction,
         messages,
         model,
         modelSpeed,
         projectReferencesPrompt,
+        projectId: transmission.projectId,
         projectPath: resolvedProjectPath,
         remoteConversationId,
         remoteConversationModel,
