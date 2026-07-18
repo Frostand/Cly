@@ -41,6 +41,7 @@ import type { DevSection } from "../domain/types";
 import { capabilityUnavailableMessage } from "../services/capabilities";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
+import { ClyDevBoardScreen } from "./dev-board";
 import { ReviewerCapsuleDialog } from "./research-workspaces";
 
 interface ObjectiveRecord {
@@ -433,6 +434,11 @@ const DEV_SECTION_META: Record<
   DevSection,
   { title: string; description: string; action: string }
 > = {
+  board: {
+    title: "Board",
+    description: "Live agent work grouped by execution state.",
+    action: "Open Agent Sessions",
+  },
   projects: {
     title: "Projects",
     description:
@@ -504,6 +510,7 @@ function useDevRecords(section: DevSection): DevRecord[] {
   const data = useClyStore((state) => state.data);
   const project = data.projects[0];
   return useMemo(() => {
+    if (section === "board") return [];
     if (section === "projects") {
       return data.projects.map((item) => ({
         id: item.id,
@@ -549,7 +556,10 @@ function useDevRecords(section: DevSection): DevRecord[] {
       }));
     }
     const staticRecords: Record<
-      Exclude<DevSection, "projects" | "sessions" | "agents" | "context">,
+      Exclude<
+        DevSection,
+        "board" | "projects" | "sessions" | "agents" | "context"
+      >,
       DevRecord[]
     > = {
       repositories: [
@@ -798,6 +808,8 @@ export function DevWorkspaceScreen() {
       setHandoffCopyState("error");
     }
   };
+
+  if (section === "board") return <ClyDevBoardScreen />;
 
   return (
     <div className="cly-page cly-page-wide cly-route-dev">

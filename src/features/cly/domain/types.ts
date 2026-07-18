@@ -29,6 +29,7 @@ export type ScreenId =
 export type ProductArea = "research" | "dev";
 
 export type DevSection =
+  | "board"
   | "projects"
   | "repositories"
   | "features"

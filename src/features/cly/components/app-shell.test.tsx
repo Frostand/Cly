@@ -360,6 +360,11 @@ describe("Cly application shell", () => {
       "dev",
     );
 
+    await user.click(screen.getByTestId("nav-dev-board"));
+    expect(
+      screen.getByRole("heading", { name: "Board", level: 1 }),
+    ).toBeVisible();
+
     await user.click(screen.getByTestId("nav-dev-features"));
     expect(
       screen.getByRole("heading", { name: "Features", level: 1 }),

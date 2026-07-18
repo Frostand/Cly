@@ -12,6 +12,7 @@ import {
   CircleGauge,
   ClipboardCheck,
   Code2,
+  Columns3,
   FileStack,
   GitBranch,
   GitPullRequest,
@@ -182,6 +183,14 @@ const devGroups: { label: string; items: DevNavigationItem[] }[] = [
   {
     label: "Execution",
     items: [
+      {
+        id: "board",
+        label: "Board",
+        icon: Columns3,
+        count: (s) =>
+          s.data.agentSessions.filter((session) => !session.archived).length ||
+          s.clyDevSessions.length,
+      },
       {
         id: "sessions",
         label: "Sessions",
