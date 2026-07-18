@@ -24,8 +24,11 @@ export function AgentSessionsScreen() {
 
 function ProductionAgentSessionsScreen() {
   const [resumeOpen, setResumeOpen] = useState(false);
+  const requestedSessionId = useClyStore(
+    (state) => state.selectedAgentSessionId,
+  );
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
-    null,
+    requestedSessionId,
   );
   const projectId = useClyStore((state) => state.activeProjectId);
   const sessions = useClyStore((state) => state.clyDevSessions);
@@ -36,6 +39,15 @@ function ProductionAgentSessionsScreen() {
   useEffect(() => {
     void load(projectId);
   }, [load, projectId]);
+
+  useEffect(() => {
+    if (
+      requestedSessionId &&
+      sessions.some((session) => session.id === requestedSessionId)
+    ) {
+      setSelectedSessionId(requestedSessionId);
+    }
+  }, [requestedSessionId, sessions]);
 
   const resume = async (sessionId: string) => {
     await productionAgentSessionServices.transition(
@@ -61,7 +73,12 @@ function ProductionAgentSessionsScreen() {
           description={`${selectedSession.state} · ${selectedSession.lastSequence} durable events · ${selectedSession.providerId}`}
           actions={
             <>
-              <Button onClick={() => setSelectedSessionId(null)}>
+              <Button
+                onClick={() => {
+                  setSelectedSessionId(null);
+                  useClyStore.setState({ selectedAgentSessionId: null });
+                }}
+              >
                 <ArrowLeft size={13} aria-hidden="true" /> Sessions
               </Button>
               <Button
