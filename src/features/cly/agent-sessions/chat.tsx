@@ -301,6 +301,7 @@ function TaskWorkspaceControls({
               const opened = projectPath
                 ? await getDesktopApi()?.openInEditor({
                     editorId: "vscode",
+                    projectId: session.projectId,
                     projectPath,
                     filePath:
                       selected.selectedFileId ??

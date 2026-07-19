@@ -1,12 +1,21 @@
 import { z } from "zod";
 
-export const chatRequestBodySchema = z.object({
-  claudePermissionMode: z
-    .enum(["ask-permissions", "accept-edits"])
-    .default("ask-permissions"),
-  codexPermissionMode: z
-    .enum(["default", "auto-accept-edits"])
-    .default("default"),
+export const getProviderPermissionModes = (agentMode) =>
+  agentMode === "plan"
+    ? {
+        claudePermissionMode: "ask-permissions",
+        codexPermissionMode: "default",
+      }
+    : {
+        claudePermissionMode: "accept-edits",
+        codexPermissionMode: "auto-accept-edits",
+      };
+
+const chatRequestSchema = z.object({
+  // These compatibility fields are accepted only when they agree with the
+  // authoritative agent mode. Provider policy is always derived below.
+  claudePermissionMode: z.enum(["ask-permissions", "accept-edits"]).optional(),
+  codexPermissionMode: z.enum(["default", "auto-accept-edits"]).optional(),
   messages: z.array(z.unknown()),
   model: z.string().min(1),
   modelLabel: z.string().min(1).optional(),
@@ -20,7 +29,7 @@ export const chatRequestBodySchema = z.object({
       }),
     )
     .default([]),
-  projectPath: z.string().min(1),
+  projectPath: z.string().min(1).optional(),
   provider: z.enum(["openai", "anthropic", "opencode", "cursor"]),
   agentMode: z.enum(["plan", "build"]).default("build"),
   remoteConversationId: z.string().nullable().optional(),
@@ -38,7 +47,7 @@ export const chatRequestBodySchema = z.object({
     .optional(),
   reasoningLabel: z.string().min(1).optional(),
   chatId: z.string().min(1).optional(),
-  projectId: z.string().min(1).optional(),
+  projectId: z.string().min(1),
   threadId: z.string().min(1).optional(),
   managedContext: z
     .object({
@@ -51,6 +60,43 @@ export const chatRequestBodySchema = z.object({
     .optional(),
 });
 
+export const chatRequestBodySchema = chatRequestSchema
+  .superRefine((value, context) => {
+    const expected = getProviderPermissionModes(value.agentMode);
+    if (
+      value.claudePermissionMode !== undefined &&
+      value.claudePermissionMode !== expected.claudePermissionMode
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "claudePermissionMode must match agentMode.",
+        path: ["claudePermissionMode"],
+      });
+    }
+    if (
+      value.codexPermissionMode !== undefined &&
+      value.codexPermissionMode !== expected.codexPermissionMode
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "codexPermissionMode must match agentMode.",
+        path: ["codexPermissionMode"],
+      });
+    }
+    if (value.provider === "cursor" && value.agentMode !== "plan") {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Cursor is plan-only until Cly can intercept and authorize each Cursor action.",
+        path: ["agentMode"],
+      });
+    }
+  })
+  .transform((value) => ({
+    ...value,
+    ...getProviderPermissionModes(value.agentMode),
+  }));
+
 export const formatProjectReferencesForPrompt = (projectReferences) => {
   if (!Array.isArray(projectReferences) || projectReferences.length === 0) {
     return null;
@@ -58,8 +104,7 @@ export const formatProjectReferencesForPrompt = (projectReferences) => {
 
   const lines = projectReferences.map((reference) => {
     const kind = reference.kind === "folder" ? "folder" : "file";
-    const name = reference.name ? ` (${reference.name})` : "";
-    return `- ${kind}${name}: ${reference.path}`;
+    return `- ${kind}: ${reference.path}`;
   });
 
   return [
@@ -71,8 +116,8 @@ export const formatProjectReferencesForPrompt = (projectReferences) => {
 
 export const chatTitleRequestBodySchema = z.object({
   fallbackModel: z.string().min(1).optional(),
-  projectPath: z.string().min(1),
-  projectId: z.string().min(1).optional(),
+  projectPath: z.string().min(1).optional(),
+  projectId: z.string().min(1),
   promptText: z.string(),
   provider: z.enum(["openai", "anthropic", "opencode", "cursor"]),
 });

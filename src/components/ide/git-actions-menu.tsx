@@ -38,6 +38,7 @@ const GitActionDialogHost = ({
   onOpenChange,
   onPrCompleted,
   model,
+  projectId,
   projectPath,
   provider,
   refreshToken,
@@ -49,6 +50,7 @@ const GitActionDialogHost = ({
   onOpenChange: (open: boolean) => void;
   onPrCompleted: (url: string | null, shouldOpen: boolean) => void;
   model: string;
+  projectId: string;
   projectPath: string;
   provider: AiProvider;
   refreshToken: number;
@@ -62,6 +64,7 @@ const GitActionDialogHost = ({
         onOpenChange={onOpenChange}
         open
         model={model}
+        projectId={projectId}
         projectPath={projectPath}
         provider={provider}
         refreshToken={refreshToken}
@@ -77,7 +80,7 @@ const GitActionDialogHost = ({
         onCompleted={onActionCompleted}
         onOpenChange={onOpenChange}
         open
-        projectPath={projectPath}
+        projectId={projectId}
         status={status}
       />
     );
@@ -90,6 +93,7 @@ const GitActionDialogHost = ({
       onOpenChange={onOpenChange}
       open
       model={model}
+      projectId={projectId}
       projectPath={projectPath}
       provider={provider}
       refreshToken={refreshToken}
@@ -120,7 +124,7 @@ const GitActionsMenuImpl = ({
     () => getDefaultGitGenerationModelSelection(settings),
     [settings],
   );
-  const { branch, status } = useProjectGitStatus(projectPath, gitRefreshKey);
+  const { branch, status } = useProjectGitStatus(projectId, gitRefreshKey);
   const [activeDialog, setActiveDialog] = useState<GitActionDialog>(null);
   const hasGitChanges = getStatusFileCount(status) > 0;
   const canPush = hasPushableCommits(status);
@@ -235,6 +239,7 @@ const GitActionsMenuImpl = ({
           onOpenChange={handleDialogOpenChange}
           onPrCompleted={handlePrCompleted}
           model={gitGenerationModelSelection.model}
+          projectId={projectId}
           projectPath={projectPath}
           provider={gitGenerationModelSelection.provider}
           refreshToken={gitRefreshKey}

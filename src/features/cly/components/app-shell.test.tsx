@@ -360,6 +360,11 @@ describe("Cly application shell", () => {
       "dev",
     );
 
+    await user.click(screen.getByTestId("nav-dev-board"));
+    expect(
+      screen.getByRole("heading", { name: "Board", level: 1 }),
+    ).toBeVisible();
+
     await user.click(screen.getByTestId("nav-dev-features"));
     expect(
       screen.getByRole("heading", { name: "Features", level: 1 }),
@@ -520,7 +525,7 @@ describe("Cly application shell", () => {
     );
   });
 
-  it("renders all titlebar action buttons directly", () => {
+  it("keeps the titlebar focused on global context", () => {
     render(<ClyAppShell />);
 
     const titlebar = document.querySelector(".cly-titlebar") as HTMLElement;
@@ -531,9 +536,32 @@ describe("Cly application shell", () => {
       within(titlebar).getByLabelText(/Local and cloud status/),
     ).toBeVisible();
     expect(
-      within(titlebar).getByLabelText("Notification center"),
+      within(titlebar).queryByLabelText("Notification center"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(titlebar).queryByLabelText("Create new object"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(titlebar).queryByLabelText("Settings"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(titlebar).queryByLabelText("Toggle inspector"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("nav-settings")).toBeVisible();
+  });
+
+  it("opens the activity drawer from the global activity control", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByRole("button", { name: /Open activity/ }));
+
+    expect(screen.getByTestId("activity-drawer")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Close activity drawer" }),
     ).toBeVisible();
-    expect(within(titlebar).getByLabelText("Settings")).toBeVisible();
-    expect(within(titlebar).getByLabelText("Toggle inspector")).toBeVisible();
   });
 });

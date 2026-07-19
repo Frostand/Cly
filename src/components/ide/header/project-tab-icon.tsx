@@ -10,8 +10,8 @@ export const areProjectIconsEqual = (
   left?.source === right?.source &&
   left?.mtimeMs === right?.mtimeMs;
 
-const getProjectIconUrl = (projectPath: string, iconPath: string) =>
-  `/api/project-file-raw?projectPath=${encodeURIComponent(projectPath)}&filePath=${encodeURIComponent(iconPath)}`;
+const getProjectIconUrl = (projectId: string, iconPath: string) =>
+  `/api/project-file-raw?projectId=${encodeURIComponent(projectId)}&filePath=${encodeURIComponent(iconPath)}`;
 
 export const normalizeProjectIconResponse = (
   value: unknown,
@@ -43,13 +43,13 @@ export const normalizeProjectIconResponse = (
 export const ProjectTabIcon = ({
   fallback = null,
   icon,
+  projectId,
   projectName,
-  projectPath,
 }: {
   fallback?: ReactNode;
   icon: ProjectIconInfo | null;
+  projectId: string;
   projectName: string;
-  projectPath: string;
 }) => {
   const [failed, setFailed] = useState(false);
   const [src, setSrc] = useState<string | null>(null);
@@ -65,7 +65,7 @@ export const ProjectTabIcon = ({
     const abortController = new AbortController();
     let objectUrl: string | null = null;
 
-    void fetch(getProjectIconUrl(projectPath, icon.path), {
+    void fetch(getProjectIconUrl(projectId, icon.path), {
       signal: abortController.signal,
     })
       .then(async (response) => {
@@ -98,7 +98,7 @@ export const ProjectTabIcon = ({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [icon, projectPath]);
+  }, [icon, projectId]);
 
   if (!icon || failed || !src) {
     return fallback;

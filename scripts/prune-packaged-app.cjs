@@ -44,7 +44,29 @@ function getUpdateFeedUrl() {
   const rawUrl = process.env.CLY_UPDATE_FEED_URL?.trim();
 
   if (rawUrl) {
-    return rawUrl.replace(/\/+$/, "");
+    let url;
+    try {
+      url = new URL(rawUrl);
+    } catch {
+      throw new Error("CLY_UPDATE_FEED_URL must be a valid HTTPS URL.");
+    }
+
+    if (url.username || url.password || url.search || url.hash) {
+      throw new Error(
+        "CLY_UPDATE_FEED_URL must not contain credentials, query parameters, or fragments.",
+      );
+    }
+
+    if (url.protocol !== "https:") {
+      throw new Error(
+        "CLY_UPDATE_FEED_URL must use HTTPS for packaged applications.",
+      );
+    }
+
+    const normalizedPath = url.pathname.replace(/\/+$/, "");
+    url.pathname = normalizedPath || "/";
+    const normalized = url.toString();
+    return normalizedPath ? normalized : normalized.replace(/\/(?=[?#]|$)/, "");
   }
 
   if (process.env.CI === "true") {

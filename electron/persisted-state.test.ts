@@ -176,6 +176,32 @@ describe("persisted research storage", () => {
     "cly_dev_sync_audit",
   ];
 
+  it("removes a legacy persistent installation identifier on reopen", () => {
+    const databasePath = createDatabasePath();
+    const database = getStateDatabase(databasePath);
+    database
+      .prepare(
+        `
+          INSERT INTO config (key, value, updated_at)
+          VALUES (?, ?, ?)
+        `,
+      )
+      .run(
+        "installId",
+        JSON.stringify("11111111-1111-4111-8111-111111111111"),
+        new Date().toISOString(),
+      );
+
+    closePersistedStateDatabase();
+    const reopened = getStateDatabase(databasePath);
+
+    expect(
+      reopened
+        .prepare("SELECT value FROM config WHERE key = ?")
+        .get("installId"),
+    ).toBeUndefined();
+  });
+
   it("persists detached-window layout independently of IDE snapshots", () => {
     const databasePath = createDatabasePath();
     expect(
@@ -282,7 +308,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784224800000 });
+    ).toEqual({ createdAt: 1784160000000 });
     expect(
       upgraded
         .prepare(

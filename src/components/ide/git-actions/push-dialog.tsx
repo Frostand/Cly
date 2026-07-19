@@ -22,14 +22,14 @@ export const PushDialog = ({
   onCompleted,
   onOpenChange,
   open,
-  projectPath,
+  projectId,
   status,
 }: {
   branch: string | null;
   onCompleted: () => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
-  projectPath: string;
+  projectId: string;
   status: ProjectGitStatusResponse | null;
 }) => {
   const [submitting, setSubmitting] = useState(false);
@@ -62,7 +62,7 @@ export const PushDialog = ({
     void (async () => {
       try {
         const response = await fetch("/api/project-git-push-preview", {
-          body: JSON.stringify({ projectPath }),
+          body: JSON.stringify({ projectId }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
           signal: controller.signal,
@@ -98,7 +98,7 @@ export const PushDialog = ({
     return () => {
       controller.abort();
     };
-  }, [open, projectPath]);
+  }, [open, projectId]);
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -114,7 +114,7 @@ export const PushDialog = ({
           commitMessage: null,
           includeUnstaged: true,
           nextStep: "push",
-          projectPath,
+          projectId,
         });
         onCompleted();
         onOpenChange(false);
@@ -126,7 +126,7 @@ export const PushDialog = ({
         setSubmitting(false);
       }
     },
-    [canPush, onCompleted, onOpenChange, projectPath, submitting],
+    [canPush, onCompleted, onOpenChange, projectId, submitting],
   );
 
   return (

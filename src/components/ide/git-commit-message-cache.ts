@@ -12,6 +12,7 @@ type CommitMessageCacheParams = {
   changes: ProjectGitStatusEntry[];
   includeUnstaged: boolean;
   model: string;
+  projectId: string;
   projectPath: string;
   provider: AiProvider;
   refreshToken: number;
@@ -22,6 +23,7 @@ type GenerateCommitMessageParams = CommitMessageCacheParams;
 type WarmCommitMessageParams = {
   includeUnstaged?: boolean;
   model: string;
+  projectId: string;
   projectPath: string;
   provider: AiProvider;
   refreshToken: number;
@@ -63,6 +65,7 @@ const getCommitMessageCacheKey = ({
   changes,
   includeUnstaged,
   model,
+  projectId,
   projectPath,
   provider,
 }: CommitMessageCacheParams) =>
@@ -80,6 +83,7 @@ const getCommitMessageCacheKey = ({
       .sort((a, b) => a.path.localeCompare(b.path)),
     includeUnstaged,
     model,
+    projectId,
     projectPath,
     provider,
     version: COMMIT_MESSAGE_CACHE_VERSION,
@@ -108,7 +112,7 @@ export const generateCachedProjectCommitMessage = (
       body: JSON.stringify({
         includeUnstaged: params.includeUnstaged,
         model: params.model,
-        projectPath: params.projectPath,
+        projectId: params.projectId,
         provider: params.provider,
       }),
       headers: { "Content-Type": "application/json" },
@@ -145,6 +149,7 @@ export const generateCachedProjectCommitMessage = (
 export const warmProjectCommitMessageForStatus = async ({
   includeUnstaged = true,
   model,
+  projectId,
   projectPath,
   provider,
   refreshToken,
@@ -160,6 +165,7 @@ export const warmProjectCommitMessageForStatus = async ({
       changes,
       includeUnstaged,
       model,
+      projectId,
       projectPath,
       provider,
       refreshToken,
@@ -172,13 +178,14 @@ export const warmProjectCommitMessageForStatus = async ({
 export const warmProjectCommitMessage = async ({
   includeUnstaged = true,
   model,
+  projectId,
   projectPath,
   provider,
   refreshToken,
 }: WarmCommitMessageParams) => {
   try {
     const statusResponse = await fetch("/api/project-git-status", {
-      body: JSON.stringify({ projectPath }),
+      body: JSON.stringify({ projectId }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     });
@@ -190,6 +197,7 @@ export const warmProjectCommitMessage = async ({
     return await warmProjectCommitMessageForStatus({
       includeUnstaged,
       model,
+      projectId,
       projectPath,
       provider,
       refreshToken,

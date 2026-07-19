@@ -664,7 +664,7 @@ export const WriteFileChip = ({
   }, [defaultExpanded]);
 
   useEffect(() => {
-    if (!shouldLoadGitDiff || !projectPath || !projectRelativeFilePath) {
+    if (!shouldLoadGitDiff || !projectId || !projectRelativeFilePath) {
       return;
     }
 
@@ -675,7 +675,7 @@ export const WriteFileChip = ({
 
       try {
         const statusResponse = await fetch("/api/project-git-status", {
-          body: JSON.stringify({ projectPath }),
+          body: JSON.stringify({ projectId }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
           signal: abortController.signal,
@@ -703,7 +703,7 @@ export const WriteFileChip = ({
           body: JSON.stringify({
             filePath: matchingChange?.path ?? projectRelativeFilePath,
             previousPath,
-            projectPath,
+            projectId,
             status: diffStatus,
           }),
           headers: { "Content-Type": "application/json" },
@@ -746,7 +746,7 @@ export const WriteFileChip = ({
     return () => {
       abortController.abort();
     };
-  }, [changeStatus, projectPath, projectRelativeFilePath, shouldLoadGitDiff]);
+  }, [changeStatus, projectId, projectRelativeFilePath, shouldLoadGitDiff]);
 
   return (
     <div className={expanded || isApprovalRequested ? "w-full" : undefined}>

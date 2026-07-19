@@ -7,6 +7,8 @@ import type {
   AgentConfiguration,
   AgentConfigurationEstimate,
   AgentConfigurationInput,
+  ClyDevCommandRequest,
+  ClyDevCommandResult,
   ClyDevContextManifest,
   ClyDevDevice,
   ClyDevDevicePublicBundle,
@@ -23,6 +25,7 @@ import type {
   ClyDevSyncConflict,
   ClyDevSyncStatus,
   ClyDevTask,
+  ClyDevWorkbenchContext,
   ClyDevWorkspace,
 } from "../agent-sessions/types";
 import type {
@@ -1050,6 +1053,41 @@ export const apiClient = {
   fetchClyDevSessionSnapshot(projectId: string, sessionId: string) {
     return request<ClyDevSessionSnapshot>(
       `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}`,
+    );
+  },
+
+  fetchClyDevWorkbench(projectId: string, sessionId: string) {
+    return request<ClyDevWorkbenchContext>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/workbench`,
+    );
+  },
+
+  requestClyDevCommand(
+    projectId: string,
+    sessionId: string,
+    input: { requestId?: string; command: string },
+  ) {
+    return request<ClyDevCommandRequest>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/workbench/commands/request`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  executeClyDevCommand(
+    projectId: string,
+    sessionId: string,
+    input: { requestId: string; command: string; approvalId?: string },
+  ) {
+    return request<ClyDevCommandResult>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/workbench/commands/execute`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  cancelClyDevCommand(projectId: string, sessionId: string, requestId: string) {
+    return request<{ canceled: boolean }>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/workbench/commands/cancel`,
+      { method: "POST", body: JSON.stringify({ requestId }) },
     );
   },
 

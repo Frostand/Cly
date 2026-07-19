@@ -34,10 +34,11 @@ export {
   storeProviderUsageLimitSnapshot,
 };
 
-const providerUsageLimitsRequestSchema = z.object({
-  provider: z.enum(["openai", "anthropic", "opencode", "cursor"]),
-  projectPath: z.string().optional(),
-});
+const providerUsageLimitsRequestSchema = z
+  .object({
+    provider: z.enum(["openai", "anthropic", "opencode", "cursor"]),
+  })
+  .strict();
 
 const providerModelsRequestSchema = z
   .object({

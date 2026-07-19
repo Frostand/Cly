@@ -15,7 +15,11 @@ function getSafeScreenshotName(value) {
   return `${sanitized || "browser-screenshot"}.png`;
 }
 
-export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
+export function createBrowserSessionManager({
+  getMainWindow,
+  getWebContentsById = (id) => webContents.fromId(id),
+  sendToRenderer,
+}) {
   function sendBrowserActionError(payload, code, description) {
     sendToRenderer("browser:error", {
       code,
@@ -25,7 +29,7 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     });
   }
 
-  function getGuestWebContents(payload, actionName) {
+  function getGuestWebContents(payload, actionName, sender) {
     const webContentsId = Number(payload?.webContentsId);
     if (!Number.isInteger(webContentsId) || webContentsId <= 0) {
       sendBrowserActionError(
@@ -36,7 +40,7 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
       return null;
     }
 
-    const guest = webContents.fromId(webContentsId);
+    const guest = getWebContentsById(webContentsId);
     if (!guest || guest.isDestroyed()) {
       sendBrowserActionError(
         payload,
@@ -46,11 +50,27 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
       return null;
     }
 
+    const host = guest.hostWebContents;
+    if (
+      !sender ||
+      sender.isDestroyed?.() ||
+      guest.getType?.() !== "webview" ||
+      !host ||
+      host.id !== sender.id
+    ) {
+      sendBrowserActionError(
+        payload,
+        "BROWSER_ACTION_FORBIDDEN",
+        `Browser guest is not owned by this window for ${actionName}.`,
+      );
+      return null;
+    }
+
     return guest;
   }
 
-  async function clearBrowserCookies(payload) {
-    const guest = getGuestWebContents(payload, "cookies");
+  async function clearBrowserCookies(payload, sender) {
+    const guest = getGuestWebContents(payload, "cookies", sender);
     if (!guest) {
       return;
     }
@@ -68,8 +88,8 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     }
   }
 
-  async function clearBrowserCache(payload) {
-    const guest = getGuestWebContents(payload, "cache");
+  async function clearBrowserCache(payload, sender) {
+    const guest = getGuestWebContents(payload, "cache", sender);
     if (!guest) {
       return;
     }
@@ -85,8 +105,8 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     }
   }
 
-  async function takeBrowserScreenshot(payload) {
-    const guest = getGuestWebContents(payload, "screenshot");
+  async function takeBrowserScreenshot(payload, sender) {
+    const guest = getGuestWebContents(payload, "screenshot", sender);
     if (!guest) {
       return;
     }
@@ -123,8 +143,8 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     }
   }
 
-  function openBrowserDevTools(payload) {
-    const guest = getGuestWebContents(payload, "DevTools");
+  function openBrowserDevTools(payload, sender) {
+    const guest = getGuestWebContents(payload, "DevTools", sender);
     if (!guest) {
       return;
     }
@@ -140,28 +160,28 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     }
   }
 
-  function update(payload) {
+  function update(payload, sender) {
     if (!payload || typeof payload !== "object") {
       return;
     }
 
     if (payload.openDevTools === true) {
-      openBrowserDevTools(payload);
+      openBrowserDevTools(payload, sender);
       return;
     }
 
     if (payload.takeScreenshot === true) {
-      void takeBrowserScreenshot(payload);
+      void takeBrowserScreenshot(payload, sender);
       return;
     }
 
     if (payload.clearCookies === true) {
-      void clearBrowserCookies(payload);
+      void clearBrowserCookies(payload, sender);
       return;
     }
 
     if (payload.clearCache === true) {
-      void clearBrowserCache(payload);
+      void clearBrowserCache(payload, sender);
     }
   }
 

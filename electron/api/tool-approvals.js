@@ -1,8 +1,14 @@
-import { createHash } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 import { z } from "zod";
 
 const pendingToolApprovals = new Map();
 const DEFAULT_APPROVAL_TTL_MS = 2 * 60 * 1000;
+const APPROVAL_SIGNATURE_KEY = randomBytes(32);
 
 const canonicalize = (value) => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -44,6 +50,29 @@ export const createToolApprovalBinding = ({
     id,
 });
 
+const signToolApprovalBinding = (binding) =>
+  createHmac("sha256", APPROVAL_SIGNATURE_KEY)
+    .update(JSON.stringify(canonicalize(binding)))
+    .digest("base64url");
+
+export const createToolApprovalChallenge = (input) => {
+  const binding = createToolApprovalBinding(input);
+  return {
+    ...binding,
+    signature: `v1.${signToolApprovalBinding(binding)}`,
+  };
+};
+
+const signaturesMatch = (left, right) => {
+  if (typeof left !== "string" || typeof right !== "string") return false;
+  const leftBytes = Buffer.from(left);
+  const rightBytes = Buffer.from(right);
+  return (
+    leftBytes.length === rightBytes.length &&
+    timingSafeEqual(leftBytes, rightBytes)
+  );
+};
+
 const registerPendingToolApproval = (approval) => {
   if (pendingToolApprovals.has(approval.id)) {
     throw new Error(
@@ -57,6 +86,7 @@ const toolApprovalResponseSchema = z.object({
   approved: z.boolean(),
   id: z.string().min(1),
   reason: z.string().nullable().optional(),
+  signature: z.string().min(1).max(512).optional(),
   scope: z.enum(["once", "session"]).default("once"),
 });
 
@@ -68,16 +98,27 @@ export const waitForToolApproval = ({
   request,
   runId,
   signal,
+  challenge,
 }) =>
   new Promise((resolve) => {
     let settled = false;
     const expiresAt = Date.now() + expiresInMs;
-    const binding = createToolApprovalBinding({
+    const expectedChallenge = createToolApprovalChallenge({
       id,
       projectId,
       request,
       runId,
     });
+    if (
+      challenge &&
+      (!signaturesMatch(challenge.signature, expectedChallenge.signature) ||
+        challenge.actionHash !== expectedChallenge.actionHash ||
+        challenge.projectId !== expectedChallenge.projectId ||
+        challenge.runId !== expectedChallenge.runId)
+    ) {
+      throw new Error("Tool approval challenge does not match its action.");
+    }
+    const binding = challenge ?? expectedChallenge;
     let expirationTimer;
 
     const finish = (response) => {
@@ -106,6 +147,7 @@ export const waitForToolApproval = ({
       expiresAt,
       id,
       provider,
+      requiresSignature: Boolean(challenge),
       request,
       respond: finish,
     });
@@ -146,6 +188,13 @@ export const registerToolApprovalRoutes = (app) => {
       // are resolved in-process by useChat(). The shared endpoint intentionally
       // treats unknown approvals as handled so the frontend can use one path.
       return c.json({ handled: false, status: "not-found" });
+    }
+
+    if (
+      pendingApproval.requiresSignature &&
+      !signaturesMatch(payload.signature, pendingApproval.signature)
+    ) {
+      return c.json({ handled: false, status: "binding-mismatch" }, 409);
     }
 
     if (pendingApproval.expiresAt <= Date.now()) {

@@ -374,11 +374,6 @@ export function SourcesScreen() {
           <EmptyState
             title="No sources in this project"
             description="Import a paper, note, dataset, or URL."
-            action={
-              <Button variant="primary" onClick={() => openImport()}>
-                Import source
-              </Button>
-            }
           />
         ) : (
           <ClyDataTable
@@ -1716,16 +1711,6 @@ export function NotebooksScreen() {
               ? "Import a notebook to inspect its execution and outputs."
               : capabilityUnavailableMessage("notebooks.import")
           }
-          action={
-            <Button
-              variant="primary"
-              disabled={!isClyDemoRuntime}
-              title={capabilityUnavailableMessage("notebooks.import")}
-              onClick={() => setImportOpen(true)}
-            >
-              Import notebook
-            </Button>
-          }
         />
       ) : (
         <div className="cly-overview-grid">
@@ -2228,11 +2213,6 @@ export function ClaimsScreen() {
         <EmptyState
           title="No claims to audit"
           description="Create a precise claim, then link evidence."
-          action={
-            <Button variant="primary" onClick={() => setCreateOpen(true)}>
-              Create first claim
-            </Button>
-          }
         />
       ) : (
         <>

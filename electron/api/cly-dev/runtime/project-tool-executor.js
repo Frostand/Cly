@@ -7,6 +7,7 @@ import {
 } from "../../project-git/files.js";
 
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
+const MAX_COMMAND_CHARS = 20_000;
 
 const requireString = (value, name, { allowEmpty = false } = {}) => {
   if (typeof value !== "string" || (!allowEmpty && !value.trim())) {
@@ -85,7 +86,7 @@ const runCommand = ({ command, root, signal }) =>
     });
   });
 
-export function createProjectScopedToolExecutor({ db } = {}) {
+export function createProjectScopedToolExecutor({ db, authorizeCommand } = {}) {
   if (!db) throw new Error("A SQLite database is required.");
 
   return async (toolCall, metadata) => {
@@ -150,12 +151,33 @@ export function createProjectScopedToolExecutor({ db } = {}) {
       case "runCommand":
       case "command":
       case "shell":
-      case "exec":
+      case "exec": {
+        const command = requireString(input.command, "command");
+        if (command.length > MAX_COMMAND_CHARS) {
+          throw new Error("command must be at most 20000 characters.");
+        }
+        if (typeof authorizeCommand !== "function") {
+          throw new Error(
+            "Native command authorization is unavailable. The command was not run.",
+          );
+        }
+        const authorized = await authorizeCommand({
+          command,
+          root,
+          projectId: metadata.projectId,
+          sessionId: metadata.sessionId,
+          requestId: metadata.requestId,
+          toolCallId: toolCall?.toolCallId,
+        });
+        if (!authorized) {
+          throw new Error("The project command was canceled before execution.");
+        }
         return runCommand({
-          command: input.command,
+          command,
           root,
           signal: metadata.signal,
         });
+      }
       default:
         throw new Error(
           `Tool ${toolCall?.tool ?? "(missing)"} is unavailable in the project-scoped executor.`,

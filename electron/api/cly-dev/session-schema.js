@@ -359,6 +359,21 @@ const testPayload = z
     durationMs: z.number().int().min(0),
   })
   .strict();
+const processPayload = z
+  .object({
+    requestId: idSchema,
+    command: z.string().trim().min(1).max(20_000),
+    cwd: z.string().trim().min(1).max(4_000),
+    status: z.enum(["completed", "failed", "canceled"]),
+    stdout: z.string().max(600_000),
+    stderr: z.string().max(600_000),
+    exitCode: z.number().int().nullable(),
+    signal: z.string().max(100).nullable(),
+    startedAt: z.string().datetime(),
+    finishedAt: z.string().datetime(),
+    truncated: z.boolean(),
+  })
+  .strict();
 const failurePayload = z
   .object({
     code: idSchema,
@@ -408,8 +423,9 @@ const publicEventSchemas = [
   localEvent("tool.recorded", toolPayload),
   syncableEvent("decision.recorded", decisionPayload),
   localEvent("cost.recorded", costPayload),
-  localEvent("diff.recorded", diffPayload),
-  localEvent("test.recorded", testPayload),
+  syncableEvent("diff.recorded", diffPayload),
+  syncableEvent("test.recorded", testPayload),
+  localEvent("process.recorded", processPayload),
   localEvent("failure.recorded", failurePayload),
   syncableEvent("remaining_work.recorded", remainingWorkPayload),
   syncableEvent("approval.requested", approvalRequestPayload),

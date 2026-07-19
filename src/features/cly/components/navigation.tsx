@@ -12,6 +12,7 @@ import {
   CircleGauge,
   ClipboardCheck,
   Code2,
+  Columns3,
   FileStack,
   GitBranch,
   GitPullRequest,
@@ -50,10 +51,15 @@ interface NavigationItem {
 
 const researchGroups: { label: string; items: NavigationItem[] }[] = [
   {
-    label: "Workspace",
+    label: "Project",
     items: [
       { id: "overview", label: "Overview", icon: CircleGauge },
       { id: "objectives", label: "Objectives", icon: Goal },
+    ],
+  },
+  {
+    label: "Work",
+    items: [
       {
         id: "agents",
         label: "Agent Sessions",
@@ -69,12 +75,6 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
         icon: BrainCircuit,
         count: (s) => s.data.contextItems.filter((x) => x.included).length,
       },
-    ],
-  },
-  {
-    label: "Research",
-    items: [
-      { id: "graph", label: "Research Graph", icon: GitBranch },
       {
         id: "experiments",
         label: "Experiments",
@@ -87,6 +87,11 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
         icon: WalletCards,
         count: (s) => s.costLedger.waste.entryCount,
       },
+    ],
+  },
+  {
+    label: "Evidence",
+    items: [
       {
         id: "sources",
         label: "Sources",
@@ -101,6 +106,7 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
         count: (s) => s.data.notebooks.length,
       },
       { id: "code", label: "Code Linker", icon: Code2 },
+      { id: "graph", label: "Research Graph", icon: GitBranch },
       {
         id: "claims",
         label: "Claims",
@@ -113,7 +119,7 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
     ],
   },
   {
-    label: "Integrity",
+    label: "Review",
     items: [
       {
         id: "obligations",
@@ -147,11 +153,10 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
     ],
   },
   {
-    label: "System",
+    label: "Configuration",
     items: [
       { id: "integrations", label: "Integrations", icon: Boxes },
       { id: "models", label: "Models & Agents", icon: Activity },
-      { id: "settings", label: "Settings", icon: Settings },
     ],
   },
 ];
@@ -179,6 +184,14 @@ const devGroups: { label: string; items: DevNavigationItem[] }[] = [
     label: "Execution",
     items: [
       {
+        id: "board",
+        label: "Board",
+        icon: Columns3,
+        count: (s) =>
+          s.data.agentSessions.filter((session) => !session.archived).length ||
+          s.clyDevSessions.length,
+      },
+      {
         id: "sessions",
         label: "Sessions",
         icon: Bot,
@@ -205,16 +218,13 @@ const devGroups: { label: string; items: DevNavigationItem[] }[] = [
       },
     ],
   },
-  {
-    label: "System",
-    items: [{ id: "settings", label: "Settings", icon: Settings }],
-  },
 ];
 
 export const screenLabels = Object.fromEntries([
   ...researchGroups.flatMap((group) =>
     group.items.map((item) => [item.id, item.label]),
   ),
+  ["settings", "Settings"],
   ["dev", "Cly Dev"],
 ]) as Record<ScreenId, string>;
 
@@ -347,6 +357,19 @@ export function Sidebar() {
             ))}
       </div>
       <div className="cly-sidebar-footer">
+        <button
+          className="cly-sidebar-item"
+          type="button"
+          aria-current={activeScreen === "settings" ? "page" : undefined}
+          aria-label="Settings"
+          title={sidebarCollapsed ? "Settings" : undefined}
+          onClick={() => setScreen("settings")}
+          data-testid="nav-settings"
+        >
+          <Settings size={15} />
+          <span className="cly-sidebar-item-label">Settings</span>
+          {!sidebarCollapsed ? <span className="cly-kbd">⌘,</span> : null}
+        </button>
         <ThemeSwitcher compact={sidebarCollapsed} />
         {activeProduct === "dev" ? (
           <button

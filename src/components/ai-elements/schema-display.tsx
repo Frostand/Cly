@@ -8,6 +8,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { HighlightedSchemaPath } from "./schema-path";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -163,20 +164,13 @@ export const SchemaDisplayPath = ({
 }: SchemaDisplayPathProps) => {
   const { path } = useContext(SchemaDisplayContext);
 
-  // Highlight path parameters
-  const highlightedPath = path.replaceAll(
-    /\{([^}]+)\}/g,
-    '<span class="text-info-foreground dark:text-info-foreground">{$1}</span>',
-  );
-
   return (
     <span
       className={cn("font-mono text-xs", className)}
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: "needed for parameter highlighting"
-      // oxlint-disable-next-line eslint-plugin-react(no-danger)
-      dangerouslySetInnerHTML={{ __html: children ?? highlightedPath }}
       {...props}
-    />
+    >
+      {children ?? <HighlightedSchemaPath path={path} />}
+    </span>
   );
 };
 

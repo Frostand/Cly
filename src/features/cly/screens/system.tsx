@@ -19,7 +19,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getDesktopApi } from "../../../lib/electron";
 import type {
   AgentConfiguration,
   AgentConfigurationEstimate,
@@ -60,6 +61,240 @@ const resourceBudget = {
   maxCostMinorUnits: 500,
   maxRuntimeMs: 2_700_000,
 };
+
+type HarnessId = "openai" | "anthropic" | "opencode" | "cursor";
+type HarnessState = {
+  error: string | null;
+  installed: boolean;
+  loading: boolean;
+  models: Array<{ id: string; label: string }>;
+};
+
+const HARNESS_ORDER: HarnessId[] = [
+  "anthropic",
+  "openai",
+  "opencode",
+  "cursor",
+];
+
+const HARNESS_META: Record<
+  HarnessId,
+  { command: string; label: string; runtime: string }
+> = {
+  anthropic: {
+    command: "claude  # then run /login",
+    label: "Claude Code",
+    runtime: "Claude Code CLI",
+  },
+  cursor: {
+    command: "agent login",
+    label: "Cursor",
+    runtime: "Cursor Agent CLI",
+  },
+  openai: {
+    command: "codex login",
+    label: "Codex",
+    runtime: "Codex CLI",
+  },
+  opencode: {
+    command: "opencode auth login",
+    label: "OpenCode",
+    runtime: "OpenCode CLI",
+  },
+};
+
+const emptyHarnessState: HarnessState = {
+  error: null,
+  installed: false,
+  loading: false,
+  models: [],
+};
+
+const DEMO_HARNESS_MODELS: Record<HarnessId, HarnessState["models"]> = {
+  anthropic: [{ id: "claude-sonnet-demo", label: "Claude Sonnet (demo)" }],
+  cursor: [{ id: "cursor-agent-demo", label: "Cursor Agent (demo)" }],
+  openai: [{ id: "gpt-demo", label: "GPT (demo)" }],
+  opencode: [{ id: "opencode-demo", label: "OpenCode (demo)" }],
+};
+
+function HarnessesPanel() {
+  const [active, setActive] = useState<HarnessId>("anthropic");
+  const [states, setStates] = useState<Record<HarnessId, HarnessState>>({
+    anthropic: emptyHarnessState,
+    cursor: emptyHarnessState,
+    openai: emptyHarnessState,
+    opencode: emptyHarnessState,
+  });
+  const [loginStarted, setLoginStarted] = useState(false);
+  const refresh = useCallback(async (provider: HarnessId) => {
+    if (__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime) {
+      setStates((current) => ({
+        ...current,
+        [provider]: {
+          error: null,
+          installed: true,
+          loading: false,
+          models: DEMO_HARNESS_MODELS[provider],
+        },
+      }));
+      return;
+    }
+
+    setStates((current) => ({
+      ...current,
+      [provider]: { ...current[provider], loading: true },
+    }));
+    try {
+      const response = await fetch("/api/provider-models", {
+        body: JSON.stringify({ force: true, provider }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("Unable to check this harness.");
+      const body = (await response.json()) as Partial<
+        Record<
+          HarnessId,
+          Omit<HarnessState, "loading" | "error"> & { error?: string }
+        >
+      >;
+      const result = body[provider];
+      setStates((current) => ({
+        ...current,
+        [provider]: {
+          error: result?.error ?? null,
+          installed: result?.installed ?? false,
+          loading: false,
+          models: result?.models ?? [],
+        },
+      }));
+    } catch (error) {
+      setStates((current) => ({
+        ...current,
+        [provider]: {
+          ...current[provider],
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to check this harness.",
+          loading: false,
+        },
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh(active);
+  }, [active, refresh]);
+
+  const state = states[active];
+  const meta = HARNESS_META[active];
+  const connected = state.installed && !state.error && state.models.length > 0;
+  const launchLogin = async () => {
+    const started = await getDesktopApi()?.launchProviderLogin(active);
+    if (started) setLoginStarted(true);
+  };
+
+  return (
+    <Section
+      title="Harnesses"
+      subtitle="Connect the local AI tools that Cly can run in your projects."
+      actions={
+        <Button disabled={state.loading} onClick={() => void refresh(active)}>
+          <RotateCcw size={13} /> Refresh
+        </Button>
+      }
+    >
+      <div className="cly-harnesses">
+        <div
+          className="cly-harness-tabs"
+          role="tablist"
+          aria-label="AI harnesses"
+        >
+          {HARNESS_ORDER.map((provider) => (
+            <button
+              type="button"
+              key={provider}
+              role="tab"
+              aria-selected={active === provider}
+              onClick={() => {
+                setActive(provider);
+                setLoginStarted(false);
+              }}
+            >
+              {HARNESS_META[provider].label}
+            </button>
+          ))}
+        </div>
+        <div className="cly-harness-content" role="tabpanel">
+          <div className="cly-row-between">
+            <div>
+              <strong>Authentication</strong>
+              <p className="cly-muted cly-small">
+                Cly uses the existing {meta.runtime} session. Credentials stay
+                with the harness.
+              </p>
+            </div>
+            <Badge tone={connected ? "success" : "warning"}>
+              {connected
+                ? `${state.models.length} models available`
+                : "Sign-in required"}
+            </Badge>
+          </div>
+          <div className="cly-harness-auth-choice">
+            <div data-selected="true">
+              <KeyRound size={15} />
+              <span>
+                <strong>CLI</strong>
+                <small>Use the account signed into {meta.runtime}.</small>
+              </span>
+            </div>
+            <div>
+              <KeyRound size={15} />
+              <span>
+                <strong>API key</strong>
+                <small>Configure it in the provider harness.</small>
+              </span>
+            </div>
+          </div>
+          {!connected ? (
+            <div className="cly-callout" data-tone="warning">
+              {state.error ?? `Sign in to ${meta.label}, then refresh.`}
+            </div>
+          ) : null}
+          {loginStarted ? (
+            <p className="cly-muted cly-small">
+              Finish signing in in Terminal, then refresh this harness.
+            </p>
+          ) : null}
+          <div className="cly-row" style={{ marginTop: 12 }}>
+            <Button variant="primary" onClick={() => void launchLogin()}>
+              Sign in with {meta.label}
+            </Button>
+            <Button
+              onClick={() => void navigator.clipboard.writeText(meta.command)}
+            >
+              <Copy size={13} /> Copy command
+            </Button>
+          </div>
+          <div className="cly-harness-models">
+            <strong>Available models</strong>
+            {state.models.length ? (
+              state.models.map((model) => (
+                <div className="cly-list-row" key={model.id}>
+                  {model.label}
+                </div>
+              ))
+            ) : (
+              <p className="cly-muted cly-small">
+                Sign in, then refresh to load models.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </Section>
+  );
+}
 
 const inferRole = (label: string): AgentRoleConfiguration["role"] => {
   const normalized = label.toLowerCase();
@@ -612,6 +847,7 @@ export function ModelsAgentsScreen() {
           </>
         }
       />
+      <HarnessesPanel />
       <Section
         title="Project configurations"
         subtitle="Durable, revisioned agent plans for the active project"

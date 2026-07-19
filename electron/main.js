@@ -15,7 +15,8 @@ import {
   shell,
 } from "electron";
 import getPort from "get-port";
-
+import { createProjectAuthorityResolver } from "./api/project-git/authority.js";
+import { resolveRegisteredProjectWorktree } from "./api/project-git/worktree-authority.js";
 import {
   configureApplicationMenu,
   toggleWebContentsDevToolsDetached,
@@ -28,7 +29,6 @@ import {
 import { detectAvailableEditors, openProjectInEditor } from "./editors.js";
 import {
   closePersistedStateDatabase,
-  ensurePersistedInstallId,
   loadClyDevWindowLayout,
   loadPersistedState,
   loadPersistedThemePreference,
@@ -36,7 +36,17 @@ import {
   savePersistedState,
   savePersistedThemePreference,
 } from "./persisted-state.js";
+import {
+  getBoundRendererId,
+  getHostCommandApprovalOptions,
+  getPrivilegedRendererId,
+  getProviderHostActionApprovalOptions,
+  getTerminalLaunchApprovalOptions,
+  isTerminalSessionOwner,
+  resolveTerminalLaunch,
+} from "./privileged-ipc.js";
 import { createProcessSessionManager } from "./process-sessions.js";
+import { projectAuthorityRegistry } from "./project-authority-registry.js";
 import { createRendererServerManager } from "./renderer-server.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
 import { initializeAutoUpdater } from "./updater.js";
@@ -113,7 +123,6 @@ let workspaceWindowSessionId = null;
 const workspaceWindowsClosingForReattach = new WeakSet();
 let appIsQuitting = false;
 let updateManager = null;
-let installId = null;
 const windowBindings = new Map();
 const clyDevWorkspaceCore = createClyDevWorkspaceCore();
 
@@ -193,14 +202,104 @@ function sendToRenderer(channel, payload) {
   mainWindow.webContents.send(channel, payload);
 }
 
+const terminalSessionOwners = new Map();
+const pendingTerminalApprovalSenders = new Set();
+const pendingTerminalSessionIds = new Set();
+
 const browserSessionManager = createBrowserSessionManager({
   getMainWindow: () => mainWindow,
   sendToRenderer,
 });
 
 const processSessionManager = createProcessSessionManager({
-  sendToRenderer,
+  sendToRenderer: (channel, payload) => {
+    if (
+      channel === "terminal:status" &&
+      payload?.status === "stopped" &&
+      typeof payload.projectId === "string"
+    ) {
+      terminalSessionOwners.delete(payload.projectId);
+    }
+    sendToRenderer(channel, payload);
+  },
 });
+const resolveEditorProjectPath = createProjectAuthorityResolver({
+  resolveAlternateProjectPath: resolveRegisteredProjectWorktree,
+  resolveProjectPathById: projectAuthorityRegistry.resolveProjectPathById,
+});
+
+let hostActionConfirmationPending = false;
+
+async function confirmHostAction({ getApprovalOptions, projectId, root }) {
+  if (hostActionConfirmationPending) return false;
+  const owner = mainWindow;
+  if (!owner || owner.isDestroyed()) return false;
+
+  let authorizedRoot;
+  try {
+    authorizedRoot = await resolveEditorProjectPath({
+      projectId,
+      projectPath: root,
+    });
+  } catch {
+    return false;
+  }
+  if (path.resolve(authorizedRoot) !== path.resolve(root)) return false;
+
+  hostActionConfirmationPending = true;
+  try {
+    const approval = await dialog.showMessageBox(
+      owner,
+      getApprovalOptions(authorizedRoot),
+    );
+    if (
+      approval.response !== 1 ||
+      owner.isDestroyed() ||
+      mainWindow !== owner
+    ) {
+      return false;
+    }
+    const currentRoot = await resolveEditorProjectPath({
+      projectId,
+      projectPath: root,
+    });
+    return path.resolve(currentRoot) === path.resolve(authorizedRoot);
+  } catch {
+    return false;
+  } finally {
+    hostActionConfirmationPending = false;
+  }
+}
+
+const authorizeClyDevCommand = ({ command, projectId, root }) =>
+  confirmHostAction({
+    projectId,
+    root,
+    getApprovalOptions: (authorizedRoot) =>
+      getHostCommandApprovalOptions({ command, root: authorizedRoot }),
+  });
+
+const authorizeProviderHostAction = ({ action, projectId, provider, root }) => {
+  if (!new Set(["cursor", "opencode"]).has(provider)) return false;
+  return confirmHostAction({
+    projectId,
+    root,
+    getApprovalOptions: (authorizedRoot) =>
+      getProviderHostActionApprovalOptions({
+        action,
+        provider,
+        root: authorizedRoot,
+      }),
+  });
+};
+
+function stopTerminalSessionsForOwner(senderId) {
+  for (const [sessionId, ownerId] of terminalSessionOwners) {
+    if (ownerId !== senderId) continue;
+    processSessionManager.stopTerminalSession(sessionId);
+    terminalSessionOwners.delete(sessionId);
+  }
+}
 
 let rendererServerManager = null;
 
@@ -277,6 +376,8 @@ async function createStartupRendererServerManager() {
     rendererProbeIntervalMs,
     rendererStartupTimeoutMs,
     rendererUrlFromEnv,
+    authorizeClyDevCommand,
+    authorizeProviderHostAction,
   });
 }
 
@@ -324,12 +425,18 @@ async function configureRendererProxy(webContents) {
   }
 }
 
-async function pickDirectory() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
+async function pickDirectory(event) {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (senderId === null || !owner || owner.isDestroyed()) {
     return null;
   }
 
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await dialog.showOpenDialog(owner, {
     properties: ["openDirectory"],
     title: "Select project folder",
   });
@@ -338,7 +445,10 @@ async function pickDirectory() {
     return null;
   }
 
-  return result.filePaths[0] ?? null;
+  const selectedPath = result.filePaths[0];
+  return selectedPath
+    ? projectAuthorityRegistry.authorizePathForRegistration(selectedPath)
+    : null;
 }
 
 async function createMainWindow() {
@@ -426,6 +536,7 @@ async function createMainWindow() {
 
   mainWindow.webContents.on("render-process-gone", () => {
     browserSessionManager.hideForRendererNavigation();
+    stopTerminalSessionsForOwner(mainWindowWebContentsId);
   });
 
   // Throttle embedded-view layout during interactive resize. Windows fires
@@ -625,8 +736,24 @@ async function createWorkspaceWindow(sessionId) {
 }
 
 ipcMain.handle("projects:pick-directory", pickDirectory);
-ipcMain.handle("state:load", () => loadPersistedState());
+ipcMain.handle("state:load", (event) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null) throw new Error("State access is not allowed.");
+  return loadPersistedState();
+});
 ipcMain.on("api:get-session-token", (event) => {
+  const senderId = getBoundRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    windowBindings,
+  });
+  if (senderId === null) {
+    event.returnValue = "";
+    return;
+  }
   const apiSessionToken = rendererServerManager?.getApiSessionToken();
   if (!apiSessionToken) {
     console.error(
@@ -647,9 +774,16 @@ const getStateSaveQueue = () =>
     saveState: savePersistedState,
   }));
 
-ipcMain.handle("state:save", (_event, state) =>
-  getStateSaveQueue().save(state),
-);
+ipcMain.handle("state:save", (event, state) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null) throw new Error("State writes are not allowed.");
+  projectAuthorityRegistry.validateState(state);
+  return getStateSaveQueue().save(state);
+});
 
 ipcMain.handle("cly-dev:get-window-role", (event) => {
   return windowBindings.get(event.sender.id)?.role ?? "agent";
@@ -856,62 +990,170 @@ ipcMain.handle("editors:detect", () => {
   return detectAvailableEditors();
 });
 
-ipcMain.handle("editors:open", (_event, payload) => {
-  return openProjectInEditor(payload ?? {});
+ipcMain.handle("editors:open", async (event, payload) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null) {
+    throw new Error("Editor access is not allowed from this window.");
+  }
+  const projectPath = await resolveEditorProjectPath({
+    projectId: payload?.projectId,
+    projectPath: payload?.projectPath,
+  });
+  return openProjectInEditor({ ...payload, projectPath });
 });
 
-ipcMain.handle(
-  "runner:start",
-  (_event, { command, cwd, projectId, projectName }) => {
-    return processSessionManager.startRunner({
-      command,
-      cwd,
-      projectId,
-      projectName,
-    });
-  },
-);
+ipcMain.handle("terminal:start", async (event, payload) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null) {
+    throw new Error("Terminal access is not allowed from this window.");
+  }
+  if (pendingTerminalApprovalSenders.has(senderId)) {
+    throw new Error("A terminal approval is already pending for this window.");
+  }
 
-ipcMain.handle("runner:stop", (_event, { projectId }) => {
-  if (!projectId) {
+  const projectPath = projectAuthorityRegistry.resolveProjectPathById({
+    projectId: payload?.projectId,
+  });
+  if (!projectPath) throw new Error("Unknown or unavailable project.");
+  const launch = {
+    ...resolveTerminalLaunch(payload, loadPersistedState()),
+    cwd: projectPath,
+  };
+  if (
+    terminalSessionOwners.has(launch.sessionId) ||
+    pendingTerminalSessionIds.has(launch.sessionId)
+  ) {
+    throw new Error("Terminal session is already active.");
+  }
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner.isDestroyed()) {
+    throw new Error("Terminal owner window is unavailable.");
+  }
+  pendingTerminalApprovalSenders.add(senderId);
+  pendingTerminalSessionIds.add(launch.sessionId);
+  let approval;
+  try {
+    approval = await dialog.showMessageBox(
+      owner,
+      getTerminalLaunchApprovalOptions(launch),
+    );
+  } finally {
+    pendingTerminalApprovalSenders.delete(senderId);
+    pendingTerminalSessionIds.delete(launch.sessionId);
+  }
+  if (approval.response !== 1) return { status: "stopped" };
+  const approvedSenderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (
+    approvedSenderId !== senderId ||
+    owner.isDestroyed() ||
+    terminalSessionOwners.has(launch.sessionId)
+  ) {
+    throw new Error("Terminal owner changed while approval was pending.");
+  }
+
+  terminalSessionOwners.set(launch.sessionId, senderId);
+  try {
+    const result = processSessionManager.startTerminal({
+      command: launch.command,
+      cwd: launch.cwd,
+      projectId: launch.sessionId,
+      shellPath: launch.shellPath,
+    });
+    if (result.status !== "running") {
+      terminalSessionOwners.delete(launch.sessionId);
+    }
+    return result;
+  } catch (error) {
+    terminalSessionOwners.delete(launch.sessionId);
+    throw error;
+  }
+});
+
+ipcMain.on("terminal:input", (event, payload) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (
+    senderId === null ||
+    !isTerminalSessionOwner(
+      terminalSessionOwners,
+      senderId,
+      payload?.sessionId,
+    ) ||
+    typeof payload?.data !== "string" ||
+    payload.data.length > 65_536
+  ) {
+    return;
+  }
+  processSessionManager.writeTerminalInput({
+    data: payload.data,
+    projectId: payload.sessionId,
+  });
+});
+
+ipcMain.on("terminal:resize", (event, payload) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (
+    senderId === null ||
+    !isTerminalSessionOwner(
+      terminalSessionOwners,
+      senderId,
+      payload?.sessionId,
+    ) ||
+    !Number.isInteger(payload?.cols) ||
+    payload.cols < 2 ||
+    payload.cols > 500 ||
+    !Number.isInteger(payload?.rows) ||
+    payload.rows < 1 ||
+    payload.rows > 300
+  ) {
+    return;
+  }
+  processSessionManager.resizeTerminal({
+    cols: payload.cols,
+    projectId: payload.sessionId,
+    rows: payload.rows,
+  });
+});
+
+ipcMain.handle("terminal:stop", (event, { sessionId } = {}) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (
+    senderId === null ||
+    !isTerminalSessionOwner(terminalSessionOwners, senderId, sessionId)
+  ) {
     return false;
   }
 
-  processSessionManager.stopRunProcess(projectId);
+  processSessionManager.stopTerminalSession(sessionId);
+  terminalSessionOwners.delete(sessionId);
   return true;
 });
 
-ipcMain.handle(
-  "terminal:start",
-  (_event, { command, cwd, projectId, shellPath: preferredShellPath }) => {
-    return processSessionManager.startTerminal({
-      command,
-      cwd,
-      projectId,
-      shellPath: preferredShellPath,
-    });
-  },
-);
-
-ipcMain.on("terminal:input", (_event, payload) => {
-  processSessionManager.writeTerminalInput(payload);
-});
-
-ipcMain.on("terminal:resize", (_event, payload) => {
-  processSessionManager.resizeTerminal(payload);
-});
-
-ipcMain.handle("terminal:stop", (_event, { projectId }) => {
-  if (!projectId) {
-    return false;
-  }
-
-  processSessionManager.stopTerminalSession(projectId);
-  return true;
-});
-
-ipcMain.on("browser:update", (_event, payload) => {
-  browserSessionManager.update(payload);
+ipcMain.on("browser:update", (event, payload) => {
+  browserSessionManager.update(payload, event.sender);
 });
 
 app.whenReady().then(async () => {
@@ -922,6 +1164,7 @@ app.whenReady().then(async () => {
     app.dock?.setIcon(appIconPath);
   }
 
+  projectAuthorityRegistry.hydrate(loadPersistedState());
   rendererServerManager = await createStartupRendererServerManager();
   await rendererServerManager.start();
   await createMainWindow();
@@ -941,16 +1184,9 @@ app.whenReady().then(async () => {
     await createWorkspaceWindow(restoredWindowLayout.sessionId);
   }
 
-  try {
-    installId = ensurePersistedInstallId();
-  } catch (error) {
-    console.error("Failed to initialize install ID:", error);
-  }
-
   updateManager = initializeAutoUpdater({
     app,
     getMainWindow: () => mainWindow,
-    installId,
     ipcMain,
     isDevelopment,
   });

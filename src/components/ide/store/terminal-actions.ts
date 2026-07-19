@@ -39,12 +39,17 @@ export const createTerminalActions = (
       terminalOutput: { ...state.terminalOutput, [sessionId]: "" },
     }));
 
-    await desktopApi.startTerminal({
-      command: project.runCommand,
-      cwd: project.path,
-      projectId: sessionId,
-      shellPath: get().settings.shellPath || undefined,
+    const result = await desktopApi.startTerminal({
+      projectId: project.id,
+      purpose: "run-project",
+      sessionId,
     });
+    if (result.status !== "running") {
+      set((state) => ({
+        outputPanelOpen: false,
+        terminalStatus: { ...state.terminalStatus, [sessionId]: "stopped" },
+      }));
+    }
   },
 
   stopRunner: async () => {
@@ -100,7 +105,7 @@ export const createTerminalActions = (
   },
 
   addProjectTerminal: async (projectId) => {
-    const { projects, settings } = get();
+    const { projects } = get();
     const project = projects.find((item) => item.id === projectId);
     if (!project) return;
 
@@ -162,11 +167,14 @@ export const createTerminalActions = (
       };
     });
 
-    await desktopApi.startTerminal({
-      cwd: project.path,
-      projectId: sessionId,
-      shellPath: settings.shellPath || undefined,
+    const result = await desktopApi.startTerminal({
+      projectId: project.id,
+      purpose: "interactive",
+      sessionId,
     });
+    if (result.status !== "running") {
+      await get().closeProjectTerminal(projectId, sessionId);
+    }
   },
 
   setActiveProjectTerminalId: (projectId, sessionId) => {

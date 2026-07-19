@@ -86,4 +86,29 @@ describe("claim audit and reproducibility board", () => {
       ]),
     );
   });
+
+  it("keeps one primary action visible in empty claim and audit states", () => {
+    useClyStore.setState({
+      data: createFixtureRepository("empty"),
+      fixtureMode: "empty",
+      selectedId: null,
+    });
+
+    const claims = render(<ClaimsScreen />);
+    expect(
+      screen.getByRole("heading", { name: "No claims to audit" }),
+    ).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "New claim" })).toHaveLength(
+      1,
+    );
+    claims.unmount();
+
+    render(<ReproducibilityScreen />);
+    expect(
+      screen.getByRole("heading", { name: "No reproducibility audit" }),
+    ).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Run audit" })).toHaveLength(
+      1,
+    );
+  });
 });

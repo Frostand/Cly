@@ -177,8 +177,8 @@ contextBridge.exposeInMainWorld("dream", {
   startTerminal: (payload) => ipcRenderer.invoke("terminal:start", payload),
   sendTerminalInput: (payload) => ipcRenderer.send("terminal:input", payload),
   resizeTerminal: (payload) => ipcRenderer.send("terminal:resize", payload),
-  stopTerminal: (projectId) =>
-    ipcRenderer.invoke("terminal:stop", { projectId }),
+  stopTerminal: (sessionId) =>
+    ipcRenderer.invoke("terminal:stop", { sessionId }),
   onTerminalData: (listener) => subscribe("terminal:data", listener),
   onTerminalStatus: (listener) => subscribe("terminal:status", listener),
 

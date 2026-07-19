@@ -444,20 +444,19 @@ export interface ProjectGitPullRequestDetailsResponse {
 
 export interface StartTerminalPayload {
   projectId: string;
-  cwd: string;
-  command?: string;
-  shellPath?: string;
+  purpose: "interactive" | "run-project";
+  sessionId: string;
 }
 
 export interface TerminalInputPayload {
-  projectId: string;
   data: string;
+  sessionId: string;
 }
 
 export interface TerminalResizePayload {
-  projectId: string;
   cols: number;
   rows: number;
+  sessionId: string;
 }
 
 export interface BrowserUpdatePayload {
@@ -588,6 +587,7 @@ export interface DesktopApi {
 
   detectEditors: () => Promise<DetectedEditor[]>;
   openInEditor: (payload: {
+    projectId: string;
     projectPath: string;
     editorId: string;
     filePath?: string;

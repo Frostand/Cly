@@ -302,10 +302,12 @@ const AskUserQuestionSummary = ({
 
 const AskUserQuestionApproval = ({
   approvalId,
+  approvalSignature,
   onToolApproval,
   questions,
 }: {
   approvalId: string;
+  approvalSignature?: string;
   onToolApproval: ToolApprovalHandler;
   questions: AskUserQuestionItem[];
 }) => {
@@ -339,6 +341,7 @@ const AskUserQuestionApproval = ({
       approved: true,
       id: approvalId,
       reason: buildReason(nextAnswers),
+      signature: approvalSignature,
     });
   };
 
@@ -422,6 +425,7 @@ const AskUserQuestionApproval = ({
             onToolApproval({
               approved: false,
               id: approvalId,
+              signature: approvalSignature,
             })
           }
           type="button"
@@ -567,6 +571,11 @@ const GenericToolChip = ({
       {shouldShowAskUserQuestionApproval ? (
         <AskUserQuestionApproval
           approvalId={askUserQuestionApprovalId}
+          approvalSignature={
+            part.approval && "signature" in part.approval
+              ? part.approval.signature
+              : undefined
+          }
           onToolApproval={onToolApproval}
           questions={askUserQuestions}
         />
