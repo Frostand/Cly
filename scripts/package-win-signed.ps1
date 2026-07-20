@@ -89,6 +89,44 @@ function Protect-CodeSignToolOutput {
   }
 }
 
+function New-TemporaryCredentialFile {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Content
+  )
+
+  $tempFile = [System.IO.Path]::GetTempFileName()
+  Set-Content -LiteralPath $tempFile -Value $Content -NoNewline
+
+  $acl = Get-Acl -LiteralPath $tempFile
+  $acl.SetAccessRuleProtection($true, $false)
+  $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+    $identity.Name,
+    "ReadData",
+    "Allow"
+  )
+  $acl.SetAccessRule($rule)
+  Set-Acl -LiteralPath $tempFile -AclObject $acl
+
+  return $tempFile
+}
+
+function Remove-CredentialTempFiles {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]]$Paths
+  )
+
+  foreach ($filePath in $Paths) {
+    if (Test-Path -LiteralPath $filePath) {
+      try {
+        Remove-Item -LiteralPath $filePath -Force -ErrorAction SilentlyContinue
+      } catch {}
+    }
+  }
+}
+
 function Invoke-CodeSignTool {
   param(
     [Parameter(Mandatory = $true)]
@@ -109,53 +147,61 @@ function Invoke-CodeSignTool {
   $logPath = Join-Path $buildReleaseDir "$logFileName.log"
   Write-Host "Log: $logPath"
 
-  $global:LASTEXITCODE = 0
-  $codeSignToolDirectory = Split-Path -Parent $codeSignTool
-  $previousErrorActionPreference = $ErrorActionPreference
-  $ErrorActionPreference = "Continue"
-  Push-Location $codeSignToolDirectory
+  $credentialTempFiles = @()
   try {
-    $output = & $codeSignTool sign `
-      "-username=$username" `
-      "-password=$password" `
-      "-credential_id=$credentialId" `
-      "-totp_secret=$totpSecret" `
-      "-input_file_path=$InputPath" `
-      "-output_dir_path=$OutputDirectory" `
-      '-override=true' 2>&1
-    $exitCode = $LASTEXITCODE
-  } finally {
-    Pop-Location
-    $ErrorActionPreference = $previousErrorActionPreference
-  }
-  $redactedOutput = Protect-CodeSignToolOutput -Output $output
-  $redactedOutput | Set-Content -LiteralPath $logPath
-  $redactedOutput | ForEach-Object {
-    Write-Host $_
-  }
+    $passwordFile = New-TemporaryCredentialFile -Content $password
+    $credentialTempFiles += $passwordFile
 
-  if ($exitCode -ne 0) {
-    throw "$Title failed with exit code $exitCode. See log: $logPath"
-  }
+    $totpSecretFile = New-TemporaryCredentialFile -Content $totpSecret
+    $credentialTempFiles += $totpSecretFile
 
-  $inputName = Split-Path -Leaf $InputPath
-  $exactOutput = Join-Path $OutputDirectory $inputName
-  if (Test-Path -LiteralPath $exactOutput) {
-    return $exactOutput
-  }
+    $global:LASTEXITCODE = 0
+    $codeSignToolDirectory = Split-Path -Parent $codeSignTool
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    Push-Location $codeSignToolDirectory
+    try {
+      $output = & $codeSignTool sign `
+        "-username=$username" `
+        "-password_file=$passwordFile" `
+        "-credential_id=$credentialId" `
+        "-totp_secret_file=$totpSecretFile" `
+        "-input_file_path=$InputPath" `
+        "-output_dir_path=$OutputDirectory" `
+        '-override=true' 2>&1
+      $exitCode = $LASTEXITCODE
+    } finally {
+      Pop-Location
+      $ErrorActionPreference = $previousErrorActionPreference
+    }
+    $redactedOutput = Protect-CodeSignToolOutput -Output $output
+    $redactedOutput | Set-Content -LiteralPath $logPath
+    $redactedOutput | ForEach-Object {
+      Write-Host $_
+    }
 
-  $signedOutput = Get-ChildItem -LiteralPath $OutputDirectory -Recurse -File |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
+    if ($exitCode -ne 0) {
+      throw "$Title failed with exit code $exitCode. See log: $logPath"
+    }
 
-  if ($signedOutput) {
-    return $signedOutput.FullName
-  }
+    $inputName = Split-Path -Leaf $InputPath
+    $exactOutput = Join-Path $OutputDirectory $inputName
+    if (Test-Path -LiteralPath $exactOutput) {
+      return $exactOutput
+    }
 
-  $outputFiles = Get-ChildItem -LiteralPath $OutputDirectory -Recurse -Force -ErrorAction SilentlyContinue |
-    ForEach-Object { $_.FullName }
+    $signedOutput = Get-ChildItem -LiteralPath $OutputDirectory -Recurse -File |
+      Sort-Object LastWriteTime -Descending |
+      Select-Object -First 1
 
-  throw @"
+    if ($signedOutput) {
+      return $signedOutput.FullName
+    }
+
+    $outputFiles = Get-ChildItem -LiteralPath $OutputDirectory -Recurse -Force -ErrorAction SilentlyContinue |
+      ForEach-Object { $_.FullName }
+
+    throw @"
 SSL.com did not produce a signed output file.
 Input: $InputPath
 Output directory: $OutputDirectory
@@ -163,6 +209,9 @@ Log: $logPath
 Files in output directory:
 $($outputFiles -join [Environment]::NewLine)
 "@
+  } finally {
+    Remove-CredentialTempFiles -Paths $credentialTempFiles
+  }
 }
 
 function Resolve-SignTool {

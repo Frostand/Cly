@@ -26,6 +26,10 @@ notary_log_json="$log_dir/notary-log.json"
 stapler_log="$log_dir/stapler.log"
 wait_timeout="${NOTARY_WAIT_TIMEOUT:-30m}"
 
+export NOTARYTOOL_APPLE_ID="$APPLE_ID"
+export NOTARYTOOL_PASSWORD="$APPLE_APP_SPECIFIC_PASSWORD"
+export NOTARYTOOL_TEAM_ID="$APPLE_TEAM_ID"
+
 auth_args=(
   --apple-id "$APPLE_ID"
   --password "$APPLE_APP_SPECIFIC_PASSWORD"

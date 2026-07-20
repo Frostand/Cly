@@ -1,7 +1,17 @@
 const electron = require("electron");
 const { contextBridge, ipcRenderer } = electron.default ?? electron;
 
-const apiSessionToken = ipcRenderer.sendSync("api:get-session-token");
+const getPreloadArgument = (prefix) => {
+  const argument = process.argv.find((value) => value.startsWith(prefix));
+  if (!argument) return null;
+  try {
+    return decodeURIComponent(argument.slice(prefix.length));
+  } catch {
+    return null;
+  }
+};
+
+const apiSessionToken = getPreloadArgument("--dream-api-session-token=");
 
 const BASE_COLORS = new Set(["neutral", "slate", "gray", "zinc", "stone"]);
 const ACCENT_COLORS = new Set([
@@ -40,15 +50,10 @@ const getSystemTheme = () =>
     : "light";
 
 const getPreloadThemePreferences = () => {
-  const prefix = "--dream-theme-preferences=";
-  const argument = process.argv.find((value) => value.startsWith(prefix));
-  if (!argument) {
-    return null;
-  }
-
+  const preferences = getPreloadArgument("--dream-theme-preferences=");
+  if (!preferences) return null;
   try {
-    const raw = decodeURIComponent(argument.slice(prefix.length));
-    return JSON.parse(raw);
+    return JSON.parse(preferences);
   } catch {
     return null;
   }

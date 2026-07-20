@@ -25,23 +25,14 @@ const DEFAULT_PERSISTED_STATE = {
   },
   projects: [],
   settings: {
-    anthropicAccessToken: "",
-    anthropicAccessTokenExpiresAt: null,
-    anthropicAuthMode: "apiKey",
-    anthropicApiKey: "",
-    anthropicRefreshToken: "",
     anthropicSelectedModels: [],
     autoAcceptPermissions: false,
-    connectedProviders: [],
     cursorSelectedModels: [],
-    defaultAnthropicModel: "",
+    defaultModel: "",
     defaultModelSpeed: "standard",
     defaultReasoningEffort: null,
-    defaultOpenAiModel: "",
     expandToolCalls: false,
     groupToolCalls: false,
-    openAiAuthMode: "apiKey",
-    openAiApiKey: "",
     openAiSelectedModels: [],
     showReasoningSummaries: true,
     shellPath: "",
@@ -335,7 +326,7 @@ const loadRelationalPersistedState = (database) => {
     projects,
     settings: {
       ...cloneDefaultPersistedState().settings,
-      defaultOpenAiModel:
+      defaultModel:
         typeof config["settings.defaultModel"] === "string"
           ? config["settings.defaultModel"]
           : "",
@@ -539,17 +530,12 @@ const normalizePathKey = (value) =>
   typeof value === "string" && value.trim() ? value.trim().toLowerCase() : null;
 
 const getDefaultImportedModel = (provider, settings) => {
-  if (provider === "anthropic") {
-    return (
-      settings.defaultAnthropicModel ||
-      settings.anthropicSelectedModels?.[0] ||
-      ""
-    );
-  }
+  const selectedModels =
+    provider === "anthropic"
+      ? settings.anthropicSelectedModels
+      : settings.openAiSelectedModels;
 
-  return (
-    settings.defaultOpenAiModel || settings.openAiSelectedModels?.[0] || ""
-  );
+  return settings.defaultModel || selectedModels?.[0] || "";
 };
 
 const inferChatTitle = (titleFromIndex, messages, sessionId) => {
