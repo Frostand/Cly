@@ -222,7 +222,7 @@ export const deterministicSemanticRanker: LiteratureSemanticRanker = {
         sourceId: source.id,
         score: intersection / union,
         explanation:
-          "Deterministic metadata similarity fixture; no cross-encoder model was used.",
+          "Deterministic metadata similarity preview; no cross-encoder model was used.",
       };
     });
   },

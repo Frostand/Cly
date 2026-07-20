@@ -28,6 +28,11 @@ export function ResearchPanel({ onClosePanel, projectId }: ResearchPanelProps) {
   const [claimTitle, setClaimTitle] = useState("");
   const [sourceId, setSourceId] = useState("");
   const [claimId, setClaimId] = useState("");
+  const [evidenceQuote, setEvidenceQuote] = useState("");
+  const [evidenceLocator, setEvidenceLocator] = useState("");
+  const [evidenceType, setEvidenceType] = useState<"supports" | "contradicts">(
+    "supports",
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -92,7 +97,15 @@ export function ResearchPanel({ onClosePanel, projectId }: ResearchPanelProps) {
     event.preventDefault();
     setError(null);
     try {
-      await researchClient.linkEvidence(projectId, sourceId, claimId);
+      await researchClient.linkEvidence(projectId, {
+        sourceId,
+        claimId,
+        quote: evidenceQuote,
+        locator: evidenceLocator || undefined,
+        type: evidenceType,
+      });
+      setEvidenceQuote("");
+      setEvidenceLocator("");
       await refresh();
     } catch (cause) {
       setError(
@@ -205,7 +218,38 @@ export function ResearchPanel({ onClosePanel, projectId }: ResearchPanelProps) {
               </option>
             ))}
           </select>
-          <Button disabled={!sourceId || !claimId} size="sm" type="submit">
+          <Label htmlFor="research-evidence-quote">Exact passage</Label>
+          <textarea
+            className="min-h-20 w-full rounded-md border bg-background p-2 text-sm"
+            id="research-evidence-quote"
+            onChange={(event) => setEvidenceQuote(event.target.value)}
+            required
+            value={evidenceQuote}
+          />
+          <Label htmlFor="research-evidence-locator">Page or locator</Label>
+          <Input
+            id="research-evidence-locator"
+            onChange={(event) => setEvidenceLocator(event.target.value)}
+            placeholder="e.g. p. 14, Results §3.2"
+            value={evidenceLocator}
+          />
+          <Label htmlFor="research-evidence-type">Relationship</Label>
+          <select
+            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+            id="research-evidence-type"
+            onChange={(event) =>
+              setEvidenceType(event.target.value as "supports" | "contradicts")
+            }
+            value={evidenceType}
+          >
+            <option value="supports">Supports claim</option>
+            <option value="contradicts">Contradicts claim</option>
+          </select>
+          <Button
+            disabled={!sourceId || !claimId || !evidenceQuote.trim()}
+            size="sm"
+            type="submit"
+          >
             <Link2 className="size-4" />
             Link evidence
           </Button>
@@ -218,20 +262,26 @@ export function ResearchPanel({ onClosePanel, projectId }: ResearchPanelProps) {
               Add a source and a claim to begin.
             </p>
           ) : null}
-          {graph.relationships.map((relationship) => {
-            const source = graph.objects.find(
-              (object) => object.id === relationship.fromObjectId,
-            );
-            const claim = graph.objects.find(
-              (object) => object.id === relationship.toObjectId,
-            );
-            return (
-              <p className="rounded border p-2 text-xs" key={relationship.id}>
-                <strong>{source?.title ?? "Source"}</strong> supports{" "}
-                <strong>{claim?.title ?? "Claim"}</strong>
-              </p>
-            );
-          })}
+          {graph.relationships
+            .filter(
+              (relationship) =>
+                relationship.type === "supports" ||
+                relationship.type === "contradicts",
+            )
+            .map((relationship) => {
+              const source = graph.objects.find(
+                (object) => object.id === relationship.fromObjectId,
+              );
+              const claim = graph.objects.find(
+                (object) => object.id === relationship.toObjectId,
+              );
+              return (
+                <p className="rounded border p-2 text-xs" key={relationship.id}>
+                  <strong>{source?.title ?? "Evidence passage"}</strong>{" "}
+                  {relationship.type} <strong>{claim?.title ?? "Claim"}</strong>
+                </p>
+              );
+            })}
         </div>
       </div>
     </section>

@@ -290,62 +290,95 @@ export interface ClyDevSyncStatus {
   lastSyncAt: string | null;
 }
 
-export type ClyDevResumeAction =
-  | "fetch"
-  | "clone"
-  | "create-branch"
-  | "create-worktree"
-  | "inspect-changes"
-  | "defer"
-  | "return-to-source";
-
-export interface ClyDevResumeReadiness {
-  status: string;
-  blocking: boolean;
-  checks: Array<{
-    id: string;
-    status: "pass" | "fail" | "warning";
-    summary: string;
-  }>;
-  actions: ClyDevResumeAction[];
-  missingTools?: string[];
+export interface ClyDevHandoffEnvelope {
+  protocol: "cly.dev.handoff";
+  schemaVersion: 1;
+  minimumReaderVersion: 1;
+  exportedAt: string;
+  payload: {
+    task: { id: string; title: string; sessionId: string; state: string };
+    conversationSync: "included" | "excluded";
+    messages: Array<{
+      id: string;
+      role: string;
+      body: string;
+      createdAt: string;
+    }>;
+    summaries: Array<{
+      id: string;
+      title: string;
+      sections: string[];
+      createdAt: string;
+    }>;
+    goal: { objective: string; successCriteria: string[] };
+    plan: { steps: Array<{ id: string; text: string; status: string }> };
+    progress: {
+      status: string;
+      completedItems: string[];
+      currentItem?: string;
+    };
+    remainingWork: Array<{ id: string; description: string; status: string }>;
+    contextManifest: { id: string; summary: string; entries: unknown[] };
+    repository: {
+      id: string;
+      remoteUrl?: string;
+      branch: string;
+      worktreeId: string;
+      commitSha: string;
+      files: Array<{ relativePath: string; objectHash: string }>;
+      symbols: Array<{ relativePath: string; name: string; kind: string }>;
+    };
+    approvals: unknown[];
+    permissions: {
+      evidenceOnly: true;
+      filesystem: string;
+      network: string;
+      commands: string[];
+    };
+    constraints: string[];
+    diffs: unknown[];
+    tests: unknown[];
+    failures: unknown[];
+    costs: { currency: string; totalMinor: number; items: unknown[] };
+    research: { objects: unknown[]; impact: unknown[] };
+    providerRequirements: { required: boolean; capabilities: string[] };
+  };
+  integrity: {
+    algorithm: "sha256";
+    canonicalization: "cly-json-v1";
+    digest: string;
+  };
 }
 
-export interface ClyDevHandoffEnvelope {
-  handoffId: string;
-  projectId: string;
-  sessionId: string;
-  revision: number;
-  sourceMachine: { id: string; platform: "darwin" | "linux" | "win32" };
-  repository: { id: string; remoteUrl?: string };
-  worktree: { id: string; branch: string; baseRef?: string };
-  commit: { sha: string };
-  task: {
-    id: string;
-    title: string;
-    objective: string;
-    researchObjectIds: string[];
-  };
-  session: { id: string; title: string; state: ClyDevSessionState };
+export interface ClyDevHandoffIssue {
+  code: string;
+  message: string;
+  recoveryAction: string;
 }
 
 export interface ClyDevHandoffInspection {
-  envelope: ClyDevHandoffEnvelope;
-  readiness: ClyDevResumeReadiness;
-  snapshot?: ClyDevSessionSnapshot;
+  compatible: boolean;
+  stale: ClyDevHandoffIssue[];
+  conflicts: ClyDevHandoffIssue[];
+  explanations: ClyDevHandoffIssue[];
+  envelope: ClyDevHandoffEnvelope | null;
+  payload: ClyDevHandoffEnvelope["payload"] | null;
+  authority: {
+    source: "target-project";
+    permissions: Record<string, unknown>;
+    authorizedApprovalIds: string[];
+    targetProvider?: ClyDevTargetProvider;
+  } | null;
 }
 
-export interface ClyDevResumeDestination {
-  name?: string;
-  path: string;
-  repositoryPath: string;
-  worktreePath: string;
-  requiredTools: string[];
-  machine: {
-    id: string;
-    platform: "darwin" | "linux" | "win32";
-    architecture?: string;
-  };
+export interface ClyDevTargetProvider {
+  id: "openai-codex" | "anthropic-claude";
+}
+
+export interface ClyDevReceivedHandoff {
+  envelopeId: string;
+  receivedAt: string;
+  envelope: ClyDevHandoffEnvelope;
 }
 
 export type AgentRole =

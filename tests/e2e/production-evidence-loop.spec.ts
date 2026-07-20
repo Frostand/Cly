@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
+import { navigateToResearch } from "./navigation-helpers";
 
 const root = process.cwd();
 const viteCli = path.join(root, "node_modules", "vite", "bin", "vite.js");
@@ -15,6 +16,10 @@ test("completes and recovers the production evidence loop with demos disabled", 
   const claimTitle = `Production evidence claim ${suffix}`;
   const experimentTitle = `Production evidence experiment ${suffix}`;
   const sourceTitle = `Production evidence source ${suffix}`;
+  const supportingQuote =
+    "The production evidence chain remains durable after a complete restart.";
+  const contradictoryQuote =
+    "A boundary condition may reduce the reported effect in external cohorts.";
 
   execFileSync(process.execPath, [viteCli, "build"], {
     cwd: root,
@@ -48,7 +53,7 @@ test("completes and recovers the production evidence loop with demos disabled", 
     ).toBeVisible();
     await expect(window.getByText("No agent sessions")).toBeVisible();
 
-    await window.getByTestId("nav-notebooks").click();
+    await navigateToResearch(window, "notebooks");
     await expect(
       window.getByRole("button", { name: "Import notebook" }).first(),
     ).toBeDisabled();
@@ -91,7 +96,7 @@ test("completes and recovers the production evidence loop with demos disabled", 
       .first()
       .click();
     await window.getByRole("radio", { name: "Detail" }).click();
-    await window.getByRole("button", { name: "Link evidence" }).click();
+    await window.getByRole("button", { name: "Link experiment" }).click();
     await expect(window.getByText("Experiment linked")).toBeVisible();
 
     await window.getByTestId("nav-sources").click();
@@ -106,10 +111,51 @@ test("completes and recovers the production evidence loop with demos disabled", 
       .getByText(sourceTitle, { exact: true })
       .first();
     await expect(sourceRecord).toBeVisible();
-    await sourceRecord.click();
-    await window.getByText("Source actions", { exact: true }).click();
-    await window.getByRole("button", { name: "Link to claim" }).click();
-    await expect(window.getByText("Evidence linked")).toBeVisible();
+    await window.getByTestId("nav-claims").click();
+    await window
+      .locator("#main-workspace")
+      .getByText(claimTitle, { exact: true })
+      .first()
+      .click();
+    await window.getByRole("radio", { name: "Detail" }).click();
+    await window
+      .getByRole("button", { name: "Add supporting passage" })
+      .click();
+    let evidenceDialog = window.getByRole("dialog", {
+      name: "Link supporting evidence",
+    });
+    await evidenceDialog
+      .getByLabel("Source")
+      .selectOption({ label: sourceTitle });
+    await evidenceDialog
+      .getByLabel("Exact evidence passage")
+      .fill(supportingQuote);
+    await evidenceDialog
+      .getByLabel("Page, section, or locator")
+      .fill("Results, paragraph 2");
+    await evidenceDialog.getByLabel("Confidence (0–100%)").fill("86");
+    await evidenceDialog.getByRole("button", { name: "Link source" }).click();
+    await expect(window.getByText("Supporting evidence linked")).toBeVisible();
+    await expect(window.getByText(supportingQuote)).toBeVisible();
+    await window.getByRole("button", { name: "Approve link" }).click();
+    await window.getByRole("button", { name: "Verify exact passage" }).click();
+
+    await window.getByRole("button", { name: "Add contradiction" }).click();
+    evidenceDialog = window.getByRole("dialog", {
+      name: "Record contradictory evidence",
+    });
+    await evidenceDialog
+      .getByLabel("Source")
+      .selectOption({ label: sourceTitle });
+    await evidenceDialog
+      .getByLabel("Exact evidence passage")
+      .fill(contradictoryQuote);
+    await evidenceDialog
+      .getByLabel("Page, section, or locator")
+      .fill("Limitations, paragraph 1");
+    await evidenceDialog.getByRole("button", { name: "Link source" }).click();
+    await expect(window.getByText("Contradiction recorded")).toBeVisible();
+    await expect(window.getByText(contradictoryQuote)).toBeVisible();
 
     await app.close();
     app = await launch();
@@ -124,6 +170,17 @@ test("completes and recovers the production evidence loop with demos disabled", 
         .getByText(claimTitle, { exact: true })
         .first(),
     ).toBeVisible();
+    await window
+      .locator("#main-workspace")
+      .getByText(claimTitle, { exact: true })
+      .first()
+      .click();
+    await window.getByRole("radio", { name: "Detail" }).click();
+    await expect(window.getByText(supportingQuote)).toBeVisible();
+    await expect(window.getByText(contradictoryQuote)).toBeVisible();
+    await expect(window.getByText("Link approved")).toBeVisible();
+    await expect(window.getByText("Passage verified")).toBeVisible();
+    await expect(window.getByText("86% confidence")).toBeVisible();
 
     await window.getByTestId("nav-experiments").click();
     await window

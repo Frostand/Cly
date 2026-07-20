@@ -510,7 +510,7 @@ export function IntegrationsScreen() {
                                 .then(() =>
                                   notify(
                                     `${integration.name} setup`,
-                                    "Real connection is unavailable in the UI prototype.",
+                                    "Provider connection is unavailable in this build.",
                                   ),
                                 );
                           }}
@@ -597,7 +597,7 @@ export function IntegrationsScreen() {
                     )}
                     onClick={() =>
                       notify(
-                        "Prototype credential",
+                        "Demo credential",
                         "Fake masked values are never persisted or sent over the network.",
                       )
                     }
@@ -1433,7 +1433,7 @@ export function SettingsScreen() {
             "Research defaults",
             "Keyboard shortcuts",
             ...(__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime
-              ? ["Fixture mode"]
+              ? ["Demo state"]
               : []),
             "Diagnostics",
           ].map((item) => (
@@ -1575,11 +1575,11 @@ export function SettingsScreen() {
           ) : null}
           {__CLY_INCLUDE_DEMOS__ &&
           isClyDemoRuntime &&
-          section === "Fixture mode" ? (
+          section === "Demo state" ? (
             <Panel className="cly-panel-body">
               <div className="cly-callout" data-tone="warning">
                 Development-only state selector. Production builds will not
-                expose fixture controls.
+                expose demo controls.
               </div>
               <div className="cly-grid-2" style={{ marginTop: 12 }}>
                 {(
@@ -1633,7 +1633,7 @@ export function SettingsScreen() {
                 <dd>Local authenticated research API</dd>
                 {isClyDemoRuntime ? (
                   <>
-                    <dt>Fixture</dt>
+                    <dt>Demo state</dt>
                     <dd>{fixtureMode}</dd>
                   </>
                 ) : null}

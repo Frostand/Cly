@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { navigateToResearch } from "./navigation-helpers";
 
 const inheritedRestriction = {
   obligationId: "obligation-e2e",
@@ -135,7 +136,7 @@ test("shows transitive restrictions and records provider approval", async ({
     });
   });
 
-  await page.getByTestId("nav-obligations").click();
+  await navigateToResearch(page, "obligations");
   await expect(
     page.getByRole("heading", { name: "Research Data Obligations" }),
   ).toBeVisible();

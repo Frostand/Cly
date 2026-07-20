@@ -62,11 +62,11 @@ test("runs the complete fixture-backed Agent Sessions workflow", async ({
   await page.getByRole("radio", { name: "tiled" }).click();
 
   await page.getByRole("tab", { name: "Tests" }).click();
-  await expect(page.getByLabel("Fixture terminal output")).toBeVisible();
+  await expect(page.getByLabel("Terminal output preview")).toBeVisible();
   await expect(page.getByText(/calibration\.test\.ts/)).toBeVisible();
 
   await page.getByRole("tab", { name: "Calibration paper" }).click();
-  await expect(page.getByLabel("Research browser fixture")).toBeVisible();
+  await expect(page.getByLabel("Research browser preview")).toBeVisible();
   await page.getByRole("button", { name: "Add page as source" }).click();
   await expect(
     page.getByRole("button", { name: "Source added" }),

@@ -1,195 +1,275 @@
-import { AlertTriangle, Check, GitBranch, Laptop } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  Check,
+  GitBranch,
+  Laptop,
+  ShieldCheck,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { StatusIndicator } from "../components/design-system";
 import { Button, Dialog } from "../components/primitives";
-import { ApiRequestError, apiClient } from "../services/api-client";
+import { apiClient } from "../services/api-client";
 import type {
+  ClyDevHandoffEnvelope,
   ClyDevHandoffInspection,
-  ClyDevResumeAction,
-  ClyDevResumeDestination,
+  ClyDevReceivedHandoff,
+  ClyDevTargetProvider,
 } from "./types";
 
 type ResumeApi = Pick<
   typeof apiClient,
-  "pairClyDevDevice" | "inspectClyDevHandoff" | "resumeClyDevHandoff"
+  "fetchReceivedClyDevHandoffs" | "inspectClyDevHandoff" | "resumeClyDevHandoff"
 >;
 
-const actionLabel: Record<ClyDevResumeAction, string> = {
-  fetch: "Fetch from remote",
-  clone: "Clone repository",
-  "create-branch": "Create branch",
-  "create-worktree": "Create worktree",
-  "inspect-changes": "Inspect local changes",
-  defer: "Defer",
-  "return-to-source": "Return to source machine",
-};
+const providers: Array<ClyDevTargetProvider & { label: string }> = [
+  { id: "openai-codex", label: "OpenAI Codex" },
+  { id: "anthropic-claude", label: "Anthropic Claude" },
+];
 
-const platform = (): ClyDevResumeDestination["machine"]["platform"] =>
-  navigator.userAgent.includes("Windows")
-    ? "win32"
-    : navigator.userAgent.includes("Linux")
-      ? "linux"
-      : "darwin";
-
-const inspectionFromError = (error: unknown) =>
-  error instanceof ApiRequestError &&
-  error.details &&
-  typeof error.details === "object" &&
-  "readiness" in error.details
-    ? (error.details as ClyDevHandoffInspection)
-    : null;
+function parseEnvelope(value: string): ClyDevHandoffEnvelope | null {
+  try {
+    const parsed = JSON.parse(value) as ClyDevHandoffEnvelope;
+    return parsed?.protocol === "cly.dev.handoff" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 export function ResumeTaskDialog({
+  projectId,
   open,
   onClose,
   onResumed,
-  onRecoveryAction,
   api = apiClient,
 }: {
+  projectId: string;
   open: boolean;
   onClose: () => void;
-  onResumed?: (result: ClyDevHandoffInspection) => void;
-  onRecoveryAction?: (action: ClyDevResumeAction) => void;
+  onResumed?: () => void;
   api?: ResumeApi;
 }) {
-  const [handoffId, setHandoffId] = useState("");
-  const [pairingCode, setPairingCode] = useState("");
-  const [repositoryPath, setRepositoryPath] = useState("");
-  const [deviceId] = useState(() => `device-${crypto.randomUUID()}`);
+  const [received, setReceived] = useState<ClyDevReceivedHandoff[]>([]);
+  const [envelopeText, setEnvelopeText] = useState("");
+  const [targetProviderId, setTargetProviderId] =
+    useState<ClyDevTargetProvider["id"]>("openai-codex");
   const [inspection, setInspection] = useState<ClyDevHandoffInspection | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const destination = useMemo<ClyDevResumeDestination>(
-    () => ({
-      path: repositoryPath,
-      repositoryPath,
-      worktreePath: repositoryPath,
-      requiredTools: ["git"],
-      machine: { id: deviceId, platform: platform() },
-    }),
-    [deviceId, repositoryPath],
+  const envelope = useMemo(() => parseEnvelope(envelopeText), [envelopeText]);
+  const targetProvider = useMemo(
+    () => ({ id: targetProviderId }) satisfies ClyDevTargetProvider,
+    [targetProviderId],
   );
 
-  const inspect = async () => {
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
     setBusy(true);
     setError(null);
-    try {
-      await api.pairClyDevDevice({ deviceId, pairingCode });
-      setInspection(
-        await api.inspectClyDevHandoff(handoffId, {
-          deviceId,
-          destination,
-        }),
-      );
-    } catch (caught) {
-      const details = inspectionFromError(caught);
-      if (details) setInspection(details);
-      else
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "The handoff could not be inspected.",
-        );
-    } finally {
-      setBusy(false);
-    }
-  };
-  const resume = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await api.resumeClyDevHandoff(handoffId, {
-        deviceId,
-        destination,
+    void api
+      .fetchReceivedClyDevHandoffs(projectId)
+      .then((items) => {
+        if (!active) return;
+        setReceived(items);
+        if (items[0]) {
+          setEnvelopeText(
+            (current) => current || JSON.stringify(items[0].envelope, null, 2),
+          );
+        }
+      })
+      .catch((cause) => {
+        if (active)
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "Encrypted handoffs could not be loaded.",
+          );
+      })
+      .finally(() => {
+        if (active) setBusy(false);
       });
-      onResumed?.(result);
-      onClose();
-    } catch (caught) {
-      const details = inspectionFromError(caught);
-      if (details) setInspection(details);
-      else
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "The task could not be resumed.",
-        );
+    return () => {
+      active = false;
+    };
+  }, [api, open, projectId]);
+
+  const inspect = async () => {
+    if (!envelope) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setInspection(
+        await api.inspectClyDevHandoff(projectId, envelope, targetProvider),
+      );
+    } catch (cause) {
+      setInspection(null);
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "The handoff could not be inspected.",
+      );
     } finally {
       setBusy(false);
     }
   };
+
+  const resume = async () => {
+    if (!envelope || !inspection?.compatible || inspection.stale.length) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.resumeClyDevHandoff(projectId, envelope, targetProvider);
+      onResumed?.();
+      onClose();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "The task could not be resumed.",
+      );
+      await inspect();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reviewRequired = Boolean(
+    inspection && (!inspection.compatible || inspection.stale.length),
+  );
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      title="Resume task on this machine"
-      description="Cly restores task context only after Git and environment checks pass."
+      title="Resume a Cly Dev handoff"
+      description="Review provider, Git, research, permissions, and environment compatibility before Cly creates resumable local state."
       wide
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          {inspection && !inspection.readiness.blocking ? (
-            <Button
-              variant="primary"
-              disabled={busy}
-              onClick={() => void resume()}
-            >
-              Resume task
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              disabled={
-                busy ||
-                !handoffId.trim() ||
-                !/^\d{6}$/.test(pairingCode) ||
-                !repositoryPath.trim()
-              }
-              onClick={() => void inspect()}
-            >
-              Inspect destination
-            </Button>
-          )}
+          <Button
+            variant="primary"
+            disabled={
+              busy ||
+              !envelope ||
+              (inspection !== null &&
+                (!inspection.compatible || inspection.stale.length > 0))
+            }
+            onClick={() => void (inspection ? resume() : inspect())}
+          >
+            {inspection ? "Resume task" : "Inspect handoff"}
+          </Button>
         </>
       }
     >
-      <div className="cly-resume-task-form">
+      <div className="cly-resume-task-form" aria-live="polite">
+        {received.length ? (
+          <label>
+            <span>Encrypted handoff received on this device</span>
+            <select
+              value={
+                received.find(
+                  (item) =>
+                    item.envelope.integrity.digest ===
+                    envelope?.integrity.digest,
+                )?.envelopeId ?? ""
+              }
+              onChange={(event) => {
+                const selected = received.find(
+                  (item) => item.envelopeId === event.target.value,
+                );
+                if (selected) {
+                  setEnvelopeText(JSON.stringify(selected.envelope, null, 2));
+                  setInspection(null);
+                }
+              }}
+            >
+              {received.map((item) => (
+                <option key={item.envelopeId} value={item.envelopeId}>
+                  {item.envelope.payload.task.title} · {item.receivedAt}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label>
-          <span>Handoff ID</span>
-          <input
-            value={handoffId}
-            onChange={(event) => setHandoffId(event.target.value)}
+          <span>Versioned handoff JSON</span>
+          <textarea
+            autoFocus
+            rows={6}
+            value={envelopeText}
+            onChange={(event) => {
+              setEnvelopeText(event.target.value);
+              setInspection(null);
+            }}
+            aria-invalid={Boolean(envelopeText && !envelope)}
+            placeholder="Paste a local export, or receive one through encrypted device sync."
           />
         </label>
         <label>
-          <span>Pairing code</span>
-          <input
-            inputMode="numeric"
-            maxLength={6}
-            value={pairingCode}
-            onChange={(event) =>
-              setPairingCode(event.target.value.replace(/\D/g, ""))
-            }
-          />
-        </label>
-        <label>
-          <span>Local repository or worktree</span>
-          <input
-            value={repositoryPath}
-            onChange={(event) => setRepositoryPath(event.target.value)}
-          />
+          <span>Resume with provider</span>
+          <select
+            value={targetProviderId}
+            onChange={(event) => {
+              setTargetProviderId(
+                event.target.value as ClyDevTargetProvider["id"],
+              );
+              setInspection(null);
+            }}
+          >
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.label}
+              </option>
+            ))}
+          </select>
         </label>
         <p className="cly-resume-restriction">
-          <AlertTriangle size={13} aria-hidden="true" /> Uncommitted files and
-          restricted context are never copied between machines.
+          <ShieldCheck size={13} aria-hidden="true" /> Credentials, restricted
+          datasets, machine paths, live processes, and uncommitted files remain
+          local. Historical approvals are evidence only; resumed effects require
+          current authority.
         </p>
         {error ? (
           <p className="cly-resume-error" role="alert">
-            {error}
+            <AlertTriangle size={13} aria-hidden="true" /> {error}
+          </p>
+        ) : null}
+        {envelope ? (
+          <section className="cly-resume-preview" aria-label="Handoff preview">
+            <div>
+              <Laptop size={14} aria-hidden="true" />
+              <span>
+                <strong>{envelope.payload.task.title}</strong>
+                <small>{envelope.payload.goal.objective}</small>
+              </span>
+              <StatusIndicator tone="info">
+                Schema {envelope.schemaVersion}
+              </StatusIndicator>
+            </div>
+            <div className="cly-resume-identity">
+              <span>
+                <GitBranch size={12} aria-hidden="true" />{" "}
+                {envelope.payload.repository.branch}
+              </span>
+              <code>{envelope.payload.repository.commitSha}</code>
+            </div>
+            <small>
+              {envelope.payload.summaries.length} summaries ·{" "}
+              {envelope.payload.plan.steps.length} plan steps ·{" "}
+              {envelope.payload.contextManifest.entries.length} context refs ·{" "}
+              {envelope.payload.tests.length} test records · raw conversation{" "}
+              {envelope.payload.conversationSync}
+            </small>
+          </section>
+        ) : envelopeText ? (
+          <p className="cly-resume-error" role="alert">
+            <AlertTriangle size={13} aria-hidden="true" /> Enter a valid
+            cly.dev.handoff envelope.
           </p>
         ) : null}
         {inspection ? (
@@ -198,56 +278,42 @@ export function ResumeTaskDialog({
             className="cly-resume-readiness"
           >
             <header>
-              <Laptop size={14} aria-hidden="true" />
+              {reviewRequired ? (
+                <AlertTriangle size={14} aria-hidden="true" />
+              ) : (
+                <Check size={14} aria-hidden="true" />
+              )}
               <span>
-                <strong>{inspection.envelope.task.title}</strong>
+                <strong>
+                  {reviewRequired ? "Review required" : "Ready to resume"}
+                </strong>
                 <small>
-                  {inspection.envelope.sourceMachine.id} ·{" "}
-                  {inspection.envelope.repository.remoteUrl ??
-                    inspection.envelope.repository.id}
+                  {reviewRequired
+                    ? "Cly will not execute or overwrite newer state."
+                    : "Repository, research, provider, and authority checks passed."}
                 </small>
               </span>
-              <StatusIndicator
-                tone={inspection.readiness.blocking ? "danger" : "success"}
-              >
-                {inspection.readiness.blocking ? "Blocked" : "Ready"}
+              <StatusIndicator tone={reviewRequired ? "warning" : "success"}>
+                {reviewRequired ? "Blocked" : "Compatible"}
               </StatusIndicator>
             </header>
-            <div className="cly-resume-identity">
-              <span>
-                <GitBranch size={12} /> {inspection.envelope.worktree.branch}
-              </span>
-              <code>{inspection.envelope.commit.sha}</code>
-            </div>
             <div className="cly-resume-checks">
-              {inspection.readiness.checks.map((check) => (
-                <div key={check.id} data-status={check.status}>
-                  {check.status === "pass" ? (
-                    <Check size={12} />
-                  ) : (
-                    <AlertTriangle size={12} />
-                  )}
-                  <span>{check.summary}</span>
-                </div>
+              {inspection.explanations.map((item) => (
+                <article key={`${item.code}:${item.message}`}>
+                  <AlertTriangle size={12} aria-hidden="true" />
+                  <span>
+                    <strong>{item.message}</strong>
+                    <small>{item.recoveryAction}</small>
+                  </span>
+                </article>
               ))}
+              {!inspection.explanations.length ? (
+                <article data-status="pass">
+                  <Check size={12} aria-hidden="true" />
+                  <span>All compatibility checks passed.</span>
+                </article>
+              ) : null}
             </div>
-            {inspection.readiness.actions.length ? (
-              <fieldset className="cly-resume-actions">
-                <legend className="cly-sr-only">Safe recovery actions</legend>
-                {inspection.readiness.actions.map((action) => (
-                  <Button
-                    key={action}
-                    variant="ghost"
-                    onClick={() => {
-                      if (action === "defer") onClose();
-                      onRecoveryAction?.(action);
-                    }}
-                  >
-                    {actionLabel[action]}
-                  </Button>
-                ))}
-              </fieldset>
-            ) : null}
           </section>
         ) : null}
       </div>

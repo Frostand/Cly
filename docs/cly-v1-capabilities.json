@@ -163,11 +163,11 @@
     "id": "code.scan",
     "route": "code",
     "action": "Scan project code artifacts",
-    "state": "unavailable",
-    "service": null,
-    "api": null,
-    "test": null,
-    "reason": "Code scanning is unavailable until filesystem approval, indexed results, and provenance are persisted."
+    "state": "production",
+    "service": "codeResearchLinker",
+    "api": "POST /api/projects/:projectId/code-context/scan; GET /api/projects/:projectId/code-context/entities; GET /api/projects/:projectId/code-context",
+    "test": "electron/api/research/code-linker.test.ts",
+    "reason": null
   },
   {
     "id": "claims.secondary-actions",
@@ -183,11 +183,11 @@
     "id": "reproducibility.audit",
     "route": "reproducibility",
     "action": "Run or resolve a reproducibility audit",
-    "state": "unavailable",
-    "service": null,
-    "api": null,
-    "test": null,
-    "reason": "Reproducibility audits are unavailable until audit findings have a durable local service."
+    "state": "production",
+    "service": "projectServices.reproducibility",
+    "api": "/api/projects/:projectId/reproducibility-audits",
+    "test": "electron/api/research/reproducibility-audit.test.ts",
+    "reason": null
   },
   {
     "id": "planner.update",

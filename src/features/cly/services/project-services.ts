@@ -17,7 +17,7 @@ import type {
   Source,
 } from "../domain/types";
 import { useClyStore } from "../store/cly-store";
-import { apiClient } from "./api-client";
+import { apiClient, nextStepFromPlannerRecommendation } from "./api-client";
 import { CapabilityUnavailableError } from "./capabilities";
 import type { ClyServices } from "./interfaces";
 import { isClyDemoRuntime, isClyExplicitDemoRuntime } from "./runtime";
@@ -516,6 +516,35 @@ export const projectServices: ClyServices = {
       stateForProject(projectId)?.updateSource(sourceId, updated);
       return updated;
     },
+    async reviewField(sourceId, fieldId, verificationState) {
+      const projectId = activeProjectId();
+      const state = stateForProject(projectId);
+      if (!state) throw new Error("Active research project changed.");
+      const source = state.data.sources.find((item) => item.id === sourceId);
+      const field = source?.extractedFields?.[fieldId];
+      if (!source || !field) {
+        throw new Error("The extracted field or its evidence is unavailable.");
+      }
+      const updated: Source = {
+        ...source,
+        extractedFields: {
+          ...source.extractedFields,
+          [fieldId]: {
+            ...field,
+            verificationState,
+            verifiedBy: "local-user",
+            verifiedAt: isoNow(),
+          },
+        },
+        updatedAt: isoNow(),
+      };
+      await apiClient.updateSource(projectId, sourceId, {
+        description: source.summary,
+        payload: { extractedFields: updated.extractedFields },
+      });
+      stateForProject(projectId)?.updateSource(sourceId, updated);
+      return updated;
+    },
   },
   notebooks: {
     async importMock(name) {
@@ -666,23 +695,69 @@ export const projectServices: ClyServices = {
         approved: relationship.reviewState === "approved",
       });
     },
-    async linkEvidence(claimId, sourceId, type) {
+    async linkEvidence(claimId, sourceId, type, passage) {
       const projectId = activeProjectId();
       const state = stateForProject(projectId);
       if (!state) return;
       const claim = state.data.claims.find((item) => item.id === claimId);
       const source = state.data.sources.find((item) => item.id === sourceId);
       if (!claim || !source) throw new Error("Claim or source not found.");
-      const relationship = isClyExplicitDemoRuntime
+      const demoEvidenceId = isClyExplicitDemoRuntime ? id("evidence") : null;
+      const result = isClyExplicitDemoRuntime
         ? {
-            id: id("edge"),
-            confidence: null,
-            reviewState: "unreviewed" as const,
+            duplicate: false,
+            evidence: {
+              id: demoEvidenceId ?? "",
+              payload: {
+                kind: "evidence" as const,
+                sourceId,
+                quote: passage.quote,
+                locator: passage.locator,
+                contentHash: "demo",
+                verificationState: "unverified" as const,
+              },
+              origin: passage.origin ?? ("human" as const),
+              reviewedBy: null,
+              reviewedAt: null,
+              version: 1,
+              createdAt: isoNow(),
+              updatedAt: isoNow(),
+            },
+            containsRelationship: {
+              id: id("edge"),
+              fromObjectId: sourceId,
+              toObjectId: demoEvidenceId ?? "",
+              type: "contains" as const,
+              confidence: null,
+              origin: passage.origin ?? ("human" as const),
+              reviewState: "unreviewed" as const,
+              reviewedBy: null,
+              reviewedAt: null,
+              version: 1,
+              createdAt: isoNow(),
+            },
+            claimRelationship: {
+              id: id("edge"),
+              fromObjectId: demoEvidenceId ?? "",
+              toObjectId: claimId,
+              type,
+              confidence: passage.confidence ?? null,
+              origin: passage.origin ?? ("human" as const),
+              reviewState: "unreviewed" as const,
+              reviewedBy: null,
+              reviewedAt: null,
+              version: 1,
+              createdAt: isoNow(),
+            },
           }
-        : await apiClient.createRelationship(projectId, {
-            fromObjectId: sourceId,
-            toObjectId: claimId,
+        : await apiClient.createEvidenceLink(projectId, {
+            sourceId,
+            claimId,
+            quote: passage.quote,
+            locator: passage.locator,
             type,
+            origin: passage.origin,
+            confidence: passage.confidence,
           });
       const currentState = stateForProject(projectId);
       if (!currentState) return;
@@ -713,13 +788,78 @@ export const projectServices: ClyServices = {
             : currentClaim.contradictingSourceIds,
         updatedAt: isoNow(),
       });
+      currentState.addEvidencePassage({
+        id: result.evidence.id,
+        sourceId: result.evidence.payload.sourceId,
+        quote: result.evidence.payload.quote,
+        locator: result.evidence.payload.locator,
+        contentHash: result.evidence.payload.contentHash,
+        verificationState: result.evidence.payload.verificationState,
+        origin: result.evidence.origin,
+        reviewedBy: result.evidence.reviewedBy,
+        reviewedAt: result.evidence.reviewedAt,
+        version: result.evidence.version,
+        createdAt: result.evidence.createdAt,
+        updatedAt: result.evidence.updatedAt,
+      });
       currentState.addGraphEdge({
-        id: relationship.id,
+        id: result.containsRelationship.id,
         source: sourceId,
+        target: result.evidence.id,
+        relation: "contains",
+        confidence: null,
+        approved: false,
+        origin: result.containsRelationship.origin,
+        reviewState: result.containsRelationship.reviewState,
+        reviewedBy: result.containsRelationship.reviewedBy,
+        reviewedAt: result.containsRelationship.reviewedAt,
+        version: result.containsRelationship.version,
+        createdAt: result.containsRelationship.createdAt,
+      });
+      currentState.addGraphEdge({
+        id: result.claimRelationship.id,
+        source: result.evidence.id,
         target: claimId,
         relation: type,
-        confidence: relationship.confidence,
+        confidence: result.claimRelationship.confidence,
+        approved: result.claimRelationship.reviewState === "approved",
+        origin: result.claimRelationship.origin,
+        reviewState: result.claimRelationship.reviewState,
+        reviewedBy: result.claimRelationship.reviewedBy,
+        reviewedAt: result.claimRelationship.reviewedAt,
+        version: result.claimRelationship.version,
+        createdAt: result.claimRelationship.createdAt,
+      });
+    },
+    async reviewEvidenceRelationship(relationshipId, reviewState, confidence) {
+      const projectId = activeProjectId();
+      const relationship = await apiClient.reviewRelationship(
+        projectId,
+        relationshipId,
+        { reviewState, confidence },
+      );
+      stateForProject(projectId)?.updateGraphEdge(relationshipId, {
         approved: relationship.reviewState === "approved",
+        reviewState: relationship.reviewState,
+        confidence: relationship.confidence,
+        reviewedBy: relationship.reviewedBy,
+        reviewedAt: relationship.reviewedAt,
+        version: relationship.version,
+      });
+    },
+    async verifyEvidencePassage(evidenceId, verificationState) {
+      const projectId = activeProjectId();
+      const evidence = await apiClient.reviewEvidence(
+        projectId,
+        evidenceId,
+        verificationState,
+      );
+      stateForProject(projectId)?.updateEvidencePassage(evidenceId, {
+        verificationState: evidence.payload.verificationState,
+        reviewedBy: evidence.reviewedBy,
+        reviewedAt: evidence.reviewedAt,
+        version: evidence.version,
+        updatedAt: evidence.updatedAt,
       });
     },
   },
@@ -769,14 +909,33 @@ export const projectServices: ClyServices = {
         );
         return generated.audit;
       }
-      throw new CapabilityUnavailableError("reproducibility.audit");
+      const projectId = await ensureActiveProject();
+      const report = await apiClient.runReproducibilityAudit(projectId);
+      stateForProject(projectId)?.replaceReproducibilityAudit(
+        report.audit,
+        report.findings,
+      );
+      stateForProject(projectId)?.notify(
+        "Reproducibility audit complete",
+        `${report.audit.summary?.blockingIssueIds.length ?? 0} blockers, ${report.audit.summary?.missingRequirementCount ?? 0} missing requirements, and ${report.audit.summary?.failedCheckCount ?? 0} failed checks.`,
+      );
+      return report.audit;
     },
     async resolveFinding(findingId) {
       if (isClyDemoRuntime) {
         useClyStore.getState().updateFinding(findingId, { status: "Resolved" });
         return;
       }
-      throw new CapabilityUnavailableError("reproducibility.audit");
+      const projectId = await ensureActiveProject();
+      const state = stateForProject(projectId);
+      const audit = state?.data.audits[0];
+      if (!audit) throw new Error("Run a reproducibility audit first.");
+      const finding = await apiClient.resolveReproducibilityFinding(
+        projectId,
+        audit.id,
+        findingId,
+      );
+      state?.updateFinding(findingId, { status: finding.status });
     },
   },
   integrations: {
@@ -789,12 +948,89 @@ export const projectServices: ClyServices = {
     },
   },
   planner: {
-    async setStatus(stepId, status) {
+    async generate() {
+      if (isClyDemoRuntime) return useClyStore.getState().data.nextSteps;
+      const projectId = await ensureActiveProject();
+      const result = await apiClient.generateNextSteps(projectId);
+      const steps = result.recommendations.map(
+        nextStepFromPlannerRecommendation,
+      );
+      useClyStore.getState().replaceNextSteps(steps);
+      return steps;
+    },
+    async setStatus(stepId, status, reason) {
       if (isClyDemoRuntime) {
         useClyStore.getState().updateNextStep(stepId, status);
         return;
       }
-      throw new CapabilityUnavailableError("planner.update");
+      if (status === "In progress") {
+        throw new Error(
+          "Starting work requires a separate, explicit execution approval.",
+        );
+      }
+      const projectId = activeProjectId();
+      const action = {
+        Accepted: "accept",
+        Deferred: "defer",
+        Dismissed: "dismiss",
+      }[status] as "accept" | "defer" | "dismiss";
+      if (action !== "accept" && !reason?.trim()) {
+        throw new Error(
+          `${action === "defer" ? "Deferring" : "Dismissing"} a recommendation requires a reason.`,
+        );
+      }
+      const result = await apiClient.reviewNextStep(
+        projectId,
+        stepId,
+        action === "accept"
+          ? { action }
+          : {
+              action,
+              reason: reason?.trim() ?? "",
+            },
+      );
+      useClyStore
+        .getState()
+        .updateNextStep(
+          stepId,
+          nextStepFromPlannerRecommendation(result.recommendation).status as
+            | "Accepted"
+            | "Deferred"
+            | "Dismissed",
+        );
+    },
+    async edit(stepId, edit, reason) {
+      if (isClyDemoRuntime) {
+        const current = useClyStore
+          .getState()
+          .data.nextSteps.find((step) => step.id === stepId);
+        if (!current) throw new Error("Recommendation was not found.");
+        useClyStore
+          .getState()
+          .replaceNextSteps(
+            useClyStore
+              .getState()
+              .data.nextSteps.map((step) =>
+                step.id === stepId ? { ...step, ...edit } : step,
+              ),
+          );
+        return { ...current, ...edit };
+      }
+      const projectId = activeProjectId();
+      const result = await apiClient.reviewNextStep(projectId, stepId, {
+        action: "edit",
+        edit,
+        reason,
+      });
+      const step = nextStepFromPlannerRecommendation(result.recommendation);
+      useClyStore
+        .getState()
+        .replaceNextSteps(
+          useClyStore
+            .getState()
+            .data.nextSteps.map((item) => (item.id === stepId ? step : item)),
+        );
+      return step;
     },
   },
   decisions: {

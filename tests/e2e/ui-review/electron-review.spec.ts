@@ -1,10 +1,23 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { _electron as electron, expect, test } from "@playwright/test";
+import {
+  _electron as electron,
+  expect,
+  type Page,
+  test,
+} from "@playwright/test";
 import axe from "axe-core";
 
 const root = process.cwd();
 const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
+
+async function navigateToResearch(page: Page, id: string) {
+  const destination = page.getByTestId(`nav-${id}`);
+  if (!(await destination.isVisible())) {
+    await page.locator("details.cly-sidebar-advanced > summary").click();
+  }
+  await destination.click();
+}
 
 test("reviews the assembled Electron shell and core interaction states", async () => {
   test.setTimeout(90_000);
@@ -54,9 +67,10 @@ test("reviews the assembled Electron shell and core interaction states", async (
       ["next-steps", "Next-Step Planner"],
       ["integrations", "Integrations & Providers"],
       ["models", "Models & Agents"],
+      ["help", "Setup & Help"],
       ["settings", "Settings"],
     ] as const) {
-      await window.getByTestId(`nav-${id}`).click();
+      await navigateToResearch(window, id);
       await expect(
         window.getByRole("heading", { name: heading, level: 1 }),
       ).toBeVisible();
@@ -517,11 +531,11 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
     ).toBeFocused();
 
     await runCommand(window, "Use Inline Workspace");
-    await runCommand(window, "Detach Workspace (Prototype Intent)");
+    await runCommand(window, "Detach Workspace");
     await expect(
       window.getByRole("button", { name: "Reattach workspace" }),
     ).toBeVisible();
-    await runCommand(window, "Reattach Workspace (Prototype Intent)");
+    await runCommand(window, "Reattach Workspace");
     await expect(window.getByLabel("Session workbench")).toBeVisible();
 
     await runCommand(window, "Open Interrupted Task to Resume");

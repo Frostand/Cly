@@ -72,6 +72,7 @@ describe("Cly application shell", () => {
 
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     const data = createFixtureRepository("active");
     const costs = createCostLedgerFixture("active", data);
     useClyStore.setState({
@@ -83,6 +84,8 @@ describe("Cly application shell", () => {
       activeProjectId: "project-cly",
       activeScreen: "overview",
       activeProduct: "research",
+      lastResearchScreen: "overview",
+      lastResearchSelectedId: null,
       activeDevSection: "projects",
       selectedId: null,
       sidebarCollapsed: false,
@@ -147,7 +150,7 @@ describe("Cly application shell", () => {
       ["reproducibility", "Reproducibility Auditor"],
       ["decisions", "Research Decision Log"],
       ["next-steps", "Next-Step Planner"],
-      ["reviewer-capsules", "Reviewer Capsules"],
+      ["reviewer-capsules", "Reviewer Packages"],
       ["integrations", "Integrations & Providers"],
       ["models", "Models & Agents"],
     ] as const;
@@ -376,6 +379,82 @@ describe("Cly application shell", () => {
         name: "Neural surrogate reliability",
         level: 1,
       }),
+    ).toBeVisible();
+  });
+
+  it("presents the five-step workflow and keeps advanced routes searchable", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    for (const label of [
+      "Set up",
+      "Understand",
+      "Build / Run",
+      "Review",
+      "Share",
+    ]) {
+      expect(screen.getByRole("navigation", { name: label })).toBeVisible();
+    }
+    await user.keyboard("{Control>}k{/Control}");
+    const palette = screen.getByRole("dialog", { name: "Command palette" });
+    await user.type(within(palette).getByRole("combobox"), "Research Graph");
+    expect(within(palette).getByText("Go to Research Graph")).toBeVisible();
+  });
+
+  it("returns to the same research route and selection after Dev work", async () => {
+    const user = userEvent.setup();
+    const claimId = useClyStore.getState().data.claims[0].id;
+    useClyStore.getState().setScreen("claims");
+    useClyStore.getState().setSelected(claimId);
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByTestId("product-dev"));
+    await user.click(screen.getByTestId("nav-dev-issues"));
+    await user.click(screen.getByTestId("product-research"));
+
+    expect(
+      screen.getByRole("heading", { name: "Claim Audit Board", level: 1 }),
+    ).toBeVisible();
+    expect(useClyStore.getState()).toMatchObject({
+      activeProjectId: "project-cly",
+      activeScreen: "claims",
+      selectedId: claimId,
+      activeDevSection: "issues",
+    });
+  });
+
+  it("does not restore a selection from a different research route", () => {
+    const claimId = useClyStore.getState().data.claims[0].id;
+    useClyStore.getState().setScreen("claims");
+    useClyStore.getState().setSelected(claimId);
+    useClyStore.getState().setScreen("sources");
+    useClyStore.getState().setScreen("dev");
+    useClyStore.getState().setProductArea("research");
+
+    expect(useClyStore.getState()).toMatchObject({
+      activeProduct: "research",
+      activeScreen: "sources",
+      selectedId: null,
+      lastResearchSelectedId: null,
+    });
+  });
+
+  it("opens setup guidance and returns through route history", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByTestId("nav-help"));
+    expect(
+      screen.getByRole("heading", { name: "Setup & Help", level: 1 }),
+    ).toBeVisible();
+    expect(screen.getByText("First evidence chain")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Import source" }));
+    expect(
+      screen.getByRole("heading", { name: "Source Manager", level: 1 }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Go back" }));
+    expect(
+      screen.getByRole("heading", { name: "Setup & Help", level: 1 }),
     ).toBeVisible();
   });
 

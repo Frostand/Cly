@@ -2,6 +2,7 @@ import { AppWindow, ArrowLeft, Bot, Laptop, RotateCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getDesktopApi } from "../../../lib/electron";
 import { Button, EmptyState, PageHeader } from "../components/primitives";
+import { apiClient } from "../services/api-client";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { DeviceSyncPanel } from "./device-sync-panel";
@@ -24,6 +25,7 @@ export function AgentSessionsScreen() {
 
 function ProductionAgentSessionsScreen() {
   const [resumeOpen, setResumeOpen] = useState(false);
+  const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
   const requestedSessionId = useClyStore(
     (state) => state.selectedAgentSessionId,
   );
@@ -56,6 +58,24 @@ function ProductionAgentSessionsScreen() {
       "queued",
     );
     await load(projectId);
+  };
+
+  const prepareHandoff = async (sessionId: string) => {
+    setHandoffNotice(null);
+    try {
+      const envelope = await apiClient.exportClyDevHandoff(
+        projectId,
+        sessionId,
+      );
+      await navigator.clipboard.writeText(JSON.stringify(envelope, null, 2));
+      setHandoffNotice(
+        "Structured handoff copied for a same-device provider switch. Open Device sync to prepare an encrypted cross-device transfer.",
+      );
+    } catch (cause) {
+      setHandoffNotice(
+        cause instanceof Error ? cause.message : "Handoff export failed.",
+      );
+    }
   };
 
   const selectedSession =
@@ -142,6 +162,11 @@ function ProductionAgentSessionsScreen() {
           aria-label="Durable agent sessions"
           className="agent-overview-list"
         >
+          {handoffNotice ? (
+            <p className="cly-dev-task-state" role="status">
+              {handoffNotice}
+            </p>
+          ) : null}
           {sessions.map((session) => (
             <article className="cly-durable-session-row" key={session.id}>
               <div>
@@ -156,6 +181,9 @@ function ProductionAgentSessionsScreen() {
                 </p>
               </div>
               <div>
+                <Button onClick={() => void prepareHandoff(session.id)}>
+                  Prepare handoff
+                </Button>
                 {session.state === "resumable" ? (
                   <Button onClick={() => void resume(session.id)}>
                     Queue resume
@@ -173,6 +201,7 @@ function ProductionAgentSessionsScreen() {
         </section>
       )}
       <ResumeTaskDialog
+        projectId={projectId}
         open={resumeOpen}
         onClose={() => setResumeOpen(false)}
         onResumed={() => void load(projectId)}

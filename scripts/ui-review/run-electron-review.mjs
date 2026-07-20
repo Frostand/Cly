@@ -70,8 +70,17 @@ const routes = [
   ["next-steps", "next-steps", "Next-Step Planner"],
   ["integrations", "integrations", "Integrations & Providers"],
   ["models", "models-agents", "Models & Agents"],
+  ["help", "setup-help", "Setup & Help"],
   ["settings", "settings", "Settings"],
 ];
+
+const navigateToResearch = async (id) => {
+  const destination = window.getByTestId(`nav-${id}`);
+  if (!(await destination.isVisible())) {
+    await window.locator("details.cly-sidebar-advanced > summary").click();
+  }
+  await destination.click();
+};
 
 const capture = async (name, animations = "disabled") => {
   await window.waitForTimeout(180);
@@ -97,7 +106,7 @@ const viewportMatrix = [
   [1728, 1117],
 ];
 for (const [id, fileName] of routes) {
-  await window.getByTestId(`nav-${id}`).click();
+  await navigateToResearch(id);
   await window.getByRole("heading", { level: 1 }).first().waitFor();
   for (const [width, height] of viewportMatrix) {
     await resize(width, height);
@@ -210,7 +219,7 @@ await window
   .getByLabel("Switch agent session")
   .selectOption({ label: "Audit primary claim evidence" });
 
-await window.getByTestId("nav-context").click();
+await navigateToResearch("context");
 const include = window.getByRole("switch", {
   name: "Include Raman et al. 2025",
 });
@@ -246,7 +255,7 @@ await window
   .click();
 await window.getByTestId("nav-experiments").click();
 await window.getByText("Calibrated ensemble sweep", { exact: true }).click();
-await window.getByTestId("nav-provenance").click();
+await navigateToResearch("provenance");
 await window
   .getByText("Figure 2 · Cost vs calibration", { exact: true })
   .first()
@@ -259,7 +268,7 @@ await window
   .click();
 await window.getByTestId("nav-next-steps").click();
 await window.getByRole("button", { name: "Accept" }).first().click();
-await window.getByTestId("nav-decisions").click();
+await navigateToResearch("decisions");
 await window.getByRole("button", { name: "New decision" }).click();
 const decisionDialog = window.getByRole("dialog", {
   name: "Record research decision",
@@ -271,14 +280,14 @@ await decisionDialog
   .getByRole("textbox", { name: "Decision", exact: true })
   .fill("Use ensemble ×5 as the canonical comparison.");
 await decisionDialog.getByRole("button", { name: "Record decision" }).click();
-await window.getByTestId("nav-graph").click();
+await navigateToResearch("graph");
 await window.getByText(/20× speedup with decision accuracy/).click();
 await capture("research-evidence-flow-complete");
 
-await window.getByTestId("nav-models").click();
+await navigateToResearch("models");
 await window.locator(".cly-agent-model").first().selectOption("Claude Sonnet");
 await window.getByRole("button", { name: "Save preset" }).click();
-await window.getByTestId("nav-integrations").click();
+await navigateToResearch("integrations");
 await window
   .locator(".cly-integration-catalog .cly-panel", { hasText: "GitHub" })
   .getByRole("button", { name: "Setup" })

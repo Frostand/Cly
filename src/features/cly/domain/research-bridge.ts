@@ -26,6 +26,7 @@ export {
   type Artifact,
   type Claim,
   createResearchObject,
+  type Evidence,
   type Experiment,
   type ResearchObject,
   type ResearchObjectInput,
@@ -36,6 +37,7 @@ export {
 export {
   type ArtifactPayload,
   type ClaimPayload,
+  type EvidencePayload,
   type ExperimentPayload,
   type GroundedLiteratureSummary,
   RESEARCH_OBJECT_TYPES,

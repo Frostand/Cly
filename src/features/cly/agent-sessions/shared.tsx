@@ -176,7 +176,7 @@ export function NewSessionFlow() {
     notify(
       "Agent session created",
       openChat
-        ? "The Orchestrator is preparing the fixture-backed task plan."
+        ? "The Orchestrator is preparing the task plan."
         : "The new session is available in Overview.",
     );
     setInput(defaultInput);
@@ -291,7 +291,7 @@ export function NewSessionFlow() {
         <SelectField
           label="Usage budget"
           value={input.usageBudget}
-          options={["$5", "$10", "$25", "No fixture limit"]}
+          options={["$5", "$10", "$25", "No demo limit"]}
           onChange={(value) => update("usageBudget", value)}
         />
       </div>

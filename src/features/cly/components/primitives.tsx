@@ -289,6 +289,14 @@ export function Dialog({
   wide?: boolean;
 }) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const openRef = useRef(open);
+  if (open && !openRef.current) {
+    returnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+  }
+  openRef.current = open;
   return (
     <RadixDialog.Root
       open={open}
@@ -301,10 +309,6 @@ export function Dialog({
         <RadixDialog.Content
           className={`cly-dialog${wide ? " cly-dialog-wide" : ""}`}
           onOpenAutoFocus={(event) => {
-            returnFocusRef.current =
-              document.activeElement instanceof HTMLElement
-                ? document.activeElement
-                : null;
             const content = event.currentTarget as HTMLElement | null;
             const target = content?.querySelector<HTMLElement>(
               "[autofocus], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",

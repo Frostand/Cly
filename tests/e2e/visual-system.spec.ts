@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { navigateToResearch } from "./navigation-helpers";
 
 const routes = [
   ["overview", "Neural surrogate reliability"],
@@ -17,6 +18,7 @@ const routes = [
   ["next-steps", "Next-Step Planner"],
   ["integrations", "Integrations & Providers"],
   ["models", "Models & Agents"],
+  ["help", "Setup & Help"],
   ["settings", "Settings"],
 ] as const;
 
@@ -30,7 +32,7 @@ async function chooseFixture(page: Page, label: RegExp) {
 }
 
 async function openRoute(page: Page, id: string, heading: string) {
-  await page.getByTestId(`nav-${id}`).click();
+  await navigateToResearch(page, id);
   await expect(
     page.getByRole("heading", { name: heading, level: 1 }),
   ).toBeVisible();
@@ -138,7 +140,7 @@ test("uses opacity-only route feedback when reduced motion is requested", async 
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openRoute(page, "overview", "Neural surrogate reliability");
-  await page.getByTestId("nav-context").click();
+  await navigateToResearch(page, "context");
   await expect(
     page.getByRole("heading", { name: "Context Composer", level: 1 }),
   ).toBeVisible();

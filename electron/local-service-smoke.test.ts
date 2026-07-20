@@ -173,20 +173,59 @@ describe("local service smoke suite", () => {
     expect(experiment.status).toBe(201);
     const experimentObject = await experiment.json();
 
-    const relationship = await request(
+    const evidenceLink = await request(
       service.port,
-      "/api/projects/research-project/research/relationships",
+      "/api/projects/research-project/research/evidence-links",
       {
         body: JSON.stringify({
-          fromObjectId: sourceObject.id,
-          toObjectId: claimObject.id,
+          sourceId: sourceObject.id,
+          claimId: claimObject.id,
+          quote: "The persisted effect survives a full local-service restart.",
+          locator: "Results, paragraph 2",
           type: "supports",
+          origin: "inferred",
+          actorId: "smoke-agent",
+          confidence: 0.8,
         }),
         method: "POST",
       },
     );
-    expect(relationship.status).toBe(201);
-    const relationshipObject = await relationship.json();
+    expect(evidenceLink.status).toBe(201);
+    const evidenceLinkObject = await evidenceLink.json();
+    expect(evidenceLinkObject).toMatchObject({
+      duplicate: false,
+      evidence: {
+        origin: "inferred",
+        reviewState: "unreviewed",
+        payload: {
+          verificationState: "unverified",
+          quote: "The persisted effect survives a full local-service restart.",
+        },
+      },
+      claimRelationship: { reviewState: "unreviewed", version: 1 },
+    });
+
+    const duplicateEvidenceLink = await request(
+      service.port,
+      "/api/projects/research-project/research/evidence-links",
+      {
+        body: JSON.stringify({
+          sourceId: sourceObject.id,
+          claimId: claimObject.id,
+          quote: "The persisted effect survives a full local-service restart.",
+          locator: "Results, paragraph 2",
+          type: "supports",
+          origin: "inferred",
+        }),
+        method: "POST",
+      },
+    );
+    expect(duplicateEvidenceLink.status).toBe(201);
+    await expect(duplicateEvidenceLink.json()).resolves.toMatchObject({
+      duplicate: true,
+      evidence: { id: evidenceLinkObject.evidence.id },
+      claimRelationship: { id: evidenceLinkObject.claimRelationship.id },
+    });
 
     const prematureClaimStatus = await request(
       service.port,
@@ -200,7 +239,7 @@ describe("local service smoke suite", () => {
 
     const relationshipReview = await request(
       service.port,
-      `/api/projects/research-project/research/relationships/${relationshipObject.id}/review`,
+      `/api/projects/research-project/research/relationships/${evidenceLinkObject.claimRelationship.id}/review`,
       {
         body: JSON.stringify({
           reviewState: "approved",
@@ -210,6 +249,16 @@ describe("local service smoke suite", () => {
       },
     );
     expect(relationshipReview.status).toBe(200);
+
+    const passageReview = await request(
+      service.port,
+      `/api/projects/research-project/research/evidence/${evidenceLinkObject.evidence.id}/verification`,
+      {
+        body: JSON.stringify({ verificationState: "verified" }),
+        method: "PATCH",
+      },
+    );
+    expect(passageReview.status).toBe(200);
 
     const claimStatus = await request(
       service.port,
@@ -234,6 +283,38 @@ describe("local service smoke suite", () => {
       },
     );
     expect(experimentRelationship.status).toBe(201);
+
+    const observationApprovalRequest = await request(
+      service.port,
+      "/api/projects/research-project/repository-action-approvals",
+      {
+        body: JSON.stringify({ enabled: true, type: "set-observation" }),
+        method: "POST",
+      },
+    );
+    expect(observationApprovalRequest.status).toBe(201);
+    const observationApproval = await observationApprovalRequest.json();
+    const observationApprovalDecision = await request(
+      service.port,
+      `/api/projects/research-project/repository-action-approvals/${observationApproval.id}/approve`,
+      {
+        body: JSON.stringify({ actorId: "local-smoke-reviewer" }),
+        method: "POST",
+      },
+    );
+    expect(observationApprovalDecision.status).toBe(200);
+    const observationSetting = await request(
+      service.port,
+      "/api/projects/research-project/repository-observation-setting",
+      {
+        body: JSON.stringify({
+          approvalId: observationApproval.id,
+          enabled: true,
+        }),
+        method: "PUT",
+      },
+    );
+    expect(observationSetting.status).toBe(200);
 
     const observation = await request(
       service.port,
@@ -274,12 +355,23 @@ describe("local service smoke suite", () => {
         expect.objectContaining({ id: sourceObject.id }),
         expect.objectContaining({ id: claimObject.id }),
         expect.objectContaining({ id: experimentObject.id }),
+        expect.objectContaining({
+          id: evidenceLinkObject.evidence.id,
+          version: 2,
+          payload: expect.objectContaining({
+            quote:
+              "The persisted effect survives a full local-service restart.",
+            verificationState: "verified",
+          }),
+        }),
       ]),
       relationships: expect.arrayContaining([
         expect.objectContaining({
-          fromObjectId: sourceObject.id,
+          fromObjectId: evidenceLinkObject.evidence.id,
           toObjectId: claimObject.id,
           type: "supports",
+          reviewState: "approved",
+          version: 2,
         }),
         expect.objectContaining({
           fromObjectId: experimentObject.id,
@@ -294,12 +386,12 @@ describe("local service smoke suite", () => {
     );
     expect(integrity.status).toBe(200);
     await expect(integrity.json()).resolves.toMatchObject({
-      eventCount: 9,
+      eventCount: 14,
       valid: true,
     });
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM provenance_events").get(),
-    ).toEqual({ count: 9 });
+    ).toEqual({ count: 14 });
     await restartedService.close();
   });
 });

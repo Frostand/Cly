@@ -313,7 +313,7 @@ export function Inspector() {
                     onClick={() =>
                       notify(
                         "External open unavailable",
-                        "The UI prototype keeps external file/editor actions behind an explicit service boundary.",
+                        "External file and editor actions stay behind an explicit service boundary.",
                       )
                     }
                   >

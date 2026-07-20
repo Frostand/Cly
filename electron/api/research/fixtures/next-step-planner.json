@@ -1,0 +1,69 @@
+{
+  "projectId": "project-planner",
+  "objects": [
+    {
+      "id": "claim-missing",
+      "type": "claim",
+      "title": "Missing evidence claim",
+      "payload": { "kind": "claim", "status": "needs-evidence" }
+    },
+    {
+      "id": "claim-conflict",
+      "type": "claim",
+      "title": "Conflicting claim",
+      "payload": { "kind": "claim", "status": "needs-evidence" }
+    },
+    {
+      "id": "source-support",
+      "type": "source",
+      "title": "Supporting source",
+      "payload": {
+        "kind": "source",
+        "status": "resolved",
+        "citation": "Support et al."
+      }
+    },
+    {
+      "id": "source-contradict",
+      "type": "source",
+      "title": "Contradicting source",
+      "payload": {
+        "kind": "source",
+        "status": "resolved",
+        "citation": "Conflict et al."
+      }
+    },
+    {
+      "id": "run-failed",
+      "type": "run",
+      "title": "Failed verification run",
+      "payload": { "kind": "run", "status": "failed" }
+    },
+    {
+      "id": "artifact-stale",
+      "type": "artifact",
+      "title": "Figure 4",
+      "payload": { "kind": "artifact", "path": "figures/figure-4.png" }
+    }
+  ],
+  "relationships": [
+    {
+      "id": "edge-support",
+      "fromObjectId": "source-support",
+      "toObjectId": "claim-conflict",
+      "type": "supports"
+    },
+    {
+      "id": "edge-contradict",
+      "fromObjectId": "source-contradict",
+      "toObjectId": "claim-conflict",
+      "type": "contradicts"
+    }
+  ],
+  "staleArtifact": {
+    "id": "artifact-stale",
+    "runId": "run-failed",
+    "kind": "figure",
+    "reasons": ["code-version-changed", "dataset-version-changed"]
+  }
+}

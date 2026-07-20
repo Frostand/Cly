@@ -11,7 +11,6 @@ import { projectServices } from "./project-services";
 describe("production Cly capability boundaries", () => {
   it.each([
     "notebooks.import",
-    "reproducibility.audit",
     "integrations.configure",
     "planner.update",
     "decisions.create",
@@ -21,6 +20,15 @@ describe("production Cly capability boundaries", () => {
       reason: expect.any(String),
       service: null,
       api: null,
+    });
+  });
+
+  it("classifies reproducibility auditing as a production capability", () => {
+    expect(getCapability("reproducibility.audit")).toMatchObject({
+      state: "production",
+      service: "projectServices.reproducibility",
+      api: expect.stringContaining("reproducibility-audits"),
+      reason: null,
     });
   });
 

@@ -125,6 +125,66 @@ describe("research domain", () => {
     });
   });
 
+  it("validates every source kind and retains review-field evidence", () => {
+    const kinds = [
+      "paper",
+      "pdf",
+      "webpage",
+      "book",
+      "dataset",
+      "documentation",
+      "repository",
+      "hugging-face",
+      "note",
+      "import",
+    ] as const;
+    const created = kinds.map((sourceType) =>
+      createResearchObject(
+        {
+          id: `source-${sourceType}`,
+          projectId: "project-1",
+          title: sourceType,
+          payload: {
+            kind: "source",
+            sourceType,
+            citation: `${sourceType} citation`,
+            folder: "Review queue",
+            extractedFields: {
+              method: {
+                value: "Deterministic review",
+                passage: {
+                  quote: "The method passage is retained.",
+                  locator: "p. 4",
+                },
+                confidence: 92,
+                verificationState: "unverified",
+              },
+            },
+            contradictoryEvidence: [
+              { quote: "A conflicting result was observed.", locator: "p. 9" },
+            ],
+          },
+        },
+        now,
+      ),
+    );
+    expect(
+      created.map((item) =>
+        item.type === "source" ? item.payload.sourceType : null,
+      ),
+    ).toEqual(kinds);
+    const firstSource = created[0];
+    expect(
+      firstSource?.type === "source"
+        ? firstSource.payload.extractedFields?.method
+        : null,
+    ).toMatchObject({
+      confidence: 92,
+      verificationState: "unverified",
+      passage: { quote: "The method passage is retained." },
+    });
+  });
+
   it("keeps evidence relationships directed", () => {
     const relationship = createRelationship(
       {

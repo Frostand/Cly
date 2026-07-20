@@ -63,16 +63,26 @@ export const researchClient = {
       },
     );
   },
-  linkEvidence(projectId: string, sourceId: string, claimId: string) {
-    return request<Relationship>(
-      `/api/projects/${encodeURIComponent(projectId)}/research/relationships`,
+  linkEvidence(
+    projectId: string,
+    input: {
+      sourceId: string;
+      claimId: string;
+      quote: string;
+      locator?: string;
+      type: "supports" | "contradicts";
+    },
+  ) {
+    return request<{
+      duplicate: boolean;
+      evidence: Extract<ResearchObject, { type: "evidence" }>;
+      containsRelationship: Relationship;
+      claimRelationship: Relationship;
+    }>(
+      `/api/projects/${encodeURIComponent(projectId)}/research/evidence-links`,
       {
         method: "POST",
-        body: JSON.stringify({
-          fromObjectId: sourceId,
-          toObjectId: claimId,
-          type: "supports",
-        }),
+        body: JSON.stringify(input),
       },
     );
   },
