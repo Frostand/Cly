@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS cly_dev_devices (
   UNIQUE(fingerprint)
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX idx_cly_dev_devices_one_local ON cly_dev_devices(kind) WHERE kind = 'local';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cly_dev_devices_one_local ON cly_dev_devices(kind) WHERE kind = 'local';
 --> statement-breakpoint
-CREATE INDEX idx_cly_dev_devices_trust ON cly_dev_devices(trust_state, name);
+CREATE INDEX IF NOT EXISTS idx_cly_dev_devices_trust ON cly_dev_devices(trust_state, name);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS cly_dev_device_keys (
   device_id TEXT NOT NULL,
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS cly_dev_sync_outbox (
   UNIQUE(project_id, recipient_device_id, envelope_id)
 );
 --> statement-breakpoint
-CREATE INDEX idx_cly_dev_sync_outbox_delivery ON cly_dev_sync_outbox(project_id, recipient_device_id, status, next_attempt_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_cly_dev_sync_outbox_delivery ON cly_dev_sync_outbox(project_id, recipient_device_id, status, next_attempt_at, created_at);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS cly_dev_sync_inbox (
   envelope_id TEXT PRIMARY KEY NOT NULL,
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS cly_dev_sync_inbox (
   CHECK(status IN ('applied','conflict','rejected'))
 );
 --> statement-breakpoint
-CREATE INDEX idx_cly_dev_sync_inbox_project_received ON cly_dev_sync_inbox(project_id, received_at, envelope_id);
+CREATE INDEX IF NOT EXISTS idx_cly_dev_sync_inbox_project_received ON cly_dev_sync_inbox(project_id, received_at, envelope_id);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS cly_dev_sync_heads (
   project_id TEXT NOT NULL,
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS cly_dev_sync_conflicts (
   UNIQUE(project_id, incoming_envelope_id)
 );
 --> statement-breakpoint
-CREATE INDEX idx_cly_dev_sync_conflicts_project_state ON cly_dev_sync_conflicts(project_id, state, created_at);
+CREATE INDEX IF NOT EXISTS idx_cly_dev_sync_conflicts_project_state ON cly_dev_sync_conflicts(project_id, state, created_at);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS cly_dev_sync_cursors (
   project_id TEXT NOT NULL,
@@ -163,4 +163,4 @@ CREATE TABLE IF NOT EXISTS cly_dev_sync_audit (
   CHECK(json_valid(metadata_json))
 );
 --> statement-breakpoint
-CREATE INDEX idx_cly_dev_sync_audit_created ON cly_dev_sync_audit(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_cly_dev_sync_audit_created ON cly_dev_sync_audit(created_at, id);

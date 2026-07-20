@@ -61,9 +61,9 @@ const appIconPath = app.isPackaged
 const isDevelopment = process.env.NODE_ENV === "development";
 
 // Diagnostic only: opt-in via env var to test whether software rendering is
-// caused by Chromium's GPU blocklist (do NOT enable in production builds —
-// blocklist entries exist because the matched configs crash or misrender).
-if (process.env.DREAM_IGNORE_GPU_BLOCKLIST === "1") {
+// caused by Chromium's GPU blocklist. Only allowed in development builds —
+// blocklist entries exist because the matched configs crash or misrender.
+if (!app.isPackaged && process.env.DREAM_IGNORE_GPU_BLOCKLIST === "1") {
   app.commandLine.appendSwitch("ignore-gpu-blocklist");
   console.warn(
     "[gpu] --ignore-gpu-blocklist enabled via DREAM_IGNORE_GPU_BLOCKLIST (diagnostic mode)",
@@ -111,8 +111,6 @@ app.setName(APP_NAME);
 if (process.platform === "win32") {
   app.setAppUserModelId(APP_ID);
 }
-mkdirSync(APP_USER_DATA_PATH, { recursive: true });
-mkdirSync(APP_SESSION_DATA_PATH, { recursive: true });
 app.setPath("userData", APP_USER_DATA_PATH);
 // Keep Chromium caches per process so parallel launches do not lock user data.
 app.setPath("sessionData", APP_SESSION_DATA_PATH);
@@ -140,7 +138,8 @@ function loadThemePreference() {
       theme: normalizeThemePreference(parsed?.theme),
       baseColor: parsed?.baseColor ?? DEFAULT_THEME_PREFERENCES.baseColor,
     };
-  } catch {
+  } catch (error) {
+    console.error("Failed to load theme preference:", error);
     return DEFAULT_THEME_PREFERENCES;
   }
 }
@@ -186,6 +185,12 @@ function applyWindowThemeBackground(theme, baseColor) {
       window.setBackgroundColor(getWindowBackground(theme, baseColor));
     }
   }
+}
+
+function getApiSessionTokenPreloadArgument() {
+  const token = rendererServerManager?.getApiSessionToken();
+  if (!token) return "";
+  return `--dream-api-session-token=${encodeURIComponent(token)}`;
 }
 
 function getThemePreferencePreloadArgument() {
@@ -469,7 +474,10 @@ async function createMainWindow() {
       process.platform === "darwin" ? { x: 14, y: 14 } : undefined,
     webPreferences: {
       contextIsolation: true,
-      additionalArguments: [getThemePreferencePreloadArgument()],
+      additionalArguments: [
+        getThemePreferencePreloadArgument(),
+        getApiSessionTokenPreloadArgument(),
+      ],
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,
@@ -534,9 +542,12 @@ async function createMainWindow() {
     },
   );
 
-  mainWindow.webContents.on("render-process-gone", () => {
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
     browserSessionManager.hideForRendererNavigation();
     stopTerminalSessionsForOwner(mainWindowWebContentsId);
+    if (details.reason === "crashed" || details.reason === "oom") {
+      windowBindings.delete(mainWindowWebContentsId);
+    }
   });
 
   // Throttle embedded-view layout during interactive resize. Windows fires
@@ -563,6 +574,10 @@ async function createMainWindow() {
   });
 
   mainWindow.on("closed", () => {
+    if (resizeFrame !== null) {
+      clearTimeout(resizeFrame);
+      resizeFrame = null;
+    }
     browserSessionManager.reset();
     windowBindings.delete(mainWindowWebContentsId);
     mainWindow = null;
@@ -611,7 +626,11 @@ function broadcastWorkspaceSnapshot(snapshot) {
       binding?.role === "agent" ||
       binding?.sessionId === snapshot.sessionId
     ) {
-      window.webContents.send("cly-dev:workspace-snapshot", snapshot);
+      try {
+        window.webContents.send("cly-dev:workspace-snapshot", snapshot);
+      } catch {
+        // Window may have been destroyed between the check and send
+      }
     }
   }
 }
@@ -659,7 +678,10 @@ async function createWorkspaceWindow(sessionId) {
       process.platform === "darwin" ? { x: 14, y: 14 } : undefined,
     webPreferences: {
       contextIsolation: true,
-      additionalArguments: [getThemePreferencePreloadArgument()],
+      additionalArguments: [
+        getThemePreferencePreloadArgument(),
+        getApiSessionTokenPreloadArgument(),
+      ],
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,
@@ -873,9 +895,13 @@ nativeTheme.on("updated", () => {
 
 // Window controls (Windows/Linux frameless window)
 ipcMain.handle("window:minimize", (event) => {
+  const senderId = getBoundRendererId(event, { windowBindings });
+  if (senderId === null) return;
   BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
 ipcMain.handle("window:maximize", (event) => {
+  const senderId = getBoundRendererId(event, { windowBindings });
+  if (senderId === null) return;
   const target = BrowserWindow.fromWebContents(event.sender);
   if (target?.isMaximized()) {
     target.unmaximize();
@@ -884,6 +910,8 @@ ipcMain.handle("window:maximize", (event) => {
   }
 });
 ipcMain.handle("window:close", (event) => {
+  const senderId = getBoundRendererId(event, { windowBindings });
+  if (senderId === null) return;
   BrowserWindow.fromWebContents(event.sender)?.close();
 });
 
@@ -1157,6 +1185,23 @@ ipcMain.on("browser:update", (event, payload) => {
 });
 
 app.whenReady().then(async () => {
+  try {
+    mkdirSync(APP_USER_DATA_PATH, { recursive: true });
+  } catch (error) {
+    console.error("Failed to create user data directory:", error);
+    dialog.showErrorBox(
+      "Startup Error",
+      `Could not create the user data directory at:\n${APP_USER_DATA_PATH}\n\n${error.message}`,
+    );
+    app.quit();
+    return;
+  }
+
+  try {
+    mkdirSync(APP_SESSION_DATA_PATH, { recursive: true });
+  } catch (error) {
+    console.error("Failed to create session data directory:", error);
+  }
   configureDetachedDevToolsShortcuts();
   configureApplicationMenu(app, APP_NAME);
 
@@ -1203,11 +1248,13 @@ app.whenReady().then(async () => {
 // and then re-trigger quit ourselves. Without this,
 // the final renderer-side persist could be lost on exit.
 let quitCleanupDone = false;
+let quitCleanupInProgress = false;
 app.on("before-quit", (event) => {
-  if (quitCleanupDone) {
+  if (quitCleanupDone || quitCleanupInProgress) {
     return;
   }
   event.preventDefault();
+  quitCleanupInProgress = true;
   appIsQuitting = true;
   saveWorkspaceWindowLayout(true);
 
@@ -1225,6 +1272,7 @@ app.on("before-quit", (event) => {
     })
     .finally(() => {
       quitCleanupDone = true;
+      quitCleanupInProgress = false;
       app.quit();
     });
 });
