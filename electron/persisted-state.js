@@ -343,7 +343,27 @@ function hasRelationalState(database) {
   return projectCount > 0 || configCount > 0;
 }
 
+const KNOWN_TABLE_NAMES = new Set([
+  "app_state",
+  "chat_messages",
+  "chats",
+  "config",
+  "projects",
+  "__drizzle_migrations",
+  "schema_migrations",
+]);
+
+function validateTableName(tableName) {
+  if (!KNOWN_TABLE_NAMES.has(tableName)) {
+    throw new Error(
+      `Unexpected SQL table name: ${tableName}. Expected one of: ${[...KNOWN_TABLE_NAMES].join(", ")}`,
+    );
+  }
+  return tableName;
+}
+
 function getTableRowCount(database, tableName) {
+  validateTableName(tableName);
   if (!tableExists(database, tableName)) {
     return 0;
   }
@@ -1164,6 +1184,7 @@ function loadStateFromRelationalDatabase(database) {
 }
 
 function ensureTableColumn(database, tableName, columnName, columnDefinition) {
+  validateTableName(tableName);
   const rows = database.prepare(`PRAGMA table_info(${tableName})`).all();
   const hasColumn = rows.some((row) => row?.name === columnName);
   if (hasColumn) {
