@@ -25,6 +25,7 @@ import type {
   Experiment,
   GraphEdge,
   Integration,
+  NextStep,
   NotebookArtifact,
   ReproducibilityAudit,
   ResearchDecision,
@@ -152,6 +153,11 @@ export interface SourceService {
   addToNotebookBundle(id: string): Promise<void>;
   linkClaim(sourceId: string, claimId: string): Promise<void>;
   enrich(sourceId: string): Promise<Source>;
+  reviewField(
+    sourceId: string,
+    fieldId: string,
+    verificationState: "verified" | "rejected",
+  ): Promise<Source>;
 }
 
 export interface LiteratureService {
@@ -173,6 +179,21 @@ export interface ClaimService {
     claimId: string,
     sourceId: string,
     relationship: "supports" | "contradicts",
+    passage: {
+      quote: string;
+      locator?: string;
+      origin?: "human" | "imported" | "inferred" | "system";
+      confidence?: number | null;
+    },
+  ): Promise<void>;
+  reviewEvidenceRelationship(
+    relationshipId: string,
+    reviewState: "approved" | "rejected",
+    confidence: number | null,
+  ): Promise<void>;
+  verifyEvidencePassage(
+    evidenceId: string,
+    verificationState: "verified" | "rejected",
   ): Promise<void>;
 }
 
@@ -191,10 +212,17 @@ export interface IntegrationService {
 }
 
 export interface PlannerService {
+  generate(): Promise<NextStep[]>;
   setStatus(
     id: string,
     status: "Accepted" | "Deferred" | "Dismissed" | "In progress",
+    reason?: string,
   ): Promise<void>;
+  edit(
+    id: string,
+    edit: Pick<NextStep, "title" | "rationale">,
+    reason?: string,
+  ): Promise<NextStep>;
 }
 
 export interface DecisionService {

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { getStateDatabase } from "../../../persisted-state.js";
 import { runGitCommand } from "../../project-git/core.js";
+import { normalizeGitRemoteUrl } from "../git-resume.js";
+import { createSignedInClaudeRunner } from "../runtime/claude-runner.js";
 import { createSignedInCodexRunner } from "../runtime/codex-runner.js";
 import {
   CLY_DEV_PROVIDER_CAPABILITY_FIELDS,
@@ -19,7 +21,12 @@ const EFFECT_CATEGORIES = [
   "research_record",
 ];
 const VALID_POLICY_MODES = new Set(["allow", "approval", "deny"]);
-const PROVIDER_IDS = new Set(["openai", "openai-codex"]);
+const PROVIDER_FAMILIES = new Map([
+  ["openai", "openai-codex"],
+  ["openai-codex", "openai-codex"],
+  ["anthropic", "anthropic-claude"],
+  ["anthropic-claude", "anthropic-claude"],
+]);
 
 const parseJson = (value, fallback = null) => {
   try {
@@ -98,6 +105,7 @@ const capabilityNames = (capabilities) =>
 export function createProductionClyDevHandoffDependencies({
   db = getStateDatabase(),
   runner,
+  claudeRunner,
   runGit = runGitCommand,
   resolveWorkspaceAuthority = resolveClyDevWorkspaceAuthority,
   now,
@@ -108,6 +116,8 @@ export function createProductionClyDevHandoffDependencies({
     ...(now ? { now } : {}),
   });
   const productionRunner = runner ?? createSignedInCodexRunner({ db });
+  const productionClaudeRunner =
+    claudeRunner ?? createSignedInClaudeRunner({ db });
 
   const findWorkspace = async (projectId, repository) => {
     const workspace = sessions
@@ -131,9 +141,9 @@ export function createProductionClyDevHandoffDependencies({
     return { ...workspace, localOnly };
   };
 
-  const git = async (cwd, args) => {
+  const git = async (cwd, args, { allowEmpty = false } = {}) => {
     const result = await runGit(cwd, args, { allowFailure: true });
-    if (!result?.ok || !result.stdout?.trim()) {
+    if (!result?.ok || (!allowEmpty && !result.stdout?.trim())) {
       throw new Error(result?.stderr?.trim() || "Git inspection failed.");
     }
     return result.stdout.trim();
@@ -142,6 +152,35 @@ export function createProductionClyDevHandoffDependencies({
   const inspectRepository = async ({ projectId, repository }) => {
     const workspace = await findWorkspace(projectId, repository);
     const cwd = workspace.localOnly.worktreePath;
+    const status = await git(
+      cwd,
+      ["status", "--porcelain=v2", "--untracked-files=all"],
+      { allowEmpty: true },
+    );
+    if (status) {
+      throw new Error(
+        "The destination worktree contains uncommitted or untracked files. Inspect, commit, stash, or choose another worktree before resuming.",
+      );
+    }
+    if (repository.remoteUrl) {
+      const remoteUrl = await git(cwd, ["remote", "get-url", "origin"]);
+      if (
+        normalizeGitRemoteUrl(remoteUrl) !==
+        normalizeGitRemoteUrl(repository.remoteUrl)
+      ) {
+        throw new Error(
+          "The destination repository remote does not match the handoff.",
+        );
+      }
+    }
+    const submodules = await git(cwd, ["submodule", "status", "--recursive"], {
+      allowEmpty: true,
+    });
+    if (/^[-+U]/m.test(submodules)) {
+      throw new Error(
+        "One or more destination submodules do not match the handed-off commit.",
+      );
+    }
     return {
       id: workspace.repository.id,
       branch: await git(cwd, ["branch", "--show-current"]),
@@ -169,12 +208,22 @@ export function createProductionClyDevHandoffDependencies({
     });
   };
 
-  const providerState = async () => {
-    const authentication = await productionRunner.getAuthentication();
+  const runnerForProvider = (providerId) => {
+    const canonicalId = PROVIDER_FAMILIES.get(providerId);
+    if (canonicalId === "openai-codex") return productionRunner;
+    if (canonicalId === "anthropic-claude") return productionClaudeRunner;
+    throw new Error(`Provider ${providerId} is not production supported.`);
+  };
+
+  const providerState = async (providerId = "openai-codex") => {
+    const selectedRunner = runnerForProvider(providerId);
+    const authentication = await selectedRunner.getAuthentication();
     if (authentication?.status !== "authenticated") {
-      throw new Error("The production Codex provider is not authenticated.");
+      throw new Error(
+        `The production ${providerId} provider is not authenticated.`,
+      );
     }
-    const models = await productionRunner.listModels();
+    const models = await selectedRunner.listModels();
     if (
       !Array.isArray(models) ||
       models.length === 0 ||
@@ -186,12 +235,14 @@ export function createProductionClyDevHandoffDependencies({
           !isCanonicalProviderModelId(model.id),
       )
     ) {
-      throw new Error("Production Codex model discovery is malformed.");
+      throw new Error(
+        `Production provider ${providerId} model discovery is malformed.`,
+      );
     }
-    const discoveredCapabilities = await productionRunner.getCapabilities();
+    const discoveredCapabilities = await selectedRunner.getCapabilities();
     if (!hasCanonicalProviderCapabilities(discoveredCapabilities)) {
       throw new Error(
-        "Production Codex capability discovery is incomplete or unknown.",
+        `Production provider ${providerId} capability discovery is incomplete or unknown.`,
       );
     }
     const capabilities = capabilityNames(discoveredCapabilities);
@@ -215,18 +266,20 @@ export function createProductionClyDevHandoffDependencies({
       ),
     }),
     getProviderRequirements: async ({ session }) => {
-      if (!PROVIDER_IDS.has(session.provider?.id)) {
+      const providerId = PROVIDER_FAMILIES.get(session.provider?.id);
+      if (!providerId) {
         throw new Error(
           "The source session provider is not production supported.",
         );
       }
-      const state = await providerState();
+      const state = await providerState(providerId);
       if (!state.models.some((model) => model.id === session.provider.model)) {
         throw new Error("The source session model is not currently available.");
       }
       return { required: true, capabilities: state.capabilities };
     },
-    getProviderCapabilities: async () => (await providerState()).capabilities,
+    getProviderCapabilities: async ({ targetProvider } = {}) =>
+      (await providerState(targetProvider?.id ?? "openai-codex")).capabilities,
     inspectSourcePermissions: ({ projectId }) =>
       loadPermissionScope(db, projectId),
     inspectPermissions: ({ projectId }) => ({
@@ -247,9 +300,11 @@ export function createProductionClyDevHandoffDependencies({
     },
     resolveTargetWorkspace: ({ projectId, repository }) =>
       findWorkspace(projectId, repository),
-    resolveTargetProvider: async () => {
-      const state = await providerState();
-      return { id: "openai-codex", model: state.models[0].id };
+    resolveTargetProvider: async ({ inspection }) => {
+      const providerId =
+        inspection?.authority?.targetProvider?.id ?? "openai-codex";
+      const state = await providerState(providerId);
+      return { id: providerId, model: state.models[0].id };
     },
     ...(now ? { now } : {}),
   };

@@ -9,6 +9,7 @@ import {
   GitCompare,
   Link2,
   ListChecks,
+  Pencil,
   Plus,
   RefreshCw,
   Sparkles,
@@ -395,10 +396,28 @@ const auditAreas = [
 export function ReproducibilityScreen() {
   const audit = useClyStore((s) => s.data.audits[0]);
   const findings = useClyStore((s) => s.data.findings);
+  const activeProjectId = useClyStore((s) => s.activeProjectId);
+  const fixtureMode = useClyStore((s) => s.fixtureMode);
+  const replaceAudit = useClyStore((s) => s.replaceReproducibilityAudit);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
   const [filter, setFilter] = useState("All");
   const [running, setRunning] = useState(false);
+  useEffect(() => {
+    if (isClyDemoRuntime || fixtureMode !== "empty") return;
+    let current = true;
+    apiClient
+      .fetchLatestReproducibilityAudit(activeProjectId)
+      .then((report) => {
+        if (current && report) replaceAudit(report.audit, report.findings);
+      })
+      .catch(() => {
+        // The empty state remains actionable when no durable audit exists yet.
+      });
+    return () => {
+      current = false;
+    };
+  }, [activeProjectId, fixtureMode, replaceAudit]);
   const visible = findings.filter(
     (item) =>
       filter === "All" ||
@@ -410,8 +429,26 @@ export function ReproducibilityScreen() {
     setRunning(true);
     try {
       await projectServices.reproducibility.runAudit();
+    } catch (error) {
+      notify(
+        "Audit failed",
+        error instanceof Error ? error.message : "The audit could not be run.",
+      );
     } finally {
       setRunning(false);
+    }
+  };
+  const resolveFinding = async (findingId: string, title: string) => {
+    try {
+      await projectServices.reproducibility.resolveFinding(findingId);
+      notify("Finding resolved", title);
+    } catch (error) {
+      notify(
+        "Resolution failed",
+        error instanceof Error
+          ? error.message
+          : "The finding could not be resolved.",
+      );
     }
   };
   return (
@@ -434,8 +471,7 @@ export function ReproducibilityScreen() {
             </Button>
             <Button
               variant="primary"
-              disabled={!isClyDemoRuntime || running}
-              title={capabilityUnavailableMessage("reproducibility.audit")}
+              disabled={running}
               onClick={() => void runAudit()}
             >
               <RefreshCw size={13} className={running ? "animate-spin" : ""} />
@@ -620,6 +656,27 @@ export function ReproducibilityScreen() {
                       <Badge tone={toneForStatus(finding.severity)}>
                         {finding.severity}
                       </Badge>
+                      {finding.requirementStatus ? (
+                        <Badge
+                          tone={
+                            finding.requirementStatus === "failed"
+                              ? "danger"
+                              : finding.requirementStatus === "missing"
+                                ? "warning"
+                                : finding.requirementStatus === "passed"
+                                  ? "success"
+                                  : "neutral"
+                          }
+                        >
+                          {finding.requirementStatus === "failed"
+                            ? "Failed check"
+                            : finding.requirementStatus === "missing"
+                              ? "Missing requirement"
+                              : finding.requirementStatus === "passed"
+                                ? "Passed check"
+                                : "Warning"}
+                        </Badge>
+                      ) : null}
                       <strong>{finding.title}</strong>
                     </div>
                     <div className="cly-list-detail">
@@ -640,16 +697,9 @@ export function ReproducibilityScreen() {
                     </Badge>
                     {finding.status !== "Resolved" ? (
                       <Button
-                        disabled={!isClyDemoRuntime}
-                        title={capabilityUnavailableMessage(
-                          "reproducibility.audit",
-                        )}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void projectServices.reproducibility.resolveFinding(
-                            finding.id,
-                          );
-                          notify("Finding resolved", finding.title);
+                          void resolveFinding(finding.id, finding.title);
                         }}
                       >
                         <Check size={12} /> Resolve
@@ -728,6 +778,7 @@ function NextStepRow({
   onSelect,
   onAccept,
   onDefer,
+  onEdit,
   onCreateSession,
   onDismiss,
 }: {
@@ -736,6 +787,7 @@ function NextStepRow({
   onSelect: () => void;
   onAccept: () => void;
   onDefer: () => void;
+  onEdit: () => void;
   onCreateSession: () => void;
   onDismiss: () => void;
 }) {
@@ -771,8 +823,8 @@ function NextStepRow({
       <div className="cly-next-step-actions">
         <Button
           onClick={onAccept}
-          disabled={!isClyDemoRuntime}
-          title={capabilityUnavailableMessage("planner.update")}
+          disabled={step.status !== "Recommended"}
+          title="Record acceptance only; no task, branch, or command is created."
         >
           <Check size={12} /> Accept
         </Button>
@@ -780,11 +832,21 @@ function NextStepRow({
           variant="ghost"
           iconOnly
           aria-label={`Defer ${step.title}`}
-          disabled={!isClyDemoRuntime}
-          title={capabilityUnavailableMessage("planner.update")}
+          disabled={step.status !== "Recommended"}
+          title="Record a reasoned deferral."
           onClick={onDefer}
         >
           <Clock size={12} />
+        </Button>
+        <Button
+          variant="ghost"
+          iconOnly
+          aria-label={`Edit ${step.title}`}
+          disabled={step.status !== "Recommended"}
+          title="Correct the recommendation before deciding."
+          onClick={onEdit}
+        >
+          <Pencil size={12} />
         </Button>
         <Button
           variant="ghost"
@@ -800,8 +862,8 @@ function NextStepRow({
           variant="ghost"
           iconOnly
           aria-label={`Dismiss ${step.title}`}
-          disabled={!isClyDemoRuntime}
-          title={capabilityUnavailableMessage("planner.update")}
+          disabled={step.status !== "Recommended"}
+          title="Record a reasoned dismissal."
           onClick={onDismiss}
         >
           <X size={12} />
@@ -819,6 +881,78 @@ export function NextStepsScreen() {
   const notify = useClyStore((s) => s.notify);
   const [view, setView] = useState<PlannerView>("Prioritized");
   const [query, setQuery] = useState("");
+  const [review, setReview] = useState<{
+    step: NextStep;
+    action: "edit" | "defer" | "dismiss";
+  } | null>(null);
+  const [reviewTitle, setReviewTitle] = useState("");
+  const [reviewRationale, setReviewRationale] = useState("");
+  const [reviewReason, setReviewReason] = useState("");
+  const openReview = (step: NextStep, action: "edit" | "defer" | "dismiss") => {
+    setReview({ step, action });
+    setReviewTitle(step.title);
+    setReviewRationale(step.rationale);
+    setReviewReason("");
+  };
+  const submitReview = async () => {
+    if (!review) return;
+    try {
+      if (review.action === "edit") {
+        await projectServices.planner.edit(
+          review.step.id,
+          { title: reviewTitle, rationale: reviewRationale },
+          reviewReason || undefined,
+        );
+        notify("Recommendation revised", reviewTitle);
+      } else {
+        await projectServices.planner.setStatus(
+          review.step.id,
+          review.action === "defer" ? "Deferred" : "Dismissed",
+          reviewReason,
+        );
+        notify(
+          review.action === "defer"
+            ? "Recommendation deferred"
+            : "Recommendation dismissed",
+          review.step.title,
+        );
+      }
+      setReview(null);
+    } catch (error) {
+      notify(
+        "Recommendation review failed",
+        error instanceof Error ? error.message : "The decision was not saved.",
+      );
+    }
+  };
+  const generate = async () => {
+    try {
+      const generated = await projectServices.planner.generate();
+      notify(
+        "Recommendations refreshed",
+        `${generated.length} evidence-linked recommendation${generated.length === 1 ? "" : "s"} ranked without external APIs.`,
+      );
+    } catch (error) {
+      notify(
+        "Recommendations could not be generated",
+        error instanceof Error ? error.message : "Planner generation failed.",
+      );
+    }
+  };
+  const accept = async (step: NextStep) => {
+    try {
+      await projectServices.planner.setStatus(step.id, "Accepted");
+      notify(
+        "Recommendation accepted",
+        "Review decision recorded; no task, branch, or command was created.",
+      );
+    } catch (error) {
+      notify(
+        "Recommendation review failed",
+        error instanceof Error ? error.message : "The decision was not saved.",
+      );
+    }
+  };
   const visible = steps.filter(
     (step) =>
       !query ||
@@ -831,13 +965,9 @@ export function NextStepsScreen() {
       step={step}
       index={index}
       onSelect={() => setSelected(step.id)}
-      onAccept={() => {
-        void projectServices.planner.setStatus(step.id, "Accepted");
-        notify("Recommendation accepted", step.title);
-      }}
-      onDefer={() =>
-        void projectServices.planner.setStatus(step.id, "Deferred")
-      }
+      onAccept={() => void accept(step)}
+      onDefer={() => openReview(step, "defer")}
+      onEdit={() => openReview(step, "edit")}
       onCreateSession={() => {
         setScreen("agents");
         notify(
@@ -845,9 +975,7 @@ export function NextStepsScreen() {
           `${step.agentPreset} with ${step.contextPack}.`,
         );
       }}
-      onDismiss={() =>
-        void projectServices.planner.setStatus(step.id, "Dismissed")
-      }
+      onDismiss={() => openReview(step, "dismiss")}
     />
   );
   return (
@@ -873,14 +1001,7 @@ export function NextStepsScreen() {
               onChange={setView}
               label="Planner view"
             />
-            <Button
-              onClick={() =>
-                notify(
-                  "Recommendations refreshed",
-                  "Five fixture recommendations were re-ranked using impact, urgency, effort, and dependency evidence.",
-                )
-              }
-            >
+            <Button onClick={() => void generate()}>
               <Sparkles size={13} /> Generate next steps
             </Button>
           </>
@@ -895,8 +1016,8 @@ export function NextStepsScreen() {
             <span className="cly-page-kicker">Priority field</span>
             <strong>High-impact work is concentrated at medium effort</strong>
             <small>
-              Position reflects the current fixture ranking; the list remains
-              the actionable source of truth.
+              Position reflects the current ranking; the list remains the
+              actionable source of truth.
             </small>
           </div>
           <ImpactEffortMap
@@ -974,6 +1095,72 @@ export function NextStepsScreen() {
           ))}
         </ol>
       )}
+      <Dialog
+        open={Boolean(review)}
+        onClose={() => setReview(null)}
+        title={
+          review?.action === "edit"
+            ? "Edit recommendation"
+            : review?.action === "defer"
+              ? "Defer recommendation"
+              : "Dismiss recommendation"
+        }
+        description="This records a review decision only. It never creates a task, branch, or command."
+        footer={
+          <>
+            <Button onClick={() => setReview(null)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={
+                review?.action === "edit"
+                  ? !reviewTitle.trim() || !reviewRationale.trim()
+                  : !reviewReason.trim()
+              }
+              onClick={() => void submitReview()}
+            >
+              Save review decision
+            </Button>
+          </>
+        }
+      >
+        <div className="cly-stack">
+          {review?.action === "edit" ? (
+            <>
+              <div className="cly-field">
+                <label htmlFor="planner-review-title">Title</label>
+                <input
+                  id="planner-review-title"
+                  className="cly-input"
+                  value={reviewTitle}
+                  onChange={(event) => setReviewTitle(event.target.value)}
+                />
+              </div>
+              <div className="cly-field">
+                <label htmlFor="planner-review-rationale">Rationale</label>
+                <textarea
+                  id="planner-review-rationale"
+                  className="cly-textarea"
+                  value={reviewRationale}
+                  onChange={(event) => setReviewRationale(event.target.value)}
+                />
+              </div>
+            </>
+          ) : null}
+          <div className="cly-field">
+            <label htmlFor="planner-review-reason">
+              {review?.action === "edit"
+                ? "Reason for correction (optional)"
+                : "Reason"}
+            </label>
+            <textarea
+              id="planner-review-reason"
+              className="cly-textarea"
+              value={reviewReason}
+              onChange={(event) => setReviewReason(event.target.value)}
+            />
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
@@ -1449,7 +1636,7 @@ export function DecisionsScreen() {
                 onClick={() =>
                   notify(
                     "Decision branch created",
-                    "A fixture alternative branch was recorded without replacing the active decision.",
+                    "An alternative branch was recorded without replacing the active decision.",
                   )
                 }
               >

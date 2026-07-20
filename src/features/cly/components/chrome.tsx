@@ -26,6 +26,7 @@ import { projectServices } from "../services/project-services";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import {
+  devSectionLabels,
   ProjectSwitcherButton,
   ProjectSwitcherPopover,
   screenLabels,
@@ -44,7 +45,7 @@ const fixtureModes: { id: FixtureMode; label: string; description: string }[] =
     {
       id: "active",
       label: "Active Project",
-      description: "Coherent linked research fixtures",
+      description: "Coherent linked research data",
     },
     {
       id: "large",
@@ -176,8 +177,8 @@ export function Titlebar() {
           <Button
             variant="ghost"
             iconOnly
-            title="Fixture mode"
-            aria-label="Open fixture mode selector"
+            title="Demo state"
+            aria-label="Open demo state selector"
             onClick={() => setFixtureOpen(true)}
             data-testid="fixture-selector"
           >
@@ -220,16 +221,16 @@ function FixtureSwitcherPopover() {
           backdropFilter: "none",
           padding: 0,
         }}
-        aria-label="Close fixture selector"
+        aria-label="Close demo state selector"
         onClick={() => setOpen(false)}
       />
       <div
         className="cly-popover cly-fixture-popover"
         role="dialog"
-        aria-label="Cly fixture mode"
+        aria-label="Cly demo state"
       >
         <div className="cly-command-group-label">
-          Cly fixture mode · development only
+          Cly demo state · development only
         </div>
         {fixtureModes.map((fixture) => (
           <button
@@ -239,7 +240,7 @@ function FixtureSwitcherPopover() {
             data-active={fixture.id === mode}
             onClick={() => {
               setMode(fixture.id);
-              notify("Fixture state changed", fixture.label);
+              notify("Demo state changed", fixture.label);
             }}
           >
             <span style={{ width: 16 }}>
@@ -299,8 +300,21 @@ export function CommandPalette() {
       icon: CommandIcon,
       run: () => setScreen(id),
     }));
+    const developerNavigation: CommandAction[] = Object.entries(
+      devSectionLabels,
+    ).map(([id, label]) => ({
+      id: `nav-dev-${id}`,
+      label: `Go to Dev ${label}`,
+      group: "Navigate",
+      icon: CommandIcon,
+      run: () =>
+        useClyStore
+          .getState()
+          .setDevSection(id as keyof typeof devSectionLabels),
+    }));
     return [
       ...navigation,
+      ...developerNavigation,
       {
         id: "project-switcher",
         label: "Switch project",
@@ -387,14 +401,14 @@ export function CommandPalette() {
       },
       {
         id: "detach-workspace-intent",
-        label: "Detach Workspace (Prototype Intent)",
+        label: "Detach Workspace",
         group: "View",
         icon: CommandIcon,
         run: () => void setSelectedWorkspaceMode("detached-workspace"),
       },
       {
         id: "reattach-workspace-intent",
-        label: "Reattach Workspace (Prototype Intent)",
+        label: "Reattach Workspace",
         group: "View",
         icon: CommandIcon,
         run: () => void setSelectedWorkspaceMode("inline-workspace"),
@@ -587,8 +601,6 @@ export function CommandPalette() {
         label: "Run Reproducibility Audit",
         group: "Research",
         icon: Sparkles,
-        disabled: !isClyDemoRuntime,
-        reason: capabilityUnavailableMessage("reproducibility.audit"),
         run: async () => {
           await projectServices.reproducibility.runAudit();
           setScreen("reproducibility");
@@ -603,10 +615,7 @@ export function CommandPalette() {
         reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           setScreen("agents");
-          notify(
-            "Claim Audit preview",
-            "A fixture-backed agent session preview is ready.",
-          );
+          notify("Claim Audit preview", "An agent session preview is ready.");
         },
       },
       {
@@ -620,7 +629,7 @@ export function CommandPalette() {
           setScreen("literature");
           notify(
             "NotebookLM bundle ready",
-            "4 fixture sources and a manifest are ready to preview.",
+            "4 sources and a manifest are ready to preview.",
           );
         },
       },
@@ -868,7 +877,7 @@ export function LocalStatusBanner() {
       <div className="cly-muted cly-small" style={{ marginTop: 4 }}>
         {mode === "offline"
           ? "All research objects remain available locally. Cloud-connected actions explain their unavailable state."
-          : "This fixture demonstrates permission, synchronization, and partial-data states across the UI."}
+          : "This demo shows permission, synchronization, and partial-data states across the UI."}
       </div>
     </div>
   );

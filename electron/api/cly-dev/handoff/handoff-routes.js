@@ -12,7 +12,17 @@ const exportInputSchema = z
     includeMessages: z.literal(true).optional(),
   })
   .strict();
-const envelopeInputSchema = z.object({ envelope: z.unknown() }).strict();
+const targetProviderSchema = z
+  .object({
+    id: z.enum(["openai-codex", "anthropic-claude"]),
+  })
+  .strict();
+const envelopeInputSchema = z
+  .object({
+    envelope: z.unknown(),
+    targetProvider: targetProviderSchema.optional(),
+  })
+  .strict();
 
 const publicMessages = {
   integrity_mismatch: "Handoff integrity verification failed.",
@@ -179,7 +189,7 @@ export function registerClyDevHandoffRoutes(app, options = {}) {
       return c.json(
         await service.inspectImport({
           projectId: c.req.param("projectId"),
-          envelope: body.data.envelope,
+          ...body.data,
         }),
         200,
       );
@@ -200,7 +210,7 @@ export function registerClyDevHandoffRoutes(app, options = {}) {
       const { service } = composition();
       const input = {
         projectId: c.req.param("projectId"),
-        envelope: body.data.envelope,
+        ...body.data,
       };
       const inspection = await service.inspectImport(input);
       if (!inspection.compatible || !inspection.envelope) {

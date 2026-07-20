@@ -285,11 +285,11 @@ export function ReviewerCapsulesScreen() {
     <div className="cly-page cly-page-wide cly-route-capsules">
       <PageHeader
         kicker="Cly Research"
-        title="Reviewer Capsules"
+        title="Reviewer Packages"
         description="Create safe, read-only evidence packages that remain useful outside Cly."
         actions={
           <Button variant="primary" onClick={() => setDialogOpen(true)}>
-            <PackageCheck /> Build capsule
+            <PackageCheck /> Build package
           </Button>
         }
       />
@@ -400,7 +400,7 @@ export function ReviewerCapsulesScreen() {
       ) : (
         <EmptyState
           title="No claims are ready to package"
-          description="Create a claim and connect its evidence before building a reviewer capsule."
+          description="Create a claim and connect its evidence before building a reviewer package."
           action={
             <Button onClick={() => useClyStore.getState().setScreen("claims")}>
               Open claims

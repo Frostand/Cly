@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { AgentSessionsScreen } from "../agent-sessions";
 import type { ScreenId } from "../domain/types";
 import { ContextScreen } from "../screens/context";
@@ -24,6 +24,7 @@ import {
   NotebooksScreen,
   SourcesScreen,
 } from "../screens/research-workspaces";
+import { SetupHelpScreen } from "../screens/setup-help";
 import {
   IntegrationsScreen,
   ModelsAgentsScreen,
@@ -33,7 +34,7 @@ import { useClyStore } from "../store/cly-store";
 import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
 import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
 import { Inspector } from "./inspector";
-import { Sidebar } from "./navigation";
+import { Sidebar, WorkspaceNavigationBar } from "./navigation";
 import { PrImpactReviewScreen } from "./pr-impact-review/pr-impact-review";
 import { LoadingState } from "./primitives";
 import { ClyMotionProvider, RouteTransition } from "./visuals";
@@ -61,6 +62,7 @@ const screens: Record<ScreenId, () => React.JSX.Element> = {
   dev: DevWorkspaceScreen,
   integrations: IntegrationsScreen,
   models: ModelsAgentsScreen,
+  help: SetupHelpScreen,
   settings: SettingsScreen,
 };
 
@@ -128,14 +130,10 @@ function runMenuCommand(command: string) {
   if (
     ["documentation", "shortcuts", "diagnostics", "about"].includes(command)
   ) {
+    if (command === "documentation") store.setScreen("help");
     if (command === "shortcuts" || command === "diagnostics")
       store.setScreen("settings");
-    store.notify(
-      command === "about" ? "Cly 0.5.0" : `Open ${command}`,
-      command === "documentation"
-        ? "Documentation is available in the repository docs directory."
-        : undefined,
-    );
+    if (command === "about") store.notify("Cly 0.5.0");
   }
 }
 
@@ -148,8 +146,86 @@ export function ClyAppShell() {
   const selectedId = useClyStore((s) => s.selectedId);
   const agentSessionsMode = useClyStore((s) => s.agentSessionsMode);
   const fixtureMode = useClyStore((s) => s.fixtureMode);
+  const activeProjectId = useClyStore((s) => s.activeProjectId);
+  const activeDevSection = useClyStore((s) => s.activeDevSection);
+  const selectedAgentSessionId = useClyStore((s) => s.selectedAgentSessionId);
   const setScreen = useClyStore((s) => s.setScreen);
   const ActiveScreen = screens[activeScreen];
+  const applyingDeepLink = useRef(false);
+
+  useEffect(() => {
+    if (navigator.userAgent.includes("jsdom")) return;
+    const applyDeepLink = () => {
+      if (!window.location.hash.startsWith("#/cly/")) return;
+      const [path, query = ""] = window.location.hash.slice(2).split("?");
+      const [, product, destination] = path.split("/");
+      const params = new URLSearchParams(query);
+      const state = useClyStore.getState();
+      applyingDeepLink.current = true;
+      const projectId = params.get("project");
+      if (
+        projectId &&
+        projectId !== state.activeProjectId &&
+        state.data.projects.some((project) => project.id === projectId)
+      ) {
+        state.setActiveProject(projectId);
+      }
+      if (product === "dev") {
+        const devSections = [
+          "board",
+          "projects",
+          "repositories",
+          "features",
+          "issues",
+          "sessions",
+          "agents",
+          "machines",
+          "pull-requests",
+          "tests",
+          "context",
+          "settings",
+        ] as const;
+        if (devSections.includes(destination as (typeof devSections)[number]))
+          state.setDevSection(destination as (typeof devSections)[number]);
+      } else if (product === "research" && destination in screens) {
+        state.setScreen(destination as ScreenId);
+        const selected = params.get("selected");
+        if (selected) state.setSelected(selected);
+      }
+      const session = params.get("session");
+      if (
+        session &&
+        state.data.agentSessions.some((item) => item.id === session)
+      )
+        state.openAgentSession(session);
+      requestAnimationFrame(() => {
+        applyingDeepLink.current = false;
+      });
+    };
+    applyDeepLink();
+    window.addEventListener("hashchange", applyDeepLink);
+    return () => window.removeEventListener("hashchange", applyDeepLink);
+  }, []);
+
+  useEffect(() => {
+    if (applyingDeepLink.current) return;
+    const destination =
+      activeProduct === "dev" ? activeDevSection : activeScreen;
+    const params = new URLSearchParams({ project: activeProjectId });
+    if (activeProduct === "research" && selectedId)
+      params.set("selected", selectedId);
+    if (selectedAgentSessionId) params.set("session", selectedAgentSessionId);
+    const nextHash = `#/cly/${activeProduct}/${destination}?${params.toString()}`;
+    if (window.location.hash !== nextHash)
+      window.history.replaceState(null, "", nextHash);
+  }, [
+    activeDevSection,
+    activeProduct,
+    activeProjectId,
+    activeScreen,
+    selectedAgentSessionId,
+    selectedId,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -282,6 +358,7 @@ export function ClyAppShell() {
         >
           <Sidebar />
           <section className="cly-workspace">
+            <WorkspaceNavigationBar />
             <div className="cly-screen" id="main-workspace" tabIndex={-1}>
               {fixtureMode === "loading" ? (
                 <div className="cly-page">

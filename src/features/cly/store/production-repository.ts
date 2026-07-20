@@ -43,6 +43,7 @@ export function createProductionRepository(
   return {
     projects,
     sources: [],
+    evidencePassages: [],
     claims: [],
     experiments: [],
     runs: [],

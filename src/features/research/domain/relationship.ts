@@ -8,6 +8,7 @@ export const relationshipInputSchema = z.object({
   type: z.enum([
     "supports",
     "contradicts",
+    "contains",
     "generated-by",
     "uses",
     "tests",
@@ -23,6 +24,7 @@ export type Relationship = z.output<typeof relationshipInputSchema> & {
   confidence: number | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
+  version: number;
   createdAt: string;
 };
 
@@ -40,6 +42,7 @@ export function createRelationship(
     confidence: null,
     reviewedBy: null,
     reviewedAt: null,
+    version: 1,
     createdAt: now.toISOString(),
   };
 }

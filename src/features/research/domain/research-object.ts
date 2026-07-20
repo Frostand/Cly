@@ -3,6 +3,7 @@ import { z } from "zod";
 import type {
   ArtifactPayload,
   ClaimPayload,
+  EvidencePayload,
   ExperimentPayload,
   RunPayload,
   SourcePayload,
@@ -21,7 +22,18 @@ const payloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("source"),
     sourceType: z
-      .enum(["paper", "dataset", "documentation", "note", "webpage"])
+      .enum([
+        "paper",
+        "pdf",
+        "webpage",
+        "book",
+        "dataset",
+        "documentation",
+        "repository",
+        "hugging-face",
+        "note",
+        "import",
+      ])
       .optional(),
     status: z.enum(["placeholder", "resolved"]).default("resolved"),
     authors: z.array(z.string().trim().min(1)).optional(),
@@ -43,8 +55,62 @@ const payloadSchema = z.discriminatedUnion("kind", [
     methods: z.array(z.string().trim().min(1)).optional(),
     findings: z.array(z.string().trim().min(1)).optional(),
     limitations: z.array(z.string().trim().min(1)).optional(),
+    folder: z.string().trim().min(1).max(500).optional(),
+    extractedFields: z
+      .record(
+        z.string().trim().min(1),
+        z.object({
+          value: z.string().trim().min(1).max(20_000),
+          passage: z.object({
+            quote: z.string().trim().min(1).max(20_000),
+            locator: z.string().trim().min(1).max(1_000).optional(),
+            sourceId: z.string().trim().min(1).max(500).optional(),
+          }),
+          confidence: z.number().finite().min(0).max(100),
+          verificationState: z.enum(["unverified", "verified", "rejected"]),
+          verifiedBy: z.string().trim().min(1).max(500).optional(),
+          verifiedAt: z.iso.datetime().optional(),
+        }),
+      )
+      .optional(),
+    contradictoryEvidence: z
+      .array(
+        z.object({
+          quote: z.string().trim().min(1).max(20_000),
+          locator: z.string().trim().min(1).max(1_000).optional(),
+          sourceId: z.string().trim().min(1).max(500).optional(),
+        }),
+      )
+      .optional(),
+    customReviewFields: z
+      .record(
+        z.string().trim().min(1),
+        z.object({
+          value: z.string().trim().min(1).max(20_000),
+          passage: z.object({
+            quote: z.string().trim().min(1).max(20_000),
+            locator: z.string().trim().min(1).max(1_000).optional(),
+            sourceId: z.string().trim().min(1).max(500).optional(),
+          }),
+          confidence: z.number().finite().min(0).max(100),
+          verificationState: z.enum(["unverified", "verified", "rejected"]),
+          verifiedBy: z.string().trim().min(1).max(500).optional(),
+          verifiedAt: z.iso.datetime().optional(),
+        }),
+      )
+      .optional(),
     enrichmentMethod: z.string().trim().min(1).max(200).optional(),
     enrichedAt: z.iso.datetime().optional(),
+  }),
+  z.object({
+    kind: z.literal("evidence"),
+    sourceId: z.string().trim().min(1),
+    quote: z.string().trim().min(1).max(20_000),
+    locator: z.string().trim().min(1).max(1_000).optional(),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+    verificationState: z
+      .enum(["unverified", "verified", "rejected"])
+      .default("unverified"),
   }),
   z.object({
     kind: z.literal("claim"),
@@ -119,6 +185,7 @@ interface ResearchObjectBase {
   reviewState: "unreviewed" | "approved" | "rejected";
   reviewedBy: string | null;
   reviewedAt: string | null;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -131,6 +198,11 @@ export type Artifact = ResearchObjectBase & {
 export type Source = ResearchObjectBase & {
   type: "source";
   payload: SourcePayload;
+};
+
+export type Evidence = ResearchObjectBase & {
+  type: "evidence";
+  payload: EvidencePayload;
 };
 
 export type Claim = ResearchObjectBase & {
@@ -148,7 +220,13 @@ export type Run = ResearchObjectBase & {
   payload: RunPayload;
 };
 
-export type ResearchObject = Artifact | Source | Claim | Experiment | Run;
+export type ResearchObject =
+  | Artifact
+  | Source
+  | Evidence
+  | Claim
+  | Experiment
+  | Run;
 
 export type ResearchObjectInput = z.input<typeof researchObjectInputSchema>;
 
@@ -162,6 +240,7 @@ export function createResearchObject(
   return {
     ...parsed,
     type: parsed.payload.kind,
+    version: 1,
     createdAt: timestamp,
     updatedAt: timestamp,
   } as ResearchObject;

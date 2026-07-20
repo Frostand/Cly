@@ -30,7 +30,12 @@ describe("Cly Dev sync routes", () => {
       bytes: 512,
       quotaBlocked: 0,
     });
-    const app = setup({ status, stage, exportBatch });
+    const receivedHandoffs = vi
+      .fn()
+      .mockResolvedValue([
+        { envelopeId: "handoff-1", envelope: { protocol: "cly.dev.handoff" } },
+      ]);
+    const app = setup({ status, stage, exportBatch, receivedHandoffs });
 
     const statusResponse = await app.request(
       "/api/projects/project-a/cly-dev/sync/status",
@@ -52,6 +57,15 @@ describe("Cly Dev sync routes", () => {
       maxRecords: 20,
       maxBytes: 4096,
     });
+
+    const handoffResponse = await app.request(
+      "/api/projects/project-a/cly-dev/sync/received-handoffs",
+    );
+    expect(handoffResponse.status).toBe(200);
+    expect(await handoffResponse.json()).toEqual([
+      { envelopeId: "handoff-1", envelope: { protocol: "cly.dev.handoff" } },
+    ]);
+    expect(receivedHandoffs).toHaveBeenCalledWith("project-a");
   });
 
   it("validates pairing and never accepts a private key field", async () => {

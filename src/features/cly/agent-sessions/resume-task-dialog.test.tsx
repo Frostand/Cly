@@ -1,128 +1,204 @@
-import { render, screen } from "@testing-library/react";
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { ApiRequestError } from "../services/api-client";
 import { ResumeTaskDialog } from "./resume-task-dialog";
 
-const blocked = {
-  envelope: {
-    handoffId: "project-a:session-a",
-    projectId: "project-a",
-    sessionId: "session-a",
-    revision: 2,
-    sourceMachine: { id: "Research Mac", platform: "darwin" as const },
-    repository: { id: "repo-a", remoteUrl: "https://github.com/cly/repo.git" },
-    worktree: { id: "worktree-a", branch: "feature/resume" },
-    commit: { sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+const envelope = {
+  protocol: "cly.dev.handoff" as const,
+  schemaVersion: 1 as const,
+  minimumReaderVersion: 1 as const,
+  exportedAt: "2026-07-16T12:00:00.000Z",
+  payload: {
     task: {
       id: "task-a",
       title: "Resume evidence audit",
-      objective: "Continue safely",
-      researchObjectIds: ["claim-a"],
+      sessionId: "session-a",
+      state: "resumable",
     },
-    session: { id: "session-a", title: "Audit", state: "resumable" as const },
-  },
-  readiness: {
-    status: "divergent-branch",
-    blocking: true,
-    checks: [
+    conversationSync: "excluded" as const,
+    messages: [],
+    summaries: [
       {
-        id: "remote",
-        status: "pass" as const,
-        summary: "Repository remote matches.",
-      },
-      {
-        id: "divergent-branch",
-        status: "fail" as const,
-        summary: "Branch diverges from the handoff.",
+        id: "summary-a",
+        title: "Progress",
+        sections: ["Reviewed sources"],
+        createdAt: "2026-07-16T12:00:00.000Z",
       },
     ],
-    actions: ["create-worktree", "inspect-changes", "defer"] as const,
+    goal: { objective: "Continue safely", successCriteria: [] },
+    plan: { steps: [{ id: "review", text: "Review", status: "pending" }] },
+    progress: { status: "in_progress", completedItems: [] },
+    remainingWork: [],
+    contextManifest: {
+      id: "context-a",
+      summary: "Approved context",
+      entries: [],
+    },
+    repository: {
+      id: "repo-a",
+      remoteUrl: "https://github.com/cly/repo",
+      branch: "feature/resume",
+      worktreeId: "worktree-a",
+      commitSha: "a".repeat(40),
+      files: [],
+      symbols: [],
+    },
+    approvals: [],
+    permissions: {
+      evidenceOnly: true as const,
+      filesystem: "workspace-write",
+      network: "restricted",
+      commands: ["*"],
+    },
+    constraints: [],
+    diffs: [],
+    tests: [],
+    failures: [],
+    costs: { currency: "USD", totalMinor: 0, items: [] },
+    research: { objects: [], impact: [] },
+    providerRequirements: { required: true, capabilities: ["streaming"] },
+  },
+  integrity: {
+    algorithm: "sha256" as const,
+    canonicalization: "cly-json-v1" as const,
+    digest: "b".repeat(64),
   },
 };
 
+const staleInspection = {
+  compatible: true,
+  stale: [
+    {
+      code: "repository_branch_changed",
+      message: "Branch diverges from the handoff.",
+      recoveryAction: "Review Git state and re-run tests.",
+    },
+  ],
+  conflicts: [],
+  explanations: [
+    {
+      code: "repository_branch_changed",
+      message: "Branch diverges from the handoff.",
+      recoveryAction: "Review Git state and re-run tests.",
+    },
+  ],
+  envelope,
+  payload: envelope.payload,
+  authority: {
+    source: "target-project" as const,
+    permissions: {},
+    authorizedApprovalIds: [],
+  },
+};
+
+function api(patch: Record<string, unknown> = {}) {
+  return {
+    fetchReceivedClyDevHandoffs: vi.fn().mockResolvedValue([]),
+    inspectClyDevHandoff: vi.fn().mockResolvedValue(staleInspection),
+    resumeClyDevHandoff: vi.fn(),
+    ...patch,
+  };
+}
+
 describe("ResumeTaskDialog", () => {
-  it("re-renders readiness when resume becomes blocked after inspection", async () => {
+  it("loads an encrypted handoff and requires stale state review", async () => {
+    const client = api({
+      fetchReceivedClyDevHandoffs: vi.fn().mockResolvedValue([
+        {
+          envelopeId: "encrypted-1",
+          receivedAt: "2026-07-16T12:30:00.000Z",
+          envelope,
+        },
+      ]),
+    });
     const user = userEvent.setup();
-    const ready = {
-      ...blocked,
-      readiness: {
-        status: "ready",
-        blocking: false,
-        checks: [],
-        actions: [],
-      },
-    };
-    const api = {
-      pairClyDevDevice: vi
-        .fn()
-        .mockResolvedValue({ deviceId: "device", state: "paired" }),
-      inspectClyDevHandoff: vi.fn().mockResolvedValue(ready),
-      resumeClyDevHandoff: vi
-        .fn()
-        .mockRejectedValue(
-          new ApiRequestError(JSON.stringify(blocked), 412, blocked),
-        ),
-    };
-    render(<ResumeTaskDialog open onClose={vi.fn()} api={api as never} />);
-    await user.type(screen.getByLabelText("Handoff ID"), "project-a:session-a");
-    await user.type(screen.getByLabelText("Pairing code"), "123456");
-    await user.type(
-      screen.getByLabelText("Local repository or worktree"),
-      "/repo",
+    render(
+      <ResumeTaskDialog
+        projectId="project-a"
+        open
+        onClose={vi.fn()}
+        api={client as never}
+      />,
     );
-    await user.click(
-      screen.getByRole("button", { name: "Inspect destination" }),
-    );
-    await user.click(
-      await screen.findByRole("button", { name: "Resume task" }),
-    );
+
+    expect(
+      await screen.findByLabelText("Versioned handoff JSON"),
+    ).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Inspect handoff" }));
 
     expect(
       await screen.findByText("Branch diverges from the handoff."),
     ).toBeVisible();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.queryByText(JSON.stringify(blocked))).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Review Git state and re-run tests."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Resume task" })).toBeDisabled();
   });
 
-  it("explains restricted context and exposes only safe mismatch actions", async () => {
+  it("switches providers only after compatibility inspection", async () => {
+    const compatible = { ...staleInspection, stale: [], explanations: [] };
+    const client = api({
+      inspectClyDevHandoff: vi.fn().mockResolvedValue(compatible),
+      resumeClyDevHandoff: vi
+        .fn()
+        .mockResolvedValue({ inspection: compatible }),
+    });
+    const onResumed = vi.fn();
     const user = userEvent.setup();
-    const api = {
-      pairClyDevDevice: vi
-        .fn()
-        .mockResolvedValue({ deviceId: "device", state: "paired" }),
-      inspectClyDevHandoff: vi
-        .fn()
-        .mockRejectedValue(new ApiRequestError("Blocked", 412, blocked)),
-      resumeClyDevHandoff: vi.fn(),
-    };
-    render(<ResumeTaskDialog open onClose={vi.fn()} api={api as never} />);
-    await user.type(screen.getByLabelText("Handoff ID"), "project-a:session-a");
-    await user.type(screen.getByLabelText("Pairing code"), "123456");
-    await user.type(
-      screen.getByLabelText("Local repository or worktree"),
-      "/repo",
+    render(
+      <ResumeTaskDialog
+        projectId="project-a"
+        open
+        onClose={vi.fn()}
+        onResumed={onResumed}
+        api={client as never}
+      />,
     );
+    await screen.findByLabelText("Versioned handoff JSON");
+    fireEvent.change(screen.getByLabelText("Versioned handoff JSON"), {
+      target: { value: JSON.stringify(envelope) },
+    });
+    await user.selectOptions(
+      screen.getByLabelText("Resume with provider"),
+      "anthropic-claude",
+    );
+    await user.click(screen.getByRole("button", { name: "Inspect handoff" }));
     await user.click(
-      screen.getByRole("button", { name: "Inspect destination" }),
+      await screen.findByRole("button", { name: "Resume task" }),
     );
 
-    expect(
-      await screen.findByRole("region", { name: "Resume readiness" }),
-    ).toBeVisible();
-    expect(
-      screen.getByText(
-        /Uncommitted files and restricted context are never copied/,
+    await waitFor(() =>
+      expect(client.resumeClyDevHandoff).toHaveBeenCalledWith(
+        "project-a",
+        envelope,
+        { id: "anthropic-claude" },
       ),
-    ).toBeVisible();
-    expect(screen.getByText("Branch diverges from the handoff.")).toBeVisible();
+    );
+    expect(onResumed).toHaveBeenCalledOnce();
+  });
+
+  it("rejects malformed or non-handoff JSON before any API call", async () => {
+    const client = api();
+    render(
+      <ResumeTaskDialog
+        projectId="project-a"
+        open
+        onClose={vi.fn()}
+        api={client as never}
+      />,
+    );
+    const input = await screen.findByLabelText("Versioned handoff JSON");
+    fireEvent.change(input, {
+      target: { value: JSON.stringify({ token: "must-not-transfer" }) },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "valid cly.dev.handoff",
+    );
     expect(
-      screen.getByRole("button", { name: "Create worktree" }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: "Inspect local changes" }),
-    ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Defer" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Resume task" })).toBeNull();
+      screen.getByRole("button", { name: "Inspect handoff" }),
+    ).toBeDisabled();
+    expect(client.inspectClyDevHandoff).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { navigateToResearch } from "./navigation-helpers";
 
 type Entry = {
   id: string;
@@ -169,7 +170,7 @@ test("records, imports, and attributes cost to a claim", async ({ page }) => {
   });
 
   await page.goto("/");
-  await page.getByTestId("nav-costs").click();
+  await navigateToResearch(page, "costs");
   await expect(
     page.getByRole("heading", { name: "Cost ledger", level: 1 }),
   ).toBeVisible();

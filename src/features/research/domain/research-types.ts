@@ -1,6 +1,7 @@
 export const RESEARCH_OBJECT_TYPES = [
   "artifact",
   "source",
+  "evidence",
   "claim",
   "experiment",
   "run",
@@ -17,7 +18,17 @@ export interface ArtifactPayload {
 
 export interface SourcePayload {
   kind: "source";
-  sourceType?: "paper" | "dataset" | "documentation" | "note" | "webpage";
+  sourceType?:
+    | "paper"
+    | "pdf"
+    | "webpage"
+    | "book"
+    | "dataset"
+    | "documentation"
+    | "repository"
+    | "hugging-face"
+    | "note"
+    | "import";
   status?: "placeholder" | "resolved";
   authors?: string[];
   citation?: string;
@@ -28,6 +39,10 @@ export interface SourcePayload {
   year?: number;
   journal?: string;
   tags?: string[];
+  folder?: string;
+  extractedFields?: Record<string, ExtractedSourceValue>;
+  contradictoryEvidence?: SourcePassage[];
+  customReviewFields?: Record<string, ExtractedSourceValue>;
   provider?: string;
   normalizedKey?: string;
   importMethod?: "metadata" | "bibtex";
@@ -46,6 +61,30 @@ export interface SourcePayload {
   limitations?: string[];
   enrichmentMethod?: string;
   enrichedAt?: string;
+}
+
+export interface EvidencePayload {
+  kind: "evidence";
+  sourceId: string;
+  quote: string;
+  locator?: string;
+  contentHash: string;
+  verificationState: "unverified" | "verified" | "rejected";
+}
+
+export interface SourcePassage {
+  quote: string;
+  locator?: string;
+  sourceId?: string;
+}
+
+export interface ExtractedSourceValue {
+  value: string;
+  passage: SourcePassage;
+  confidence: number;
+  verificationState: "unverified" | "verified" | "rejected";
+  verifiedBy?: string;
+  verifiedAt?: string;
 }
 
 export interface GroundedLiteratureSummary {
@@ -91,6 +130,7 @@ export interface RunPayload {
 export type ResearchObjectPayload =
   | ArtifactPayload
   | SourcePayload
+  | EvidencePayload
   | ClaimPayload
   | ExperimentPayload
   | RunPayload;

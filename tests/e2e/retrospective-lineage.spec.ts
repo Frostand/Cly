@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { navigateToResearch } from "./navigation-helpers";
 
 const suggestion = {
   id: "lineage-1",
@@ -95,7 +96,7 @@ test("keeps retrospective reconstruction inside the existing graph screen and re
   );
 
   await page.goto("/");
-  await page.getByTestId("nav-graph").click();
+  await navigateToResearch(page, "graph");
   const panel = page.getByTestId("lineage-reconstruction-panel");
   await expect(panel).toBeVisible();
   await expect(

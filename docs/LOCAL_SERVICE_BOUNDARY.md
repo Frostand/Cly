@@ -2,7 +2,7 @@
 
 - Status: normative architecture contract
 - Owner: Cly research core
-- Last reviewed: 2026-07-12
+- Last reviewed: 2026-07-19
 
 ## Purpose
 
@@ -27,6 +27,8 @@ ordinary client as authority.
 | Git observation | Project ID and a fixed observation operation | HEAD/ref identity and project-relative worktree status | Fixed read-only Git argument arrays; no hooks, filters, pagers, credential helpers, optional locks, or caller commands | `repository.scan.*`, `repository.change.*` |
 | Experiment/run capture | Project ID, typed experiment/run manifest, declared adapter, and referenced object IDs | Stable run ID, state, timing, exit classification, hashes, and object links | Manifest fields are schema-allowlisted; commands are adapter-owned and separately approved; secrets are rejected | `experiment.*`, `run.*` |
 | Artifact indexing | Project ID, run ID, project-relative output reference, media type, size, and content hash | Stable artifact identity, lineage, regeneration/staleness state | Metadata belongs in SQLite; large content remains beneath an approved root or managed artifact store; content is read only with an explicit capability | `artifact.*` |
+| Code research context | Project ID, tracked project-relative Python/Jupyter location, symbol, typed research target, structured evidence, confidence, origin, and review decision | File/symbol metadata, content hashes, verified or explicitly unverified links, stale-impact records | Scans remain inside the canonical registered Git root; source bodies, notebook outputs, credentials, and raw remotes are not persisted | `code.*` |
+| Staleness assessment | Project ID plus typed current Git, code-symbol, dataset, configuration, environment, dependency, and artifact hashes | Impacted runs, artifacts, and claims; dependency paths; explanations; recommended actions; transition history | Comparisons use stored provenance only, remain project-scoped, and never accept commands, absolute roots, environment values, or file bodies | `staleness.*` |
 | Context retrieval | Project ID, research-object IDs, project-relative ranges, budget, and destination | Immutable manifest, preview, redactions, and payload hash | Graph traversal and file reads are bounded; external transmission needs hash-bound approval | `context.*`, `transmission.*` |
 | Agent execution | Project ID, run ID, registered adapter/capability ID, typed arguments, and approval reference | Structured events, bounded output, diffs, artifacts, and terminal state | Adapters can narrow but never broaden grants; write, process, network, credential, destructive, and external effects fail closed without approval | `approval.*`, `agent.*`, `run.*` |
 | Provenance review | Project ID and bounded pagination/filter values | Ordered typed events with relative references, hashes, actor, adapter, and time | Project-scoped, append-only mutation API; no sensitive content copies, credentials, raw SQL, or absolute paths | all families |
@@ -38,17 +40,58 @@ content, context transmission, and agent capability grants remain behind
 their existing typed frontend contracts until their policy-enforcing service
 adapters are implemented.
 
-## Implemented observation API
-
-The research service exposes two observation operations:
+## Implemented staleness API
 
 ```text
+POST /api/projects/:projectId/staleness/assessments
+GET  /api/projects/:projectId/staleness?includeCurrent=true|false
+GET  /api/projects/:projectId/staleness/:objectId/transitions
+```
+
+Runs capture the Git commit, configuration, dataset references, symbol-level
+code hashes, environment fingerprint fields, and dependency versions used to
+produce them. An assessment supplies typed current hashes and fingerprints.
+The service compares them to captured provenance, detects output hashes that
+indicate manual edits, flags missing hashes or generators, and follows reviewed
+or pending research-graph edges to affected figures, tables, and claims.
+Assessment families may be supplied incrementally: omitting code, data,
+configuration, environment, dependency, or artifact observations retains any
+existing finding in that family until a later assessment explicitly checks it.
+
+Each result names the upstream change, provides the downstream object path,
+and recommends rerunning, regenerating, reviewing, or completing provenance.
+Current state and immutable transitions persist in SQLite and emit chained
+`staleness.*` provenance events. Artifact state remains synchronized with the
+generic record; affected claims move to `Needs review`. File contents,
+credentials, raw environment variables, and caller-selected commands are not
+accepted.
+
+## Implemented observation API
+
+The research service exposes project-scoped observation and provenance
+operations:
+
+```text
+POST /api/projects/:projectId/repository-action-approvals
+POST /api/projects/:projectId/repository-action-approvals/:approvalId/approve
+PUT  /api/projects/:projectId/repository-observation-setting
 POST /api/projects/:projectId/repository-observations
+POST /api/projects/:projectId/repository-links
 GET  /api/projects/:projectId/provenance?limit=1..500
 ```
 
-The scan request has no body. It cannot select a path, Git arguments, a
-command, an environment, a ref, or an output location. The service:
+Observation starts disabled. Enabling or disabling it is a material action:
+the client first requests an approval for the exact project-bound action, a
+human explicitly approves it, and the setting call consumes that short-lived
+approval once. Approval and setting changes are recorded as attributable
+provenance. Approvals cannot cross projects, authorize changed payloads, or be
+reused. Outstanding approvals are bounded, expire after five minutes, and are
+invalidated by a local-service restart; their immutable approval provenance
+remains available for review.
+
+The scan request has no body and fails before invoking Git unless observation
+is enabled for that project. It cannot select a path, Git arguments, a command,
+an environment, a ref, or an output location. The service:
 
 1. loads the project from SQLite by ID;
 2. resolves the stored root with `realpath` and rejects aliases;
@@ -58,10 +101,20 @@ command, an environment, a ref, or an output location. The service:
 5. validates every returned path as project-relative; and
 6. appends one scan summary and one event per change.
 
-An observation returns only the project ID, observation time, HEAD hash, and
-status records shaped as `{ path, indexStatus, worktreeStatus,
-originalPath? }`. File contents and absolute roots are absent. Provenance
-listing accepts only a bounded numeric limit and uses fixed parameterized SQL.
+An observation returns only the project ID, observation time, HEAD hash,
+branch name, and status records shaped as `{ path, indexStatus,
+worktreeStatus, originalPath? }`. File contents and absolute roots are absent.
+Provenance listing accepts only a bounded numeric limit and uses fixed
+parameterized SQL.
+
+Commit and pull-request references use the same exact-action approval flow.
+They accept only credential-free, fragment-free HTTPS references, require one
+or more research objects owned by the route project, and append an attributable
+object-level provenance event for each association. Returned Cly deep links
+carry the project ID and provenance event ID, so external tools cannot reopen a
+similarly named object in another project. This adapter records links and
+observations only; it does not fetch, checkout, commit, push, merge, edit, or
+provide a general Git command surface.
 
 ## Project registration and lifecycle
 
@@ -128,4 +181,3 @@ and tool output are untrusted. Authentication proves which launched Cly
 instance is calling; it does not replace project scope or capability checks.
 The complete threat model and approval requirements are in
 [Local service security model](LOCAL_SERVICE_SECURITY_MODEL.md).
-
