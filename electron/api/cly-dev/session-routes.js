@@ -15,6 +15,11 @@ import {
   clyDevTaskInputSchema,
   clyDevWorkspaceInputSchema,
 } from "./session-schema.js";
+import {
+  buildClyDevSessionStartAggregate,
+  clyDevSessionStartInputSchema,
+  resolveClyDevSessionStartContext,
+} from "./session-start.js";
 import { resolveClyDevWorkspaceAuthority } from "./workspace-authority.js";
 
 async function parseBody(c, schema) {
@@ -62,6 +67,7 @@ export function registerClyDevSessionRoutes(
     durableToolEffects,
     requestApproval,
     resolveWorkspaceAuthority = resolveClyDevWorkspaceAuthority,
+    resolveSessionStartContext = resolveClyDevSessionStartContext,
     now,
   } = {},
 ) {
@@ -257,6 +263,52 @@ export function registerClyDevSessionRoutes(
         error instanceof Error
           ? error.message
           : "Cly Dev workspace authority failed.";
+      return c.text(
+        message,
+        /not found|unknown project/i.test(message) ? 404 : 400,
+      );
+    }
+  });
+  app.post("/api/projects/:projectId/cly-dev/session-starts", async (c) => {
+    const body = await parseBody(c, clyDevSessionStartInputSchema);
+    if (body.error) return body.error;
+    try {
+      const projectId = c.req.param("projectId");
+      const context = await resolveSessionStartContext({
+        projectId,
+        researchObjectIds: body.data.researchObjectIds,
+        getDatabase,
+        resolveWorkspaceAuthority,
+      });
+      const { aggregate: input, execution } = buildClyDevSessionStartAggregate(
+        body.data,
+        context,
+      );
+      const aggregate = getRepository().createSessionAggregate(
+        projectId,
+        input,
+      );
+      const executionRequest = {
+        ...execution,
+        projectId,
+        sessionId: aggregate.session.id,
+      };
+      // Provider execution is deliberately detached from the HTTP request.
+      // Effectful providers can pause on an approval while the returned durable
+      // session opens immediately in the agent window.
+      void resolveRuntime()
+        .execute(executionRequest)
+        .catch(() => undefined);
+      return c.json(
+        {
+          ...aggregate,
+          execution: { requestId: execution.requestId, status: "queued" },
+        },
+        202,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Cly Dev task start failed.";
       return c.text(
         message,
         /not found|unknown project/i.test(message) ? 404 : 400,

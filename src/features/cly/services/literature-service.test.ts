@@ -106,7 +106,7 @@ describe("desktop literature service", () => {
     await expect(
       desktopLiteratureService.search(project, "robust calibration"),
     ).resolves.toMatchObject([
-      { method: "rrf:metadata_similarity_fixture_v1" },
+      { method: "rrf:deterministic_expanded_embedding_v1" },
     ]);
   });
 });

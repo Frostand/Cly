@@ -202,7 +202,9 @@ describe("first-run onboarding", () => {
     await waitFor(() =>
       expect(window.dream?.saveOnboardingDraft).toHaveBeenCalled(),
     );
-    vi.mocked(window.dream!.saveOnboardingDraft).mockClear();
+    const desktop = window.dream;
+    if (!desktop) throw new Error("Desktop onboarding bridge is unavailable.");
+    vi.mocked(desktop.saveOnboardingDraft).mockClear();
 
     await user.click(
       screen.getByRole("button", { name: /Add the first source/ }),
@@ -240,7 +242,12 @@ describe("first-run onboarding", () => {
       createOnboardingDraft("project-onboarding"),
       {
         currentStep: "finish",
-        project: { id: project.id, name: project.name, path: project.path, mode: "import" },
+        project: {
+          id: project.id,
+          name: project.name,
+          path: project.path,
+          mode: "import",
+        },
         starterPlan: {
           objective: "Persist the project",
           hypothesis: "Failure remains resumable",
@@ -277,7 +284,12 @@ describe("first-run onboarding", () => {
       createOnboardingDraft("project-onboarding"),
       {
         currentStep: "finish",
-        project: { id: project.id, name: project.name, path: project.path, mode: "import" },
+        project: {
+          id: project.id,
+          name: project.name,
+          path: project.path,
+          mode: "import",
+        },
         starterPlan: {
           objective: "Navigate visibly",
           hypothesis: "The gate opens after persistence",

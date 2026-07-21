@@ -2,15 +2,18 @@ import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
 import { createResearchRepository } from "../research/repository.js";
 import { tryLocalCrossEncoder } from "./cross-encoder.js";
-import { parseBibtex } from "./ingestion.js";
+import { enrichLiteraturePapers } from "./full-text.js";
 import { createLiteratureRepository } from "./repository.js";
 import { searchLiteratureProviders } from "./search.js";
 import { LiteratureSearchError } from "./semantic-scholar.js";
+import { ingestLiteratureUpload } from "./uploads.js";
 
 const requestSchema = z.object({
   query: z.string().trim().min(1).max(2_000),
   limit: z.number().int().min(1).max(100).default(25),
-  provider: z.enum(["arxiv", "semantic-scholar", "both"]).default("both"),
+  provider: z
+    .enum(["arxiv", "semantic-scholar", "crossref", "pubmed", "both", "all"])
+    .default("all"),
 });
 
 const metadataRecordSchema = z
@@ -48,6 +51,8 @@ const importSchema = z.discriminatedUnion("format", [
     .object({
       format: z.literal("metadata"),
       records: z.array(metadataRecordSchema).min(1).max(100),
+      filename: z.string().trim().min(1).max(500).optional(),
+      mediaType: z.string().trim().min(1).max(200).optional(),
       readingListIds: z.array(z.string().trim().min(1)).max(25).default([]),
     })
     .strict(),
@@ -55,6 +60,8 @@ const importSchema = z.discriminatedUnion("format", [
     .object({
       format: z.literal("bibtex"),
       content: z.string().trim().min(1).max(1_000_000),
+      filename: z.string().trim().min(1).max(500).optional(),
+      mediaType: z.string().trim().min(1).max(200).optional(),
       readingListIds: z.array(z.string().trim().min(1)).max(25).default([]),
     })
     .strict(),
@@ -70,13 +77,17 @@ const readingListSchema = z
 const externalDestinations = {
   arxiv: ["arxiv"],
   "semantic-scholar": ["semantic-scholar"],
+  crossref: ["crossref"],
+  pubmed: ["pubmed"],
   both: ["arxiv", "semantic-scholar"],
+  all: ["arxiv", "semantic-scholar", "crossref", "pubmed"],
 };
 
 export function registerLiteratureRoutes(
   app,
   {
     search = searchLiteratureProviders,
+    enrich = enrichLiteraturePapers,
     rerank = tryLocalCrossEncoder,
     getRepository = () => createResearchRepository(getStateDatabase()),
     getLiteratureRepository = () =>
@@ -111,12 +122,34 @@ export function registerLiteratureRoutes(
           403,
         );
       }
-      const papers = await search(parsed.data.query, {
+      const searchedPapers = await search(parsed.data.query, {
         limit: parsed.data.limit,
         provider: parsed.data.provider,
       });
+      const providerFailures = Array.isArray(searchedPapers)
+        ? (searchedPapers.providerFailures ?? [])
+        : (searchedPapers.providerFailures ?? []);
+      const providerCalls = Array.isArray(searchedPapers)
+        ? (searchedPapers.providerCalls ?? [])
+        : (searchedPapers.providerCalls ?? []);
+      const retrievalPlan = searchedPapers.retrievalPlan ?? {
+        normalizedQuery: parsed.data.query.trim(),
+        expansionTerms: [],
+        expandedQuery: parsed.data.query.trim(),
+        method: "none",
+      };
+      const papers = await enrich(
+        Array.isArray(searchedPapers) ? searchedPapers : searchedPapers.papers,
+      );
       const reranking = await rerank(parsed.data.query, papers);
-      return c.json({ papers, provider: parsed.data.provider, reranking });
+      return c.json({
+        papers,
+        provider: parsed.data.provider,
+        providerFailures,
+        providerCalls,
+        retrievalPlan,
+        reranking,
+      });
     } catch (error) {
       if (error instanceof LiteratureSearchError) {
         const status =
@@ -125,7 +158,20 @@ export function registerLiteratureRoutes(
             : error.kind === "timeout"
               ? 504
               : 502;
-        return c.text(error.message, status);
+        return c.json(
+          {
+            error: error.message,
+            kind: error.kind,
+            provider: error.provider,
+            retryable: error.retryable,
+            retryAfterMs: error.retryAfterMs,
+            action: error.action,
+            providerCalls:
+              error.providerCalls ??
+              (error.providerCall ? [error.providerCall] : []),
+          },
+          status,
+        );
       }
       return c.text(
         error instanceof Error ? error.message : "Literature search failed.",
@@ -144,10 +190,7 @@ export function registerLiteratureRoutes(
     const parsed = importSchema.safeParse(body);
     if (!parsed.success) return c.text("Invalid literature import.", 400);
     try {
-      const records =
-        parsed.data.format === "bibtex"
-          ? parseBibtex(parsed.data.content)
-          : parsed.data.records;
+      const records = ingestLiteratureUpload(parsed.data);
       if (records.length > 100) {
         return c.text("A literature import is limited to 100 records.", 400);
       }

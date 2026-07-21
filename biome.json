@@ -13,6 +13,7 @@
       "!dist",
       "!dist",
       "!build",
+      "!output/marketing/*.json",
       "!storybook-static",
       "!src/components/ai-elements"
     ]

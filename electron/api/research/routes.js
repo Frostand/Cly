@@ -39,12 +39,32 @@ const objectBodySchema = z.object({
     "risk",
     "method",
     "objective",
+    "question",
+    "hypothesis",
+    "task",
+    "collaborator",
+    "agent",
   ]),
   title: z.string().trim().min(1).max(500),
   description: z.string().trim().max(10_000).default(""),
   payload: z.record(z.string(), z.unknown()),
   origin: z.enum(["human", "imported", "inferred", "system"]).default("human"),
 });
+
+const objectUpdateBodySchema = z
+  .object({
+    expectedVersion: z.number().int().min(1),
+    title: z.string().trim().min(1).max(500).optional(),
+    description: z.string().trim().max(10_000).optional(),
+    payload: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine(
+    (value) =>
+      value.title !== undefined ||
+      value.description !== undefined ||
+      value.payload !== undefined,
+    "An object update requires at least one changed field.",
+  );
 
 const relationshipBodySchema = z.object({
   fromObjectId: z.string().trim().min(1),
@@ -949,6 +969,57 @@ export function registerResearchRoutes(
     }
   });
 
+  app.patch(
+    "/api/projects/:projectId/research/objects/:objectId",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const isLifecycleUpdate =
+        typeof body.data === "object" &&
+        body.data !== null &&
+        "expectedVersion" in body.data;
+      if (!isLifecycleUpdate) {
+        const sourceUpdate = sourceUpdateBodySchema.safeParse(body.data);
+        if (!sourceUpdate.success)
+          return c.text(sourceUpdate.error.message, 400);
+        try {
+          return c.json(
+            getRepository().updateSource({
+              ...sourceUpdate.data,
+              id: c.req.param("objectId"),
+              projectId: c.req.param("projectId"),
+            }),
+          );
+        } catch (error) {
+          return c.text(
+            error instanceof Error ? error.message : "Source update failed.",
+            400,
+          );
+        }
+      }
+      const parsed = objectUpdateBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          getRepository().updateObject({
+            ...parsed.data,
+            projectId: c.req.param("projectId"),
+            id: c.req.param("objectId"),
+          }),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Research object update failed.";
+        return c.text(
+          message,
+          message.includes("version conflict") ? 409 : 400,
+        );
+      }
+    },
+  );
+
   app.post("/api/projects/:projectId/research/relationships", async (c) => {
     const body = await readJson(c);
     if (body.error) return body.error;
@@ -1065,28 +1136,4 @@ export function registerResearchRoutes(
       );
     }
   });
-
-  app.patch(
-    "/api/projects/:projectId/research/objects/:objectId",
-    async (c) => {
-      const body = await readJson(c);
-      if (body.error) return body.error;
-      const parsed = sourceUpdateBodySchema.safeParse(body.data);
-      if (!parsed.success) return c.text(parsed.error.message, 400);
-      try {
-        return c.json(
-          getRepository().updateSource({
-            ...parsed.data,
-            id: c.req.param("objectId"),
-            projectId: c.req.param("projectId"),
-          }),
-        );
-      } catch (error) {
-        return c.text(
-          error instanceof Error ? error.message : "Source update failed.",
-          400,
-        );
-      }
-    },
-  );
 }

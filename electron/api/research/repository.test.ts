@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { DatabaseSync } from "node:sqlite";
+import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createResearchRepository } from "./repository.js";
+import { registerResearchRoutes } from "./routes.js";
 
 let database: DatabaseSync;
 
@@ -370,6 +372,106 @@ describe("research repository", () => {
         expect.objectContaining({ id: "source-review-contract" }),
       ]),
     );
+  });
+
+  it("round-trips PDF provenance, extraction confidence, and provider observations through the API", async () => {
+    const repository = createResearchRepository(database);
+    const app = new Hono();
+    registerResearchRoutes(app, { getRepository: () => repository });
+    const payload = {
+      kind: "source",
+      sourceType: "paper",
+      status: "resolved",
+      url: "https://example.com/paper",
+      fullTextStatus: "parsed",
+      pdfFailure: {
+        kind: "rate_limited",
+        message: "The first acquisition attempt was rate limited.",
+        retryable: true,
+        retryAfterMs: 500,
+        action: "Retry after the provider window.",
+      },
+      pdfAcquisition: {
+        attempts: 2,
+        finalUrl: "https://cdn.example.com/paper.pdf",
+        redirects: 1,
+      },
+      extractedValues: {
+        methods: [
+          {
+            value: "We use conformal prediction.",
+            passage: {
+              quote: "We use conformal prediction.",
+              locator: "pdf:page:2:section:methods:chars:0-28",
+            },
+            confidence: 92,
+            verificationState: "unverified",
+          },
+          {
+            value: "We calibrate on ShiftBench.",
+            passage: {
+              quote: "We calibrate on ShiftBench.",
+              locator: "pdf:page:3:section:methods:chars:0-27",
+            },
+            confidence: 88,
+            verificationState: "verified",
+            verifiedBy: "reviewer-1",
+            verifiedAt: "2026-07-21T20:00:00.000Z",
+          },
+        ],
+      },
+      providerCalls: [
+        {
+          attempts: [
+            {
+              attempt: 1,
+              durationMs: 25,
+              outcome: "retryable_http",
+              retryAfterMs: 500,
+              status: 429,
+            },
+            {
+              attempt: 2,
+              durationMs: 40,
+              outcome: "success",
+              retryAfterMs: null,
+              status: 200,
+            },
+          ],
+          durationMs: 565,
+          operation: "search",
+          provider: "crossref",
+          status: "completed",
+        },
+      ],
+    };
+
+    const created = await app.request(
+      "/api/projects/project-1/research/objects",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "source",
+          title: "Parsed paper",
+          payload,
+        }),
+      },
+    );
+    expect(created.status).toBe(201);
+    await expect(created.json()).resolves.toMatchObject({ payload });
+
+    const restartedApp = new Hono();
+    registerResearchRoutes(restartedApp, {
+      getRepository: () => createResearchRepository(database),
+    });
+    const listed = await restartedApp.request(
+      "/api/projects/project-1/research",
+    );
+    expect(listed.status).toBe(200);
+    await expect(listed.json()).resolves.toMatchObject({
+      objects: [expect.objectContaining({ title: "Parsed paper", payload })],
+    });
   });
 
   it("recovers project objects, relationships, and provenance after service restart", () => {
@@ -760,6 +862,98 @@ describe("research repository", () => {
       ]),
       relationships: [expect.objectContaining({ type: "generated-by" })],
     });
+  });
+
+  it("manages project lifecycle objects with optimistic versions and graph linkage", () => {
+    const repository = createResearchRepository(database, {
+      clock: () => "2026-07-21T20:00:00.000Z",
+    });
+    const kinds = [
+      "question",
+      "objective",
+      "hypothesis",
+      "method",
+      "risk",
+      "task",
+      "collaborator",
+      "agent",
+    ];
+    for (const kind of kinds) {
+      repository.createObject({
+        id: `${kind}-1`,
+        projectId: "project-1",
+        type: kind,
+        title: `${kind} record`,
+        payload: { kind, status: "draft" },
+      });
+    }
+    repository.createRelationship({
+      id: "objective-method",
+      projectId: "project-1",
+      fromObjectId: "method-1",
+      toObjectId: "objective-1",
+      type: "implements",
+    });
+
+    const updated = repository.updateObject({
+      projectId: "project-1",
+      id: "objective-1",
+      expectedVersion: 1,
+      title: "Calibrated objective",
+      payload: { status: "active", ownerId: "collaborator-1" },
+    });
+
+    expect(updated).toMatchObject({
+      title: "Calibrated objective",
+      version: 2,
+      payload: {
+        kind: "objective",
+        status: "active",
+        ownerId: "collaborator-1",
+      },
+    });
+    expect(repository.listProject("project-1")).toMatchObject({
+      objects: expect.arrayContaining(
+        kinds.map((kind) => expect.objectContaining({ type: kind })),
+      ),
+      relationships: [
+        expect.objectContaining({
+          id: "objective-method",
+          fromObjectId: "method-1",
+          toObjectId: "objective-1",
+        }),
+      ],
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT action, metadata FROM provenance_events WHERE object_id = ? ORDER BY sequence DESC LIMIT 1",
+        )
+        .get("objective-1"),
+    ).toEqual({
+      action: "objective.updated",
+      metadata: JSON.stringify({
+        previousVersion: 1,
+        version: 2,
+        status: "active",
+      }),
+    });
+    expect(() =>
+      repository.updateObject({
+        projectId: "project-1",
+        id: "objective-1",
+        expectedVersion: 1,
+        payload: { status: "completed" },
+      }),
+    ).toThrow("version conflict");
+    expect(() =>
+      repository.updateObject({
+        projectId: "project-2",
+        id: "objective-1",
+        expectedVersion: 2,
+        payload: { status: "archived" },
+      }),
+    ).toThrow("does not belong to the project");
   });
 
   it("rejects strong and paper-ready claim transitions until integrity gates pass", () => {

@@ -131,6 +131,8 @@ interface ClyState {
   agentContextProjectId: string | null;
   agentContextLoading: boolean;
   agentContextError: string | null;
+  researchDataLoading: boolean;
+  researchDataError: string | null;
   agentSessionsMode: AgentSessionsMode;
   selectedAgentSessionId: string | null;
   selectedOverviewSessionId: string | null;
@@ -479,8 +481,12 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
     findings: payload.findings ?? [],
     limitations: payload.limitations ?? [],
     tags: payload.tags ?? [],
+    fullTextStatus: payload.fullTextStatus,
+    pdfFailure: payload.pdfFailure,
+    pdfAcquisition: payload.pdfAcquisition,
     folder: payload.folder,
     extractedFields: payload.extractedFields,
+    extractedValues: payload.extractedValues,
     contradictoryEvidence: payload.contradictoryEvidence,
     customReviewFields: payload.customReviewFields,
     linkedClaimIds: [],
@@ -500,6 +506,7 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
             components: payload.rankingComponents,
             explanation: payload.rankingExplanation,
             retrievedAt: payload.retrievedAt ?? object.createdAt,
+            providerCalls: payload.providerCalls,
           }
         : undefined,
   };
@@ -531,6 +538,11 @@ const graphRelationFromRelationship: Record<
   uses: "uses",
   tests: "tests",
   implements: "implements",
+  produces: "produces",
+  "depends-on": "depends on",
+  documents: "contains",
+  "has-risk": "requires follow-up",
+  "part-of": "contains",
 };
 
 const entityTypeFromResearchObject: Record<ResearchObject["type"], EntityType> =
@@ -541,6 +553,14 @@ const entityTypeFromResearchObject: Record<ResearchObject["type"], EntityType> =
     claim: "claim",
     experiment: "experiment",
     run: "run",
+    question: "question",
+    objective: "objective",
+    hypothesis: "hypothesis",
+    method: "method",
+    risk: "risk",
+    task: "task",
+    collaborator: "collaborator",
+    agent: "agent",
   };
 
 /**
@@ -829,6 +849,8 @@ const mapResearchData = (
 
   return {
     ...baseData,
+    researchObjects: researchData.objects,
+    researchRelationships: relationships,
     runs,
     notebooks: [],
     code: [],
@@ -918,6 +940,8 @@ const clearPersistedResearchData = (
   graphEdges: [],
   reports: [],
   activity: [],
+  researchObjects: [],
+  researchRelationships: [],
 });
 
 const emptyAgentContext = (): AgentContextSnapshot => ({
@@ -1028,6 +1052,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
   agentContextProjectId: null,
   agentContextLoading: false,
   agentContextError: null,
+  researchDataLoading: false,
+  researchDataError: null,
   agentSessionsMode: savedAgentSessionIsValid
     ? (saved.agentSessionsMode ?? "overview")
     : "overview",
@@ -1145,6 +1171,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
       agentContextProjectId: null,
       agentContextLoading: true,
       agentContextError: null,
+      researchDataLoading: true,
+      researchDataError: null,
       lineageSuggestions: [],
       lineageMeasurement: null,
       decisionBriefs: [],
@@ -1187,6 +1215,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
       agentContextProjectId: null,
       agentContextLoading: false,
       agentContextError: null,
+      researchDataLoading: false,
+      researchDataError: null,
       lineageSuggestions: [],
       lineageMeasurement: null,
       decisionBriefs: [],
@@ -1324,7 +1354,12 @@ export const useClyStore = create<ClyState>((set, get) => ({
     const project = get().data.projects.find((item) => item.id === projectId);
     if (!project) return false;
     if (get().activeProjectId === projectId)
-      set({ agentContextLoading: true, agentContextError: null });
+      set({
+        agentContextLoading: true,
+        agentContextError: null,
+        researchDataLoading: true,
+        researchDataError: null,
+      });
     let contextHydrationStarted = false;
     try {
       await apiClient.ensureProject(project);
@@ -1427,6 +1462,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
           : { agentContextProjectId: null }),
         agentContextError: agentContextResult.error,
         agentContextLoading: false,
+        researchDataLoading: false,
+        researchDataError: null,
         fixtureMode: "empty",
         lineageSuggestions,
         lineageMeasurement: null,
@@ -1468,8 +1505,15 @@ export const useClyStore = create<ClyState>((set, get) => ({
         errorName: error instanceof Error ? error.name : "UnknownError",
         operation: "hydrate-project-research",
       });
-      if (get().activeProjectId === projectId && !contextHydrationStarted)
-        set({ agentContextLoading: false, agentContextError: message });
+      if (get().activeProjectId === projectId) {
+        set({
+          researchDataLoading: false,
+          researchDataError: message,
+          ...(!contextHydrationStarted
+            ? { agentContextLoading: false, agentContextError: message }
+            : null),
+        });
+      }
       get().notify("Research data could not load", message);
       return false;
     }
@@ -2010,8 +2054,12 @@ export const useClyStore = create<ClyState>((set, get) => ({
           providerId: source.providerId,
           abstract: source.summary,
           tags: source.tags,
+          fullTextStatus: source.fullTextStatus,
+          pdfFailure: source.pdfFailure,
+          pdfAcquisition: source.pdfAcquisition,
           folder: source.folder,
           extractedFields: source.extractedFields,
+          extractedValues: source.extractedValues,
           contradictoryEvidence: source.contradictoryEvidence,
           customReviewFields: source.customReviewFields,
           provider: source.provenance?.provider,
@@ -2022,6 +2070,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
           rankingComponents: source.provenance?.components,
           rankingExplanation: source.provenance?.explanation,
           retrievedAt: source.provenance?.retrievedAt,
+          providerCalls: source.provenance?.providerCalls,
         },
       });
       const persistedSource = sourceFromResearchObject(object);

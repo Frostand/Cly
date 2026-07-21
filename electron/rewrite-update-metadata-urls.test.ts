@@ -33,6 +33,7 @@ function rewrite(
     encoding: "utf8",
     env: {
       ...process.env,
+      CLY_RELEASE_VERSION: "v0.5.0",
       CLY_UPDATE_FEED_URL: feedUrl,
     },
   });
@@ -51,8 +52,8 @@ path: 'https://legacy.example.com/private/Cly-0.5.0.zip?token=secret'
     expect(result.status).toBe(0);
     expect(readFileSync(filePath, "utf8")).toBe(`version: 0.5.0
 files:
-  - url: 'https://updates.example.com/releases/Cly-0.5.0.dmg'
-path: 'https://updates.example.com/releases/Cly-0.5.0.zip'
+  - url: 'https://updates.example.com/releases/versions/v0.5.0/Cly-0.5.0.dmg'
+path: 'https://updates.example.com/releases/versions/v0.5.0/Cly-0.5.0.zip'
 `);
   });
 
@@ -80,6 +81,24 @@ path: http://downloads.example.com/Cly-0.5.0.zip
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("must not contain credentials");
+    expect(readFileSync(filePath, "utf8")).toBe(original);
+  });
+
+  it("requires a version tag so metadata cannot point at a mutable artifact path", () => {
+    const original = "path: Cly-0.5.0.zip\n";
+    const filePath = createMetadata(original);
+
+    const result = spawnSync(process.execPath, [scriptPath, filePath], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CLY_RELEASE_VERSION: "main",
+        CLY_UPDATE_FEED_URL: "https://updates.example.com/releases",
+      },
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("must be a version tag");
     expect(readFileSync(filePath, "utf8")).toBe(original);
   });
 });

@@ -1,0 +1,332 @@
+name: Cly Production Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cly-production-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    name: V1 acceptance, security, and provenance gates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - name: Require an exact package-version tag
+        id: release
+        shell: bash
+        run: |
+          test "$GITHUB_REF_TYPE" = "tag"
+          version="$(node scripts/validate-release-tag.mjs "$GITHUB_REF_NAME")"
+          echo "release_tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Require the release tag commit to be reachable from main
+        shell: bash
+        run: |
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm capabilities:check
+      - run: pnpm companion-contract:check
+      - run: pnpm licenses:check
+      - name: Audit all locked dependencies
+        run: pnpm audit --audit-level high
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high
+      - name: Scan the exact release commit for secrets
+        uses: gitleaks/gitleaks-action@v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: pnpm test
+      - run: pnpm vite:build
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run source-tree production-mode evidence and fresh-profile flows
+        run: >-
+          xvfb-run --auto-servernum pnpm exec playwright test
+          tests/e2e/onboarding.spec.ts
+          tests/e2e/production-evidence-loop.spec.ts
+          tests/e2e/critical-accessibility.spec.ts
+
+  provider-smoke:
+    name: Authenticated Claude production provider smoke
+    needs: acceptance
+    runs-on: [self-hosted, macos, cly-provider-smoke]
+    environment: production-release
+    permissions:
+      contents: read
+    env:
+      CLY_RELEASE_PROVIDER_SMOKE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - name: Run the authenticated Claude Code provider smoke
+        run: pnpm exec playwright test tests/e2e/production-provider-smoke.spec.ts
+
+  macos:
+    name: Signed, notarized, and smoke-tested macOS
+    needs: acceptance
+    runs-on: macos-14
+    environment: production-release
+    permissions:
+      contents: read
+    env:
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CLY_RELEASE_VERSION: ${{ needs.acceptance.outputs.release_tag }}
+      CLY_REQUIRE_NOTARIZATION: "1"
+      CLY_UPDATE_FEED_URL: ${{ vars.CLY_UPDATE_FEED_URL }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm package:mac
+      - name: Verify signature, Gatekeeper, and notarization ticket
+        run: |
+          app_path="$(find release -type d -name 'Cly.app' -print -quit)"
+          test -n "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          spctl --assess --type execute --verbose=4 "$app_path"
+          xcrun stapler validate "$app_path"
+          node scripts/smoke-packaged-app.mjs "$app_path/Contents/MacOS/Cly"
+          node scripts/rewrite-update-metadata-urls.mjs release/latest-mac.yml
+      - name: Run the full fresh-profile evidence loop against the packaged app
+        run: |
+          app_path="$(find release -type d -name 'Cly.app' -print -quit)"
+          test -n "$app_path"
+          CLY_PACKAGED_APP_EXECUTABLE="$app_path/Contents/MacOS/Cly" pnpm exec playwright test tests/e2e/production-evidence-loop.spec.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cly-release-macos
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 30
+      - name: Retain notarization evidence separately from public downloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: cly-notarization-evidence
+          path: macos-package-logs/**
+          if-no-files-found: error
+          retention-days: 30
+
+  windows:
+    name: Signed and smoke-tested Windows installer
+    needs: acceptance
+    runs-on: [self-hosted, windows, cly-signing]
+    environment: production-release
+    permissions:
+      contents: read
+    env:
+      CLY_RELEASE_VERSION: ${{ needs.acceptance.outputs.release_tag }}
+      CLY_UPDATE_FEED_URL: ${{ vars.CLY_UPDATE_FEED_URL }}
+      SSL_COM_CODESIGNTOOL: ${{ vars.SSL_COM_CODESIGNTOOL }}
+      SSL_COM_CREDENTIAL_ID: ${{ secrets.SSL_COM_CREDENTIAL_ID }}
+      SSL_COM_PASSWORD: ${{ secrets.SSL_COM_PASSWORD }}
+      SSL_COM_TOTP_SECRET: ${{ secrets.SSL_COM_TOTP_SECRET }}
+      SSL_COM_USERNAME: ${{ secrets.SSL_COM_USERNAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm package:win:signed
+      - run: node scripts/rewrite-update-metadata-urls.mjs release/latest.yml
+      - name: Verify Authenticode and smoke the packaged application
+        shell: powershell
+        run: |
+          $installers = Get-ChildItem release -Filter *.exe -File
+          if (-not $installers) { throw "No Windows installer was produced." }
+          foreach ($installer in $installers) {
+            $signature = Get-AuthenticodeSignature $installer.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "Invalid signature for $($installer.Name): $($signature.Status)"
+            }
+          }
+          $app = Get-ChildItem release -Recurse -Filter Cly.exe -File |
+            Where-Object { $_.FullName -like "*win-unpacked*" } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $app) { throw "No signed unpacked Cly executable was found." }
+          node scripts/smoke-packaged-app.mjs $app.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Packaged Windows smoke failed." }
+          $env:CLY_PACKAGED_APP_EXECUTABLE = $app.FullName
+          pnpm exec playwright test tests/e2e/production-evidence-loop.spec.ts
+          if ($LASTEXITCODE -ne 0) { throw "Packaged Windows evidence loop failed." }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cly-release-windows
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Packaged and smoke-tested Linux
+    needs: acceptance
+    runs-on: ubuntu-latest
+    environment: production-release
+    permissions:
+      contents: read
+    env:
+      CLY_RELEASE_VERSION: ${{ needs.acceptance.outputs.release_tag }}
+      CLY_UPDATE_FEED_URL: ${{ vars.CLY_UPDATE_FEED_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install-deps chromium
+      - run: pnpm package:linux
+      - name: Smoke the packaged application and scope updater URLs
+        run: |
+          app_path="$(find release -type f -path '*/linux-unpacked/cly' -print -quit)"
+          test -n "$app_path"
+          xvfb-run --auto-servernum node scripts/smoke-packaged-app.mjs "$app_path"
+          CLY_PACKAGED_APP_EXECUTABLE="$app_path" xvfb-run --auto-servernum pnpm exec playwright test tests/e2e/production-evidence-loop.spec.ts
+          node scripts/rewrite-update-metadata-urls.mjs release/latest-linux.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cly-release-linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.blockmap
+            release/latest-linux.yml
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Verify immutable artifacts, publish, then promote metadata
+    needs: [acceptance, provider-smoke, macos, windows, linux]
+    runs-on: ubuntu-latest
+    environment: production-release
+    permissions:
+      contents: write
+    env:
+      CLY_RELEASE_VERSION: ${{ needs.acceptance.outputs.release_tag }}
+      CLY_UPDATE_FEED_URL: ${{ vars.CLY_UPDATE_FEED_URL }}
+      RELEASE_VERSION: ${{ needs.acceptance.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cly-release-*
+          path: release-bundle
+          merge-multiple: true
+      - name: Verify updater metadata and create the release manifest
+        run: node scripts/verify-release-artifacts.mjs release-bundle "$RELEASE_VERSION"
+      - name: Create an independently consumable SHA-256 manifest
+        working-directory: release-bundle
+        run: find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+      - name: Upload immutable versioned release files
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLY_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLY_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          CLY_R2_BUCKET: ${{ vars.CLY_R2_BUCKET }}
+          CLY_R2_ENDPOINT: ${{ vars.CLY_R2_ENDPOINT }}
+        run: >-
+          aws s3 cp release-bundle
+          "s3://${CLY_R2_BUCKET}/versions/${CLY_RELEASE_VERSION}/"
+          --recursive
+          --cache-control "public, max-age=31536000, immutable"
+          --endpoint-url "$CLY_R2_ENDPOINT"
+      - name: Re-download and verify every immutable public file
+        run: >-
+          node scripts/verify-public-release.mjs
+          release-bundle "$CLY_UPDATE_FEED_URL" "$CLY_RELEASE_VERSION"
+      - name: Create the GitHub release from the verified bundle
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          fail_on_unmatched_files: true
+          files: release-bundle/**
+      - name: Promote verified updater metadata with atomic object replacement
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLY_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLY_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          CLY_R2_BUCKET: ${{ vars.CLY_R2_BUCKET }}
+          CLY_R2_ENDPOINT: ${{ vars.CLY_R2_ENDPOINT }}
+        run: |
+          for metadata in latest.yml latest-mac.yml latest-linux.yml; do
+            test -f "release-bundle/$metadata"
+            aws s3 cp "release-bundle/$metadata" "s3://${CLY_R2_BUCKET}/$metadata" \
+              --cache-control "no-cache, no-store, must-revalidate" \
+              --content-type "application/yaml" \
+              --endpoint-url "$CLY_R2_ENDPOINT"
+          done
+      - name: Verify every promoted metadata key through the public feed
+        run: >-
+          node scripts/verify-public-release.mjs
+          release-bundle "$CLY_UPDATE_FEED_URL" "$CLY_RELEASE_VERSION"
+          --root-metadata

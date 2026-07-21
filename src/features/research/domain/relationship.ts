@@ -13,6 +13,11 @@ export const relationshipInputSchema = z.object({
     "uses",
     "tests",
     "implements",
+    "produces",
+    "depends-on",
+    "documents",
+    "has-risk",
+    "part-of",
   ]),
   origin: z.enum(["human", "imported", "inferred", "system"]).default("human"),
 });

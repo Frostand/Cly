@@ -9,6 +9,7 @@ import {
 export { deriveTransferableContextSummary } from "./outbound-context.js";
 
 const VERSION = 1;
+const MAX_PROCESS_OUTPUT_CHARS = 500_000;
 class RuntimeError extends Error {
   constructor(code, message, retryable = false, cause) {
     super(message, { cause });
@@ -162,6 +163,30 @@ const getApproval = (approvals, toolCallId) => {
   return approvals?.[toolCallId];
 };
 
+const clipProcessOutput = (value) => {
+  const text = typeof value === "string" ? value : "";
+  return text.length > MAX_PROCESS_OUTPUT_CHARS
+    ? { text: text.slice(0, MAX_PROCESS_OUTPUT_CHARS), truncated: true }
+    : { text, truncated: false };
+};
+
+const parseTestCounts = (output) => {
+  const passed =
+    [...output.matchAll(/(\d+)\s+passed\b/gi)]
+      .map((match) => Number(match[1]))
+      .filter(Number.isFinite)
+      .at(-1) ?? 0;
+  const failed =
+    [...output.matchAll(/(\d+)\s+failed\b/gi)]
+      .map((match) => Number(match[1]))
+      .filter(Number.isFinite)
+      .at(-1) ?? 0;
+  return { passed, failed };
+};
+
+const isTestCommand = (command) =>
+  /\b(?:test|vitest|jest|playwright|pytest)\b/i.test(command);
+
 export function createClyDevExecutionRuntime(options = {}) {
   const repository = options.repository;
   const provider = options.provider;
@@ -290,7 +315,14 @@ export function createClyDevExecutionRuntime(options = {}) {
     return { status: "failed", error };
   };
 
-  const recordToolResult = async (request, resultKey, result, executed) => {
+  const recordToolResult = async (
+    request,
+    resultKey,
+    toolCall,
+    result,
+    executed,
+    startedAt,
+  ) => {
     await append(
       request,
       localEvent({
@@ -304,6 +336,69 @@ export function createClyDevExecutionRuntime(options = {}) {
             result,
             executed,
           }),
+        },
+        actor: actor("tool", "cly-dev-tool-runtime"),
+        now,
+      }),
+    );
+    if (toolCall.tool !== "runCommand") return;
+
+    const command = String(
+      result?.command ?? toolCall.arguments?.command ?? "",
+    ).trim();
+    const cwd = typeof result?.cwd === "string" ? result.cwd.trim() : "";
+    if (!command || !cwd) return;
+
+    const stdout = clipProcessOutput(result?.stdout);
+    const stderr = clipProcessOutput(result?.stderr);
+    const exitCode = Number.isInteger(result?.exitCode)
+      ? result.exitCode
+      : null;
+    const signal = typeof result?.signal === "string" ? result.signal : null;
+    const status =
+      signal && exitCode === null
+        ? "canceled"
+        : exitCode === 0
+          ? "completed"
+          : "failed";
+    const finishedAt = now();
+    await append(
+      request,
+      localEvent({
+        key: `${resultKey}:process`,
+        type: "process.recorded",
+        payload: {
+          requestId: toolCall.toolCallId,
+          command,
+          cwd,
+          status,
+          stdout: stdout.text,
+          stderr: stderr.text,
+          exitCode,
+          signal,
+          startedAt,
+          finishedAt,
+          truncated: stdout.truncated || stderr.truncated,
+        },
+        actor: actor("tool", "cly-dev-tool-runtime"),
+        now,
+      }),
+    );
+    if (!isTestCommand(command)) return;
+    const counts = parseTestCounts(`${stdout.text}\n${stderr.text}`);
+    await append(
+      request,
+      localEvent({
+        key: `${resultKey}:test`,
+        type: "test.recorded",
+        payload: {
+          commandId: toolCall.toolCallId,
+          passed: counts.passed,
+          failed: Math.max(counts.failed, status === "completed" ? 0 : 1),
+          durationMs: Math.max(
+            0,
+            Date.parse(finishedAt) - Date.parse(startedAt),
+          ),
         },
         actor: actor("tool", "cly-dev-tool-runtime"),
         now,
@@ -657,6 +752,7 @@ export function createClyDevExecutionRuntime(options = {}) {
           signal: controller.signal,
           category: gateDecision.category,
         };
+        const startedAt = now();
         const execute = () => executeTool(event, metadata);
         const outcome = durableToolEffects?.executeOnce
           ? await durableToolEffects.executeOnce({
@@ -686,8 +782,10 @@ export function createClyDevExecutionRuntime(options = {}) {
         await recordToolResult(
           request,
           resultKey,
+          event,
           outcome.result,
           outcome.executed,
+          startedAt,
         );
         await append(
           request,
@@ -999,6 +1097,7 @@ export function createClyDevExecutionRuntime(options = {}) {
                 signal: controller.signal,
                 category: gateDecision.category,
               };
+              const startedAt = now();
               const execute = () => executeTool(event, metadata);
               const outcome = durableToolEffects?.executeOnce
                 ? await durableToolEffects.executeOnce({
@@ -1029,8 +1128,10 @@ export function createClyDevExecutionRuntime(options = {}) {
               await recordToolResult(
                 request,
                 resultKey,
+                event,
                 result,
                 outcome.executed,
+                startedAt,
               );
               await append(
                 request,

@@ -1,4 +1,9 @@
+import {
+  attachProviderCalls,
+  requestLiteratureProvider,
+} from "./provider-runtime.js";
 import { LiteratureSearchError } from "./semantic-scholar.js";
+import { defineLiteratureSourceAdapter } from "./source-adapter.js";
 
 export const ARXIV_SEARCH_URL = "https://export.arxiv.org/api/query";
 const text = (xml, tag) =>
@@ -34,6 +39,9 @@ export function parseArxivFeed(xml) {
         ? Number(published.slice(0, 4))
         : undefined,
       url,
+      pdfUrl: providerId
+        ? `https://arxiv.org/pdf/${providerId}.pdf`
+        : undefined,
       doi: text(entry, "arxiv:doi") || undefined,
       tags: [...entry.matchAll(/<category[^>]+term=["']([^"']+)["']/gi)].map(
         (category) => category[1],
@@ -42,10 +50,8 @@ export function parseArxivFeed(xml) {
   });
 }
 
-export async function searchArxiv(
-  query,
-  { fetchImpl = fetch, limit = 25, timeoutMs = 20_000 } = {},
-) {
+export async function searchArxiv(query, options = {}) {
+  const { limit = 25 } = options;
   const normalizedQuery = query.trim();
   if (!normalizedQuery) return [];
   const url = new URL(ARXIV_SEARCH_URL);
@@ -53,22 +59,64 @@ export async function searchArxiv(
   url.searchParams.set("start", "0");
   url.searchParams.set("max_results", String(limit));
   try {
-    const response = await fetchImpl(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (response.status === 429)
-      throw new LiteratureSearchError(
+    const { response, providerCall } = await requestLiteratureProvider(
+      "arxiv",
+      url,
+      options,
+    );
+    if (response.status === 429) {
+      const error = new LiteratureSearchError(
         "arXiv rate limit reached.",
         "rate_limited",
+        {
+          provider: "arxiv",
+          retryAfterMs: providerCall.attempts.at(-1)?.retryAfterMs ?? null,
+        },
       );
-    if (!response.ok)
-      throw new LiteratureSearchError("Unable to search arXiv right now.");
-    return parseArxivFeed(await response.text());
+      error.providerCall = providerCall;
+      throw error;
+    }
+    if (!response.ok) {
+      const error = new LiteratureSearchError(
+        "Unable to search arXiv right now.",
+        "general",
+        {
+          provider: "arxiv",
+        },
+      );
+      error.providerCall = providerCall;
+      throw error;
+    }
+    return attachProviderCalls(parseArxivFeed(await response.text()), [
+      providerCall,
+    ]);
   } catch (error) {
     if (error instanceof LiteratureSearchError) throw error;
     if (error?.name === "TimeoutError" || error?.name === "AbortError") {
-      throw new LiteratureSearchError("arXiv search timed out.", "timeout");
+      const wrapped = new LiteratureSearchError(
+        "arXiv search timed out.",
+        "timeout",
+        {
+          provider: "arxiv",
+        },
+      );
+      wrapped.providerCall = error.providerCall;
+      throw wrapped;
     }
-    throw new LiteratureSearchError("Unable to search arXiv right now.");
+    const wrapped = new LiteratureSearchError(
+      "Unable to search arXiv right now.",
+      "general",
+      {
+        provider: "arxiv",
+      },
+    );
+    wrapped.providerCall = error.providerCall;
+    throw wrapped;
   }
 }
+
+export const arxivAdapter = defineLiteratureSourceAdapter({
+  id: "arxiv",
+  kind: "remote",
+  search: searchArxiv,
+});

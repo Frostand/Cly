@@ -33,6 +33,25 @@ function getFeedUrl() {
   return normalizedPath ? normalized : normalized.replace(/\/(?=[?#]|$)/, "");
 }
 
+function getReleaseVersion() {
+  const releaseVersion = process.env.CLY_RELEASE_VERSION?.trim();
+  if (!releaseVersion) {
+    throw new Error(
+      "Missing CLY_RELEASE_VERSION. Set it to the immutable release tag, for example v1.2.3.",
+    );
+  }
+  if (
+    !/^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/.test(
+      releaseVersion,
+    )
+  ) {
+    throw new Error(
+      "CLY_RELEASE_VERSION must be a version tag such as v1.2.3.",
+    );
+  }
+  return releaseVersion;
+}
+
 function parseScalar(value) {
   const trimmed = value.trim();
   if (
@@ -79,7 +98,7 @@ function getArtifactName(value) {
   return artifactName;
 }
 
-function rewriteMetadataFile(filePath, feedUrl) {
+function rewriteMetadataFile(filePath, artifactBaseUrl) {
   const lines = readFileSync(filePath, "utf8").split(/\r?\n/);
   const rewritten = lines.map((line) => {
     const match = line.match(/^(\s*(?:-\s*)?(?:path|url):\s*)(.+?)\s*$/);
@@ -88,7 +107,7 @@ function rewriteMetadataFile(filePath, feedUrl) {
     }
 
     const value = parseScalar(match[2]);
-    return `${match[1]}${quote(`${feedUrl}/${getArtifactName(value)}`)}`;
+    return `${match[1]}${quote(`${artifactBaseUrl}/${encodeURIComponent(getArtifactName(value))}`)}`;
   });
 
   writeFileSync(filePath, rewritten.join("\n"), "utf8");
@@ -102,6 +121,8 @@ if (filePaths.length === 0) {
 }
 
 const feedUrl = getFeedUrl();
+const releaseVersion = getReleaseVersion();
+const artifactBaseUrl = `${feedUrl}/versions/${encodeURIComponent(releaseVersion)}`;
 for (const filePath of filePaths) {
-  rewriteMetadataFile(filePath, feedUrl);
+  rewriteMetadataFile(filePath, artifactBaseUrl);
 }

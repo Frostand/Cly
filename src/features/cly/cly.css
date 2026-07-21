@@ -156,6 +156,99 @@
   }
 }
 
+/* Structured project lifecycle: versioned records and graph linkage. */
+@layer v4 {
+  .cly-lifecycle-error,
+  .cly-lifecycle-partial {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cly-space-3);
+    margin: var(--cly-space-4) 0;
+    border-left: 3px solid var(--cly-warning);
+    background: var(--cly-warning-soft);
+    padding: var(--cly-space-3);
+    color: var(--cly-text-muted);
+    font-size: 11px;
+  }
+
+  .cly-lifecycle-error {
+    border-left-color: var(--cly-danger);
+    background: var(--cly-danger-soft);
+  }
+
+  .cly-lifecycle-partial > span {
+    display: grid;
+    gap: var(--cly-space-1);
+  }
+
+  .cly-lifecycle-partial strong {
+    color: var(--cly-text);
+  }
+
+  .cly-lifecycle-form {
+    display: grid;
+    gap: var(--cly-space-3);
+  }
+
+  .cly-lifecycle-form .cly-field > span {
+    color: var(--cly-text-muted);
+    font-size: 10px;
+    font-weight: 650;
+  }
+
+  .cly-lifecycle-actions,
+  .cly-lifecycle-link-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--cly-space-2);
+  }
+
+  .cly-lifecycle-link-controls .cly-select {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .cly-lifecycle-links {
+    margin: var(--cly-space-2) 0 0;
+    border-block: 1px solid var(--cly-divider);
+    padding: 0;
+    list-style: none;
+  }
+
+  .cly-lifecycle-links li {
+    min-height: 38px;
+    display: grid;
+    grid-template-columns: auto 90px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--cly-space-2);
+    border-bottom: 1px solid var(--cly-divider);
+    font-size: 10px;
+  }
+
+  .cly-lifecycle-links li:last-child {
+    border-bottom: 0;
+  }
+
+  .cly-lifecycle-links code {
+    overflow: hidden;
+    color: var(--cly-text-faint);
+    font: 9px var(--cly-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 760px) {
+    .cly-lifecycle-error,
+    .cly-lifecycle-partial,
+    .cly-lifecycle-actions,
+    .cly-lifecycle-link-controls {
+      align-items: stretch;
+      flex-direction: column;
+    }
+  }
+}
+
 /* First-run setup: one progressive workspace with durable, visible decisions. */
 @layer v4 {
   .cly-onboarding,
@@ -223,7 +316,11 @@
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
     border-right: 1px solid var(--cly-divider);
-    background: color-mix(in srgb, var(--cly-sidebar) 82%, var(--cly-workspace));
+    background: color-mix(
+      in srgb,
+      var(--cly-sidebar) 82%,
+      var(--cly-workspace)
+    );
     padding: var(--cly-space-3) var(--cly-space-2);
   }
 
@@ -2261,6 +2358,55 @@
   .cly-resume-task-form textarea {
     resize: vertical;
     font: 10px / 1.45 var(--cly-mono);
+  }
+
+  .cly-task-start-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--cly-space-2);
+  }
+
+  .cly-task-start-grid > label,
+  .cly-task-start-references > label {
+    display: grid;
+    gap: var(--cly-space-1);
+    color: var(--cly-text-muted);
+    font-size: 10px;
+    font-weight: 650;
+  }
+
+  .cly-task-start-references {
+    display: grid;
+    gap: var(--cly-space-1);
+    margin: 0;
+    border: 1px solid var(--cly-border);
+    border-radius: var(--cly-radius-sm);
+    padding: var(--cly-space-2);
+  }
+
+  .cly-task-start-references legend {
+    display: flex;
+    align-items: center;
+    gap: var(--cly-space-1);
+    color: var(--cly-text-muted);
+    font-size: 10px;
+    font-weight: 650;
+  }
+
+  .cly-task-start-references > label {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .cly-task-start-references small {
+    color: var(--cly-text-faint);
+    font: 9px / 1.4 var(--cly-mono);
+  }
+
+  @media (max-width: 720px) {
+    .cly-task-start-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   .cly-resume-preview {

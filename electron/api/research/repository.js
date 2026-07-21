@@ -13,9 +13,17 @@ const NOTEBOOK_OBJECT_TYPES = [
   "metric",
   "figure",
   "table",
-  "risk",
-  "method",
+];
+
+const PROJECT_LIFECYCLE_OBJECT_TYPES = [
+  "question",
   "objective",
+  "hypothesis",
+  "method",
+  "risk",
+  "task",
+  "collaborator",
+  "agent",
 ];
 
 const RESEARCH_OBJECT_TYPES = [
@@ -26,6 +34,7 @@ const RESEARCH_OBJECT_TYPES = [
   "experiment",
   "run",
   ...NOTEBOOK_OBJECT_TYPES,
+  ...PROJECT_LIFECYCLE_OBJECT_TYPES,
 ];
 
 const RESEARCH_RELATIONSHIP_TYPES = [
@@ -49,6 +58,38 @@ const relationshipEvidenceSchema = z.object({
   locator: z.string().trim().min(1).max(500),
   excerpt: z.string().max(1_000),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+});
+
+const extractedSourceValueSchema = z.object({
+  value: z.string().trim().min(1).max(20_000),
+  passage: z.object({
+    quote: z.string().trim().min(1).max(20_000),
+    locator: z.string().trim().min(1).max(1_000).optional(),
+    sourceId: z.string().trim().min(1).max(500).optional(),
+  }),
+  confidence: z.number().finite().min(0).max(100),
+  verificationState: z.enum(["unverified", "verified", "rejected"]),
+  verifiedBy: z.string().trim().min(1).max(500).optional(),
+  verifiedAt: z.iso.datetime().optional(),
+});
+
+const literatureProviderCallSchema = z.object({
+  attempts: z
+    .array(
+      z.object({
+        attempt: z.number().int().min(1),
+        durationMs: z.number().finite().min(0),
+        outcome: z.string().trim().min(1).max(200),
+        retryAfterMs: z.number().int().min(0).nullable(),
+        status: z.number().int().min(100).max(599).nullable(),
+      }),
+    )
+    .min(1)
+    .max(10),
+  durationMs: z.number().finite().min(0),
+  operation: z.string().trim().min(1).max(200),
+  provider: z.string().trim().min(1).max(200),
+  status: z.enum(["completed", "failed"]),
 });
 
 const objectPayloadSchema = z.discriminatedUnion("kind", [
@@ -121,10 +162,36 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
     rankingComponents: z.record(z.string(), z.number().finite()).optional(),
     rankingExplanation: z.string().trim().min(1).max(2_000).optional(),
     retrievedAt: z.iso.datetime().optional(),
+    providerCalls: z.array(literatureProviderCallSchema).max(100).optional(),
     researchProblem: z.string().trim().min(1).max(10_000).optional(),
     methods: z.array(z.string().trim().min(1)).optional(),
     findings: z.array(z.string().trim().min(1)).optional(),
     limitations: z.array(z.string().trim().min(1)).optional(),
+    fullTextStatus: z
+      .enum([
+        "parsed",
+        "not_available",
+        "not_attempted_limit",
+        "download_failed",
+        "parse_failed",
+      ])
+      .optional(),
+    pdfFailure: z
+      .object({
+        kind: z.string().trim().min(1).max(200),
+        message: z.string().trim().min(1).max(2_000),
+        retryable: z.boolean(),
+        retryAfterMs: z.number().int().min(0).nullable(),
+        action: z.string().trim().min(1).max(2_000),
+      })
+      .optional(),
+    pdfAcquisition: z
+      .object({
+        attempts: z.number().int().min(1),
+        finalUrl: z.url().max(4_000).optional(),
+        redirects: z.number().int().min(0).optional(),
+      })
+      .optional(),
     folder: z.string().trim().min(1).max(500).optional(),
     extractedFields: z
       .record(
@@ -141,6 +208,12 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
           verifiedBy: z.string().trim().min(1).max(500).optional(),
           verifiedAt: z.iso.datetime().optional(),
         }),
+      )
+      .optional(),
+    extractedValues: z
+      .record(
+        z.string().trim().min(1),
+        z.array(extractedSourceValueSchema).max(1_000),
       )
       .optional(),
     contradictoryEvidence: z
@@ -228,7 +301,40 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
   ...NOTEBOOK_OBJECT_TYPES.map((kind) =>
     z.object({ kind: z.literal(kind) }).passthrough(),
   ),
+  ...PROJECT_LIFECYCLE_OBJECT_TYPES.map((kind) =>
+    z
+      .object({
+        kind: z.literal(kind),
+        status: z
+          .enum(["draft", "active", "blocked", "completed", "archived"])
+          .default("draft"),
+        ownerId: z.string().trim().min(1).max(500).nullable().optional(),
+        dueAt: z.iso.datetime().optional(),
+        role: z.string().trim().min(1).max(500).optional(),
+        provider: z.string().trim().min(1).max(500).optional(),
+        model: z.string().trim().min(1).max(500).optional(),
+        severity: z.enum(["low", "medium", "high", "blocking"]).optional(),
+      })
+      .passthrough(),
+  ),
 ]);
+
+const objectUpdateSchema = z
+  .object({
+    projectId: z.string().trim().min(1),
+    id: z.string().trim().min(1),
+    expectedVersion: z.number().int().min(1),
+    title: z.string().trim().min(1).max(500).optional(),
+    description: z.string().trim().max(10_000).optional(),
+    payload: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine(
+    (value) =>
+      value.title !== undefined ||
+      value.description !== undefined ||
+      value.payload !== undefined,
+    "An object update requires at least one changed field.",
+  );
 
 const objectInputSchema = z
   .object({
@@ -1274,6 +1380,74 @@ export function createResearchRepository(
       }
       return mapObject(
         database.prepare("SELECT * FROM research_objects WHERE id = ?").get(id),
+      );
+    },
+
+    updateObject(input) {
+      const parsed = objectUpdateSchema.parse(input);
+      ensureProject(parsed.projectId);
+      const existing = database
+        .prepare(
+          "SELECT * FROM research_objects WHERE id = ? AND project_id = ?",
+        )
+        .get(parsed.id, parsed.projectId);
+      if (!existing)
+        throw new Error("Research object does not belong to the project.");
+      if (existing.version !== parsed.expectedVersion)
+        throw new Error(
+          `Research object version conflict: expected ${parsed.expectedVersion}, current ${existing.version}.`,
+        );
+      const payload = objectPayloadSchema.parse({
+        ...parseJson(existing.payload),
+        ...(parsed.payload ?? {}),
+        kind: existing.type,
+      });
+      const nextVersion = existing.version + 1;
+      const now = clock();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const result = database
+          .prepare(
+            `UPDATE research_objects
+             SET title = ?, description = ?, payload = ?, version = ?,
+                 review_state = 'unreviewed', reviewed_by = NULL,
+                 reviewed_at = NULL, updated_at = ?
+             WHERE id = ? AND project_id = ? AND version = ?`,
+          )
+          .run(
+            parsed.title ?? existing.title,
+            parsed.description ?? existing.description,
+            JSON.stringify(payload),
+            nextVersion,
+            now,
+            parsed.id,
+            parsed.projectId,
+            parsed.expectedVersion,
+          );
+        if (result.changes !== 1)
+          throw new Error("Research object changed while it was being saved.");
+        insertProvenance(
+          {
+            action: `${existing.type}.updated`,
+            objectId: parsed.id,
+            projectId: parsed.projectId,
+            metadata: {
+              previousVersion: existing.version,
+              version: nextVersion,
+              status: payload.status,
+            },
+          },
+          now,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      return mapObject(
+        database
+          .prepare("SELECT * FROM research_objects WHERE id = ?")
+          .get(parsed.id),
       );
     },
 

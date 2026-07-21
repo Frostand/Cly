@@ -87,7 +87,11 @@ import {
   type ReviewerCapsule,
 } from "../services/api-client";
 import { capabilityUnavailableMessage } from "../services/capabilities";
-import { desktopLiteratureService } from "../services/literature-service";
+import {
+  desktopLiteratureService,
+  type LiteratureProviderFailure,
+  LiteratureSearchFailure,
+} from "../services/literature-service";
 import { projectServices } from "../services/project-services";
 import { isClyDemoRuntime } from "../services/runtime";
 import { claimStatusTone, useClyStore } from "../store/cly-store";
@@ -783,8 +787,15 @@ export function LiteratureScreen() {
     [],
   );
   const [searching, setSearching] = useState(false);
+  const [providerFailures, setProviderFailures] = useState<
+    LiteratureProviderFailure[]
+  >([]);
   const [externalSearchApproved, setExternalSearchApproved] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<{
+    message: string;
+    action: string;
+    retryable: boolean;
+  } | null>(null);
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
   const savedSearchResultIds = useMemo(
     () =>
@@ -894,19 +905,25 @@ export function LiteratureScreen() {
   const runSearch = async () => {
     setSearching(true);
     setSearchError(null);
+    setProviderFailures([]);
     try {
       if (!activeProject) {
         throw new Error("Select a research project before searching.");
       }
       if (activeProject.localOnly && !externalSearchApproved) {
         throw new Error(
-          "Approve transmission to arXiv and Semantic Scholar before searching this local-only project.",
+          "Approve transmission to arXiv, Semantic Scholar, Crossref, and PubMed before searching this local-only project.",
         );
       }
       const searchProject: ResearchProject = activeProject.localOnly
         ? {
             ...activeProject,
-            externalTransmissionApprovals: ["arxiv", "semantic-scholar"],
+            externalTransmissionApprovals: [
+              "arxiv",
+              "semantic-scholar",
+              "crossref",
+              "pubmed",
+            ],
           }
         : activeProject;
       if (searchProject.localOnly) {
@@ -916,15 +933,32 @@ export function LiteratureScreen() {
         searchProject,
         query,
       );
+      setProviderFailures(
+        (
+          results as typeof results & {
+            providerFailures?: LiteratureProviderFailure[];
+          }
+        ).providerFailures ?? [],
+      );
       setSearchResults(results);
       setSelectedResultId(results[0]?.source.id ?? null);
     } catch (error) {
-      setSearchError(
-        error instanceof Error
-          ? error.message
-          : "Literature retrieval failed. No records were changed.",
-      );
+      setSearchError({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Literature retrieval failed. No records were changed.",
+        action:
+          error instanceof LiteratureSearchFailure
+            ? error.details.action
+            : "Check the project and network settings, then retry.",
+        retryable:
+          error instanceof LiteratureSearchFailure
+            ? error.details.retryable
+            : true,
+      });
       setSearchResults([]);
+      setProviderFailures([]);
       setSelectedResultId(null);
     } finally {
       setSearching(false);
@@ -1034,9 +1068,9 @@ export function LiteratureScreen() {
               </form>
 
               <div className="cly-callout">
-                <strong>External search destinations:</strong> arXiv and
-                Semantic Scholar receive the query text. Local reranking stays
-                on this device.
+                <strong>External search destinations:</strong> arXiv, Semantic
+                Scholar, Crossref, and PubMed receive the query text. Local
+                reranking stays on this device.
                 {activeProject?.localOnly ? (
                   <label className="cly-control-label">
                     <input
@@ -1046,7 +1080,7 @@ export function LiteratureScreen() {
                         setExternalSearchApproved(event.target.checked)
                       }
                     />
-                    Approve sending this project’s search queries to both
+                    Approve sending this project’s search queries to all four
                     destinations
                   </label>
                 ) : null}
@@ -1054,9 +1088,25 @@ export function LiteratureScreen() {
 
               {searchError ? (
                 <div className="cly-callout" role="alert">
-                  <strong>Search unavailable.</strong> {searchError}
+                  <strong>Search unavailable.</strong> {searchError.message}{" "}
+                  {searchError.action}
+                  {searchError.retryable ? (
+                    <Button onClick={() => void runSearch()}>
+                      Retry search
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
+              {providerFailures.map((failure) => (
+                <div
+                  className="cly-callout"
+                  role="status"
+                  key={`${failure.provider}:${failure.kind}`}
+                >
+                  <strong>{failure.provider} returned partial results.</strong>{" "}
+                  {failure.message} {failure.action}
+                </div>
+              ))}
               {searching ? (
                 <LoadingState label="Searching literature providers" />
               ) : null}
@@ -1137,6 +1187,28 @@ export function LiteratureScreen() {
                             <p className="cly-literature-authors">
                               {selectedResult.source.authors}
                             </p>
+                            <InlineMetadata>
+                              <Badge
+                                tone={
+                                  selectedResult.source.fullTextStatus ===
+                                  "parsed"
+                                    ? "success"
+                                    : "neutral"
+                                }
+                              >
+                                {selectedResult.source.fullTextStatus ===
+                                "parsed"
+                                  ? "Full text"
+                                  : "Abstract only"}
+                              </Badge>
+                            </InlineMetadata>
+                            {selectedResult.source.pdfFailure ? (
+                              <div className="cly-callout" role="status">
+                                <strong>Full text unavailable.</strong>{" "}
+                                {selectedResult.source.pdfFailure.message}{" "}
+                                {selectedResult.source.pdfFailure.action}
+                              </div>
+                            ) : null}
                             <div className="cly-literature-detail-actions">
                               <Button
                                 variant="primary"

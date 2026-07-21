@@ -432,6 +432,7 @@ export const projectServices: ClyServices = {
           components: result.components,
           explanation: result.explanation,
           retrievedAt: result.retrievedAt,
+          providerCalls: result.providerCalls,
         },
       };
       const persisted = await useClyStore.getState().addSource(candidate);

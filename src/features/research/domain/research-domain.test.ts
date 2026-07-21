@@ -94,6 +94,34 @@ describe("research domain", () => {
     expect(run?.payload.status).toBe("planned");
   });
 
+  it.each([
+    "question",
+    "objective",
+    "hypothesis",
+    "method",
+    "risk",
+    "task",
+    "collaborator",
+    "agent",
+  ] as const)("creates a versioned %s project object", (kind) => {
+    expect(
+      createResearchObject(
+        {
+          id: `${kind}-1`,
+          projectId: "project-1",
+          title: `${kind} title`,
+          payload: { kind, status: "active" },
+        },
+        now,
+      ),
+    ).toMatchObject({
+      projectId: "project-1",
+      type: kind,
+      version: 1,
+      payload: { kind, status: "active" },
+    });
+  });
+
   it("preserves validated literature ranking provenance", () => {
     const source = createResearchObject(
       {
@@ -122,6 +150,76 @@ describe("research domain", () => {
       rankingMethod: "keyword_overlap_v1",
       rankingModel: "BAAI/bge-reranker-base",
       query: "robust calibration",
+    });
+  });
+
+  it("retains bounded PDF acquisition, every extracted value, and provider-call observations", () => {
+    const source = createResearchObject(
+      {
+        id: "source-full-text",
+        projectId: "project-1",
+        title: "Parsed paper",
+        payload: {
+          kind: "source",
+          url: "https://example.com/paper",
+          fullTextStatus: "parsed",
+          pdfAcquisition: {
+            attempts: 2,
+            finalUrl: "https://cdn.example.com/paper.pdf",
+            redirects: 1,
+          },
+          extractedValues: {
+            methods: [
+              {
+                value: "We use conformal prediction.",
+                passage: {
+                  quote: "We use conformal prediction.",
+                  locator: "pdf:page:2:section:methods:chars:0-28",
+                },
+                confidence: 92,
+                verificationState: "unverified",
+              },
+            ],
+          },
+          providerCalls: [
+            {
+              attempts: [
+                {
+                  attempt: 1,
+                  durationMs: 40,
+                  outcome: "success",
+                  retryAfterMs: null,
+                  status: 200,
+                },
+              ],
+              durationMs: 40,
+              operation: "search",
+              provider: "crossref",
+              status: "completed",
+            },
+          ],
+        },
+      },
+      now,
+    );
+
+    expect(source.type === "source" ? source.payload : null).toMatchObject({
+      fullTextStatus: "parsed",
+      pdfAcquisition: { attempts: 2, redirects: 1 },
+      extractedValues: {
+        methods: [
+          {
+            confidence: 92,
+            passage: { locator: "pdf:page:2:section:methods:chars:0-28" },
+          },
+        ],
+      },
+      providerCalls: [
+        {
+          provider: "crossref",
+          attempts: [{ outcome: "success", status: 200 }],
+        },
+      ],
     });
   });
 

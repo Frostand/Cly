@@ -202,6 +202,13 @@ export interface CreateRelationshipInput {
   origin?: Relationship["origin"];
 }
 
+export interface UpdateObjectInput {
+  expectedVersion: number;
+  title?: string;
+  description?: string;
+  payload?: Record<string, unknown>;
+}
+
 export interface CreateEvidenceLinkInput {
   sourceId: string;
   claimId: string;
@@ -1117,6 +1124,13 @@ export const apiClient = {
     });
   },
 
+  updateObject(projectId: string, objectId: string, input: UpdateObjectInput) {
+    return request<ResearchObject>(
+      `${projectPath(projectId)}/objects/${encodeURIComponent(objectId)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
+  },
+
   updateSource(
     projectId: string,
     sourceId: string,
@@ -1192,6 +1206,33 @@ export const apiClient = {
     return request<{
       papers: LiteraturePaper[];
       provider: string;
+      providerFailures: Array<{
+        provider: string;
+        kind: string;
+        message: string;
+        retryable: boolean;
+        retryAfterMs: number | null;
+        action: string;
+      }>;
+      providerCalls: Array<{
+        attempts: Array<{
+          attempt: number;
+          durationMs: number;
+          outcome: string;
+          retryAfterMs: number | null;
+          status: number | null;
+        }>;
+        durationMs: number;
+        operation: string;
+        provider: string;
+        status: "completed" | "failed";
+      }>;
+      retrievalPlan: {
+        normalizedQuery: string;
+        expansionTerms: string[];
+        expandedQuery: string;
+        method: string;
+      };
       reranking: CrossEncoderReranking;
     }>(`/api/projects/${encodeURIComponent(projectId)}/literature/search`, {
       method: "POST",
@@ -1421,6 +1462,43 @@ export const apiClient = {
       session: ClyDevSessionRecord;
     }>(
       `/api/projects/${encodeURIComponent(projectId)}/cly-dev/session-aggregates`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  startClyDevSession(
+    projectId: string,
+    input: {
+      title: string;
+      objective?: string;
+      linearIssue?: string;
+      provider: { id: "openai-codex" | "anthropic-claude"; model: string };
+      researchObjectIds?: string[];
+      budget?: {
+        maxInputTokens?: number;
+        maxOutputTokens?: number;
+        maxTotalTokens?: number;
+        maxCostMinor?: number;
+      };
+    },
+  ) {
+    return request<{
+      workspace: ClyDevWorkspace;
+      contextManifest: ClyDevContextManifest;
+      task: ClyDevTask;
+      session: ClyDevSessionRecord;
+      execution: {
+        requestId?: string;
+        status:
+          | "queued"
+          | "completed"
+          | "failed"
+          | "canceled"
+          | "awaiting_approval";
+        error?: { code: string; message: string; retryable: boolean };
+      };
+    }>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/session-starts`,
       { method: "POST", body: JSON.stringify(input) },
     );
   },

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
@@ -11,6 +11,9 @@ const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
 test("reviews the production handoff setup and resume dialog", async () => {
   test.setTimeout(90_000);
   const userDataPath = mkdtempSync(path.join(tmpdir(), "cly-72-ui-"));
+  const projectPath = path.join(userDataPath, "handoff-repository");
+  mkdirSync(path.join(projectPath, ".git"), { recursive: true });
+  const canonicalProjectPath = realpathSync(projectPath);
   mkdirSync(path.join(root, "artifacts/ui-review/cly-72-final"), {
     recursive: true,
   });
@@ -28,6 +31,7 @@ test("reviews the production handoff setup and resume dialog", async () => {
       ELECTRON_API_PORT: "43911",
       CLY_E2E: "1",
       CLY_E2E_USER_DATA_PATH: userDataPath,
+      CLY_E2E_PROJECT_PATH: canonicalProjectPath,
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
       VITE_CLY_DEMO_MODE: "0",
     },
@@ -36,7 +40,31 @@ test("reviews the production handoff setup and resume dialog", async () => {
   try {
     const window = await app.firstWindow();
     const browserWindow = await app.browserWindow(window);
-    await window.getByRole("heading", { level: 1 }).first().waitFor();
+    await expect(
+      window.getByRole("heading", {
+        name: "Build your first trustworthy evidence chain",
+        level: 1,
+      }),
+    ).toBeVisible();
+    await window.getByRole("button", { name: /Continue/ }).click();
+    await window
+      .getByRole("button", { name: /Import an existing folder/ })
+      .click();
+    await window.getByLabel("Research topic").fill("Durable agent handoffs");
+    await window
+      .getByLabel("Primary question")
+      .fill("Can an approved coding session resume on this machine?");
+    await window.getByRole("button", { name: /Continue/ }).click();
+    await expect(window.getByLabel("Repositories")).toHaveValue(
+      canonicalProjectPath,
+    );
+    await window.getByRole("button", { name: /Continue/ }).click();
+    await window.getByRole("button", { name: /Continue/ }).click();
+    await window.getByRole("button", { name: /Continue/ }).click();
+    await window.getByRole("button", { name: "Skip for now" }).click();
+    await window.getByRole("button", { name: "Skip for now" }).click();
+    await window.getByRole("button", { name: /Approve and generate/ }).click();
+    await window.getByRole("button", { name: /Add the first source/ }).click();
     await window.getByTestId("nav-agents").click();
     const trigger = window.getByRole("button", {
       name: "Resume on this machine",

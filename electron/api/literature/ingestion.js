@@ -134,6 +134,12 @@ export function normalizeLiteratureRecord(record) {
     title,
     url,
     year,
+    upload: record.upload
+      ? {
+          filename: collapseWhitespace(record.upload.filename) || null,
+          mediaType: collapseWhitespace(record.upload.mediaType) || null,
+        }
+      : undefined,
   };
   if (!normalized.url && !normalized.citation) {
     throw new Error("Paper metadata requires a URL, DOI, or citation.");
@@ -273,5 +279,101 @@ export function createGroundedSummary(
         },
       ],
     })),
+  };
+}
+
+const extractionPatterns = {
+  methods:
+    /\b(method|methodology|approach|algorithm|model|we (?:use|propose|train|estimate))\b/i,
+  datasets:
+    /\b(dataset|benchmark|corpus|cohort|participants?|samples?|data from)\b/i,
+  evidence:
+    /\b(result|we find|found that|outperform|improv|increase|decrease|achiev|accuracy|confidence interval|p\s*[<=>])\b/i,
+  limitations:
+    /\b(limitations?|however|restricted|future work|only (?:tested|evaluated)|may not|cannot generalize)\b/i,
+  reproducibility:
+    /\b(reproduc|source code|code (?:is|was) available|data (?:is|are|were) available|repository|implementation|protocol)\b/i,
+  contradictions:
+    /\b(contradict|contrary|did not|no significant|fails?|worse|does not support|however)\b/i,
+};
+
+const sentencePassages = (text, { field, page, section }) => {
+  const passages = [];
+  const pattern = /[^.!?]+(?:[.!?]+|$)/g;
+  for (const match of text.matchAll(pattern)) {
+    const quote = collapseWhitespace(match[0]);
+    if (!quote) continue;
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    passages.push({
+      quote,
+      locator:
+        field === "pdf"
+          ? `pdf:page:${page ?? 1}:section:${section ?? "body"}:chars:${start}-${end}`
+          : `abstract:chars:${start}-${end}`,
+    });
+  }
+  return passages;
+};
+
+const extractedValue = (passage, confidence) => ({
+  value: passage.quote,
+  passage,
+  confidence,
+  verificationState: "unverified",
+});
+
+export function extractStructuredLiterature(
+  record,
+  parsedPdf = null,
+  extractedAt = new Date().toISOString(),
+) {
+  const documents = parsedPdf?.sections?.length
+    ? parsedPdf.sections.map((section) => ({
+        field: "pdf",
+        page: section.page,
+        section: section.name,
+        text: section.text,
+      }))
+    : record.abstract
+      ? [{ field: "abstract", section: "abstract", text: record.abstract }]
+      : [];
+  const passages = documents.flatMap((document) =>
+    sentencePassages(document.text, document),
+  );
+  const baseConfidence = parsedPdf ? 92 : 76;
+  const select = (pattern, limit = 3) => {
+    const seen = new Set();
+    return passages
+      .filter((passage) => pattern.test(passage.quote))
+      .filter((passage) => {
+        const key = passage.quote.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, limit)
+      .map((passage) => extractedValue(passage, baseConfidence));
+  };
+  const researchProblemPassage =
+    passages.find((passage) =>
+      /\b(study|investigat|evaluate|question|problem|aim|objective)\b/i.test(
+        passage.quote,
+      ),
+    ) ?? passages[0];
+  return {
+    hasFullText: Boolean(parsedPdf),
+    fullTextStatus: parsedPdf ? "parsed" : "abstract_only",
+    extractedAt,
+    method: parsedPdf ? "bounded_pdf_rules_v1" : "bounded_abstract_rules_v1",
+    researchProblem: researchProblemPassage
+      ? extractedValue(researchProblemPassage, parsedPdf ? 88 : 70)
+      : null,
+    methods: select(extractionPatterns.methods),
+    datasets: select(extractionPatterns.datasets),
+    evidence: select(extractionPatterns.evidence),
+    limitations: select(extractionPatterns.limitations),
+    reproducibility: select(extractionPatterns.reproducibility),
+    contradictions: select(extractionPatterns.contradictions),
   };
 }

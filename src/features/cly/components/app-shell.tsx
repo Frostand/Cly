@@ -11,11 +11,11 @@ import {
   ProvenanceScreen,
   ReproducibilityScreen,
 } from "../screens/integrity";
+import { ObjectivesScreen } from "../screens/objectives";
 import { ClyOnboardingScreen } from "../screens/onboarding-route";
 import { OverviewScreen } from "../screens/overview";
 import {
   DevWorkspaceScreen,
-  ObjectivesScreen,
   ReviewerCapsulesScreen,
 } from "../screens/platform-workspaces";
 import {

@@ -11,6 +11,10 @@ import { projectAuthorityRegistry } from "../../../project-authority-registry.js
 import { API_SESSION_TOKEN_HEADER, createApiApp } from "../../app.js";
 import { createClyDevSessionRepository } from "../session-repository.js";
 import { deriveTransferableContextSummary } from "./execution-runtime.js";
+import {
+  DEFAULT_CLY_DEV_POLICY,
+  productionClyDevLoaders,
+} from "./production-composition.js";
 
 const NOW = "2026-07-16T12:00:00.000Z";
 const TOKEN = "production-composition-test-token";
@@ -95,6 +99,15 @@ const requestBody = (overrides: Record<string, unknown> = {}) => ({
 afterEach(() => {
   projectAuthorityRegistry.hydrate({ projects: [], closedProjects: [] });
   closePersistedStateDatabase();
+});
+
+describe("production Cly Dev policy", () => {
+  it("defaults new projects to read-only access plus explicit approvals for effects", () => {
+    const { db } = createFixture();
+    expect(productionClyDevLoaders.loadProjectPolicy(db, "project-1")).toEqual(
+      DEFAULT_CLY_DEV_POLICY,
+    );
+  });
 });
 
 describe("production Cly Dev execution composition", () => {

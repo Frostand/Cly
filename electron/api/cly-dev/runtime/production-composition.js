@@ -19,12 +19,25 @@ const parseJson = (value, fallback = null) => {
   }
 };
 
+export const DEFAULT_CLY_DEV_POLICY = Object.freeze({
+  categories: Object.freeze({
+    read_only: "allow",
+    file_write: "approval",
+    command: "approval",
+    network: "approval",
+    secret: "deny",
+    git: "approval",
+    experiment: "approval",
+    research_record: "approval",
+  }),
+});
+
 const loadProjectPolicy = (db, projectId) => {
   const row = db
     .prepare("SELECT metadata FROM projects WHERE id = ?")
     .get(projectId);
   if (!row) throw new Error("Project was not found.");
-  return parseJson(row.metadata, {})?.clyDevPolicy ?? null;
+  return parseJson(row.metadata, {})?.clyDevPolicy ?? DEFAULT_CLY_DEV_POLICY;
 };
 
 const loadApproval = (db, approvalId, scope) => {

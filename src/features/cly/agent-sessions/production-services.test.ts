@@ -14,6 +14,7 @@ describe("production agent-session services", () => {
         events: [],
       }),
       createClyDevSessionAggregate: vi.fn(),
+      startClyDevSession: vi.fn(),
       appendClyDevSessionEvent: vi.fn(),
       fetchClyDevSessionEvents: vi.fn(),
     };
@@ -88,6 +89,30 @@ describe("production agent-session services", () => {
       "project-a",
       input,
     );
+  });
+
+  it("starts a real provider session through the server-owned aggregate boundary", async () => {
+    const startClyDevSession = vi.fn().mockResolvedValue({
+      session: { id: "session-started" },
+      execution: { status: "completed" },
+    });
+    const services = createProductionAgentSessionServices({
+      api: { startClyDevSession } as never,
+    });
+    const input = {
+      title: "Fix CLY-71",
+      objective: "Create the production task start flow.",
+      provider: { id: "openai-codex" as const, model: "gpt-5" },
+      researchObjectIds: ["claim-1"],
+    };
+
+    await expect(
+      services.startSession("project-a", input),
+    ).resolves.toMatchObject({
+      session: { id: "session-started" },
+      execution: { status: "completed" },
+    });
+    expect(startClyDevSession).toHaveBeenCalledWith("project-a", input);
   });
 
   it("persists approval decisions as idempotent ordered events", async () => {

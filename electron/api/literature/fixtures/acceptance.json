@@ -1,0 +1,56 @@
+{
+  "malformedPdfBase64": "JVBERi0xLjcKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyA+PiBlbmRvYmoKJSVFT0Y=",
+  "rateLimit": {
+    "status": 429,
+    "retryAfter": "2"
+  },
+  "contradictoryPaper": {
+    "title": "Contradictory benchmark result",
+    "abstract": "We evaluate calibration on the ShiftBench dataset. The proposed method did not improve coverage over the baseline. Code and data are available for reproducibility."
+  },
+  "duplicates": [
+    {
+      "id": "arxiv:one",
+      "title": "Calibration under shift",
+      "doi": "10.1000/shared"
+    },
+    {
+      "id": "semantic-scholar:one",
+      "title": "Calibration under shift (journal version)",
+      "doi": "https://doi.org/10.1000/SHARED"
+    }
+  ],
+  "crossref": {
+    "message": {
+      "items": [
+        {
+          "DOI": "10.1000/crossref-fixture",
+          "title": ["Transparent calibration"],
+          "author": [{ "given": "Ada", "family": "Lovelace" }],
+          "published-print": { "date-parts": [[2025, 1, 1]] },
+          "URL": "https://doi.org/10.1000/crossref-fixture",
+          "abstract": "<jats:p>Calibration remains reliable under shift.</jats:p>",
+          "subject": ["Machine Learning"]
+        }
+      ]
+    }
+  },
+  "pubmedSearch": { "esearchresult": { "idlist": ["12345678"] } },
+  "pubmedSummary": {
+    "result": {
+      "12345678": {
+        "uid": "12345678",
+        "title": "Reproducible clinical calibration",
+        "authors": [{ "name": "Lovelace A" }],
+        "pubdate": "2024 Jan",
+        "fulljournalname": "Fixture Medicine",
+        "articleids": [{ "idtype": "doi", "value": "10.1000/pubmed-fixture" }]
+      }
+    }
+  },
+  "upload": {
+    "filename": "fixture.bib",
+    "mediaType": "application/x-bibtex",
+    "content": "@article{fixture, title={Uploaded calibration evidence}, author={Lovelace, Ada}, year={2026}, doi={10.1000/upload-fixture}}"
+  }
+}

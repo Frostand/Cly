@@ -5,6 +5,14 @@ export const RESEARCH_OBJECT_TYPES = [
   "claim",
   "experiment",
   "run",
+  "question",
+  "objective",
+  "hypothesis",
+  "method",
+  "risk",
+  "task",
+  "collaborator",
+  "agent",
 ] as const;
 
 export type ResearchObjectType = (typeof RESEARCH_OBJECT_TYPES)[number];
@@ -39,14 +47,34 @@ export interface SourcePayload {
   year?: number;
   journal?: string;
   tags?: string[];
+  fullTextStatus?:
+    | "parsed"
+    | "not_available"
+    | "not_attempted_limit"
+    | "download_failed"
+    | "parse_failed";
+  pdfFailure?: {
+    kind: string;
+    message: string;
+    retryable: boolean;
+    retryAfterMs: number | null;
+    action: string;
+  };
+  pdfAcquisition?: {
+    attempts: number;
+    finalUrl?: string;
+    redirects?: number;
+  };
   folder?: string;
   extractedFields?: Record<string, ExtractedSourceValue>;
+  extractedValues?: Record<string, ExtractedSourceValue[]>;
   contradictoryEvidence?: SourcePassage[];
   customReviewFields?: Record<string, ExtractedSourceValue>;
   provider?: string;
   normalizedKey?: string;
   importMethod?: "metadata" | "bibtex";
   importedAt?: string;
+  upload?: { filename: string | null; mediaType: string | null };
   groundedSummary?: GroundedLiteratureSummary;
   query?: string;
   rankingScore?: number;
@@ -55,6 +83,21 @@ export interface SourcePayload {
   rankingComponents?: Record<string, number>;
   rankingExplanation?: string;
   retrievedAt?: string;
+  providerCalls?: Array<{
+    attempts: Array<{
+      attempt: number;
+      durationMs: number;
+      outcome: string;
+      retryAfterMs: number | null;
+      status: number | null;
+    }>;
+    durationMs: number;
+    operation: string;
+    provider: string;
+    status: "completed" | "failed";
+  }>;
+  extractionMethod?: string;
+  extractedAt?: string;
   researchProblem?: string;
   methods?: string[];
   findings?: string[];
@@ -127,10 +170,44 @@ export interface RunPayload {
   status: "planned" | "running" | "completed" | "failed";
 }
 
+export const PROJECT_LIFECYCLE_OBJECT_TYPES = [
+  "question",
+  "objective",
+  "hypothesis",
+  "method",
+  "risk",
+  "task",
+  "collaborator",
+  "agent",
+] as const;
+
+export type ProjectLifecycleObjectType =
+  (typeof PROJECT_LIFECYCLE_OBJECT_TYPES)[number];
+export type ProjectLifecycleStatus =
+  | "draft"
+  | "active"
+  | "blocked"
+  | "completed"
+  | "archived";
+
+export interface ProjectLifecyclePayload<
+  Kind extends ProjectLifecycleObjectType = ProjectLifecycleObjectType,
+> {
+  kind: Kind;
+  status: ProjectLifecycleStatus;
+  ownerId?: string | null;
+  dueAt?: string;
+  role?: string;
+  provider?: string;
+  model?: string;
+  severity?: "low" | "medium" | "high" | "blocking";
+}
+
 export type ResearchObjectPayload =
   | ArtifactPayload
   | SourcePayload
   | EvidencePayload
   | ClaimPayload
   | ExperimentPayload
-  | RunPayload;
+  | RunPayload
+  | ProjectLifecyclePayload;
