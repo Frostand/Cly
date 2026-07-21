@@ -4,6 +4,7 @@ import { createCostLedgerFixture } from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
 import { apiClient } from "../services/api-client";
 import { mockServices } from "../services/mock-services";
+import { onboardingStorageKey } from "../services/onboarding-storage";
 import { resolveInitialFixtureMode, useClyStore } from "./cly-store";
 
 describe("Cly UI store", () => {
@@ -17,10 +18,19 @@ describe("Cly UI store", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+    localStorage.clear();
   });
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    localStorage.setItem(
+      onboardingStorageKey("project-cells"),
+      JSON.stringify({
+        version: 1,
+        projectId: "project-cells",
+        privacyReviewed: true,
+      }),
+    );
     const data = createFixtureRepository("active");
     const costs = createCostLedgerFixture("active", data);
     useClyStore.setState({
@@ -71,6 +81,38 @@ describe("Cly UI store", () => {
     });
     expect(useClyStore.getState().agentContextProjectId).toBeNull();
     expect(useClyStore.getState().agentContextLoading).toBe(true);
+  });
+
+  it("selects an onboarding project without starting API hydration", () => {
+    const hydrate = vi.spyOn(useClyStore.getState(), "loadFromApi");
+
+    useClyStore.getState().selectOnboardingProject("project-cells");
+
+    expect(useClyStore.getState()).toMatchObject({
+      activeProjectId: "project-cells",
+      agentContextLoading: false,
+    });
+    expect(hydrate).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary project switching offline until privacy is reviewed", async () => {
+    localStorage.setItem(
+      onboardingStorageKey("project-cells"),
+      JSON.stringify({
+        version: 1,
+        projectId: "project-cells",
+        privacyReviewed: false,
+        completed: false,
+      }),
+    );
+    const hydrate = vi.spyOn(useClyStore.getState(), "loadFromApi");
+
+    useClyStore.getState().setActiveProject("project-cells");
+
+    await vi.waitFor(() =>
+      expect(useClyStore.getState().agentContextLoading).toBe(false),
+    );
+    expect(hydrate).not.toHaveBeenCalled();
   });
 
   it("ignores stale agent-context hydration after a project switch", () => {

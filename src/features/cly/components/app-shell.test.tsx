@@ -12,6 +12,7 @@ import type { AgentConfiguration } from "../agent-sessions/types";
 import type { ScreenId } from "../domain/types";
 import { createCostLedgerFixture } from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
+import { onboardingStorageKey } from "../services/onboarding-storage";
 import { projectServices } from "../services/project-services";
 import { useClyStore } from "../store/cly-store";
 import { ClyAppShell } from "./app-shell";
@@ -72,6 +73,15 @@ describe("Cly application shell", () => {
 
   beforeEach(() => {
     localStorage.clear();
+    localStorage.setItem(
+      onboardingStorageKey("project-cly"),
+      JSON.stringify({
+        version: 1,
+        projectId: "project-cly",
+        completed: true,
+        privacyReviewed: true,
+      }),
+    );
     sessionStorage.clear();
     const data = createFixtureRepository("active");
     const costs = createCostLedgerFixture("active", data);

@@ -42,6 +42,7 @@ const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 const DRIZZLE_MIGRATIONS_FOLDER = path.join(__dirname, "drizzle");
 const THEME_PREFERENCES_CONFIG_KEY = "themePreferences";
 const CLY_DEV_WINDOW_LAYOUT_CONFIG_KEY = "clyDevWindowLayoutV1";
+const ONBOARDING_DRAFT_CONFIG_KEY_PREFIX = "clyOnboardingDraftV1:";
 const LEGACY_INSTALL_ID_CONFIG_KEY = "installId";
 const PERSISTED_STATE_CONFIG_KEYS = [
   "activeProjectId",
@@ -348,7 +349,11 @@ const KNOWN_TABLE_NAMES = new Set([
   "chat_messages",
   "chats",
   "config",
+  "experiment_runs",
   "projects",
+  "provenance_events",
+  "research_objects",
+  "research_relationships",
   "__drizzle_migrations",
   "schema_migrations",
 ]);
@@ -407,6 +412,20 @@ function writeConfig(database, key, value, updatedAt) {
       `,
     )
     .run(key, toJson(value), updatedAt);
+}
+
+function onboardingDraftConfigKey(projectId) {
+  if (projectId === null || projectId === undefined) {
+    return `${ONBOARDING_DRAFT_CONFIG_KEY_PREFIX}new-project`;
+  }
+
+  const normalizedProjectId =
+    typeof projectId === "string" ? projectId.trim() : "";
+  if (!normalizedProjectId || normalizedProjectId.length > 512) {
+    throw new TypeError("A valid onboarding project id is required.");
+  }
+
+  return `${ONBOARDING_DRAFT_CONFIG_KEY_PREFIX}${normalizedProjectId}`;
 }
 
 function buildProjectMetadata(project) {
@@ -1422,6 +1441,36 @@ export function savePersistedThemePreference(
     database,
     THEME_PREFERENCES_CONFIG_KEY,
     preferences,
+    new Date().toISOString(),
+  );
+  return true;
+}
+
+export function loadOnboardingDraft(projectId, { databasePath } = {}) {
+  const database = getStateDatabase(databasePath);
+  const row = database
+    .prepare("SELECT value FROM config WHERE key = ? LIMIT 1")
+    .get(onboardingDraftConfigKey(projectId));
+  const draft = parseJson(row?.value, null);
+  return isRecord(draft) && draft.version === 1 ? draft : null;
+}
+
+export function saveOnboardingDraft(draft, { databasePath } = {}) {
+  if (!isRecord(draft) || draft.version !== 1) {
+    throw new TypeError("A versioned onboarding draft is required.");
+  }
+
+  const projectId =
+    typeof draft.projectId === "string" ? draft.projectId.trim() : null;
+  if (draft.projectId !== null && !projectId) {
+    throw new TypeError("The onboarding draft project id is invalid.");
+  }
+
+  const database = getStateDatabase(databasePath);
+  writeConfig(
+    database,
+    onboardingDraftConfigKey(projectId),
+    { ...draft, projectId },
     new Date().toISOString(),
   );
   return true;

@@ -33,7 +33,8 @@
     "storybook:build": "storybook build",
     "format": "biome format --write .",
     "licenses:check": "node scripts/check-production-licenses.mjs",
-    "capabilities:check": "node scripts/check-cly-capabilities.mjs"
+    "capabilities:check": "node scripts/check-cly-capabilities.mjs",
+    "companion-contract:check": "node scripts/check-companion-mode-contract.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",

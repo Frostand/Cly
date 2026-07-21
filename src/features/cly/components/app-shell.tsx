@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgentSessionsScreen } from "../agent-sessions";
 import type { ScreenId } from "../domain/types";
 import { ContextScreen } from "../screens/context";
@@ -11,6 +11,7 @@ import {
   ProvenanceScreen,
   ReproducibilityScreen,
 } from "../screens/integrity";
+import { ClyOnboardingScreen } from "../screens/onboarding-route";
 import { OverviewScreen } from "../screens/overview";
 import {
   DevWorkspaceScreen,
@@ -30,6 +31,8 @@ import {
   ModelsAgentsScreen,
   SettingsScreen,
 } from "../screens/system";
+import { loadOnboardingDraft } from "../services/onboarding-storage";
+import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
 import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
@@ -138,7 +141,7 @@ function runMenuCommand(command: string) {
 }
 
 export function ClyAppShell() {
-  useClyDataBootstrap();
+  const bootstrapStatus = useClyDataBootstrap();
   const activeScreen = useClyStore((s) => s.activeScreen);
   const activeProduct = useClyStore((s) => s.activeProduct);
   const sidebarCollapsed = useClyStore((s) => s.sidebarCollapsed);
@@ -146,12 +149,53 @@ export function ClyAppShell() {
   const selectedId = useClyStore((s) => s.selectedId);
   const agentSessionsMode = useClyStore((s) => s.agentSessionsMode);
   const fixtureMode = useClyStore((s) => s.fixtureMode);
+  const projects = useClyStore((s) => s.data.projects);
+  const onboardingRequested = useClyStore((s) => s.onboardingRequested);
   const activeProjectId = useClyStore((s) => s.activeProjectId);
   const activeDevSection = useClyStore((s) => s.activeDevSection);
   const selectedAgentSessionId = useClyStore((s) => s.selectedAgentSessionId);
   const setScreen = useClyStore((s) => s.setScreen);
   const ActiveScreen = screens[activeScreen];
   const applyingDeepLink = useRef(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<
+    boolean | null
+  >(null);
+  const activeProject = projects.find(
+    (project) => project.id === activeProjectId,
+  );
+  const onboardingRequired =
+    !isClyDemoRuntime &&
+    bootstrapStatus === "ready" &&
+    (onboardingRequested !== null ||
+      !activeProject ||
+      onboardingCompleted !== true);
+
+  useEffect(() => {
+    if (
+      isClyDemoRuntime ||
+      bootstrapStatus !== "ready" ||
+      onboardingRequested !== null ||
+      !activeProject
+    ) {
+      setOnboardingCompleted(null);
+      return;
+    }
+
+    let cancelled = false;
+    setOnboardingCompleted(null);
+    void loadOnboardingDraft(activeProjectId || null)
+      .then((draft) => {
+        if (!cancelled) setOnboardingCompleted(draft.completed);
+      })
+      .catch(() => {
+        // The onboarding screen owns the actionable retry UI. Treat a failed
+        // gate read as incomplete so a durable-load failure cannot unlock Cly.
+        if (!cancelled) setOnboardingCompleted(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject, activeProjectId, bootstrapStatus, onboardingRequested]);
 
   useEffect(() => {
     if (navigator.userAgent.includes("jsdom")) return;
@@ -322,6 +366,52 @@ export function ClyAppShell() {
     ).dream;
     return desktop?.onClyCommand?.(runMenuCommand);
   }, []);
+
+  if (!isClyDemoRuntime && bootstrapStatus === "loading") {
+    return (
+      <ClyMotionProvider>
+        <main className="cly-app">
+          <Titlebar />
+          <div className="cly-onboarding-boot">
+            <LoadingState label="Loading local projects" />
+          </div>
+        </main>
+      </ClyMotionProvider>
+    );
+  }
+
+  if (
+    !isClyDemoRuntime &&
+    bootstrapStatus === "ready" &&
+    onboardingRequested === null &&
+    activeProject &&
+    onboardingCompleted === null
+  ) {
+    return (
+      <ClyMotionProvider>
+        <main className="cly-app">
+          <Titlebar />
+          <div className="cly-onboarding-boot">
+            <LoadingState label="Loading saved setup" />
+          </div>
+        </main>
+      </ClyMotionProvider>
+    );
+  }
+
+  if (onboardingRequired) {
+    return (
+      <ClyMotionProvider>
+        <main className="cly-app">
+          <Titlebar />
+          <ClyOnboardingScreen
+            onCompleted={() => setOnboardingCompleted(true)}
+          />
+          <Toasts />
+        </main>
+      </ClyMotionProvider>
+    );
+  }
 
   return (
     <ClyMotionProvider>

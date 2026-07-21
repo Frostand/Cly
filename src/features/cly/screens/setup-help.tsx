@@ -5,11 +5,17 @@ import {
   Circle,
   Compass,
   LifeBuoy,
+  RotateCcw,
   Search,
 } from "lucide-react";
 import { StatusIndicator, WorkspaceHeader } from "../components/design-system";
 import { Button } from "../components/primitives";
+import { restartOnboarding } from "../domain/onboarding";
 import type { ScreenId } from "../domain/types";
+import {
+  loadOnboardingDraft,
+  saveOnboardingDraft,
+} from "../services/onboarding-storage";
 import { useClyStore } from "../store/cly-store";
 
 interface SetupStep {
@@ -90,14 +96,26 @@ export function SetupHelpScreen() {
           </StatusIndicator>
         }
         actions={
-          next ? (
+          <div className="cly-help-actions">
             <Button
-              variant="primary"
-              onClick={() => setScreen(next.destination)}
+              onClick={async () => {
+                const persisted = await loadOnboardingDraft(activeProjectId);
+                const draft = restartOnboarding(persisted);
+                await saveOnboardingDraft(draft);
+                useClyStore.getState().setOnboardingRequested("current");
+              }}
             >
-              {next.action} <ArrowRight size={14} />
+              <RotateCcw size={14} /> Run guided setup again
             </Button>
-          ) : null
+            {next ? (
+              <Button
+                variant="primary"
+                onClick={() => setScreen(next.destination)}
+              >
+                {next.action} <ArrowRight size={14} />
+              </Button>
+            ) : null}
+          </div>
         }
       />
 

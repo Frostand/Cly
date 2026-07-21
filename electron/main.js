@@ -30,9 +30,11 @@ import { detectAvailableEditors, openProjectInEditor } from "./editors.js";
 import {
   closePersistedStateDatabase,
   loadClyDevWindowLayout,
+  loadOnboardingDraft,
   loadPersistedState,
   loadPersistedThemePreference,
   saveClyDevWindowLayout,
+  saveOnboardingDraft,
   savePersistedState,
   savePersistedThemePreference,
 } from "./persisted-state.js";
@@ -441,6 +443,14 @@ async function pickDirectory(event) {
     return null;
   }
 
+  const e2eProjectPath =
+    process.env.CLY_E2E === "1" ? process.env.CLY_E2E_PROJECT_PATH?.trim() : "";
+  if (e2eProjectPath) {
+    return projectAuthorityRegistry.authorizePathForRegistration(
+      path.resolve(e2eProjectPath),
+    );
+  }
+
   const result = await dialog.showOpenDialog(owner, {
     properties: ["openDirectory"],
     title: "Select project folder",
@@ -767,6 +777,16 @@ ipcMain.handle("state:load", (event) => {
   if (senderId === null) throw new Error("State access is not allowed.");
   return loadPersistedState();
 });
+ipcMain.handle("onboarding-draft:load", (event, { projectId } = {}) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null)
+    throw new Error("Onboarding state access is not allowed.");
+  return loadOnboardingDraft(projectId ?? null);
+});
 ipcMain.on("api:get-session-token", (event) => {
   const senderId = getBoundRendererId(event, {
     allowedRoles: ["agent", "workspace"],
@@ -795,6 +815,16 @@ const getStateSaveQueue = () =>
   (stateSaveQueue ??= createStateSaveQueue({
     saveState: savePersistedState,
   }));
+const onboardingDraftSaveQueues = new Map();
+const getOnboardingDraftSaveQueue = (projectId) => {
+  const key = typeof projectId === "string" ? projectId : "new-project";
+  let queue = onboardingDraftSaveQueues.get(key);
+  if (!queue) {
+    queue = createStateSaveQueue({ saveState: saveOnboardingDraft });
+    onboardingDraftSaveQueues.set(key, queue);
+  }
+  return queue;
+};
 
 ipcMain.handle("state:save", (event, state) => {
   const senderId = getPrivilegedRendererId(event, {
@@ -805,6 +835,17 @@ ipcMain.handle("state:save", (event, state) => {
   if (senderId === null) throw new Error("State writes are not allowed.");
   projectAuthorityRegistry.validateState(state);
   return getStateSaveQueue().save(state);
+});
+
+ipcMain.handle("onboarding-draft:save", (event, draft) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null)
+    throw new Error("Onboarding state writes are not allowed.");
+  return getOnboardingDraftSaveQueue(draft?.projectId).save(draft);
 });
 
 ipcMain.handle("cly-dev:get-window-role", (event) => {
@@ -1265,6 +1306,11 @@ app.on("before-quit", (event) => {
     .then(async () => {
       await rendererServerManager?.stop();
       await stateSaveQueue?.flushAndClose();
+      await Promise.all(
+        [...onboardingDraftSaveQueues.values()].map((queue) =>
+          queue.flushAndClose(),
+        ),
+      );
       closePersistedStateDatabase();
     })
     .catch((error) => {

@@ -10,7 +10,9 @@ import {
   closePersistedStateDatabase,
   getStateDatabase,
   loadClyDevWindowLayout,
+  loadOnboardingDraft,
   saveClyDevWindowLayout,
+  saveOnboardingDraft,
   savePersistedState,
 } from "./persisted-state.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
@@ -224,6 +226,37 @@ describe("persisted research storage", () => {
     });
   });
 
+  it("persists project-scoped onboarding drafts across reopen and IDE snapshots", () => {
+    const databasePath = createDatabasePath();
+    const draft = {
+      version: 1,
+      projectId: "project-onboarding",
+      currentStep: "research",
+      completed: false,
+      topic: "Durable evidence chains",
+      primaryQuestion: "Does the draft survive a renderer origin change?",
+      updatedAt: "2026-07-21T16:00:00.000Z",
+    };
+
+    expect(saveOnboardingDraft(draft, { databasePath })).toBe(true);
+    savePersistedState(
+      {
+        projects: [],
+        closedProjects: [],
+        chats: [],
+        messagesByChatId: {},
+        settings: {},
+      },
+      { databasePath },
+    );
+    closePersistedStateDatabase();
+
+    expect(loadOnboardingDraft("project-onboarding", { databasePath })).toEqual(
+      draft,
+    );
+    expect(loadOnboardingDraft("another-project", { databasePath })).toBeNull();
+  });
+
   it("installs every agent-context table and immutable trigger on a clean database", () => {
     const database = getStateDatabase(createDatabasePath());
     const tables = database
@@ -308,7 +341,49 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784160000000 });
+    ).toEqual({ createdAt: 1784520000000 });
+    expect(
+      upgraded
+        .prepare("PRAGMA table_info(research_objects)")
+        .all()
+        .map((row) => row.name),
+    ).toContain("version");
+    expect(
+      upgraded
+        .prepare("PRAGMA table_info(research_relationships)")
+        .all()
+        .map((row) => row.name),
+    ).toEqual(
+      expect.arrayContaining(["evidence", "verification_state", "version"]),
+    );
+    expect(
+      upgraded
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('research_object_staleness', 'research_object_staleness_transitions') ORDER BY name",
+        )
+        .all()
+        .map((row) => row.name),
+    ).toEqual([
+      "research_object_staleness",
+      "research_object_staleness_transitions",
+    ]);
+    expect(
+      upgraded
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('reproducibility_audits','reproducibility_finding_dispositions') ORDER BY name",
+        )
+        .all(),
+    ).toEqual([
+      { name: "reproducibility_audits" },
+      { name: "reproducibility_finding_dispositions" },
+    ]);
+    expect(
+      upgraded
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'research_evidence_passage_unique'",
+        )
+        .get(),
+    ).toEqual({ name: "research_evidence_passage_unique" });
     expect(
       upgraded
         .prepare(
@@ -396,7 +471,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784224800000 });
+    ).toEqual({ createdAt: 1784520000000 });
     expect(upgraded.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 
     closePersistedStateDatabase();
@@ -440,7 +515,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784224800000 });
+    ).toEqual({ createdAt: 1784520000000 });
     expect(
       upgradedFrom0018
         .prepare(
@@ -473,7 +548,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784224800000 });
+    ).toEqual({ createdAt: 1784520000000 });
   });
 
   it("configures a bounded wait for concurrent SQLite writers", () => {

@@ -214,6 +214,48 @@ export function ContextScreen() {
       `Context ${action} recorded`,
     );
 
+  const markOutdated = (item: AgentContextItem) => {
+    const approvedRevision = item.approvedRevision;
+    if (!approvedRevision) return Promise.resolve();
+    return perform(async () => {
+      const existingRevisionIds = new Set(
+        item.revisions.map((revision) => revision.id),
+      );
+      const proposed = await projectServices.context.proposeRevision(
+        projectId,
+        item.id,
+        item.version,
+        {
+          originClass: approvedRevision.originClass,
+          referenceId: approvedRevision.referenceId,
+          content: approvedRevision.content,
+          confidence: approvedRevision.confidence,
+          evidenceRefs: approvedRevision.evidenceRefs,
+          lastCheckedAt: approvedRevision.lastCheckedAt,
+          producerProcess: actor.producerProcess,
+          producerModel: actor.producerModel,
+          verificationState: "stale",
+          sensitivity: approvedRevision.sensitivity,
+        },
+        actor,
+      );
+      const staleRevision = proposed.revisions.find(
+        (revision) =>
+          !existingRevisionIds.has(revision.id) &&
+          revision.verificationState === "stale",
+      );
+      if (!staleRevision)
+        throw new Error("The outdated revision could not be identified.");
+      await projectServices.context.approveRevision(
+        projectId,
+        item.id,
+        staleRevision.id,
+        proposed.version,
+        actor,
+      );
+    }, "Context marked outdated");
+  };
+
   const savePack = async () => {
     if (!configuration || !role) {
       setError(
@@ -671,6 +713,28 @@ export function ContextScreen() {
                                         {historical.producerProcess}
                                       </small>
                                     </span>
+                                    <Button
+                                      disabled={
+                                        busy ||
+                                        item.locked ||
+                                        Boolean(item.deletedAt)
+                                      }
+                                      onClick={() =>
+                                        void perform(
+                                          () =>
+                                            projectServices.context.approveRevision(
+                                              projectId,
+                                              item.id,
+                                              historical.id,
+                                              item.version,
+                                              actor,
+                                            ),
+                                          `Revision r${historical.revision} restored`,
+                                        )
+                                      }
+                                    >
+                                      Restore r{historical.revision}
+                                    </Button>
                                   </div>
                                 ),
                               )}
@@ -713,6 +777,20 @@ export function ContextScreen() {
                                 <Lock size={14} />
                               )}
                               {item.locked ? "Unlock" : "Lock"}
+                            </Button>
+                            <Button
+                              disabled={
+                                busy ||
+                                item.locked ||
+                                Boolean(item.deletedAt) ||
+                                !item.approvedRevision ||
+                                item.approvedRevision.verificationState ===
+                                  "stale"
+                              }
+                              onClick={() => void markOutdated(item)}
+                            >
+                              <AlertTriangle size={14} />
+                              Mark outdated
                             </Button>
                             <Button
                               disabled={busy || item.locked}

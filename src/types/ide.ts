@@ -552,6 +552,10 @@ export interface DesktopApi {
 
   loadState: () => Promise<Partial<PersistedIdeState>>;
   saveState: (state: PersistedIdeState) => Promise<boolean>;
+  loadOnboardingDraft: (projectId: string | null) => Promise<unknown | null>;
+  saveOnboardingDraft: (
+    draft: import("@/features/cly/domain/onboarding").OnboardingDraft,
+  ) => Promise<boolean>;
   getThemePreferences: () => Promise<{
     accentColor?: string;
     baseColor?: string;

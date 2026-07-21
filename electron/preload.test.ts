@@ -27,7 +27,13 @@ describe("Electron preload API session authority", () => {
     vm.runInNewContext(source, {
       console,
       document,
-      process,
+      process: {
+        argv: [
+          process.execPath,
+          "electron/preload.cjs",
+          "--dream-api-session-token=production-session-token",
+        ],
+      },
       require: (specifier: string) => {
         expect(specifier).toBe("electron");
         return {
@@ -45,9 +51,7 @@ describe("Electron preload API session authority", () => {
       window,
     });
 
-    expect(electronMocks.sendSync).toHaveBeenCalledWith(
-      "api:get-session-token",
-    );
+    expect(electronMocks.sendSync).not.toHaveBeenCalled();
     expect(electronMocks.exposeInMainWorld).toHaveBeenCalledWith(
       "dream",
       expect.objectContaining({
@@ -58,6 +62,8 @@ describe("Electron preload API session authority", () => {
 
     const api = electronMocks.exposeInMainWorld.mock.calls[0]?.[1];
     await api.getWindowRole();
+    await api.loadOnboardingDraft("project-1");
+    await api.saveOnboardingDraft({ version: 1, projectId: "project-1" });
     await api.detachWorkspace({ sessionId: "session-1" });
     await api.dispatchWorkspaceIntent({
       mutationId: "mutation-1",
@@ -69,6 +75,13 @@ describe("Electron preload API session authority", () => {
     expect(electronMocks.invoke).toHaveBeenCalledWith(
       "cly-dev:get-window-role",
     );
+    expect(electronMocks.invoke).toHaveBeenCalledWith("onboarding-draft:load", {
+      projectId: "project-1",
+    });
+    expect(electronMocks.invoke).toHaveBeenCalledWith("onboarding-draft:save", {
+      version: 1,
+      projectId: "project-1",
+    });
     expect(electronMocks.invoke).toHaveBeenCalledWith(
       "cly-dev:detach-workspace",
       { sessionId: "session-1" },
