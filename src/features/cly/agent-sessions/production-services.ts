@@ -10,6 +10,7 @@ type SessionApi = Pick<
   | "fetchClyDevSessionOverviews"
   | "fetchClyDevSessionEvents"
   | "createClyDevSessionAggregate"
+  | "startClyDevSession"
   | "appendClyDevSessionEvent"
 >;
 
@@ -76,6 +77,13 @@ export function createProductionAgentSessionServices({
         input,
       );
       return aggregate.session;
+    },
+
+    async startSession(
+      projectId: string,
+      input: Parameters<SessionApi["startClyDevSession"]>[1],
+    ) {
+      return api.startClyDevSession(projectId, input);
     },
 
     appendEvent: append,

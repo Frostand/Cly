@@ -1,5 +1,12 @@
-import { AppWindow, ArrowLeft, Bot, Laptop, RotateCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  AppWindow,
+  ArrowLeft,
+  Bot,
+  Laptop,
+  Play,
+  RotateCw,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { getDesktopApi } from "../../../lib/electron";
 import { Button, EmptyState, PageHeader } from "../components/primitives";
 import { apiClient } from "../services/api-client";
@@ -9,6 +16,10 @@ import { DeviceSyncPanel } from "./device-sync-panel";
 import { LiveClyDevWorkbench } from "./live-workbench";
 import { productionAgentSessionServices } from "./production-services";
 import { ResumeTaskDialog } from "./resume-task-dialog";
+import {
+  type ProductionTaskStartInput,
+  StartTaskDialog,
+} from "./start-task-dialog";
 
 const DemoAgentSessionsScreen =
   __CLY_INCLUDE_DEMOS__ && isClyDemoRuntime
@@ -25,6 +36,7 @@ export function AgentSessionsScreen() {
 
 function ProductionAgentSessionsScreen() {
   const [resumeOpen, setResumeOpen] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
   const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
   const requestedSessionId = useClyStore(
     (state) => state.selectedAgentSessionId,
@@ -37,6 +49,35 @@ function ProductionAgentSessionsScreen() {
   const loading = useClyStore((state) => state.clyDevSessionsLoading);
   const error = useClyStore((state) => state.clyDevSessionsError);
   const load = useClyStore((state) => state.loadClyDevSessions);
+  const project = useClyStore((state) =>
+    state.data.projects.find(
+      (candidate) => candidate.id === state.activeProjectId,
+    ),
+  );
+  const claims = useClyStore((state) => state.data.claims);
+  const experiments = useClyStore((state) => state.data.experiments);
+  const runs = useClyStore((state) => state.data.runs);
+  const references = useMemo(
+    () =>
+      [
+        ...claims.map((item) => ({
+          id: item.id,
+          title: item.text,
+          kind: "Claim",
+        })),
+        ...experiments.map((item) => ({
+          id: item.id,
+          title: item.name,
+          kind: "Experiment",
+        })),
+        ...runs.map((item) => ({
+          id: item.id,
+          title: item.name,
+          kind: "Run",
+        })),
+      ].slice(0, 24),
+    [claims, experiments, runs],
+  );
 
   useEffect(() => {
     void load(projectId);
@@ -58,6 +99,22 @@ function ProductionAgentSessionsScreen() {
       "queued",
     );
     await load(projectId);
+  };
+
+  const start = async (input: ProductionTaskStartInput) => {
+    const result = await productionAgentSessionServices.startSession(
+      projectId,
+      input,
+    );
+    await load(projectId);
+    setSelectedSessionId(result.session.id);
+    useClyStore.setState({ selectedAgentSessionId: result.session.id });
+    if (result.execution.status === "failed") {
+      setHandoffNotice(
+        result.execution.error?.message ??
+          "The provider run failed. Review the durable session log for details.",
+      );
+    }
   };
 
   const prepareHandoff = async (sessionId: string) => {
@@ -132,6 +189,9 @@ function ProductionAgentSessionsScreen() {
         actions={
           <>
             <DeviceSyncPanel projectId={projectId} />
+            <Button variant="primary" onClick={() => setStartOpen(true)}>
+              <Play size={13} aria-hidden="true" /> Start task
+            </Button>
             <Button onClick={() => setResumeOpen(true)}>
               <Laptop size={13} aria-hidden="true" /> Resume on this machine
             </Button>
@@ -205,6 +265,13 @@ function ProductionAgentSessionsScreen() {
         open={resumeOpen}
         onClose={() => setResumeOpen(false)}
         onResumed={() => void load(projectId)}
+      />
+      <StartTaskDialog
+        open={startOpen}
+        projectName={project?.name ?? "active project"}
+        references={references}
+        onClose={() => setStartOpen(false)}
+        onStart={start}
       />
     </div>
   );

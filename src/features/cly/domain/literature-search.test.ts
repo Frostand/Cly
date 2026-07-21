@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  expandLiteratureQuery,
   findDuplicateSource,
   rankLiterature,
   rankLiteratureWithRrf,
@@ -82,6 +83,59 @@ describe("literature ranking", () => {
     });
   });
 
+  it("retains every extracted passage and confidence in the source projection", () => {
+    const source = sourceFromLiteraturePaper({
+      id: "pubmed:1",
+      provider: "pubmed",
+      providerId: "1",
+      title: "A paper",
+      authors: [],
+      abstract: "Abstract.",
+      url: "https://pubmed.ncbi.nlm.nih.gov/1/",
+      tags: [],
+      extraction: {
+        hasFullText: true,
+        fullTextStatus: "parsed",
+        extractedAt: "2026-07-21T00:00:00.000Z",
+        method: "bounded_pdf_rules_v1",
+        researchProblem: null,
+        methods: [
+          {
+            value: "Method one.",
+            passage: { quote: "Method one.", locator: "pdf:page:1" },
+            confidence: 92,
+            verificationState: "unverified",
+          },
+          {
+            value: "Method two.",
+            passage: { quote: "Method two.", locator: "pdf:page:2" },
+            confidence: 88,
+            verificationState: "unverified",
+          },
+        ],
+        datasets: [],
+        evidence: [],
+        limitations: [
+          {
+            value: "Limited cohort.",
+            passage: { quote: "Limited cohort.", locator: "pdf:page:3" },
+            confidence: 90,
+            verificationState: "unverified",
+          },
+        ],
+        reproducibility: [],
+        contradictions: [],
+      },
+    });
+    expect(source.extractedValues).toMatchObject({
+      methods: [
+        { passage: { locator: "pdf:page:1" }, confidence: 92 },
+        { passage: { locator: "pdf:page:2" }, confidence: 88 },
+      ],
+      limitations: [{ passage: { locator: "pdf:page:3" }, confidence: 90 }],
+    });
+  });
+
   it("deduplicates provider papers by stable identity", () => {
     const existing = {
       ...source("existing", "Existing", "Abstract"),
@@ -146,7 +200,7 @@ describe("literature ranking", () => {
       "Uncertainty estimation",
       "Distribution behavior.",
     );
-    const results = await rankLiteratureWithRrf("calibration", [candidate], {
+    const results = await rankLiteratureWithRrf("photosynthesis", [candidate], {
       method: "cross_encoder_tei:test",
       async rank() {
         return [
@@ -164,5 +218,97 @@ describe("literature ranking", () => {
         components: { keywordRank: 0, semanticRank: 1 },
       },
     ]);
+  });
+
+  it("explains topic, method, dataset, evidence, recency, availability, reproducibility, and contradiction factors", () => {
+    const baseline = source(
+      "baseline",
+      "Calibration study",
+      "A calibration result.",
+    );
+    baseline.year = 2012;
+    const transparent = source(
+      "transparent",
+      "Calibration under shift",
+      "Code and data are available for reproducibility.",
+    );
+    transparent.year = 2026;
+    transparent.methods = ["We use conformal prediction."];
+    transparent.findings = ["Coverage improves on ShiftBench."];
+    transparent.tags = ["ShiftBench", "dataset", "GitHub"];
+    transparent.extractedFields = {
+      dataset: {
+        value: "ShiftBench dataset",
+        passage: { quote: "We evaluate ShiftBench." },
+        confidence: 92,
+        verificationState: "unverified",
+      },
+    };
+    transparent.contradictoryEvidence = [
+      { quote: "The method did not improve the hardest regime." },
+    ];
+
+    const results = rankLiterature(
+      "calibration conformal ShiftBench coverage",
+      [baseline, transparent],
+      "2026-07-21T18:00:00.000Z",
+    );
+    expect(results[0].source.id).toBe("transparent");
+    expect(results[0].components).toMatchObject({
+      topicFit: expect.any(Number),
+      methodFit: expect.any(Number),
+      datasetFit: expect.any(Number),
+      evidenceFit: expect.any(Number),
+      recency: 1,
+      codeDataAvailability: 1,
+      reproducibility: 1,
+      contradiction: 1,
+    });
+  });
+
+  it("expands, semantically filters, and synthesizes with deterministic rationale", async () => {
+    expect(expandLiteratureQuery("robust calibration")).toMatchObject({
+      normalizedQuery: "robust calibration",
+      expansionTerms: expect.arrayContaining([
+        "distribution-shift",
+        "coverage",
+      ]),
+    });
+    const results = await rankLiteratureWithRrf(
+      "robust calibration",
+      [
+        source(
+          "relevant",
+          "Reliability under distribution shift",
+          "Coverage is measured on a benchmark dataset.",
+        ),
+        source("irrelevant", "Marine ecology", "A survey of coral reefs."),
+      ],
+      {
+        method: "deterministic_expanded_embedding_v1",
+        async rank(query, sources) {
+          return sources.flatMap((item) =>
+            item.id === "relevant"
+              ? [
+                  {
+                    sourceId: item.id,
+                    score: 0.75,
+                    explanation: `Matched expanded query ${query}.`,
+                  },
+                ]
+              : [],
+          );
+        },
+      },
+      "2026-07-21T00:00:00.000Z",
+    );
+    expect(results.map((result) => result.source.id)).toEqual(["relevant"]);
+    expect(results[0].explanation).toContain(
+      "embedding-style semantic filtering",
+    );
+    expect(results.synthesis).toMatchObject({
+      method: "deterministic_ranked_passages_v1",
+      sourceIds: ["relevant"],
+    });
   });
 });

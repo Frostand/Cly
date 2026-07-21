@@ -196,6 +196,8 @@ export function OnboardingScreen({
 
   useEffect(() => {
     if (initialDraft) return;
+    // Incrementing loadAttempt is the explicit retry signal for this effect.
+    void loadAttempt;
     let cancelled = false;
     setDraftLoaded(false);
     setDraftLoadError(null);

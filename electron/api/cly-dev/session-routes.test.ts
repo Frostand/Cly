@@ -86,6 +86,153 @@ describe("Cly Dev session routes", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("creates a server-derived durable aggregate and starts its selected provider without blocking the approval UI", async () => {
+    const createSessionAggregate = vi.fn(() => ({
+      session: { id: "session-started" },
+      workspace: { id: "workspace-started" },
+      contextManifest: { id: "manifest-started" },
+      task: { id: "task-started" },
+    }));
+    const execute = vi.fn(async () => ({ status: "completed" }));
+    const resolveSessionStartContext = vi.fn(async () => ({
+      project: { id: "project-a", name: "Research project" },
+      workspace: {
+        repositoryPath: "/authorized/project",
+        worktreePath: "/authorized/project",
+        branch: "feature/start",
+        commitSha: "a".repeat(40),
+      },
+      machine: {
+        id: "local-machine",
+        platform: "darwin",
+        architecture: "arm64",
+      },
+    }));
+    const app = new Hono();
+    registerClyDevSessionRoutes(app, {
+      getRepository: () => ({ createSessionAggregate }),
+      getRuntime: () => ({ execute, cancel: vi.fn(), resume: vi.fn() }),
+      resolveSessionStartContext,
+    });
+
+    const response = await app.request(
+      "/api/projects/project-a/cly-dev/session-starts",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: "Fix task creation",
+          objective:
+            "Start a production provider task and preserve its evidence.",
+          linearIssue: "CLY-71",
+          provider: {
+            id: "anthropic-claude",
+            model: "claude-sonnet-4-6",
+          },
+          researchObjectIds: ["claim-1", "experiment-1", "claim-1"],
+          budget: { maxTotalTokens: 12000 },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      session: { id: "session-started" },
+      execution: { status: "queued", requestId: expect.any(String) },
+    });
+    expect(resolveSessionStartContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-a",
+        researchObjectIds: ["claim-1", "experiment-1", "claim-1"],
+      }),
+    );
+    expect(createSessionAggregate).toHaveBeenCalledWith(
+      "project-a",
+      expect.objectContaining({
+        task: expect.objectContaining({
+          title: "Fix task creation (CLY-71)",
+          researchObjectIds: ["claim-1", "experiment-1"],
+        }),
+        contextManifest: expect.objectContaining({
+          transferable: {
+            summary: "Task context for Fix task creation (CLY-71).",
+            entries: [
+              { kind: "research_object", researchObjectId: "claim-1" },
+              { kind: "research_object", researchObjectId: "experiment-1" },
+            ],
+          },
+        }),
+      }),
+    );
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-a",
+        sessionId: "session-started",
+        prompt: "Start a production provider task and preserve its evidence.",
+        mode: "execute",
+        budget: { maxTotalTokens: 12000 },
+      }),
+    );
+  });
+
+  it("returns the durable session immediately while provider failures are recorded in its log", async () => {
+    const createSessionAggregate = vi.fn(() => ({
+      session: { id: "session-failed" },
+      workspace: { id: "workspace-failed" },
+      contextManifest: { id: "manifest-failed" },
+      task: { id: "task-failed" },
+    }));
+    const app = new Hono();
+    registerClyDevSessionRoutes(app, {
+      getRepository: () => ({ createSessionAggregate }),
+      getRuntime: () => ({
+        execute: vi.fn(async () => ({
+          status: "failed",
+          error: {
+            code: "AUTHENTICATION_EXPIRED",
+            message: "Provider authentication has expired.",
+            retryable: false,
+          },
+        })),
+        cancel: vi.fn(),
+        resume: vi.fn(),
+      }),
+      resolveSessionStartContext: async () => ({
+        project: { id: "project-a", name: "Research project" },
+        workspace: {
+          repositoryPath: "/authorized/project",
+          worktreePath: "/authorized/project",
+          branch: "main",
+          commitSha: "a".repeat(40),
+        },
+        machine: {
+          id: "local-machine",
+          platform: "darwin",
+          architecture: "arm64",
+        },
+      }),
+    });
+
+    const response = await app.request(
+      "/api/projects/project-a/cly-dev/session-starts",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: "Authenticate provider",
+          objective: "Retry after signing in.",
+          provider: { id: "openai-codex", model: "gpt-5" },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      session: { id: "session-failed" },
+      execution: { status: "queued", requestId: expect.any(String) },
+    });
+  });
+
   it("passes bounded event and overview pagination through HTTP", async () => {
     const listEvents = vi.fn().mockReturnValue([]);
     const listSessionOverviews = vi

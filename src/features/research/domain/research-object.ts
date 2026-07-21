@@ -5,9 +5,54 @@ import type {
   ClaimPayload,
   EvidencePayload,
   ExperimentPayload,
+  ProjectLifecycleObjectType,
+  ProjectLifecyclePayload,
   RunPayload,
   SourcePayload,
 } from "./research-types";
+
+const lifecyclePayloadSchemas = [
+  "question",
+  "objective",
+  "hypothesis",
+  "method",
+  "risk",
+  "task",
+  "collaborator",
+  "agent",
+] as const satisfies readonly ProjectLifecycleObjectType[];
+
+const extractedSourceValueSchema = z.object({
+  value: z.string().trim().min(1).max(20_000),
+  passage: z.object({
+    quote: z.string().trim().min(1).max(20_000),
+    locator: z.string().trim().min(1).max(1_000).optional(),
+    sourceId: z.string().trim().min(1).max(500).optional(),
+  }),
+  confidence: z.number().finite().min(0).max(100),
+  verificationState: z.enum(["unverified", "verified", "rejected"]),
+  verifiedBy: z.string().trim().min(1).max(500).optional(),
+  verifiedAt: z.iso.datetime().optional(),
+});
+
+const literatureProviderCallSchema = z.object({
+  attempts: z
+    .array(
+      z.object({
+        attempt: z.number().int().min(1),
+        durationMs: z.number().finite().min(0),
+        outcome: z.string().trim().min(1).max(200),
+        retryAfterMs: z.number().int().min(0).nullable(),
+        status: z.number().int().min(100).max(599).nullable(),
+      }),
+    )
+    .min(1)
+    .max(10),
+  durationMs: z.number().finite().min(0),
+  operation: z.string().trim().min(1).max(200),
+  provider: z.string().trim().min(1).max(200),
+  status: z.enum(["completed", "failed"]),
+});
 
 const payloadSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -51,10 +96,36 @@ const payloadSchema = z.discriminatedUnion("kind", [
     rankingComponents: z.record(z.string(), z.number().finite()).optional(),
     rankingExplanation: z.string().trim().min(1).max(2_000).optional(),
     retrievedAt: z.iso.datetime().optional(),
+    providerCalls: z.array(literatureProviderCallSchema).max(100).optional(),
     researchProblem: z.string().trim().min(1).max(10_000).optional(),
     methods: z.array(z.string().trim().min(1)).optional(),
     findings: z.array(z.string().trim().min(1)).optional(),
     limitations: z.array(z.string().trim().min(1)).optional(),
+    fullTextStatus: z
+      .enum([
+        "parsed",
+        "not_available",
+        "not_attempted_limit",
+        "download_failed",
+        "parse_failed",
+      ])
+      .optional(),
+    pdfFailure: z
+      .object({
+        kind: z.string().trim().min(1).max(200),
+        message: z.string().trim().min(1).max(2_000),
+        retryable: z.boolean(),
+        retryAfterMs: z.number().int().min(0).nullable(),
+        action: z.string().trim().min(1).max(2_000),
+      })
+      .optional(),
+    pdfAcquisition: z
+      .object({
+        attempts: z.number().int().min(1),
+        finalUrl: z.url().max(4_000).optional(),
+        redirects: z.number().int().min(0).optional(),
+      })
+      .optional(),
     folder: z.string().trim().min(1).max(500).optional(),
     extractedFields: z
       .record(
@@ -71,6 +142,12 @@ const payloadSchema = z.discriminatedUnion("kind", [
           verifiedBy: z.string().trim().min(1).max(500).optional(),
           verifiedAt: z.iso.datetime().optional(),
         }),
+      )
+      .optional(),
+    extractedValues: z
+      .record(
+        z.string().trim().min(1),
+        z.array(extractedSourceValueSchema).max(1_000),
       )
       .optional(),
     contradictoryEvidence: z
@@ -143,6 +220,20 @@ const payloadSchema = z.discriminatedUnion("kind", [
       .optional(),
     status: z.enum(["planned", "running", "completed", "failed"]),
   }),
+  ...lifecyclePayloadSchemas.map((kind) =>
+    z.object({
+      kind: z.literal(kind),
+      status: z
+        .enum(["draft", "active", "blocked", "completed", "archived"])
+        .default("draft"),
+      ownerId: z.string().trim().min(1).max(500).nullable().optional(),
+      dueAt: z.iso.datetime().optional(),
+      role: z.string().trim().min(1).max(500).optional(),
+      provider: z.string().trim().min(1).max(500).optional(),
+      model: z.string().trim().min(1).max(500).optional(),
+      severity: z.enum(["low", "medium", "high", "blocking"]).optional(),
+    }),
+  ),
 ]);
 
 export const researchObjectInputSchema = z
@@ -220,13 +311,22 @@ export type Run = ResearchObjectBase & {
   payload: RunPayload;
 };
 
+export type ProjectLifecycleObject = ResearchObjectBase &
+  {
+    [Kind in ProjectLifecycleObjectType]: {
+      type: Kind;
+      payload: ProjectLifecyclePayload<Kind>;
+    };
+  }[ProjectLifecycleObjectType];
+
 export type ResearchObject =
   | Artifact
   | Source
   | Evidence
   | Claim
   | Experiment
-  | Run;
+  | Run
+  | ProjectLifecycleObject;
 
 export type ResearchObjectInput = z.input<typeof researchObjectInputSchema>;
 

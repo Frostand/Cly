@@ -108,14 +108,10 @@ describe("onboarding storage", () => {
 
   it("propagates a durable read failure without falling back or overwriting the draft", async () => {
     const storage = memoryStorage();
-    const cached = updateOnboardingDraft(
-      createOnboardingDraft("project-a"),
-      { topic: "Cached topic must not become authoritative" },
-    );
-    storage.setItem(
-      onboardingStorageKey("project-a"),
-      JSON.stringify(cached),
-    );
+    const cached = updateOnboardingDraft(createOnboardingDraft("project-a"), {
+      topic: "Cached topic must not become authoritative",
+    });
+    storage.setItem(onboardingStorageKey("project-a"), JSON.stringify(cached));
     const desktop = {
       loadOnboardingDraft: vi
         .fn()

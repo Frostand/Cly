@@ -150,6 +150,7 @@
       }
     ],
     "afterPack": "scripts/prune-packaged-app.cjs",
+    "afterSign": "scripts/notarize-after-sign.cjs",
     "files": [
       "electron/**/*",
       "dist/**/*",

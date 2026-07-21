@@ -1,4 +1,10 @@
-import type { GroundedLiteratureSummary } from "../../research/domain/research-types";
+import type { Relationship } from "../../research/domain/relationship";
+import type { ResearchObject } from "../../research/domain/research-object";
+import type {
+  GroundedLiteratureSummary,
+  ProjectLifecycleObjectType,
+  ProjectLifecycleStatus,
+} from "../../research/domain/research-types";
 import type { AgentConfiguration, AgentSession } from "../agent-sessions/types";
 
 export type ScreenId =
@@ -55,6 +61,7 @@ export type FixtureMode =
 
 export type EntityType =
   | "question"
+  | "objective"
   | "hypothesis"
   | "source"
   | "dataset"
@@ -69,7 +76,16 @@ export type EntityType =
   | "claim"
   | "decision"
   | "report"
+  | "risk"
+  | "task"
+  | "collaborator"
+  | "agent"
   | "agent-session";
+
+export interface ProjectLifecycleSummary {
+  type: ProjectLifecycleObjectType;
+  status: ProjectLifecycleStatus;
+}
 
 export type StatusTone = "neutral" | "info" | "success" | "warning" | "danger";
 
@@ -82,7 +98,9 @@ export interface ResearchProject {
   phase: string;
   description: string;
   localOnly: boolean;
-  externalTransmissionApprovals?: Array<"arxiv" | "semantic-scholar">;
+  externalTransmissionApprovals?: Array<
+    "arxiv" | "semantic-scholar" | "crossref" | "pubmed"
+  >;
   setup?: {
     discipline: string;
     expectedOutputs: string[];
@@ -129,8 +147,27 @@ export interface Source {
   findings: string[];
   limitations: string[];
   tags: string[];
+  fullTextStatus?:
+    | "parsed"
+    | "not_available"
+    | "not_attempted_limit"
+    | "download_failed"
+    | "parse_failed";
+  pdfFailure?: {
+    kind: string;
+    message: string;
+    retryable: boolean;
+    retryAfterMs: number | null;
+    action: string;
+  };
+  pdfAcquisition?: {
+    attempts: number;
+    finalUrl?: string;
+    redirects?: number;
+  };
   folder?: string;
   extractedFields?: Record<string, SourceExtractedValue>;
+  extractedValues?: Record<string, SourceExtractedValue[]>;
   contradictoryEvidence?: SourceEvidencePassage[];
   customReviewFields?: Record<string, SourceExtractedValue>;
   linkedClaimIds: string[];
@@ -148,6 +185,19 @@ export interface Source {
     components?: Record<string, number>;
     explanation: string;
     retrievedAt: string;
+    providerCalls?: Array<{
+      attempts: Array<{
+        attempt: number;
+        durationMs: number;
+        outcome: string;
+        retryAfterMs: number | null;
+        status: number | null;
+      }>;
+      durationMs: number;
+      operation: string;
+      provider: string;
+      status: "completed" | "failed";
+    }>;
   };
 }
 
@@ -806,4 +856,6 @@ export interface ClyRepositoryData {
   graphEdges: GraphEdge[];
   reports: Report[];
   activity: ActivityEvent[];
+  researchObjects?: ResearchObject[];
+  researchRelationships?: Relationship[];
 }

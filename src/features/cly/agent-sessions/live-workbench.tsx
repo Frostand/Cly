@@ -32,6 +32,7 @@ import {
 } from "../components/primitives";
 import { ClySplitPane, ClyTerminal } from "../components/toolkit";
 import { apiClient } from "../services/api-client";
+import { eventProcessLines } from "./live-workbench-output";
 import type { ClyDevSessionEvent, ClyDevWorkbenchContext } from "./types";
 
 type LiveTab = "files" | "changes" | "terminal" | "tests" | "logs" | "impact";
@@ -74,19 +75,6 @@ const eventLabel = (event: ClyDevSessionEvent) =>
     .replace(/\.recorded$/, "")
     .replaceAll(".", " ")
     .replaceAll("_", " ");
-
-const eventProcessLines = (events: ClyDevSessionEvent[]) => {
-  const records = events.filter((event) => event.type === "process.recorded");
-  const latest = records.at(-1);
-  if (!latest) return ["No command output has been recorded for this session."];
-  const payload = latest.payload as Record<string, unknown>;
-  return [
-    `$ ${String(payload.command ?? "")}`,
-    ...String(payload.stdout ?? "").split(/\r?\n/),
-    ...String(payload.stderr ?? "").split(/\r?\n/),
-    `[${String(payload.status ?? "complete")}; exit ${String(payload.exitCode ?? "n/a")}]`,
-  ].filter(Boolean);
-};
 
 function useWorkspaceProjection(sessionId: string) {
   const desktop = getDesktopApi();
@@ -171,39 +159,50 @@ export function LiveClyDevWorkbench({
     git?.changes[0] ??
     null;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await apiClient.fetchClyDevWorkbench(projectId, sessionId);
-      const root = next.workspace.localOnly.worktreePath;
-      const [fileResult, gitResult] = await Promise.all([
-        postJson<{ files: string[] }>("/api/project-files", {
-          directory: ".",
-          maxResults: 2000,
-          projectId,
-          projectPath: root,
-        }),
-        postJson<ProjectGitStatusResponse>("/api/project-git-status", {
-          projectId,
-          projectPath: root,
-        }),
-      ]);
-      setContext(next);
-      setFiles(fileResult.files);
-      setGit(gitResult);
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "The live workbench could not load.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, sessionId]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const next = await apiClient.fetchClyDevWorkbench(projectId, sessionId);
+        const root = next.workspace.localOnly.worktreePath;
+        const [fileResult, gitResult] = await Promise.all([
+          postJson<{ files: string[] }>("/api/project-files", {
+            directory: ".",
+            maxResults: 2000,
+            projectId,
+            projectPath: root,
+          }),
+          postJson<ProjectGitStatusResponse>("/api/project-git-status", {
+            projectId,
+            projectPath: root,
+          }),
+        ]);
+        setContext(next);
+        setFiles(fileResult.files);
+        setGit(gitResult);
+      } catch (caught) {
+        if (!silent) {
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "The live workbench could not load.",
+          );
+        }
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [projectId, sessionId],
+  );
 
-  useEffect(() => void load(), [load]);
+  useEffect(() => {
+    void load();
+    const poll = window.setInterval(() => void load(true), 1_000);
+    return () => window.clearInterval(poll);
+  }, [load]);
   useEffect(() => {
     void getDesktopApi()
       ?.detectEditors()
@@ -284,6 +283,61 @@ export function LiveClyDevWorkbench({
       actor: { kind: "user", id: "local-user" },
       payload: { approvalId, state, resolvedBy: "local-user" },
     });
+  };
+
+  const resolvedApprovalIds = new Set(
+    (context?.events ?? [])
+      .filter((event) => event.type === "approval.resolved")
+      .map((event) => String(event.payload.approvalId ?? "")),
+  );
+  const pendingProviderApproval = [...(context?.events ?? [])]
+    .toReversed()
+    .find(
+      (event) =>
+        event.type === "approval.requested" &&
+        !resolvedApprovalIds.has(String(event.payload.approvalId ?? "")),
+    );
+  const providerApprovalDetail = (() => {
+    try {
+      return JSON.parse(
+        String(pendingProviderApproval?.payload.detail ?? "{}"),
+      ) as Record<string, unknown>;
+    } catch {
+      return {} as Record<string, unknown>;
+    }
+  })();
+
+  const respondToProviderApproval = async (approved: boolean) => {
+    const approvalId = String(
+      pendingProviderApproval?.payload.approvalId ?? "",
+    );
+    if (!approvalId) return;
+    setSurfaceError(null);
+    try {
+      const response = await postJson<{ handled: boolean; status?: string }>(
+        "/api/tool-approval-response",
+        {
+          approved,
+          id: approvalId,
+          reason: approved ? null : "Rejected in the Cly Dev agent window.",
+          scope: "once",
+        },
+      );
+      if (!response.handled) {
+        throw new Error(
+          response.status === "expired"
+            ? "This provider approval expired. Resume the task to retry."
+            : "The provider approval is no longer pending.",
+        );
+      }
+      await load(true);
+    } catch (caught) {
+      setSurfaceError(
+        caught instanceof Error
+          ? caught.message
+          : "The provider approval could not be resolved.",
+      );
+    }
   };
 
   const execute = async (next: {
@@ -709,6 +763,57 @@ export function LiveClyDevWorkbench({
           </section>
         ) : null}
       </div>
+
+      <Dialog
+        open={Boolean(pendingProviderApproval) && !pendingCommand}
+        title={String(
+          pendingProviderApproval?.payload.title ?? "Approve provider tool?",
+        )}
+        description="This effect is bound to the current project, session, tool arguments, and research-context hash."
+        onClose={() => void respondToProviderApproval(false)}
+        footer={
+          pendingProviderApproval ? (
+            <>
+              <Button onClick={() => void respondToProviderApproval(false)}>
+                Reject
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void respondToProviderApproval(true)}
+              >
+                <Check size={12} /> Approve once
+              </Button>
+            </>
+          ) : null
+        }
+      >
+        <div className="cly-command-approval-detail">
+          <div>
+            <span>Tool</span>
+            <code>{String(providerApprovalDetail.tool ?? "unknown")}</code>
+          </div>
+          <div>
+            <span>Worktree</span>
+            <code>{projectPath}</code>
+          </div>
+          <div>
+            <span>Session</span>
+            <code>{sessionId}</code>
+          </div>
+          <div>
+            <span>Arguments hash</span>
+            <code>
+              {String(providerApprovalDetail.argumentsHash ?? "unavailable")}
+            </code>
+          </div>
+          <div>
+            <span>Context manifest hash</span>
+            <code>
+              {String(providerApprovalDetail.contextHash ?? "unavailable")}
+            </code>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog
         open={Boolean(pendingCommand)}

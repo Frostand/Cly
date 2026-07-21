@@ -49,6 +49,7 @@ import {
 } from "./privileged-ipc.js";
 import { createProcessSessionManager } from "./process-sessions.js";
 import { projectAuthorityRegistry } from "./project-authority-registry.js";
+import { canBypassNativeCommandConfirmationForReleaseSmoke } from "./release-provider-smoke.js";
 import { createRendererServerManager } from "./renderer-server.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
 import { initializeAutoUpdater } from "./updater.js";
@@ -278,13 +279,31 @@ async function confirmHostAction({ getApprovalOptions, projectId, root }) {
   }
 }
 
-const authorizeClyDevCommand = ({ command, projectId, root }) =>
-  confirmHostAction({
+const authorizeClyDevCommand = async ({ command, projectId, root }) => {
+  if (
+    canBypassNativeCommandConfirmationForReleaseSmoke({
+      isPackaged: app.isPackaged,
+    })
+  ) {
+    // The test bypasses only the native modal. Preserve the same main-process
+    // project authority check before allowing its deterministic command.
+    try {
+      const authorizedRoot = await resolveEditorProjectPath({
+        projectId,
+        projectPath: root,
+      });
+      return path.resolve(authorizedRoot) === path.resolve(root);
+    } catch {
+      return false;
+    }
+  }
+  return confirmHostAction({
     projectId,
     root,
     getApprovalOptions: (authorizedRoot) =>
       getHostCommandApprovalOptions({ command, root: authorizedRoot }),
   });
+};
 
 const authorizeProviderHostAction = ({ action, projectId, provider, root }) => {
   if (!new Set(["cursor", "opencode"]).has(provider)) return false;
