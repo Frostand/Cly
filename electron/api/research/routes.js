@@ -1,22 +1,48 @@
 import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
+import { createCodeResearchLinker } from "./code-linker.js";
 import { registerContextRoutes } from "./context-routes.js";
 import { createCostLedgerRepository } from "./cost-ledger-repository.js";
 import { registerCostLedgerRoutes } from "./cost-ledger-routes.js";
 import { registerExperimentProvenanceRoutes } from "./experiment-provenance-routes.js";
 import { createLineageReconstructor } from "./lineage-reconstructor.js";
+import { createNextStepPlanner } from "./next-step-planner.js";
+import { registerNextStepPlannerRoutes } from "./next-step-planner-routes.js";
+import { createNotebookImporter } from "./notebook-importer.js";
+import { registerNotebookRoutes } from "./notebook-routes.js";
 import { registerObligationRoutes } from "./obligation-routes.js";
 import { createObligationService } from "./obligation-service.js";
 import { registerPreregistrationRoutes } from "./preregistration-routes.js";
 import { createResearchRepository } from "./repository.js";
 import { createRepositoryObserver } from "./repository-observer.js";
+import { createRepositoryWorkflowCoordinator } from "./repository-workflow-coordinator.js";
+import { createReproducibilityAuditService } from "./reproducibility-audit.js";
 import { createReviewerCapsuleService } from "./reviewer-capsule.js";
+import { registerStalenessRoutes } from "./staleness-routes.js";
 
 const objectBodySchema = z.object({
-  type: z.enum(["artifact", "source", "claim", "experiment", "run"]),
+  type: z.enum([
+    "artifact",
+    "source",
+    "claim",
+    "experiment",
+    "run",
+    "notebook",
+    "notebook-cell",
+    "notebook-output",
+    "dependency",
+    "dataset",
+    "metric",
+    "figure",
+    "table",
+    "risk",
+    "method",
+    "objective",
+  ]),
   title: z.string().trim().min(1).max(500),
   description: z.string().trim().max(10_000).default(""),
   payload: z.record(z.string(), z.unknown()),
+  origin: z.enum(["human", "imported", "inferred", "system"]).default("human"),
 });
 
 const relationshipBodySchema = z.object({
@@ -25,11 +51,47 @@ const relationshipBodySchema = z.object({
   type: z.enum([
     "supports",
     "contradicts",
+    "contains",
     "generated-by",
     "uses",
     "tests",
     "implements",
+    "contains",
+    "produces",
+    "depends-on",
+    "documents",
+    "has-risk",
+    "part-of",
   ]),
+  verificationState: z.literal("unverified").optional(),
+  evidence: z
+    .array(
+      z.object({
+        kind: z.string().trim().min(1).max(100),
+        path: z.string().trim().min(1).max(4_000),
+        locator: z.string().trim().min(1).max(500),
+        excerpt: z.string().max(1_000),
+        contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+      }),
+    )
+    .max(100)
+    .optional(),
+  origin: z.enum(["human", "imported", "inferred", "system"]).default("human"),
+});
+
+const evidenceLinkBodySchema = z.object({
+  sourceId: z.string().trim().min(1),
+  claimId: z.string().trim().min(1),
+  quote: z.string().trim().min(1).max(20_000),
+  locator: z.string().trim().min(1).max(1_000).optional(),
+  type: z.enum(["supports", "contradicts"]),
+  origin: z.enum(["human", "imported", "inferred", "system"]).default("human"),
+  actorId: z.string().trim().min(1).max(200).optional(),
+  confidence: z.number().finite().min(0).max(1).nullable().default(null),
+});
+
+const evidenceVerificationBodySchema = z.object({
+  verificationState: z.enum(["verified", "rejected"]),
 });
 
 const relationshipReviewBodySchema = z.object({
@@ -63,6 +125,92 @@ const projectBodySchema = z.object({
 const provenanceQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
+
+const repositoryApprovalDecisionSchema = z
+  .object({ actorId: z.string().trim().min(1).max(200) })
+  .strict();
+
+const repositoryObservationSettingSchema = z
+  .object({
+    approvalId: z.string().trim().min(1).max(500),
+    enabled: z.boolean(),
+  })
+  .strict();
+
+const repositoryReferenceSchema = z
+  .object({
+    approvalId: z.string().trim().min(1).max(500),
+    reference: z.unknown(),
+    researchObjectIds: z.array(z.unknown()),
+  })
+  .strict();
+
+const codeContextQuerySchema = z.object({
+  path: z.string().trim().min(1).max(4_000),
+  symbol: z.string().trim().min(1).max(4_000).nullable().optional(),
+});
+
+const codeEntityQuerySchema = z.object({
+  kind: z.enum(["file", "symbol"]).optional(),
+});
+
+const codeLinkBodySchema = z.object({
+  codeEntityId: z.string().trim().min(1).max(500),
+  targetKind: z.enum([
+    "objective",
+    "method",
+    "dataset",
+    "experiment",
+    "run",
+    "claim",
+    "test",
+    "risk",
+    "commit",
+    "issue",
+    "source",
+    "artifact",
+  ]),
+  targetId: z.string().trim().min(1).max(4_000),
+  targetTitle: z.string().trim().min(1).max(500).optional(),
+  linkRole: z.enum([
+    "implements",
+    "uses",
+    "produces",
+    "tests",
+    "supports",
+    "affects",
+    "discusses",
+  ]),
+  source: z.enum(["manual", "execution", "agent-proposed"]),
+  origin: z.string().trim().min(1).max(500),
+  confidence: z.number().finite().min(0).max(1).nullable().optional(),
+  evidence: z
+    .array(
+      z
+        .object({
+          type: z.enum([
+            "source-location",
+            "notebook-cell",
+            "execution-trace",
+            "git-commit",
+            "user-assertion",
+          ]),
+          locator: z.string().trim().min(1).max(4_000),
+          description: z.string().trim().min(1).max(2_000),
+          contentHash: z
+            .string()
+            .regex(/^[a-f0-9]{64}$/i)
+            .optional(),
+        })
+        .strict(),
+    )
+    .max(50)
+    .default([]),
+});
+
+const codeLinkReviewBodySchema = z
+  .object({ verificationState: z.enum(["verified", "rejected"]) })
+  .strict();
 
 const reviewerCapsuleBodySchema = z
   .object({
@@ -145,6 +293,12 @@ const decisionBriefTransitionBodySchema = z
     }
   });
 
+const reproducibilityFindingBodySchema = z
+  .object({
+    actorId: z.string().trim().min(1).max(200).default("local-user"),
+  })
+  .strict();
+
 async function readJson(c) {
   try {
     return { data: await c.req.json() };
@@ -158,9 +312,26 @@ export function registerResearchRoutes(
   {
     getRepository = () => createResearchRepository(getStateDatabase()),
     getRepositoryObserver = () =>
-      createRepositoryObserver(createResearchRepository(getStateDatabase())),
+      (() => {
+        const database = getStateDatabase();
+        const repository = createResearchRepository(database);
+        const linker = createCodeResearchLinker(database, repository);
+        return createRepositoryObserver(repository, {
+          onChanges: (...args) => linker.recordRepositoryChanges(...args),
+        });
+      })(),
+    getCodeLinker = () => {
+      const database = getStateDatabase();
+      return createCodeResearchLinker(
+        database,
+        createResearchRepository(database),
+      );
+    },
+    getRepositoryWorkflowCoordinator,
     getLineageReconstructor = () =>
       createLineageReconstructor(createResearchRepository(getStateDatabase())),
+    getNotebookImporter = () =>
+      createNotebookImporter(createResearchRepository(getStateDatabase())),
     getReviewerCapsuleService = () =>
       createReviewerCapsuleService(
         createResearchRepository(getStateDatabase()),
@@ -168,8 +339,27 @@ export function registerResearchRoutes(
     getCostLedgerRepository = () =>
       createCostLedgerRepository(getStateDatabase()),
     getObligationService = () => createObligationService(getStateDatabase()),
+    getReproducibilityAuditService = () => {
+      const database = getStateDatabase();
+      return createReproducibilityAuditService(
+        database,
+        createResearchRepository(database),
+      );
+    },
+    getNextStepPlanner = () => createNextStepPlanner(getStateDatabase()),
   } = {},
 ) {
+  let repositoryWorkflowCoordinator;
+  const resolveRepositoryWorkflowCoordinator = () => {
+    if (getRepositoryWorkflowCoordinator) {
+      return getRepositoryWorkflowCoordinator();
+    }
+    repositoryWorkflowCoordinator ??= createRepositoryWorkflowCoordinator(
+      getRepository(),
+    );
+    return repositoryWorkflowCoordinator;
+  };
+
   registerCostLedgerRoutes(app, {
     getRepository: getCostLedgerRepository,
   });
@@ -177,6 +367,9 @@ export function registerResearchRoutes(
   registerExperimentProvenanceRoutes(app, { getRepository });
   registerPreregistrationRoutes(app, { getRepository });
   registerObligationRoutes(app, { getService: getObligationService });
+  registerNotebookRoutes(app, { getImporter: getNotebookImporter });
+  registerStalenessRoutes(app, { getRepository });
+  registerNextStepPlannerRoutes(app, { getPlanner: getNextStepPlanner });
 
   app.put("/api/projects/:projectId/research", async (c) => {
     const body = await readJson(c);
@@ -239,6 +432,74 @@ export function registerResearchRoutes(
       );
     }
   });
+
+  app.get("/api/projects/:projectId/reproducibility-audits/latest", (c) => {
+    try {
+      return c.json(
+        getReproducibilityAuditService().latest(c.req.param("projectId")),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error
+          ? error.message
+          : "Reproducibility audit query failed.",
+        400,
+      );
+    }
+  });
+
+  app.post("/api/projects/:projectId/reproducibility-audits", async (c) => {
+    if (
+      (c.req.header("content-length") &&
+        c.req.header("content-length") !== "0") ||
+      c.req.header("transfer-encoding")
+    ) {
+      return c.text(
+        "Reproducibility audit requests do not accept a body.",
+        400,
+      );
+    }
+    try {
+      return c.json(
+        getReproducibilityAuditService().run(c.req.param("projectId")),
+        201,
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error
+          ? error.message
+          : "Reproducibility audit failed.",
+        400,
+      );
+    }
+  });
+
+  app.patch(
+    "/api/projects/:projectId/reproducibility-audits/:auditId/findings/:findingId",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = reproducibilityFindingBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          getReproducibilityAuditService().resolve(
+            c.req.param("projectId"),
+            c.req.param("auditId"),
+            c.req.param("findingId"),
+            parsed.data.actorId,
+          ),
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error
+            ? error.message
+            : "Reproducibility finding update failed.",
+          400,
+        );
+      }
+    },
+  );
 
   app.get("/api/projects/:projectId/decision-briefs", (c) => {
     try {
@@ -382,6 +643,214 @@ export function registerResearchRoutes(
     }
   });
 
+  app.post(
+    "/api/projects/:projectId/repository-action-approvals",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      try {
+        return c.json(
+          resolveRepositoryWorkflowCoordinator().requestApproval(
+            c.req.param("projectId"),
+            body.data,
+          ),
+          201,
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error
+            ? error.message
+            : "Repository approval request failed.",
+          400,
+        );
+      }
+    },
+  );
+
+  app.post(
+    "/api/projects/:projectId/repository-action-approvals/:approvalId/approve",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = repositoryApprovalDecisionSchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          resolveRepositoryWorkflowCoordinator().approveAction(
+            c.req.param("projectId"),
+            c.req.param("approvalId"),
+            parsed.data.actorId,
+          ),
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error
+            ? error.message
+            : "Repository action approval failed.",
+          409,
+        );
+      }
+    },
+  );
+
+  app.put(
+    "/api/projects/:projectId/repository-observation-setting",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = repositoryObservationSettingSchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          resolveRepositoryWorkflowCoordinator().setObservationEnabled(
+            c.req.param("projectId"),
+            parsed.data,
+          ),
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error
+            ? error.message
+            : "Repository observation setting failed.",
+          error?.code ? 409 : 400,
+        );
+      }
+    },
+  );
+
+  app.post("/api/projects/:projectId/repository-links", async (c) => {
+    const body = await readJson(c);
+    if (body.error) return body.error;
+    const parsed = repositoryReferenceSchema.safeParse(body.data);
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        resolveRepositoryWorkflowCoordinator().linkReference(
+          c.req.param("projectId"),
+          parsed.data,
+        ),
+        201,
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error
+          ? error.message
+          : "Repository reference link failed.",
+        error?.code ? 409 : 400,
+      );
+    }
+  });
+
+  app.post("/api/projects/:projectId/code-context/scan", async (c) => {
+    if (
+      (c.req.header("content-length") &&
+        c.req.header("content-length") !== "0") ||
+      c.req.header("transfer-encoding")
+    ) {
+      return c.text("Code scan requests do not accept a body.", 400);
+    }
+    try {
+      return c.json(await getCodeLinker().scan(c.req.param("projectId")), 201);
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Code scan failed.",
+        400,
+      );
+    }
+  });
+
+  app.get("/api/projects/:projectId/code-context", (c) => {
+    const parsed = codeContextQuerySchema.safeParse({
+      path: c.req.query("path"),
+      symbol: c.req.query("symbol") ?? undefined,
+    });
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        getCodeLinker().getContext(c.req.param("projectId"), parsed.data),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Code context failed.",
+        400,
+      );
+    }
+  });
+
+  app.get("/api/projects/:projectId/code-context/entities", (c) => {
+    const parsed = codeEntityQuerySchema.safeParse({
+      kind: c.req.query("kind") ?? undefined,
+    });
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        getCodeLinker().listEntities(c.req.param("projectId"), parsed.data),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Code entity list failed.",
+        400,
+      );
+    }
+  });
+
+  app.post("/api/projects/:projectId/code-context/links", async (c) => {
+    const body = await readJson(c);
+    if (body.error) return body.error;
+    const parsed = codeLinkBodySchema.safeParse(body.data);
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        getCodeLinker().createLink({
+          ...parsed.data,
+          projectId: c.req.param("projectId"),
+        }),
+        201,
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Code link creation failed.",
+        400,
+      );
+    }
+  });
+
+  app.patch(
+    "/api/projects/:projectId/code-context/links/:linkId/review",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = codeLinkReviewBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          getCodeLinker().reviewLink({
+            ...parsed.data,
+            id: c.req.param("linkId"),
+            projectId: c.req.param("projectId"),
+            reviewerId: "local-user",
+          }),
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error ? error.message : "Code link review failed.",
+          400,
+        );
+      }
+    },
+  );
+
+  app.get("/api/projects/:projectId/code-context/stale", (c) => {
+    try {
+      return c.json(getCodeLinker().listStaleImpact(c.req.param("projectId")));
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Stale code context failed.",
+        400,
+      );
+    }
+  });
+
   app.get("/api/projects/:projectId/lineage-suggestions", (c) => {
     try {
       return c.json(
@@ -480,6 +949,54 @@ export function registerResearchRoutes(
       );
     }
   });
+
+  app.post("/api/projects/:projectId/research/evidence-links", async (c) => {
+    const body = await readJson(c);
+    if (body.error) return body.error;
+    const parsed = evidenceLinkBodySchema.safeParse(body.data);
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        getRepository().createEvidenceLink({
+          ...parsed.data,
+          projectId: c.req.param("projectId"),
+        }),
+        201,
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error
+          ? error.message
+          : "Evidence link creation failed.",
+        400,
+      );
+    }
+  });
+
+  app.patch(
+    "/api/projects/:projectId/research/evidence/:evidenceId/verification",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = evidenceVerificationBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          getRepository().reviewEvidence({
+            ...parsed.data,
+            id: c.req.param("evidenceId"),
+            projectId: c.req.param("projectId"),
+            reviewerId: "local-user",
+          }),
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error ? error.message : "Evidence review failed.",
+          400,
+        );
+      }
+    },
+  );
 
   app.patch(
     "/api/projects/:projectId/research/relationships/:relationshipId/review",

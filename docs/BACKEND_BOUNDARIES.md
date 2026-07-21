@@ -18,13 +18,25 @@ terminal, runner, and Git routes are not research authorization primitives.
 | AgentService | Codex/Claude/local CLI adapters, budgets, approvals, provenance |
 | ExperimentService | Project scanner, run manifest, process adapter |
 | SourceService | Safe import, metadata/extraction, bibliography repository |
-| NotebookService | Static `.ipynb` parser first; explicit executor later |
+| NotebookService | Static bounded `.ipynb` importer with deterministic objects, evidence, and risks; explicit executor later |
 | ClaimService | Relational claim/evidence repository and audit engine |
 | ResearchGraphService | SQLite research objects/relationships, neighborhood queries |
 | ReproducibilityService | Deterministic local checks and report export |
 | IntegrationService | Capability/permission adapters; OAuth only where required |
 | PlannerService | Rule-based evidence gaps first, agent suggestions second |
 | DecisionService | Append-preserving decision repository and supersession links |
+
+### Reproducibility reports
+
+`ReproducibilityService` is production-backed by
+`/api/projects/:projectId/reproducibility-audits`. Each run evaluates the
+persisted research graph, experiment definitions and runs, artifacts, claim
+links, and provenance integrity. The immutable report records an input hash,
+object and provenance evidence references, affected claims, missing artifact
+identifiers, and recommended fixes. Findings classify `missing` requirements
+separately from `failed` checks so an absent record is never presented as an
+executed check failure. Resolution is stored as a separate disposition and
+does not rewrite the original report.
 
 ## Security boundaries
 

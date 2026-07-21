@@ -16,6 +16,9 @@ import {
   agentRoleConfigurations,
   clyDevHandoffs,
   clyDevToolEffects,
+  reproducibilityAudits,
+  reproducibilityFindingDispositions,
+  researchRelationships,
 } from "./schema.js";
 
 const dialect = new SQLiteDialect();
@@ -145,6 +148,22 @@ describe("Cly Dev execution Drizzle schema", () => {
           { name: "id", order: "asc" },
         ],
       },
+    });
+  });
+});
+
+describe("research relationship evidence schema", () => {
+  it("matches the notebook import verification contract in migration 0022", () => {
+    expect(
+      getTableConfig(researchRelationships).columns.map(
+        (column) => column.name,
+      ),
+    ).toEqual(expect.arrayContaining(["evidence", "verification_state"]));
+    expect(tableContract(researchRelationships).checkSql).toMatchObject({
+      research_relationships_evidence_json:
+        "json_valid(evidence) AND json_type(evidence) = 'array'",
+      research_relationships_verification_state:
+        "verification_state IN ('unverified', 'reviewed', 'approved', 'rejected')",
     });
   });
 });
@@ -347,5 +366,44 @@ describe("agent context Drizzle schema", () => {
     expect(contracts.agent_context_audit_events.checkSql).toEqual({
       agent_context_audit_metadata_json: "json_valid(metadata_json)",
     });
+  });
+});
+
+describe("reproducibility audit Drizzle schema", () => {
+  it("declares immutable reports and separately mutable dispositions", () => {
+    const audits = tableContract(reproducibilityAudits);
+    const dispositions = tableContract(reproducibilityFindingDispositions);
+
+    expect(audits).toMatchObject({
+      checkSql: {
+        reproducibility_audits_score: "score BETWEEN 0 AND 100",
+        reproducibility_audits_summary_json:
+          "json_valid(summary_json) AND json_type(summary_json) = 'object'",
+        reproducibility_audits_findings_json:
+          "json_valid(findings_json) AND json_type(findings_json) = 'array'",
+      },
+      indexes: {
+        idx_reproducibility_audits_project_created: [
+          { name: "project_id", order: "asc" },
+          { name: "created_at", order: "desc" },
+          { name: "id", order: "desc" },
+        ],
+      },
+    });
+    expect(dispositions).toMatchObject({
+      primaryKeys: [["audit_id", "finding_id"]],
+      checkSql: {
+        reproducibility_finding_dispositions_status:
+          "status IN ('Assigned','Resolved','Ignored')",
+      },
+    });
+    expect(dispositions.foreignKeys).toContainEqual(
+      expect.objectContaining({
+        columns: ["audit_id", "project_id"],
+        foreignColumns: ["id", "project_id"],
+        foreignTable: "reproducibility_audits",
+        onDelete: "cascade",
+      }),
+    );
   });
 });

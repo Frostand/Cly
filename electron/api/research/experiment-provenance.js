@@ -23,7 +23,35 @@ const datasetRefSchema = z
 const codeRefSchema = z
   .object({
     path: z.string().trim().min(1).max(4_000),
+    symbol: z.string().trim().min(1).max(1_000).optional(),
+    kind: z.enum(["function", "class", "module", "notebook-cell"]).optional(),
     contentHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/i)
+      .optional(),
+  })
+  .strict();
+
+const dependencyRefSchema = z
+  .object({
+    name: z.string().trim().min(1).max(1_000),
+    version: z.string().trim().min(1).max(1_000),
+    integrity: z.string().trim().min(1).max(4_000).optional(),
+  })
+  .strict();
+
+const environmentSnapshotSchema = z
+  .object({
+    runtime: z.string().trim().min(1).max(200).optional(),
+    runtimeVersion: z.string().trim().min(1).max(200).optional(),
+    platform: z.string().trim().min(1).max(200).optional(),
+    architecture: z.string().trim().min(1).max(100).optional(),
+    imageDigest: z.string().trim().min(1).max(500).optional(),
+    lockfileHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/i)
+      .optional(),
+    fingerprint: z
       .string()
       .regex(/^[a-f0-9]{64}$/i)
       .optional(),
@@ -96,6 +124,8 @@ export const runCreateInputSchema = z
     configuration: z.record(z.string(), z.unknown()).optional(),
     datasets: z.array(datasetRefSchema).max(100).optional(),
     codeRefs: z.array(codeRefSchema).max(500).default([]),
+    environment: environmentSnapshotSchema.default({}),
+    dependencies: z.array(dependencyRefSchema).max(1_000).default([]),
     startedAt: z.iso.datetime().optional(),
     finishedAt: z.iso.datetime().nullable().optional(),
     exitCode: z.number().int().nullable().optional(),
@@ -125,6 +155,24 @@ export const runCreateInputSchema = z
         code: "custom",
         path: ["exitCode"],
         message: "A non-terminal run cannot have an exit code.",
+      });
+    }
+    const codeKeys = value.codeRefs.map(
+      (reference) => `${reference.path}\u0000${reference.symbol ?? ""}`,
+    );
+    if (new Set(codeKeys).size !== codeKeys.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["codeRefs"],
+        message: "Code references must be unique by path and symbol.",
+      });
+    }
+    const dependencyNames = value.dependencies.map(({ name }) => name);
+    if (new Set(dependencyNames).size !== dependencyNames.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencies"],
+        message: "Dependencies must be unique by name.",
       });
     }
   });
@@ -331,12 +379,16 @@ export function createExperimentProvenanceMethods({
     configuration,
     datasets,
     codeRefs,
+    environment,
+    dependencies,
   ) => ({
     definitionHash,
     commitSha: commitSha.toLowerCase(),
     configuration,
     datasets,
     codeRefs,
+    environment,
+    dependencies,
   });
 
   const mapRun = (row) => ({
@@ -351,6 +403,8 @@ export function createExperimentProvenanceMethods({
     configuration: parseJson(row.configuration_json),
     datasets: parseJson(row.datasets_json),
     codeRefs: parseJson(row.code_refs_json),
+    environment: parseJson(row.environment_json),
+    dependencies: parseJson(row.dependencies_json),
     inputFingerprint: row.input_fingerprint,
     startedAt: row.started_at,
     finishedAt: row.finished_at ?? null,
@@ -623,6 +677,8 @@ export function createExperimentProvenanceMethods({
         configuration,
         datasets,
         parsed.codeRefs,
+        parsed.environment,
+        parsed.dependencies,
       );
       const id = parsed.id ?? createId();
       const now = clock();
@@ -669,9 +725,10 @@ export function createExperimentProvenanceMethods({
           .prepare(
             `INSERT INTO experiment_runs
              (id, project_id, experiment_id, definition_version_id, status, commit_sha,
-              configuration_json, datasets_json, code_refs_json, input_fingerprint,
+              configuration_json, datasets_json, code_refs_json, environment_json,
+              dependencies_json, input_fingerprint,
               started_at, finished_at, exit_code, provenance_event_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             id,
@@ -683,6 +740,8 @@ export function createExperimentProvenanceMethods({
             canonicalJson(configuration),
             canonicalJson(datasets),
             canonicalJson(parsed.codeRefs),
+            canonicalJson(parsed.environment),
+            canonicalJson(parsed.dependencies),
             hashJson(snapshot),
             startedAt,
             parsed.finishedAt ?? null,

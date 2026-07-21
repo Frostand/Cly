@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { validateHandoffEnvelope } from "./handoff/handoff-schema.js";
 import {
   decryptSyncEnvelope,
   encryptSyncEnvelope,
@@ -31,7 +32,11 @@ const errorCodeFor = (error) => {
   return "sync_failed";
 };
 
-function collectProjectRecords(sessionRepository, projectId) {
+function collectProjectRecords(
+  sessionRepository,
+  projectId,
+  handoffRepository,
+) {
   const records = [];
   let localOnlyItems = 0;
   for (const session of sessionRepository.listSessions(projectId)) {
@@ -81,12 +86,40 @@ function collectProjectRecords(sessionRepository, projectId) {
       afterSequence = events.at(-1).sequence;
     }
   }
+  const handoffs = handoffRepository
+    ? [...handoffRepository.list(projectId, "export")].reverse()
+    : [];
+  const handoffRevision = new Map();
+  for (const handoff of handoffs) {
+    const recordId = handoff.payload.task.sessionId;
+    const baseRevision = handoffRevision.get(recordId) ?? 0;
+    const revision = baseRevision + 1;
+    handoffRevision.set(recordId, revision);
+    records.push({
+      envelopeId: `handoff:${handoff.id}`,
+      projectId,
+      recordKind: "cly-dev-handoff",
+      recordId,
+      revision,
+      baseRevision,
+      createdAt: handoff.createdAt,
+      payload: {
+        protocol: handoff.protocol,
+        schemaVersion: handoff.schemaVersion,
+        minimumReaderVersion: handoff.minimumReaderVersion,
+        exportedAt: handoff.exportedAt,
+        payload: handoff.payload,
+        integrity: handoff.integrity,
+      },
+    });
+  }
   return { records, localOnlyItems };
 }
 
 export function createClyDevSyncService({
   repository,
   sessionRepository,
+  handoffRepository,
   keyVault,
   now = () => new Date().toISOString(),
   deviceId = () => randomUUID(),
@@ -203,6 +236,7 @@ export function createClyDevSyncService({
       const { records, localOnlyItems } = collectProjectRecords(
         sessionRepository,
         projectId,
+        handoffRepository,
       );
       const trusted = repository.listTrustedRecipients();
       const durable = repository.getStatus(projectId);
@@ -230,7 +264,11 @@ export function createClyDevSyncService({
     async stage(projectId) {
       await service.ensureLocalDevice();
       const recipients = repository.listTrustedRecipients();
-      const { records } = collectProjectRecords(sessionRepository, projectId);
+      const { records } = collectProjectRecords(
+        sessionRepository,
+        projectId,
+        handoffRepository,
+      );
       if (!recipients.length) {
         return { queued: 0, policyBlocked: records.length };
       }
@@ -394,6 +432,26 @@ export function createClyDevSyncService({
           signingKey: senderKey.signingKey,
         },
       });
+    },
+
+    async receivedHandoffs(projectId) {
+      const records = repository.listIncomingEnvelopes(
+        projectId,
+        "cly-dev-handoff",
+      );
+      const handoffs = [];
+      for (const record of records) {
+        const decrypted = await service.readAppliedRecord(
+          projectId,
+          record.envelopeId,
+        );
+        handoffs.push({
+          envelopeId: record.envelopeId,
+          receivedAt: record.receivedAt,
+          envelope: validateHandoffEnvelope(decrypted),
+        });
+      }
+      return handoffs;
     },
 
     async acknowledge(projectId, recipientDeviceId, envelopeIds) {

@@ -78,3 +78,74 @@ describe("experiment provenance routes", () => {
     expect(createExperimentRun).not.toHaveBeenCalled();
   });
 });
+
+describe("reproducibility audit routes", () => {
+  it("binds project, audit, and finding identity at the route boundary", async () => {
+    const run = vi.fn(() => ({ audit: { id: "audit-1" }, findings: [] }));
+    const latest = vi.fn(() => ({ audit: { id: "audit-1" }, findings: [] }));
+    const resolve = vi.fn(() => ({ id: "finding-1", status: "Resolved" }));
+    const app = new Hono();
+    registerResearchRoutes(app, {
+      getReproducibilityAuditService: () => ({ run, latest, resolve }),
+    });
+
+    const created = await app.request(
+      "/api/projects/project-a/reproducibility-audits",
+      { method: "POST" },
+    );
+    expect(created.status).toBe(201);
+    expect(run).toHaveBeenCalledWith("project-a");
+
+    const fetched = await app.request(
+      "/api/projects/project-a/reproducibility-audits/latest",
+    );
+    expect(fetched.status).toBe(200);
+    expect(latest).toHaveBeenCalledWith("project-a");
+
+    const resolved = await app.request(
+      "/api/projects/project-a/reproducibility-audits/audit-1/findings/finding-1",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorId: "reviewer-1", projectId: "project-b" }),
+      },
+    );
+    expect(resolved.status).toBe(400);
+    expect(resolve).not.toHaveBeenCalled();
+
+    const validResolution = await app.request(
+      "/api/projects/project-a/reproducibility-audits/audit-1/findings/finding-1",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorId: "reviewer-1" }),
+      },
+    );
+    expect(validResolution.status).toBe(200);
+    expect(resolve).toHaveBeenCalledWith(
+      "project-a",
+      "audit-1",
+      "finding-1",
+      "reviewer-1",
+    );
+  });
+
+  it("rejects an audit request body", async () => {
+    const run = vi.fn();
+    const app = new Hono();
+    registerResearchRoutes(app, {
+      getReproducibilityAuditService: () => ({ run }),
+    });
+
+    const response = await app.request(
+      "/api/projects/project-a/reproducibility-audits",
+      {
+        method: "POST",
+        headers: { "content-length": "2", "content-type": "application/json" },
+        body: "{}",
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(run).not.toHaveBeenCalled();
+  });
+});

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -145,6 +145,73 @@ afterEach(() => {
 });
 
 describe("Cly Dev sync service", () => {
+  it("encrypts durable handoffs separately and exposes them only after trusted receipt", async () => {
+    const envelope = JSON.parse(
+      readFileSync(
+        new URL("./handoff/fixtures/valid-v1.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    const source = setup("handoff-source", {
+      handoffRepository: {
+        list: () => [
+          {
+            id: "export-1",
+            protocol: envelope.protocol,
+            schemaVersion: envelope.schemaVersion,
+            minimumReaderVersion: envelope.minimumReaderVersion,
+            exportedAt: envelope.exportedAt,
+            payload: envelope.payload,
+            integrity: envelope.integrity,
+            createdAt: envelope.exportedAt,
+          },
+        ],
+      } as never,
+    });
+    const destination = setup("handoff-destination");
+    const sourceDevice = await source.service.ensureLocalDevice("Source Mac");
+    const destinationDevice =
+      await destination.service.ensureLocalDevice("Lab workstation");
+    await source.service.registerAndVerifyDevice(
+      destinationDevice,
+      destinationDevice.fingerprint,
+    );
+    await destination.service.registerAndVerifyDevice(
+      sourceDevice,
+      sourceDevice.fingerprint,
+    );
+
+    await expect(source.service.stage("project-a")).resolves.toEqual({
+      queued: 1,
+      policyBlocked: 0,
+    });
+    const batch = await source.service.exportBatch(
+      "project-a",
+      destinationDevice.id,
+      { maxRecords: 10, maxBytes: 500_000 },
+    );
+    expect(batch.items[0].recordKind).toBe("cly-dev-handoff");
+    expect(JSON.stringify(batch)).not.toContain("Implement durable handoff");
+
+    await expect(
+      destination.service.importBatch(
+        "project-a",
+        batch.items.map((item) => item.envelope),
+      ),
+    ).resolves.toMatchObject({ applied: 1, failed: 0 });
+    await expect(
+      destination.service.receivedHandoffs("project-a"),
+    ).resolves.toMatchObject([
+      {
+        envelopeId: "handoff:export-1",
+        envelope: {
+          protocol: "cly.dev.handoff",
+          payload: { task: { title: "Implement durable handoff" } },
+        },
+      },
+    ]);
+  });
+
   it("exchanges only approved chat and context fields between verified devices", async () => {
     const a = setup("device-a");
     const b = setup("device-b");

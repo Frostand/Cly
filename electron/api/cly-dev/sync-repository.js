@@ -820,6 +820,18 @@ export function createClyDevSyncRepository({
       };
     },
 
+    listIncomingEnvelopes(projectId, recordKind, status = "applied") {
+      return db
+        .prepare(
+          `SELECT envelope_id AS envelopeId, record_id AS recordId,
+                  revision, received_at AS receivedAt
+             FROM cly_dev_sync_inbox
+            WHERE project_id = ? AND record_kind = ? AND status = ?
+            ORDER BY received_at DESC, envelope_id`,
+        )
+        .all(projectId, recordKind, status);
+    },
+
     listConflicts(projectId) {
       return db
         .prepare(

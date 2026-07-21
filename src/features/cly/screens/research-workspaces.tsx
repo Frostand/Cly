@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Clipboard,
   Code2,
-  Columns3,
   Copy,
   Database,
   Download,
@@ -36,6 +35,7 @@ import {
   Button,
   Dialog,
   EmptyState,
+  ErrorState,
   LoadingState,
   Metric,
   PageHeader,
@@ -45,7 +45,15 @@ import {
   Segmented,
   toneForStatus,
 } from "../components/primitives";
-import { ClyDataTable, ClySplitPane } from "../components/toolkit";
+import {
+  LiteratureMatrixWorkspace,
+  SourceReviewInspector,
+} from "../components/source-review-workspace";
+import {
+  ClyDataTable,
+  ClySplitPane,
+  ClyVirtualList,
+} from "../components/toolkit";
 import {
   EvidenceStrength,
   ExecutionStrip,
@@ -57,7 +65,6 @@ import {
   formatMoney,
   formatMoneyTotals,
 } from "../domain/costs";
-import { previewLiteratureThemes } from "../domain/literature-enrichment";
 import type { LiteratureSearchResult } from "../domain/literature-search";
 import { filterAndSortClaims } from "../domain/logic";
 import type {
@@ -65,6 +72,7 @@ import type {
   ObligationEvaluation,
   ObligationOperation,
 } from "../domain/obligations";
+import { sourceKinds } from "../domain/source-review";
 import type {
   Claim,
   ClaimStatus,
@@ -73,6 +81,8 @@ import type {
 } from "../domain/types";
 import {
   apiClient,
+  type CodeContext,
+  type CodeEntitySummary,
   type LiteratureReadingList,
   type ReviewerCapsule,
 } from "../services/api-client";
@@ -90,12 +100,14 @@ export function SourcesScreen() {
   );
   const sources = useClyStore((s) => s.data.sources);
   const claims = useClyStore((s) => s.data.claims);
-  const selectedId = useClyStore((s) => s.selectedId);
   const setSelected = useClyStore((s) => s.setSelected);
+  const setScreen = useClyStore((s) => s.setScreen);
   const notify = useClyStore((s) => s.notify);
   const loadFromApi = useClyStore((s) => s.loadFromApi);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("All");
+  const [folder, setFolder] = useState("All folders");
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [sort, setSort] = useState<"Relevance" | "Newest" | "Title">(
     "Relevance",
   );
@@ -125,11 +137,19 @@ export function SourcesScreen() {
             .includes(query.toLowerCase())) &&
         (type === "All" || source.type === type),
     )
+    .filter(
+      (source) =>
+        folder === "All folders" ||
+        (folder === "Unfiled" ? !source.folder : source.folder === folder),
+    )
     .sort((a, b) => {
       if (sort === "Newest") return b.year - a.year;
       if (sort === "Title") return a.title.localeCompare(b.title);
       return relevanceRank[a.relevance] - relevanceRank[b.relevance];
     });
+  const selectedSource = sources.find(
+    (source) => source.id === selectedSourceId,
+  );
   const sourceColumns = useMemo<ColumnDef<Source, unknown>[]>(
     () => [
       {
@@ -247,7 +267,7 @@ export function SourcesScreen() {
         );
         await loadFromApi(activeProject.id);
         const source = result.results[0]?.source;
-        if (source) setSelected(source.id);
+        if (source) setSelectedSourceId(source.id);
         setImportOpen(false);
         resetImport();
         notify(
@@ -264,7 +284,7 @@ export function SourcesScreen() {
       });
       setImportOpen(false);
       resetImport();
-      setSelected(source.id);
+      setSelectedSourceId(source.id);
       notify(
         "Source imported",
         "The source record was saved and is ready for metadata review.",
@@ -344,11 +364,23 @@ export function SourcesScreen() {
             aria-label="Filter source type"
           >
             <option>All</option>
-            {Array.from(new Set(sources.map((item) => item.type))).map(
-              (item) => (
-                <option key={item}>{item}</option>
-              ),
-            )}
+            {sourceKinds.map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+          <select
+            className="cly-select"
+            style={{ width: 150 }}
+            value={folder}
+            onChange={(event) => setFolder(event.target.value)}
+            aria-label="Filter source folder"
+          >
+            <option>All folders</option>
+            {Array.from(
+              new Set(sources.map((item) => item.folder || "Unfiled")),
+            ).map((item) => (
+              <option key={item}>{item}</option>
+            ))}
           </select>
           <select
             className="cly-select"
@@ -373,7 +405,51 @@ export function SourcesScreen() {
         {sources.length === 0 ? (
           <EmptyState
             title="No sources in this project"
-            description="Import a paper, note, dataset, or URL."
+            description="Import a paper, PDF, webpage, book, dataset, documentation, repository, Hugging Face resource, note, or existing source export."
+          />
+        ) : selectedSource ? (
+          <ClySplitPane
+            id="source-manager-evidence"
+            className="cly-source-manager-split"
+            primary={
+              <ClyDataTable
+                id="sources"
+                data={filtered}
+                columns={sourceColumns}
+                getRowId={(row) => row.id}
+                selectedId={selectedSourceId}
+                onSelect={(row) => setSelectedSourceId(row.id)}
+                emptyMessage="No sources match these filters"
+              />
+            }
+            secondary={
+              <SourceReviewInspector
+                source={selectedSource}
+                onVerificationChange={(fieldId, verificationState) => {
+                  void projectServices.sources
+                    .reviewField(selectedSource.id, fieldId, verificationState)
+                    .then(() =>
+                      notify(
+                        verificationState === "verified"
+                          ? "Passage verified"
+                          : "Passage rejected",
+                        `${fieldId} now records the durable human review decision.`,
+                      ),
+                    )
+                    .catch((error) =>
+                      notify(
+                        "Review was not saved",
+                        error instanceof Error
+                          ? error.message
+                          : "Unable to save the review decision.",
+                      ),
+                    );
+                }}
+              />
+            }
+            secondarySize={36}
+            secondaryMin="300px"
+            label="Resize source list and evidence inspector"
           />
         ) : (
           <ClyDataTable
@@ -381,64 +457,54 @@ export function SourcesScreen() {
             data={filtered}
             columns={sourceColumns}
             getRowId={(row) => row.id}
-            selectedId={selectedId}
-            onSelect={(row) => setSelected(row.id)}
+            selectedId={selectedSourceId}
+            onSelect={(row) => setSelectedSourceId(row.id)}
           />
         )}
       </div>
       <DisclosureRow
         title="Source actions"
         detail={
-          selectedId
+          selectedSourceId
             ? "Actions for the selected source"
             : "Select a source first"
         }
       >
         <div className="cly-row">
           <Button
-            disabled={!selectedId || !isClyDemoRuntime}
+            disabled={!selectedSourceId || !isClyDemoRuntime}
             title={capabilityUnavailableMessage("exports.notebook-bundle")}
             onClick={() =>
-              selectedId &&
+              selectedSourceId &&
               void projectServices.sources
-                .addToNotebookBundle(selectedId)
+                .addToNotebookBundle(selectedSourceId)
                 .then(() => notify("Added to NotebookLM bundle"))
             }
           >
             <BookOpen size={13} /> Add to NotebookLM bundle
           </Button>
           <Button
-            disabled={!selectedId || claims.length === 0}
+            disabled={!selectedSourceId || claims.length === 0}
             onClick={() => {
               const claim = claims[0];
-              if (!selectedId || !claim) return;
-              void projectServices.sources
-                .linkClaim(selectedId, claim.id)
-                .then(() =>
-                  notify(
-                    "Evidence linked",
-                    `The source now supports “${claim.text.slice(0, 70)}”.`,
-                  ),
-                )
-                .catch((error) =>
-                  notify(
-                    "Evidence link failed",
-                    error instanceof Error
-                      ? error.message
-                      : "Unable to link claim.",
-                  ),
-                );
+              if (!selectedSourceId || !claim) return;
+              setSelected(claim.id);
+              setScreen("claims");
+              notify(
+                "Add an exact passage",
+                `Open Detail and quote the evidence from this source before linking it to “${claim.text.slice(0, 70)}”.`,
+              );
             }}
           >
-            <Link2 size={13} /> Link to claim
+            <Link2 size={13} /> Add passage to claim
           </Button>
           <Button
-            disabled={!selectedId || !isClyDemoRuntime}
+            disabled={!selectedSourceId || !isClyDemoRuntime}
             title={capabilityUnavailableMessage("sources.deduplicate")}
             onClick={() => {
-              if (!selectedId) return;
+              if (!selectedSourceId) return;
               void projectServices.sources
-                .enrich(selectedId)
+                .enrich(selectedSourceId)
                 .then(() =>
                   notify(
                     "Structured notes saved",
@@ -458,7 +524,7 @@ export function SourcesScreen() {
             <FileText size={13} /> Extract structured notes
           </Button>
           <Button
-            disabled={!selectedId}
+            disabled={!selectedSourceId}
             onClick={() =>
               notify(
                 "Duplicate analysis",
@@ -469,7 +535,7 @@ export function SourcesScreen() {
             <Merge size={13} /> Merge duplicates
           </Button>
           <Button
-            disabled={!selectedId || !isClyDemoRuntime}
+            disabled={!selectedSourceId || !isClyDemoRuntime}
             variant="danger"
             title={capabilityUnavailableMessage("sources.archive")}
             onClick={() =>
@@ -522,11 +588,9 @@ export function SourcesScreen() {
               if (nextType !== "Paper") setReadingListId("");
             }}
           >
-            <option>Paper</option>
-            <option>Dataset</option>
-            <option>Documentation</option>
-            <option>Lab note</option>
-            <option>Webpage</option>
+            {sourceKinds.map((item) => (
+              <option key={item}>{item}</option>
+            ))}
           </select>
         </div>
         {importType !== "Paper" || importFormat === "metadata" ? (
@@ -707,8 +771,6 @@ export function LiteratureScreen() {
   const [matrixMode, setMatrixMode] =
     useState<LiteratureMatrixMode>("Discover");
   const [query, setQuery] = useState("");
-  const [matrixQuery, setMatrixQuery] = useState("");
-  const [matrixStatus, setMatrixStatus] = useState("All review states");
   const [resultFilter, setResultFilter] =
     useState<LiteratureResultFilter>("All results");
   const [resultSort, setResultSort] =
@@ -827,76 +889,6 @@ export function LiteratureScreen() {
       },
     ],
     [savedSearchResultIds],
-  );
-  const matrixSources = useMemo(
-    () =>
-      sources.filter(
-        (source) =>
-          (!matrixQuery ||
-            `${source.title} ${source.authors} ${source.methods.join(" ")} ${source.findings.join(" ")}`
-              .toLowerCase()
-              .includes(matrixQuery.toLowerCase())) &&
-          (matrixStatus === "All review states" ||
-            source.status === matrixStatus),
-      ),
-    [matrixQuery, matrixStatus, sources],
-  );
-  const matrixColumns = useMemo<ColumnDef<Source, unknown>[]>(
-    () => [
-      {
-        accessorKey: "title",
-        header: "Source",
-        cell: ({ row }) => (
-          <div className="cly-literature-paper-cell">
-            <strong>{row.original.title}</strong>
-            <span>
-              {row.original.authors} · {row.original.year}
-            </span>
-          </div>
-        ),
-      },
-      { accessorKey: "summary", header: "Research problem" },
-      {
-        id: "methods",
-        header: "Method",
-        accessorFn: (source) => source.methods.join(", ") || "Not extracted",
-      },
-      {
-        id: "finding",
-        header: "Principal result",
-        accessorFn: (source) => source.findings[0] ?? "Extraction pending",
-      },
-      {
-        id: "limitations",
-        header: "Limitations",
-        accessorFn: (source) =>
-          source.limitations.join(", ") || "None recorded",
-      },
-      {
-        id: "claims",
-        header: "Claims",
-        accessorFn: (source) =>
-          source.linkedClaimIds
-            .map((id) => claims.find((claim) => claim.id === id)?.text)
-            .filter(Boolean)
-            .join("; ") || "—",
-      },
-      {
-        accessorKey: "confidence",
-        header: "Confidence",
-        cell: ({ row }) => `${row.original.confidence}%`,
-      },
-      {
-        accessorKey: "status",
-        header: "Review",
-        cell: ({ row }) => (
-          <Badge tone={toneForStatus(row.original.status)}>
-            {row.original.status}
-          </Badge>
-        ),
-      },
-    ],
-    [claims],
   );
 
   const runSearch = async () => {
@@ -1251,92 +1243,12 @@ export function LiteratureScreen() {
               ) : null}
             </>
           ) : (
-            <>
-              <div className="cly-filterbar cly-literature-matrix-toolbar">
-                <SearchInput
-                  value={matrixQuery}
-                  onChange={setMatrixQuery}
-                  label="Filter saved literature"
-                  placeholder="Filter titles, authors, methods, or findings…"
-                />
-                <label className="cly-control-label">
-                  <span className="cly-sr-only">Filter by review state</span>
-                  <select
-                    className="cly-select"
-                    value={matrixStatus}
-                    onChange={(event) => setMatrixStatus(event.target.value)}
-                  >
-                    <option>All review states</option>
-                    <option>Needs metadata</option>
-                    <option>Queued</option>
-                    <option>Reading</option>
-                    <option>Reviewed</option>
-                  </select>
-                </label>
-                <Button
-                  onClick={() => {
-                    const themes = previewLiteratureThemes(sources);
-                    notify(
-                      "Theme preview ready",
-                      themes.length
-                        ? themes
-                            .map(
-                              (theme) =>
-                                `${theme.label} (${theme.sourceCount} source${theme.sourceCount === 1 ? "" : "s"})`,
-                            )
-                            .join(" · ")
-                        : "Add tags or structured methods before generating a theme preview.",
-                    );
-                  }}
-                >
-                  <Sparkles size={13} /> Synthesize themes
-                </Button>
-                <Button
-                  onClick={() =>
-                    notify(
-                      "Column settings",
-                      "Column visibility is remembered for this literature matrix.",
-                    )
-                  }
-                >
-                  <Columns3 size={13} /> Columns
-                </Button>
-              </div>
-              <div className="cly-literature-result-summary">
-                <div>
-                  <strong>Saved evidence matrix</strong>
-                  <span>{matrixSources.length} sources in this view</span>
-                </div>
-                <InlineMetadata>
-                  <span>
-                    {
-                      sources.filter((source) => source.status === "Reviewed")
-                        .length
-                    }{" "}
-                    reviewed
-                  </span>
-                  <span>
-                    {
-                      sources.filter((source) => source.linkedClaimIds.length)
-                        .length
-                    }{" "}
-                    linked to claims
-                  </span>
-                  <span>
-                    {sources.filter((source) => source.provenance).length} with
-                    search provenance
-                  </span>
-                </InlineMetadata>
-              </div>
-              <ClyDataTable
-                id="literature-saved-matrix"
-                data={matrixSources}
-                columns={matrixColumns}
-                getRowId={(source) => source.id}
-                onSelect={(source) => setSelected(source.id)}
-                emptyMessage="No saved sources match these filters"
-              />
-            </>
+            <LiteratureMatrixWorkspace
+              sources={sources}
+              claims={claims}
+              onSelectSource={setSelected}
+              notify={notify}
+            />
           )}
         </section>
       ) : null}
@@ -1923,6 +1835,7 @@ export function CodeLinkerScreen() {
       (view !== "Unlinked" || item.status === "Unlinked") &&
       (view !== "Risks" || item.risks.length),
   );
+  if (!isClyDemoRuntime) return <LiveCodeLinkerScreen />;
   return (
     <div className="cly-page cly-page-wide cly-route-code">
       <PageHeader
@@ -2111,6 +2024,368 @@ export function CodeLinkerScreen() {
   );
 }
 
+function LiveCodeLinkerScreen() {
+  const activeProjectId = useClyStore((state) => state.activeProjectId);
+  const notify = useClyStore((state) => state.notify);
+  const [entities, setEntities] = useState<CodeEntitySummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [context, setContext] = useState<CodeContext | null>(null);
+  const [query, setQuery] = useState("");
+  const [view, setView] = useState<"All" | "Files" | "Symbols" | "Review">(
+    "All",
+  );
+  const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reloadEntities = async (projectId: string) => {
+    const next = await apiClient.fetchCodeEntities(projectId);
+    setEntities(next);
+    setSelectedId((current) =>
+      current && next.some((entity) => entity.id === current)
+        ? current
+        : (next[0]?.id ?? null),
+    );
+    return next;
+  };
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    if (!activeProjectId) {
+      setEntities([]);
+      setLoading(false);
+      return;
+    }
+    void apiClient
+      .fetchCodeEntities(activeProjectId)
+      .then((next) => {
+        if (!active) return;
+        setEntities(next);
+        setSelectedId(next[0]?.id ?? null);
+      })
+      .catch((caught) => {
+        if (active)
+          setError(
+            caught instanceof Error ? caught.message : "Code context failed.",
+          );
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeProjectId]);
+
+  const selected = entities.find((entity) => entity.id === selectedId) ?? null;
+  useEffect(() => {
+    let active = true;
+    setContext(null);
+    if (!activeProjectId || !selected) return;
+    void apiClient
+      .fetchCodeContext(activeProjectId, selected)
+      .then((next) => {
+        if (active) setContext(next);
+      })
+      .catch((caught) => {
+        if (active)
+          setError(
+            caught instanceof Error ? caught.message : "Code context failed.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeProjectId, selected]);
+
+  const visible = entities.filter((entity) => {
+    const matchesQuery =
+      `${entity.path} ${entity.symbol ?? ""} ${entity.language}`
+        .toLowerCase()
+        .includes(query.toLowerCase());
+    const matchesView =
+      view === "All" ||
+      (view === "Files" && entity.kind === "file") ||
+      (view === "Symbols" && entity.kind === "symbol") ||
+      (view === "Review" &&
+        (entity.unverifiedCount > 0 || entity.staleLinkCount > 0));
+    return matchesQuery && matchesView;
+  });
+
+  const scan = async () => {
+    if (!activeProjectId) return;
+    setScanning(true);
+    setError(null);
+    try {
+      const result = await apiClient.scanCodeContext(activeProjectId);
+      await reloadEntities(activeProjectId);
+      notify(
+        "Code context refreshed",
+        `${result.filesScanned} files and ${result.entities} file/symbol records indexed.`,
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Code scan failed.");
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const review = async (
+    linkId: string,
+    verificationState: "verified" | "rejected",
+  ) => {
+    if (!activeProjectId || !selected) return;
+    try {
+      await apiClient.reviewCodeLink(
+        activeProjectId,
+        linkId,
+        verificationState,
+      );
+      const next = await apiClient.fetchCodeContext(activeProjectId, selected);
+      setContext(next);
+      await reloadEntities(activeProjectId);
+      notify(
+        verificationState === "verified"
+          ? "Code link verified"
+          : "Code link rejected",
+        "The decision and reviewer identity were added to provenance.",
+      );
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Code link review failed.",
+      );
+    }
+  };
+
+  return (
+    <div className="cly-page cly-page-wide cly-route-code">
+      <PageHeader
+        kicker="Research"
+        title="Code-to-Research Linker"
+        description="Inspect verified context and review inferred relationships."
+        actions={
+          entities.length ? (
+            <div className="cly-row">
+              <Segmented
+                value={view}
+                options={["All", "Files", "Symbols", "Review"] as const}
+                onChange={setView}
+                label="Code entity view"
+              />
+              <Button
+                variant="primary"
+                disabled={scanning}
+                onClick={() => void scan()}
+              >
+                <ScanSearch size={13} />{" "}
+                {scanning ? "Scanning…" : "Scan project"}
+              </Button>
+            </div>
+          ) : undefined
+        }
+      />
+      {error ? (
+        <ErrorState description={error} onRetry={() => void scan()} />
+      ) : loading ? (
+        <LoadingState label="Loading code research context" />
+      ) : entities.length === 0 ? (
+        <EmptyState
+          title="No code context indexed"
+          description="Scan the registered repository to index tracked Python and Jupyter files."
+          icon={<Code2 size={22} />}
+          action={
+            <Button
+              variant="primary"
+              disabled={scanning}
+              onClick={() => void scan()}
+            >
+              <ScanSearch size={13} /> Scan project
+            </Button>
+          }
+        />
+      ) : (
+        <ClySplitPane
+          id="code-research-context"
+          label="Resize code context panes"
+          secondarySize={46}
+          primary={
+            <div>
+              <div className="cly-filterbar">
+                <SearchInput
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Search files and symbols…"
+                  label="Search indexed code"
+                />
+              </div>
+              <ClyVirtualList
+                items={visible}
+                estimateSize={44}
+                height={520}
+                getKey={(entity) => entity.id}
+                label="Indexed files and symbols"
+                renderItem={(entity) => (
+                  <button
+                    className="cly-list-row"
+                    type="button"
+                    data-selected={selected?.id === entity.id}
+                    onClick={() => setSelectedId(entity.id)}
+                  >
+                    <div>
+                      <span className="cly-list-title cly-mono">
+                        {entity.path}
+                        {entity.symbol ? ` · ${entity.symbol}` : ""}
+                      </span>
+                      <div className="cly-list-detail">
+                        {entity.language} · {entity.linkCount} links
+                      </div>
+                    </div>
+                    <Badge
+                      tone={toneForStatus(
+                        entity.staleLinkCount
+                          ? "stale"
+                          : entity.unverifiedCount
+                            ? "review"
+                            : "verified",
+                      )}
+                    >
+                      {entity.staleLinkCount
+                        ? "Stale"
+                        : entity.unverifiedCount
+                          ? "Needs review"
+                          : "Current"}
+                    </Badge>
+                  </button>
+                )}
+              />
+            </div>
+          }
+          secondary={
+            selected && context ? (
+              <div>
+                <PaneHeader
+                  title={selected.symbol ?? selected.path}
+                  detail={selected.symbol ? selected.path : "File context"}
+                  actions={
+                    <Badge tone={selected.stale ? "warning" : "success"}>
+                      {selected.stale ? "Changed" : "Indexed"}
+                    </Badge>
+                  }
+                />
+                <div className="cly-panel-body">
+                  <InlineMetadata>
+                    <span>{selected.language}</span>
+                    <span>{selected.symbolKind ?? selected.kind}</span>
+                    {selected.lineStart ? (
+                      <span>
+                        lines {selected.lineStart}–{selected.lineEnd}
+                      </span>
+                    ) : null}
+                    {selected.commitSha ? (
+                      <code>{selected.commitSha.slice(0, 12)}</code>
+                    ) : null}
+                  </InlineMetadata>
+                  <Section title="Research context">
+                    {context.links.length ? (
+                      context.links.map((link) => (
+                        <DisclosureRow
+                          key={link.id}
+                          title={link.target.title}
+                          detail={`${link.linkRole} · ${link.target.kind}`}
+                          tone={toneForStatus(
+                            link.stale ? "stale" : link.verificationState,
+                          )}
+                          metadata={
+                            <Badge
+                              tone={toneForStatus(
+                                link.stale ? "stale" : link.verificationState,
+                              )}
+                            >
+                              {link.stale ? "Stale" : link.verificationState}
+                            </Badge>
+                          }
+                        >
+                          <dl className="cly-detail-grid">
+                            <dt>Source</dt>
+                            <dd>{link.source}</dd>
+                            <dt>Origin</dt>
+                            <dd>{link.origin}</dd>
+                            <dt>Confidence</dt>
+                            <dd>
+                              {link.confidence == null
+                                ? "Not applicable"
+                                : `${Math.round(link.confidence * 100)}%`}
+                            </dd>
+                            <dt>Evidence</dt>
+                            <dd>
+                              {link.evidence.length
+                                ? link.evidence
+                                    .map(
+                                      (item) =>
+                                        `${item.locator}: ${item.description}`,
+                                    )
+                                    .join("; ")
+                                : "Manual assertion"}
+                            </dd>
+                          </dl>
+                          {link.verificationState === "unverified" ? (
+                            <div className="cly-row">
+                              <Button
+                                onClick={() => void review(link.id, "verified")}
+                              >
+                                <Check size={13} /> Verify
+                              </Button>
+                              <Button
+                                onClick={() => void review(link.id, "rejected")}
+                              >
+                                <X size={13} /> Reject
+                              </Button>
+                            </div>
+                          ) : null}
+                        </DisclosureRow>
+                      ))
+                    ) : (
+                      <div className="cly-callout">
+                        No research relationships are linked to this code
+                        entity.
+                      </div>
+                    )}
+                  </Section>
+                  <Section title="Provenance">
+                    {context.provenance.length ? (
+                      context.provenance.map((event) => (
+                        <div className="cly-list-row" key={event.id}>
+                          <div>
+                            <span className="cly-list-title">
+                              {event.action}
+                            </span>
+                            <div className="cly-list-detail">
+                              {event.actorId ?? event.actorType} ·{" "}
+                              {event.createdAt}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="cly-callout">
+                        No link decisions recorded yet.
+                      </div>
+                    )}
+                  </Section>
+                </div>
+              </div>
+            ) : (
+              <LoadingState label="Loading selected code context" />
+            )
+          }
+        />
+      )}
+    </div>
+  );
+}
+
 type ClaimView = "Board" | "Table" | "Detail";
 const claimStatuses: ClaimStatus[] = [
   "Unsupported",
@@ -2269,7 +2544,10 @@ export function ClaimsScreen() {
                           type="button"
                           className="cly-claim-card"
                           key={claim.id}
-                          onClick={() => setSelected(claim.id)}
+                          onClick={() => {
+                            setSelected(claim.id);
+                            setView("Detail");
+                          }}
                           style={{
                             display: "block",
                             width: "calc(100% - 14px)",
@@ -2306,7 +2584,10 @@ export function ClaimsScreen() {
               columns={claimColumns}
               selectedId={selectedId}
               getRowId={(claim) => claim.id}
-              onSelect={(claim) => setSelected(claim.id)}
+              onSelect={(claim) => {
+                setSelected(claim.id);
+                setView("Detail");
+              }}
               emptyMessage="No claims match this audit filter"
             />
           ) : null}
@@ -2717,6 +2998,9 @@ function ClaimDetail({
     "supports",
   );
   const [sourceId, setSourceId] = useState(data.sources[0]?.id ?? "");
+  const [quote, setQuote] = useState("");
+  const [locator, setLocator] = useState("");
+  const [evidenceConfidence, setEvidenceConfidence] = useState("");
   const [savingEvidence, setSavingEvidence] = useState(false);
   const evidenceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const closeEvidence = () => {
@@ -2741,16 +3025,27 @@ function ClaimDetail({
     setEvidenceOpen(true);
   };
   const linkEvidence = async () => {
-    if (!sourceId) return;
+    if (!sourceId || !quote.trim()) return;
     setSavingEvidence(true);
     try {
       await projectServices.claims.linkEvidence(
         claim.id,
         sourceId,
         relationship,
+        {
+          quote: quote.trim(),
+          locator: locator.trim() || undefined,
+          origin: "human",
+          confidence: evidenceConfidence
+            ? Number(evidenceConfidence) / 100
+            : null,
+        },
       );
       const source = data.sources.find((item) => item.id === sourceId);
       closeEvidence();
+      setQuote("");
+      setLocator("");
+      setEvidenceConfidence("");
       notify(
         relationship === "supports"
           ? "Supporting evidence linked"
@@ -2766,6 +3061,24 @@ function ClaimDetail({
       setSavingEvidence(false);
     }
   };
+  const passageLinks = data.graphEdges
+    .filter(
+      (edge) =>
+        edge.target === claim.id &&
+        (edge.relation === "supports" || edge.relation === "contradicts"),
+    )
+    .flatMap((edge) => {
+      const passage = data.evidencePassages.find(
+        (candidate) => candidate.id === edge.source,
+      );
+      return passage ? [{ edge, passage }] : [];
+    });
+  const passageSourceIds = new Set(
+    passageLinks.map(({ passage }) => passage.sourceId),
+  );
+  const missingPassageSourceIds = Array.from(
+    new Set([...claim.supportingSourceIds, ...claim.contradictingSourceIds]),
+  ).filter((id) => !passageSourceIds.has(id));
   return (
     <div className="cly-overview-grid">
       <div>
@@ -2907,46 +3220,214 @@ function ClaimDetail({
                 <p className="cly-muted">No supporting run costs attributed.</p>
               )}
             </Section>
-            <Section title="Evidence chain">
-              <div className="cly-evidence-chain">
-                {[
-                  ...claim.supportingSourceIds
-                    .slice(0, 1)
-                    .map(
-                      (id) =>
-                        data.sources.find((item) => item.id === id)?.title ??
-                        id,
-                    ),
-                  ...claim.experimentIds
-                    .slice(0, 1)
-                    .map(
-                      (id) =>
-                        data.experiments.find((item) => item.id === id)?.name ??
-                        id,
-                    ),
-                  ...claim.artifactIds
-                    .slice(0, 1)
-                    .map(
-                      (id) =>
-                        data.artifacts.find((item) => item.id === id)?.name ??
-                        id,
-                    ),
-                  "Claim",
-                ].map((label, index, all) => (
-                  <span style={{ display: "contents" }} key={label}>
-                    <div className="cly-chain-node">
-                      <strong className="cly-clamp-2">{label}</strong>
-                      <div className="cly-muted" style={{ marginTop: 3 }}>
-                        {index === all.length - 1
-                          ? claim.status
-                          : "Confirmed evidence"}
+            <Section
+              title="Complete available evidence chain"
+              subtitle="Source → exact passage → claim, with review and provenance state."
+            >
+              <div className="cly-passage-list">
+                {passageLinks.map(({ edge, passage }) => {
+                  const source = data.sources.find(
+                    (item) => item.id === passage.sourceId,
+                  );
+                  const supporting = edge.relation === "supports";
+                  return (
+                    <article
+                      className="cly-passage-card"
+                      data-relation={edge.relation}
+                      key={edge.id}
+                    >
+                      <div className="cly-passage-card-header">
+                        <div>
+                          <strong>{source?.title ?? passage.sourceId}</strong>
+                          <div className="cly-muted cly-small">
+                            {passage.locator ?? "Locator not supplied"} · v
+                            {passage.version} · {passage.origin}
+                          </div>
+                        </div>
+                        <Badge tone={supporting ? "success" : "danger"}>
+                          {supporting ? "Supports" : "Contradicts"}
+                        </Badge>
                       </div>
-                    </div>
-                    {index < all.length - 1 ? (
-                      <ArrowRight className="cly-chain-arrow" size={13} />
-                    ) : null}
-                  </span>
+                      <blockquote>“{passage.quote}”</blockquote>
+                      <div className="cly-passage-review">
+                        <Badge
+                          tone={
+                            edge.reviewState === "approved"
+                              ? "success"
+                              : edge.reviewState === "rejected"
+                                ? "danger"
+                                : "warning"
+                          }
+                        >
+                          {edge.origin === "inferred" &&
+                          edge.reviewState === "unreviewed"
+                            ? "AI inferred · unverified"
+                            : `Link ${edge.reviewState ?? "unreviewed"}`}
+                        </Badge>
+                        <Badge
+                          tone={
+                            passage.verificationState === "verified"
+                              ? "success"
+                              : passage.verificationState === "rejected"
+                                ? "danger"
+                                : "warning"
+                          }
+                        >
+                          Passage {passage.verificationState}
+                        </Badge>
+                        {edge.confidence !== null ? (
+                          <span className="cly-muted cly-small">
+                            {Math.round(edge.confidence * 100)}% confidence
+                          </span>
+                        ) : null}
+                      </div>
+                      {edge.reviewState === "unreviewed" ||
+                      edge.reviewState === undefined ? (
+                        <div className="cly-row">
+                          <Button
+                            onClick={() =>
+                              void projectServices.claims
+                                .reviewEvidenceRelationship(
+                                  edge.id,
+                                  "approved",
+                                  edge.confidence,
+                                )
+                                .then(() => notify("Evidence link approved"))
+                                .catch((error) =>
+                                  notify(
+                                    "Evidence review was not saved",
+                                    error instanceof Error
+                                      ? error.message
+                                      : "Unable to approve the link.",
+                                  ),
+                                )
+                            }
+                          >
+                            Approve link
+                          </Button>
+                          <Button
+                            onClick={() =>
+                              void projectServices.claims
+                                .reviewEvidenceRelationship(
+                                  edge.id,
+                                  "rejected",
+                                  edge.confidence,
+                                )
+                                .then(() => notify("Evidence link rejected"))
+                                .catch((error) =>
+                                  notify(
+                                    "Evidence review was not saved",
+                                    error instanceof Error
+                                      ? error.message
+                                      : "Unable to reject the link.",
+                                  ),
+                                )
+                            }
+                          >
+                            Reject link
+                          </Button>
+                        </div>
+                      ) : null}
+                      {passage.verificationState === "unverified" ? (
+                        <Button
+                          variant="ghost"
+                          onClick={() =>
+                            void projectServices.claims
+                              .verifyEvidencePassage(passage.id, "verified")
+                              .then(() => notify("Passage verified"))
+                              .catch((error) =>
+                                notify(
+                                  "Passage verification was not saved",
+                                  error instanceof Error
+                                    ? error.message
+                                    : "Unable to verify the passage.",
+                                ),
+                              )
+                          }
+                        >
+                          Verify exact passage
+                        </Button>
+                      ) : null}
+                      <div className="cly-muted cly-small">
+                        Link v{edge.version ?? 1} ·{" "}
+                        {edge.reviewedBy
+                          ? `reviewed by ${edge.reviewedBy} ${new Date(
+                              edge.reviewedAt ??
+                                edge.createdAt ??
+                                passage.createdAt,
+                            ).toLocaleString()}`
+                          : `created ${new Date(
+                              edge.createdAt ?? passage.createdAt,
+                            ).toLocaleString()}`}
+                      </div>
+                      <div className="cly-muted cly-small">
+                        {passage.reviewedBy
+                          ? `Reviewed by ${passage.reviewedBy} · ${new Date(
+                              passage.reviewedAt ?? passage.updatedAt,
+                            ).toLocaleString()}`
+                          : `Created ${new Date(passage.createdAt).toLocaleString()}`}
+                      </div>
+                    </article>
+                  );
+                })}
+                {missingPassageSourceIds.map((id) => (
+                  <div className="cly-callout" data-tone="warning" key={id}>
+                    Missing exact passage for{" "}
+                    {data.sources.find((source) => source.id === id)?.title ??
+                      id}
+                    .
+                  </div>
                 ))}
+                {passageLinks.length === 0 &&
+                missingPassageSourceIds.length === 0 ? (
+                  <div className="cly-callout" data-tone="warning">
+                    Missing link: add a source and quote the exact passage that
+                    supports or contradicts this claim.
+                  </div>
+                ) : null}
+                {claim.experimentIds.map((experimentId) => {
+                  const experiment = data.experiments.find(
+                    (item) => item.id === experimentId,
+                  );
+                  const runs = data.runs.filter(
+                    (run) => run.experimentId === experimentId,
+                  );
+                  const artifacts = data.artifacts.filter(
+                    (artifact) => artifact.experimentId === experimentId,
+                  );
+                  return (
+                    <article className="cly-passage-card" key={experimentId}>
+                      <div className="cly-passage-card-header">
+                        <div>
+                          <strong>
+                            {experiment?.name ?? experimentId} → Claim
+                          </strong>
+                          <div className="cly-muted cly-small">
+                            Objective: {experiment?.goal ?? "Missing objective"}
+                          </div>
+                        </div>
+                        <Badge tone={runs.length ? "info" : "warning"}>
+                          Experiment
+                        </Badge>
+                      </div>
+                      <div className="cly-muted cly-small">
+                        {runs.length
+                          ? `${runs.length} linked ${runs.length === 1 ? "run" : "runs"}`
+                          : "Missing link: no run recorded"}
+                        {" · "}
+                        {artifacts.length
+                          ? `${artifacts.length} linked ${artifacts.length === 1 ? "artifact" : "artifacts"}`
+                          : "Missing link: no artifact recorded"}
+                      </div>
+                    </article>
+                  );
+                })}
+                {claim.experimentIds.length === 0 ? (
+                  <div className="cly-callout" data-tone="warning">
+                    Missing computation link: connect an objective or
+                    experiment, then record its run and artifact when available.
+                  </div>
+                ) : null}
               </div>
             </Section>
             <div className="cly-grid-2">
@@ -2985,7 +3466,7 @@ function ClaimDetail({
             onClick={() =>
               notify(
                 "Experiment proposal created",
-                "A planned experiment and linked next step were created in fixture mode.",
+                "A planned experiment and linked next step were created in demo mode.",
               )
             }
           >
@@ -2996,17 +3477,13 @@ function ClaimDetail({
           <div className="cly-inspector-label">Claim actions</div>
           <div className="cly-stack">
             <Button
-              disabled={!isClyDemoRuntime && data.experiments.length === 0}
+              disabled={data.experiments.length === 0}
               title={
                 !isClyDemoRuntime && data.experiments.length === 0
                   ? "Create an experiment before linking evidence."
                   : undefined
               }
-              onClick={(event) => {
-                if (isClyDemoRuntime) {
-                  openEvidence("supports", event.currentTarget);
-                  return;
-                }
+              onClick={() => {
                 void projectServices.claims
                   .linkExperiment(claim.id, data.experiments[0].id)
                   .then(() =>
@@ -3017,7 +3494,18 @@ function ClaimDetail({
                   );
               }}
             >
-              <Link2 size={13} /> Link evidence
+              <Link2 size={13} /> Link experiment
+            </Button>
+            <Button
+              disabled={data.sources.length === 0}
+              title={
+                data.sources.length === 0
+                  ? "Import a source before adding an evidence passage."
+                  : undefined
+              }
+              onClick={(event) => openEvidence("supports", event.currentTarget)}
+            >
+              <Link2 size={13} /> Add supporting passage
             </Button>
             <Button
               onClick={(event) =>
@@ -3032,7 +3520,7 @@ function ClaimDetail({
               onClick={() =>
                 notify(
                   "Claim report exported",
-                  "The fixture report includes all evidence, caveats, and provenance links.",
+                  "The report includes all evidence, caveats, and provenance links.",
                 )
               }
             >
@@ -3058,7 +3546,7 @@ function ClaimDetail({
             <Button onClick={closeEvidence}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={!sourceId || savingEvidence}
+              disabled={!sourceId || !quote.trim() || savingEvidence}
               onClick={() => void linkEvidence()}
             >
               {savingEvidence ? "Linking…" : "Link source"}
@@ -3080,6 +3568,46 @@ function ClaimDetail({
               </option>
             ))}
           </select>
+        </div>
+        <div className="cly-field">
+          <label htmlFor={`claim-evidence-quote-${claim.id}`}>
+            Exact evidence passage
+          </label>
+          <textarea
+            id={`claim-evidence-quote-${claim.id}`}
+            className="cly-textarea"
+            value={quote}
+            onChange={(event) => setQuote(event.target.value)}
+            placeholder="Paste the exact sentence or paragraph from the source…"
+          />
+        </div>
+        <div className="cly-field">
+          <label htmlFor={`claim-evidence-confidence-${claim.id}`}>
+            Confidence (0–100%)
+          </label>
+          <input
+            id={`claim-evidence-confidence-${claim.id}`}
+            className="cly-input"
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            value={evidenceConfidence}
+            onChange={(event) => setEvidenceConfidence(event.target.value)}
+            placeholder="Optional"
+          />
+        </div>
+        <div className="cly-field">
+          <label htmlFor={`claim-evidence-locator-${claim.id}`}>
+            Page, section, or locator
+          </label>
+          <input
+            id={`claim-evidence-locator-${claim.id}`}
+            className="cly-input"
+            value={locator}
+            onChange={(event) => setLocator(event.target.value)}
+            placeholder="e.g. p. 14, Results §3.2"
+          />
         </div>
         <div className="cly-field">
           <label htmlFor={`claim-relation-${claim.id}`}>Relationship</label>

@@ -82,7 +82,23 @@ describe("repository observer", () => {
     const root = await createGitRepository();
     const database = createDatabase();
     const repository = createResearchRepository(database);
-    repository.upsertProject({ id: "project-1", name: "Project", path: root });
+    repository.upsertProject({
+      id: "project-1",
+      metadata: {
+        repositoryObservation: {
+          approvalId: "approval-project-1",
+          enabled: true,
+        },
+      },
+      name: "Project",
+      path: root,
+    });
+    repository.appendProvenance({
+      action: "repository.observation.enabled",
+      actorType: "human",
+      metadata: { approvalId: "approval-project-1" },
+      projectId: "project-1",
+    });
     await writeFile(path.join(root, "tracked.txt"), "changed\n");
     await mkdir(path.join(root, "results"));
     await writeFile(path.join(root, "results", "run.json"), "{}\n");
@@ -105,6 +121,7 @@ describe("repository observer", () => {
       ]),
     );
     expect(result.repository.head).toMatch(/^[a-f0-9]{40}$/);
+    expect(result.repository.branch).toMatch(/^(?:main|master)$/);
     expect(repository.listProvenance("project-1", { limit: 10 })).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -126,7 +143,20 @@ describe("repository observer", () => {
     const repository = createResearchRepository(database);
     const child = path.join(root, "child");
     await mkdir(child);
-    repository.upsertProject({ id: "child", name: "Child", path: child });
+    repository.upsertProject({
+      id: "child",
+      metadata: {
+        repositoryObservation: { approvalId: "approval-child", enabled: true },
+      },
+      name: "Child",
+      path: child,
+    });
+    repository.appendProvenance({
+      action: "repository.observation.enabled",
+      actorType: "human",
+      metadata: { approvalId: "approval-child" },
+      projectId: "child",
+    });
 
     await expect(
       createRepositoryObserver(repository).scan("child"),
@@ -137,7 +167,20 @@ describe("repository observer", () => {
     const alias = `${root}-alias`;
     temporaryDirectories.push(alias);
     await symlink(root, alias, "dir");
-    repository.upsertProject({ id: "alias", name: "Alias", path: alias });
+    repository.upsertProject({
+      id: "alias",
+      metadata: {
+        repositoryObservation: { approvalId: "approval-alias", enabled: true },
+      },
+      name: "Alias",
+      path: alias,
+    });
+    repository.appendProvenance({
+      action: "repository.observation.enabled",
+      actorType: "human",
+      metadata: { approvalId: "approval-alias" },
+      projectId: "alias",
+    });
     await expect(
       createRepositoryObserver(repository).scan("alias"),
     ).rejects.toThrow("registered project path is not canonical");
@@ -147,7 +190,23 @@ describe("repository observer", () => {
     const root = await createGitRepository();
     const database = createDatabase();
     const repository = createResearchRepository(database);
-    repository.upsertProject({ id: "project-1", name: "Project", path: root });
+    repository.upsertProject({
+      id: "project-1",
+      metadata: {
+        repositoryObservation: {
+          approvalId: "approval-project-1",
+          enabled: true,
+        },
+      },
+      name: "Project",
+      path: root,
+    });
+    repository.appendProvenance({
+      action: "repository.observation.enabled",
+      actorType: "human",
+      metadata: { approvalId: "approval-project-1" },
+      projectId: "project-1",
+    });
     await writeFile(
       path.join(root, "untracked-with-a-long-name.txt"),
       "content\n",
@@ -158,6 +217,22 @@ describe("repository observer", () => {
         "project-1",
       ),
     ).rejects.toThrow("Repository observation exceeded its output limit");
+    expect(
+      repository
+        .listProvenance("project-1")
+        .filter((event) => event.action.startsWith("repository.scan")),
+    ).toEqual([]);
+  });
+
+  it("fails before touching Git unless observation is opted in for the project", async () => {
+    const root = await createGitRepository();
+    const database = createDatabase();
+    const repository = createResearchRepository(database);
+    repository.upsertProject({ id: "project-1", name: "Project", path: root });
+
+    await expect(
+      createRepositoryObserver(repository).scan("project-1"),
+    ).rejects.toThrow("observation is not enabled for this project");
     expect(repository.listProvenance("project-1")).toEqual([]);
   });
 });

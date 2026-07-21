@@ -90,6 +90,63 @@ const coreData: ClyRepositoryData = {
         "No compute-normalized comparison",
       ],
       tags: ["surrogates", "calibration", "dynamics"],
+      folder: "Core evidence",
+      extractedFields: {
+        researchProblem: {
+          value:
+            "How reliable are calibrated neural surrogates under temporal and parameter shift?",
+          passage: {
+            quote:
+              "We evaluate calibrated surrogate ensembles under temporal, parameter, and compound distribution shift.",
+            locator: "Abstract · sentence 2",
+          },
+          confidence: 98,
+          verificationState: "verified",
+          verifiedBy: "A. Researcher",
+          verifiedAt: "2026-07-10T14:20:00.000Z",
+        },
+        method: {
+          value: "Deep ensembles with conformal intervals",
+          passage: {
+            quote:
+              "Five independently initialized surrogates were combined with split-conformal calibration.",
+            locator: "Methods · p. 4",
+          },
+          confidence: 96,
+          verificationState: "verified",
+          verifiedBy: "A. Researcher",
+          verifiedAt: "2026-07-10T14:24:00.000Z",
+        },
+        principalResult: {
+          value: "Ensembles reduce silent failures under single shifts",
+          passage: {
+            quote:
+              "The ensemble reduced undetected rollout failures by 41% under temporal shift.",
+            locator: "Results · p. 8",
+          },
+          confidence: 93,
+          verificationState: "unverified",
+        },
+        limitations: {
+          value: "Low-dimensional PDEs; no compute-normalized comparison",
+          passage: {
+            quote:
+              "Our study is limited to low-dimensional PDE systems and does not normalize comparisons by tuning cost.",
+            locator: "Limitations · p. 11",
+          },
+          confidence: 99,
+          verificationState: "verified",
+          verifiedBy: "A. Researcher",
+          verifiedAt: "2026-07-10T14:31:00.000Z",
+        },
+      },
+      contradictoryEvidence: [
+        {
+          quote:
+            "Under compound shift, nominal coverage fell below every accepted reliability threshold.",
+          locator: "Results · p. 9",
+        },
+      ],
       linkedClaimIds: ["claim-01", "claim-03"],
       linkedExperimentIds: ["exp-01"],
       inNotebookBundle: true,
@@ -111,6 +168,50 @@ const coreData: ClyRepositoryData = {
       findings: ["Single aggregate metrics conceal regime-specific collapse"],
       limitations: ["No fluid-dynamics benchmark"],
       tags: ["uncertainty", "OOD", "evaluation"],
+      folder: "Evaluation protocols",
+      extractedFields: {
+        researchProblem: {
+          value:
+            "Which evaluation protocols expose uncertainty failures under distribution shift?",
+          passage: {
+            quote:
+              "We develop a taxonomy and evaluation protocol for uncertainty under scientific distribution shift.",
+            locator: "Abstract",
+          },
+          confidence: 95,
+          verificationState: "unverified",
+        },
+        method: {
+          value: "Shift taxonomy and regime-stratified calibration error",
+          passage: {
+            quote:
+              "Evaluation is stratified by shift mechanism and severity before calibration error is aggregated.",
+            locator: "Methods · p. 5",
+          },
+          confidence: 91,
+          verificationState: "unverified",
+        },
+        principalResult: {
+          value: "Aggregate metrics conceal regime-specific collapse",
+          passage: {
+            quote:
+              "Aggregate calibration scores concealed severe failures in three of seven shift regimes.",
+            locator: "Results · p. 9",
+          },
+          confidence: 97,
+          verificationState: "unverified",
+        },
+        limitations: {
+          value: "No fluid-dynamics benchmark",
+          passage: {
+            quote:
+              "Fluid-dynamics systems are not represented in the benchmark suite.",
+            locator: "Limitations · p. 13",
+          },
+          confidence: 99,
+          verificationState: "unverified",
+        },
+      },
       linkedClaimIds: ["claim-02", "claim-03"],
       linkedExperimentIds: ["exp-02"],
       inNotebookBundle: true,
@@ -131,6 +232,7 @@ const coreData: ClyRepositoryData = {
       findings: ["Validated against experimental drag coefficients"],
       limitations: ["Two-dimensional geometry"],
       tags: ["dataset", "CFD", "validation"],
+      folder: "Benchmarks",
       linkedClaimIds: ["claim-01"],
       linkedExperimentIds: ["exp-01", "exp-03"],
       inNotebookBundle: false,
@@ -181,6 +283,7 @@ const coreData: ClyRepositoryData = {
       updatedAt: "2026-07-05T08:00:00.000Z",
     },
   ],
+  evidencePassages: [],
   claims: [
     {
       id: "claim-01",
@@ -769,7 +872,7 @@ const coreData: ClyRepositoryData = {
       status: "Planned",
       purpose: "Report handoff",
       capabilities: ["Planned export"],
-      privacy: "Unavailable in prototype",
+      privacy: "Unavailable in this build",
     },
     {
       id: "int-drive",
@@ -787,7 +890,7 @@ const coreData: ClyRepositoryData = {
       status: "Not connected",
       purpose: "Dataset and model manifests",
       capabilities: ["Manual reference", "Future sync"],
-      privacy: "No token stored in prototype",
+      privacy: "No token stored in this build",
     },
     {
       id: "int-wandb",
@@ -796,7 +899,7 @@ const coreData: ClyRepositoryData = {
       status: "Unavailable",
       purpose: "Experiment metadata import",
       capabilities: ["Planned run import"],
-      privacy: "Unavailable in prototype",
+      privacy: "Unavailable in this build",
     },
     {
       id: "int-mlflow",
@@ -1786,7 +1889,7 @@ export const createFixtureRepository = (
       id: "activity-error",
       time: "Now",
       type: "system",
-      title: "Fixture service error",
+      title: "Demo service error",
       detail:
         "The selected state simulates partial data and integration failures.",
       status: "warning",
@@ -1796,7 +1899,7 @@ export const createFixtureRepository = (
     if (session && failedAgent) {
       failedAgent.status = "failed";
       failedAgent.lastAction = "Process exited before returning a result";
-      failedAgent.currentResource = "Fixture runtime log · exit code 1";
+      failedAgent.currentResource = "Demo runtime log · exit code 1";
       failedAgent.transcript.push(
         "The partial implementation result remains available for reassignment.",
       );
@@ -1807,7 +1910,7 @@ export const createFixtureRepository = (
         type: "error",
         author: failedAgent.name,
         title: "Delegated Agent failed",
-        body: "The fixture process exited before handoff. Inspect logs, retry, or reassign the task; completed evidence remains attached.",
+        body: "The process exited before handoff. Inspect logs, retry, or reassign the task; completed evidence remains attached.",
         timestamp: "Just now",
         agentId: failedAgent.id,
         actions: ["Inspect logs", "Retry", "Reassign"],

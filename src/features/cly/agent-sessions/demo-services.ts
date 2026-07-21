@@ -132,7 +132,7 @@ export const demoAgentSessionServices = {
         id: `fixture-response-${Date.now()}`,
         type: "orchestrator",
         author: "Cly Orchestrator",
-        body: "I’ve added this direction to the active plan. The fixture runtime will keep the session moving while you inspect another surface.",
+        body: "I’ve added this direction to the active plan. The demo runtime will keep the session moving while you inspect another surface.",
         timestamp: "Just now",
       };
     },
@@ -147,7 +147,7 @@ export const demoAgentSessionServices = {
   browser: {
     navigate: async (url) => {
       await wait();
-      return { title: "Fixture research page", url };
+      return { title: "Research preview page", url };
     },
     addAsSource: async () => wait(),
   } satisfies BrowserService,

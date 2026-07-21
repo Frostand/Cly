@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { navigateToResearch } from "./navigation-helpers";
 
 const mockAgentConfigurationApi = async (page: Page) => {
   await page.route("**/agent-configurations**", async (route) => {
@@ -121,13 +122,75 @@ test("launches Cly and navigates every major destination", async ({ page }) => {
   });
 
   for (const [id, heading] of destinations) {
-    await page.getByTestId(`nav-${id}`).click();
+    await navigateToResearch(page, id);
     await expect(
       page.getByRole("heading", { name: heading, level: 1 }),
     ).toBeVisible();
   }
 
   expect(consoleProblems).toEqual([]);
+});
+
+test("preserves research context across Dev and restores deep links", async ({
+  page,
+}) => {
+  await page.goto(
+    "/#/cly/research/claims?project=project-cly&selected=claim-01",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Claim Audit Board", level: 1 }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/research\/claims\?.*selected=claim-01/);
+
+  await page.getByTestId("product-dev").click();
+  await page.getByTestId("nav-dev-issues").click();
+  await expect(page).toHaveURL(/dev\/issues\?/);
+
+  await page.getByTestId("product-research").click();
+  await expect(
+    page.getByRole("heading", { name: "Claim Audit Board", level: 1 }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/research\/claims\?.*selected=claim-01/);
+
+  await page.goto("/#/cly/dev/tests?project=project-cly");
+  await expect(page.getByTestId("nav-dev-tests")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page).toHaveURL(/dev\/tests\?/);
+});
+
+test("keeps advanced routes searchable and primary navigation visible", async ({
+  page,
+}) => {
+  for (const label of [
+    "Set up",
+    "Understand",
+    "Build / Run",
+    "Review",
+    "Share",
+  ]) {
+    await expect(page.getByRole("navigation", { name: label })).toBeVisible();
+  }
+
+  const primaryNavigationSize = await page
+    .locator(".cly-sidebar-scroll")
+    .evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }));
+  expect(primaryNavigationSize.scrollHeight).toBeLessThanOrEqual(
+    primaryNavigationSize.clientHeight,
+  );
+
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByRole("combobox").fill("Research Graph");
+  await expect(palette.getByText("Go to Research Graph")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Research Object Graph", level: 1 }),
+  ).toBeVisible();
 });
 
 test("completes the linked research workflow", async ({ page }) => {
@@ -142,11 +205,19 @@ test("completes the linked research workflow", async ({ page }) => {
     page.getByRole("heading", { name: "Claim Audit Board" }),
   ).toBeVisible();
   await page.getByRole("radio", { name: "Detail" }).click();
-  await page.getByRole("button", { name: "Link evidence" }).click();
-  await page
-    .getByRole("dialog", { name: "Link supporting evidence" })
-    .getByRole("button", { name: "Link source" })
-    .click();
+  await page.getByRole("button", { name: "Add supporting passage" }).click();
+  const evidenceDialog = page.getByRole("dialog", {
+    name: "Link supporting evidence",
+  });
+  await evidenceDialog
+    .getByLabel("Exact evidence passage")
+    .fill(
+      "The calibrated ensemble reduced simulation cost without lowering decision accuracy.",
+    );
+  await evidenceDialog
+    .getByLabel("Page, section, or locator")
+    .fill("Results, paragraph 2");
+  await evidenceDialog.getByRole("button", { name: "Link source" }).click();
   await expect(page.getByText("Supporting evidence linked")).toBeVisible();
 
   // Add a source to a NotebookLM bundle.
@@ -157,7 +228,7 @@ test("completes the linked research workflow", async ({ page }) => {
   await expect(page.getByText("Added to NotebookLM bundle")).toBeVisible();
 
   // Import and inspect a mock notebook.
-  await page.getByTestId("nav-notebooks").click();
+  await navigateToResearch(page, "notebooks");
   await page.getByRole("button", { name: "Import notebook" }).click();
   await page.getByLabel("Notebook filename").fill("review-analysis.ipynb");
   await page.getByRole("button", { name: "Import and scan" }).click();
@@ -172,19 +243,19 @@ test("completes the linked research workflow", async ({ page }) => {
   await page.getByTestId("nav-experiments").click();
   await page.getByRole("radio", { name: "Compare" }).click();
   await expect(page.getByText("Comparison selection")).toBeVisible();
-  await page.getByTestId("nav-graph").click();
+  await navigateToResearch(page, "graph");
   await page.getByText(/20× speedup with decision accuracy/).click();
   await page.getByRole("button", { name: "Evidence", exact: true }).click();
   await expect(page.getByText("Evidence path traced")).toBeVisible();
 
   // Configure an agent before composing its exact context pack.
-  await page.getByTestId("nav-models").click();
+  await navigateToResearch(page, "models");
   await page.getByRole("button", { name: "Review estimate" }).click();
   await page.getByRole("button", { name: "Save configuration" }).click();
   await expect(page.getByText("Agent configuration saved")).toBeVisible();
 
   // Compose context.
-  await page.getByTestId("nav-context").click();
+  await navigateToResearch(page, "context");
   const contextToggle = page.getByRole("switch", {
     name: "Include Raman et al. 2025",
   });
@@ -343,7 +414,7 @@ test("generates and assigns an evidence-linked lab-meeting brief in Decisions", 
     });
   });
 
-  await page.getByTestId("nav-decisions").click();
+  await navigateToResearch(page, "decisions");
   await page.getByRole("radio", { name: "Briefs" }).click();
   await expect(page.getByText("Decisions needing owners")).toBeVisible();
   await page
@@ -387,7 +458,7 @@ test("supports shell controls, shortcuts, command execution, and inspector selec
     "open",
   );
   await expect(
-    page.getByRole("heading", {
+    page.getByTestId("inspector").getByRole("heading", {
       name: /Calibration-aware ensembles reduce simulation cost/,
       level: 2,
     }),
@@ -415,7 +486,7 @@ test("captures responsive visual fixtures", async ({ page }) => {
       path: `output/playwright/overview-${width}x${height}.png`,
     });
   }
-  await page.getByTestId("nav-graph").click();
+  await navigateToResearch(page, "graph");
   await page.screenshot({ path: "output/playwright/graph-large.png" });
   await page.getByTestId("nav-literature").click();
   await page.screenshot({ path: "output/playwright/literature-matrix.png" });
@@ -436,14 +507,14 @@ test("filters and sorts data, configures providers, and persists preferences", a
   await expect(page.getByLabel("Filter source type")).toHaveValue("Paper");
   await expect(page.getByLabel("Sort sources")).toHaveValue("Newest");
 
-  await page.getByTestId("nav-integrations").click();
+  await navigateToResearch(page, "integrations");
   const github = page.locator(".cly-integration-catalog .cly-panel", {
     hasText: "GitHub",
   });
   await github.getByRole("button", { name: "Setup" }).click();
   await expect(page.getByText("GitHub setup")).toBeVisible();
 
-  await page.getByTestId("nav-models").click();
+  await navigateToResearch(page, "models");
   const firstModel = page.locator(".cly-agent-model").first();
   await firstModel.fill("Claude Sonnet");
   await expect(firstModel).toHaveValue("Claude Sonnet");

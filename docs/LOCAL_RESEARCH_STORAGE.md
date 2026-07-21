@@ -25,6 +25,18 @@ event's project. These constraints cover writes that bypass the repository. The
 repository also validates relationships before writing and records provenance
 for object and relationship creation.
 
+Static notebook imports additionally persist bounded evidence and an explicit
+verification state on every inferred relationship. Notebook object and edge
+identities are deterministic, so unchanged re-imports do not duplicate the
+graph; changed inferred records return to an unverified review state.
+
+Run input fingerprints include code-symbol, dataset, configuration,
+environment, and dependency snapshots. `research_object_staleness` stores the
+latest project-scoped assessment for a run, artifact, or claim, while
+`research_object_staleness_transitions` is immutable history linked to the
+append-only provenance chain. Repeating an identical assessment updates its
+check time without creating a duplicate transition.
+
 No API accepts a filesystem path as research identity. The local service uses a
 registered project ID; filesystem access, when later introduced, must validate
 that project ID before resolving a path.
@@ -83,5 +95,10 @@ unchanged. The current local service exposes no delete endpoint.
   migration journal are unchanged after rollback.
 - Export one project and assert the result contains only that project's graph
   and provenance. Restore it into a temporary database and query it.
+- Change a captured function hash and assert deterministic propagation from
+  its run through figures/tables to claims, then restore the captured hash and
+  assert persisted stale-to-current transitions after a database reopen.
+- Change a generated artifact hash and omit generator/code hashes to verify
+  manual-edit and incomplete-provenance findings.
 - Delete a temporary project only after exporting it; assert its cascaded rows
   are gone and a second project's rows remain.

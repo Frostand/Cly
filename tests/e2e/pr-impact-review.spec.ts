@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { navigateToResearch } from "./navigation-helpers";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
-  await page.getByTestId("nav-impact-review").click();
+  await navigateToResearch(page, "impact-review");
   await expect(
     page.getByRole("heading", { name: "Research impact review", level: 1 }),
   ).toBeVisible();

@@ -24,13 +24,15 @@ beforeEach(() => {
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, type TEXT NOT NULL,
       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL,
       origin TEXT NOT NULL DEFAULT 'human', review_state TEXT NOT NULL DEFAULT 'unreviewed',
-      reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      reviewed_by TEXT, reviewed_at TEXT, version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE TABLE research_relationships (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, from_object_id TEXT NOT NULL,
       to_object_id TEXT NOT NULL, type TEXT NOT NULL,
       origin TEXT NOT NULL DEFAULT 'human', review_state TEXT NOT NULL DEFAULT 'unreviewed',
-      confidence REAL, reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL
+      confidence REAL, reviewed_by TEXT, reviewed_at TEXT,
+      version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL
     );
     CREATE TABLE provenance_events (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, object_id TEXT, action TEXT NOT NULL,

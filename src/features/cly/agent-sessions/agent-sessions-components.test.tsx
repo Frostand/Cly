@@ -125,11 +125,11 @@ describe("Agent Sessions workspace", () => {
     render(<AgentSessionsScreen />);
 
     await user.click(screen.getByRole("tab", { name: /Tests/ }));
-    expect(screen.getByLabelText("Fixture terminal output")).toBeVisible();
+    expect(screen.getByLabelText("Terminal output preview")).toBeVisible();
     expect(screen.getByText(/calibration.test.ts/)).toBeVisible();
 
     await user.click(screen.getByRole("tab", { name: /Calibration paper/ }));
-    expect(screen.getByLabelText("Research browser fixture")).toBeVisible();
+    expect(screen.getByLabelText("Research browser preview")).toBeVisible();
     await user.click(
       screen.getByRole("button", { name: "Add page as source" }),
     );

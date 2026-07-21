@@ -16,7 +16,7 @@ import type {
   ClyDevHandoffEnvelope,
   ClyDevHandoffInspection,
   ClyDevOutboundContext,
-  ClyDevResumeDestination,
+  ClyDevReceivedHandoff,
   ClyDevSessionEvent,
   ClyDevSessionOverviewPage,
   ClyDevSessionRecord,
@@ -24,6 +24,7 @@ import type {
   ClyDevSessionState,
   ClyDevSyncConflict,
   ClyDevSyncStatus,
+  ClyDevTargetProvider,
   ClyDevTask,
   ClyDevWorkbenchContext,
   ClyDevWorkspace,
@@ -53,6 +54,7 @@ import type {
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
 import type {
   AnalysisDeviation,
+  AuditFinding,
   ClaimCostSummary,
   ClaimStatus,
   CostCategory,
@@ -64,9 +66,11 @@ import type {
   LineageReviewDecision,
   LineageScanMeasurement,
   LineageSuggestion,
+  NextStep,
   PreregistrationComparison,
   PreregistrationContent,
   PreregistrationSnapshot,
+  ReproducibilityAudit,
   ResearchProject,
 } from "../domain/types";
 
@@ -75,17 +79,145 @@ export interface ResearchData {
   relationships: Relationship[];
 }
 
+export interface ReproducibilityAuditReport {
+  audit: ReproducibilityAudit;
+  findings: AuditFinding[];
+}
+
+export interface PlannerEvidence {
+  id: string;
+  kind: "source" | "graph" | "audit" | "workflow";
+  objectId: string | null;
+  relationshipId: string | null;
+  provenanceEventId: string | null;
+  auditFindingId: string | null;
+  workflowReference: string | null;
+  label: string;
+  rationale: string;
+}
+
+export interface PlannerRecommendation {
+  id: string;
+  projectId: string;
+  planId: string;
+  category:
+    | "blocking-dependency"
+    | "verification"
+    | "reproducibility"
+    | "evidence-gap"
+    | "stale-artifact"
+    | "conflict"
+    | "workflow";
+  title: string;
+  rationale: string;
+  expectedBenefit: string;
+  priority: "critical" | "high" | "medium" | "low";
+  effort: "small" | "medium" | "large";
+  rankScore: number;
+  dependencies: string[];
+  proposedAction: {
+    kind: "review" | "resolve" | "rerun" | "regenerate";
+    description: string;
+  };
+  status: "recommended" | "accepted" | "deferred" | "dismissed";
+  requiresExplicitApproval: true;
+  executionState: "not-created";
+  createdAt: string;
+  updatedAt: string;
+  evidence: PlannerEvidence[];
+}
+
+export function nextStepFromPlannerRecommendation(
+  recommendation: PlannerRecommendation,
+): NextStep {
+  const category: NextStep["category"] =
+    recommendation.category === "verification" ||
+    recommendation.category === "evidence-gap" ||
+    recommendation.category === "conflict"
+      ? "Claim"
+      : "Integrity";
+  const status: NextStep["status"] = {
+    recommended: "Recommended",
+    accepted: "Accepted",
+    deferred: "Deferred",
+    dismissed: "Dismissed",
+  }[recommendation.status] as NextStep["status"];
+  return {
+    id: recommendation.id,
+    title: recommendation.title,
+    category,
+    rationale: recommendation.rationale,
+    impact:
+      recommendation.priority === "critical" ||
+      recommendation.priority === "high"
+        ? "High"
+        : recommendation.priority === "medium"
+          ? "Medium"
+          : "Low",
+    effort:
+      recommendation.effort === "small"
+        ? "Small"
+        : recommendation.effort === "medium"
+          ? "Medium"
+          : "Large",
+    urgency:
+      recommendation.priority === "critical" ||
+      recommendation.priority === "high"
+        ? "Now"
+        : recommendation.priority === "medium"
+          ? "Soon"
+          : "Later",
+    evidenceIds: recommendation.evidence.flatMap((evidence) =>
+      [
+        evidence.objectId,
+        evidence.relationshipId,
+        evidence.provenanceEventId,
+        evidence.auditFindingId,
+        evidence.workflowReference,
+      ].filter((id): id is string => Boolean(id)),
+    ),
+    agentPreset: `${recommendation.evidence.length} linked evidence record${recommendation.evidence.length === 1 ? "" : "s"}`,
+    contextPack: "Approval required · no execution",
+    status,
+    expectedBenefit: recommendation.expectedBenefit,
+    dependencies: recommendation.dependencies,
+    proposedAction: recommendation.proposedAction,
+    requiresExplicitApproval: recommendation.requiresExplicitApproval,
+    executionState: recommendation.executionState,
+  };
+}
+
 export interface CreateObjectInput {
-  type: ResearchObject["type"];
+  type: Exclude<ResearchObject["type"], "evidence">;
   title: string;
   description?: string;
   payload: ResearchObject["payload"];
+  origin?: ResearchObject["origin"];
 }
 
 export interface CreateRelationshipInput {
   fromObjectId: string;
   toObjectId: string;
   type: Relationship["type"];
+  origin?: Relationship["origin"];
+}
+
+export interface CreateEvidenceLinkInput {
+  sourceId: string;
+  claimId: string;
+  quote: string;
+  locator?: string;
+  type: "supports" | "contradicts";
+  origin?: "human" | "imported" | "inferred" | "system";
+  actorId?: string;
+  confidence?: number | null;
+}
+
+export interface EvidenceLinkResult {
+  duplicate: boolean;
+  evidence: Extract<ResearchObject, { type: "evidence" }>;
+  containsRelationship: Relationship;
+  claimRelationship: Relationship;
 }
 
 export interface ManualCostEntryInput {
@@ -125,6 +257,98 @@ export interface ProvenanceIntegrity {
   eventCount?: number;
   headHash?: string | null;
   reason?: string;
+}
+
+export type CodeTargetKind =
+  | "objective"
+  | "method"
+  | "dataset"
+  | "experiment"
+  | "run"
+  | "claim"
+  | "test"
+  | "risk"
+  | "commit"
+  | "issue"
+  | "source"
+  | "artifact";
+
+export interface CodeEntity {
+  id: string;
+  projectId: string;
+  kind: "file" | "symbol";
+  path: string;
+  symbol: string | null;
+  language: "python" | "jupyter";
+  symbolKind: "function" | "class" | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  notebookCell: number | null;
+  contentHash: string;
+  commitSha: string | null;
+  repositorySlug: string | null;
+  stale: boolean;
+  staleReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CodeEntitySummary extends CodeEntity {
+  linkCount: number;
+  unverifiedCount: number;
+  staleLinkCount: number;
+}
+
+export interface CodeLinkEvidence {
+  type:
+    | "source-location"
+    | "notebook-cell"
+    | "execution-trace"
+    | "git-commit"
+    | "user-assertion";
+  locator: string;
+  description: string;
+  contentHash?: string;
+}
+
+export interface CodeResearchLink {
+  id: string;
+  projectId: string;
+  codeEntityId: string;
+  researchObjectId: string | null;
+  target: { kind: CodeTargetKind; id: string; title: string };
+  linkRole:
+    | "implements"
+    | "uses"
+    | "produces"
+    | "tests"
+    | "supports"
+    | "affects"
+    | "discusses";
+  source: "manual" | "execution" | "agent-proposed";
+  origin: string;
+  confidence: number | null;
+  evidence: CodeLinkEvidence[];
+  verificationState: "unverified" | "verified" | "rejected";
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+  stale: boolean;
+  staleReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CodeContext {
+  entity: CodeEntity;
+  links: CodeResearchLink[];
+  provenance: Array<{
+    id: string;
+    action: string;
+    actorType: string;
+    actorId: string | null;
+    metadata: Record<string, unknown>;
+    createdAt: string;
+  }>;
 }
 
 export interface CrossEncoderReranking {
@@ -608,6 +832,33 @@ export const apiClient = {
     );
   },
 
+  runReproducibilityAudit(projectId: string) {
+    return request<ReproducibilityAuditReport>(
+      `/api/projects/${encodeURIComponent(projectId)}/reproducibility-audits`,
+      { method: "POST" },
+    );
+  },
+
+  fetchLatestReproducibilityAudit(projectId: string) {
+    return request<ReproducibilityAuditReport | null>(
+      `/api/projects/${encodeURIComponent(projectId)}/reproducibility-audits/latest`,
+    );
+  },
+
+  resolveReproducibilityFinding(
+    projectId: string,
+    auditId: string,
+    findingId: string,
+  ) {
+    return request<AuditFinding>(
+      `/api/projects/${encodeURIComponent(projectId)}/reproducibility-audits/${encodeURIComponent(auditId)}/findings/${encodeURIComponent(findingId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ actorId: "local-user" }),
+      },
+    );
+  },
+
   fetchObligations(projectId: string) {
     return request<ObligationSummary>(
       `/api/projects/${encodeURIComponent(projectId)}/obligations`,
@@ -701,6 +952,47 @@ export const apiClient = {
     );
   },
 
+  scanCodeContext(projectId: string) {
+    return request<{
+      projectId: string;
+      commitSha: string | null;
+      repositorySlug: string | null;
+      filesScanned: number;
+      entities: number;
+      staleLinks: CodeResearchLink[];
+    }>(`/api/projects/${encodeURIComponent(projectId)}/code-context/scan`, {
+      method: "POST",
+    });
+  },
+
+  fetchCodeEntities(projectId: string) {
+    return request<CodeEntitySummary[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/code-context/entities`,
+    );
+  },
+
+  fetchCodeContext(
+    projectId: string,
+    location: { path: string; symbol?: string | null },
+  ) {
+    const query = new URLSearchParams({ path: location.path });
+    if (location.symbol) query.set("symbol", location.symbol);
+    return request<CodeContext>(
+      `/api/projects/${encodeURIComponent(projectId)}/code-context?${query}`,
+    );
+  },
+
+  reviewCodeLink(
+    projectId: string,
+    linkId: string,
+    verificationState: "verified" | "rejected",
+  ) {
+    return request<CodeResearchLink>(
+      `/api/projects/${encodeURIComponent(projectId)}/code-context/links/${encodeURIComponent(linkId)}/review`,
+      { method: "PATCH", body: JSON.stringify({ verificationState }) },
+    );
+  },
+
   fetchDecisionBriefs(projectId: string) {
     return request<DecisionBrief[]>(
       `/api/projects/${encodeURIComponent(projectId)}/decision-briefs`,
@@ -735,6 +1027,63 @@ export const apiClient = {
         method: "PATCH",
         body: JSON.stringify(input),
       },
+    );
+  },
+
+  fetchNextSteps(projectId: string) {
+    return request<PlannerRecommendation[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/next-step-plans`,
+    );
+  },
+
+  generateNextSteps(projectId: string, actor = "local-user") {
+    return request<{
+      planId: string;
+      created: boolean;
+      fingerprint: string;
+      recommendations: PlannerRecommendation[];
+    }>(`/api/projects/${encodeURIComponent(projectId)}/next-step-plans`, {
+      method: "POST",
+      body: JSON.stringify({ actor }),
+    });
+  },
+
+  reviewNextStep(
+    projectId: string,
+    recommendationId: string,
+    input:
+      | { action: "accept"; actor?: string }
+      | { action: "defer" | "dismiss"; reason: string; actor?: string }
+      | {
+          action: "edit";
+          reason?: string;
+          actor?: string;
+          edit: Partial<
+            Pick<
+              PlannerRecommendation,
+              | "title"
+              | "rationale"
+              | "expectedBenefit"
+              | "effort"
+              | "dependencies"
+              | "proposedAction"
+            >
+          >;
+        },
+  ) {
+    return request<{
+      recommendation: PlannerRecommendation;
+      decision: {
+        id: string;
+        action: "accept" | "edit" | "defer" | "dismiss";
+        actor: string;
+        reason: string | null;
+        createdAt: string;
+      };
+      execution: { created: false; state: "not-created"; message: string };
+    }>(
+      `/api/projects/${encodeURIComponent(projectId)}/next-step-plans/recommendations/${encodeURIComponent(recommendationId)}/decisions`,
+      { method: "POST", body: JSON.stringify(input) },
     );
   },
 
@@ -797,6 +1146,30 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify(input),
     });
+  },
+
+  createEvidenceLink(projectId: string, input: CreateEvidenceLinkInput) {
+    return request<EvidenceLinkResult>(
+      `${projectPath(projectId)}/evidence-links`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    );
+  },
+
+  reviewEvidence(
+    projectId: string,
+    evidenceId: string,
+    verificationState: "verified" | "rejected",
+  ) {
+    return request<Extract<ResearchObject, { type: "evidence" }>>(
+      `${projectPath(projectId)}/evidence/${encodeURIComponent(evidenceId)}/verification`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ verificationState }),
+      },
+    );
   },
 
   reviewRelationship(
@@ -1199,49 +1572,57 @@ export const apiClient = {
     );
   },
 
-  pairClyDevDevice(input: { deviceId: string; pairingCode: string }) {
-    return request<{ deviceId: string; state: "paired" }>(
-      "/api/cly-dev/devices/pair",
-      { method: "POST", body: JSON.stringify(input) },
-    );
-  },
-
-  publishClyDevHandoff(
+  exportClyDevHandoff(
     projectId: string,
     sessionId: string,
-    input: { deviceId: string; expectedRevision: number },
+    includeMessages = false,
   ) {
     return request<ClyDevHandoffEnvelope>(
-      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/handoffs`,
-      { method: "POST", body: JSON.stringify(input) },
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/handoffs/export`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          sessionId,
+          ...(includeMessages ? { includeMessages: true } : {}),
+        }),
+      },
     );
   },
 
   inspectClyDevHandoff(
-    handoffId: string,
-    input: {
-      deviceId: string;
-      destination: ClyDevResumeDestination;
-      offline?: boolean;
-    },
+    projectId: string,
+    envelope: ClyDevHandoffEnvelope,
+    targetProvider: ClyDevTargetProvider,
   ) {
     return request<ClyDevHandoffInspection>(
-      `/api/cly-dev/handoffs/${encodeURIComponent(handoffId)}/inspect`,
-      { method: "POST", body: JSON.stringify(input) },
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/handoffs/inspect`,
+      {
+        method: "POST",
+        body: JSON.stringify({ envelope, targetProvider }),
+      },
     );
   },
 
   resumeClyDevHandoff(
-    handoffId: string,
-    input: {
-      deviceId: string;
-      destination: ClyDevResumeDestination;
-      offline?: boolean;
-    },
+    projectId: string,
+    envelope: ClyDevHandoffEnvelope,
+    targetProvider: ClyDevTargetProvider,
   ) {
-    return request<ClyDevHandoffInspection>(
-      `/api/cly-dev/handoffs/${encodeURIComponent(handoffId)}/resume`,
-      { method: "POST", body: JSON.stringify(input) },
+    return request<{
+      inspection: ClyDevHandoffInspection;
+      materialized?: { session?: ClyDevSessionSnapshot };
+    }>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/handoffs/import`,
+      {
+        method: "POST",
+        body: JSON.stringify({ envelope, targetProvider }),
+      },
+    );
+  },
+
+  fetchReceivedClyDevHandoffs(projectId: string) {
+    return request<ClyDevReceivedHandoff[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sync/received-handoffs`,
     );
   },
 };

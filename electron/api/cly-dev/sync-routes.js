@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getStateDatabase } from "../../persisted-state.js";
 import { defaultDeviceKeyVault } from "./device-key-vault.js";
+import { createClyDevHandoffRepository } from "./handoff/handoff-repository.js";
 import { createClyDevSessionRepository } from "./session-repository.js";
 import { createClyDevSyncRepository } from "./sync-repository.js";
 import {
@@ -61,6 +62,7 @@ const defaultGetService = () => {
   return createClyDevSyncService({
     repository: createClyDevSyncRepository({ db }),
     sessionRepository: createClyDevSessionRepository({ db }),
+    handoffRepository: createClyDevHandoffRepository({ db }),
     keyVault: defaultDeviceKeyVault,
   });
 };
@@ -123,6 +125,10 @@ export function registerClyDevSyncRoutes(
 
   app.get("/api/projects/:projectId/cly-dev/sync/status", (c) =>
     respond(c, () => getService().status(c.req.param("projectId"))),
+  );
+
+  app.get("/api/projects/:projectId/cly-dev/sync/received-handoffs", (c) =>
+    respond(c, () => getService().receivedHandoffs(c.req.param("projectId"))),
   );
 
   app.post("/api/projects/:projectId/cly-dev/sync/stage", (c) =>

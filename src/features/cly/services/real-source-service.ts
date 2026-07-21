@@ -29,9 +29,14 @@ function toClySource(row: {
   const typeBySourceType = {
     dataset: "Dataset",
     documentation: "Documentation",
-    note: "Lab note",
+    note: "Note",
     paper: "Paper",
+    pdf: "PDF",
     webpage: "Webpage",
+    book: "Book",
+    repository: "Repository",
+    "hugging-face": "Hugging Face",
+    import: "Import",
   } as const;
   return {
     id: row.id,
@@ -56,6 +61,10 @@ function toClySource(row: {
     findings: payload.findings ?? [],
     limitations: payload.limitations ?? [],
     tags: payload.tags ?? [],
+    folder: payload.folder,
+    extractedFields: payload.extractedFields,
+    contradictoryEvidence: payload.contradictoryEvidence,
+    customReviewFields: payload.customReviewFields,
     linkedClaimIds: [],
     linkedExperimentIds: [],
     inNotebookBundle: false,
@@ -113,12 +122,30 @@ export function createRealSourceService(
 ): SourceService {
   return {
     async create(input) {
+      const sourceTypeByKind = {
+        Paper: "paper",
+        PDF: "pdf",
+        Webpage: "webpage",
+        Book: "book",
+        Dataset: "dataset",
+        Documentation: "documentation",
+        Repository: "repository",
+        "Hugging Face": "hugging-face",
+        Note: "note",
+        Import: "import",
+        "Lab note": "note",
+        "NotebookLM result": "import",
+      } as const satisfies Record<
+        Source["type"],
+        NonNullable<SourcePayload["sourceType"]>
+      >;
       const obj = repository.createObject({
         projectId,
         type: "source",
         title: input.title,
         payload: {
           kind: "source",
+          sourceType: sourceTypeByKind[input.type],
           status: "placeholder",
         } satisfies SourcePayload,
       });
@@ -168,6 +195,12 @@ export function createRealSourceService(
 
     async enrich(_sourceId: string) {
       throw new Error("Enrichment requires the project research API boundary.");
+    },
+
+    async reviewField(_sourceId, _fieldId, _verificationState) {
+      throw new Error(
+        "Source review requires the project research API boundary.",
+      );
     },
   };
 }

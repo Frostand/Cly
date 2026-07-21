@@ -925,10 +925,7 @@ export function AgentMessage({
               </Button>
               <Button
                 onClick={() =>
-                  notify(
-                    "Edit constraints",
-                    "Fixture constraint editor opened.",
-                  )
+                  notify("Edit constraints", "Constraint editor opened.")
                 }
               >
                 Edit constraints
@@ -1027,7 +1024,7 @@ export function AgentMessage({
                   if (action === "Inspect logs")
                     openTab(session.id, "terminal");
                   else if (action === "Reassign") openTab(session.id, "agents");
-                  else notify(action, "Fixture agent recovery action queued.");
+                  else notify(action, "Agent recovery action queued.");
                 }}
               >
                 {action}
@@ -1067,17 +1064,13 @@ function MessageActions() {
     <div className="agent-message-actions">
       <button
         type="button"
-        onClick={() =>
-          notify("Copied", "Message copied to the clipboard fixture.")
-        }
+        onClick={() => notify("Copied", "Message copied to the clipboard.")}
       >
         Copy
       </button>
       <button
         type="button"
-        onClick={() =>
-          notify("Response pinned", "Added to project memory fixture.")
-        }
+        onClick={() => notify("Response pinned", "Added to project memory.")}
       >
         <Pin size={10} /> Pin
       </button>
