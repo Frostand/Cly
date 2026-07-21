@@ -473,6 +473,8 @@ export const apiClient = {
           localOnly: project.localOnly,
           phase: project.phase,
           question: project.question,
+          setup: project.setup,
+          optionalIntegrations: project.setup?.optionalIntegrations,
         },
       }),
     });

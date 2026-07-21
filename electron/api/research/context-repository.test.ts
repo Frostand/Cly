@@ -358,7 +358,7 @@ describe("agent context repository", () => {
     ).toEqual({ count: 0 });
   });
 
-  it("pins exact ordered revisions in packs and rejects cross-project item/revision pairs", () => {
+  it("pins exact ordered revisions, restores immutable history, and rejects cross-project pairs", () => {
     const { repository } = setup();
     const item = repository.createItem("project-1", {
       label: "Pack member",
@@ -399,6 +399,18 @@ describe("agent context repository", () => {
     expect(approved.proposedRevisions).toEqual([]);
     expect(repository.listPacks("project-1")[0].entries[0].revisionId).toBe(
       item.approvedRevisionId,
+    );
+    const restored = repository.approveRevision(
+      "project-1",
+      item.id,
+      item.approvedRevisionId,
+      { expectedVersion: approved.version, actor },
+    );
+    expect(restored.approvedRevisionId).toBe(item.approvedRevisionId);
+    expect(restored.previouslyApprovedRevisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: proposal.proposedRevisions[0].id }),
+      ]),
     );
     expect(() =>
       repository.savePack("project-1", {

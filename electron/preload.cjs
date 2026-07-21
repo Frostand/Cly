@@ -170,6 +170,10 @@ contextBridge.exposeInMainWorld("dream", {
 
   loadState: () => ipcRenderer.invoke("state:load"),
   saveState: (state) => ipcRenderer.invoke("state:save", state),
+  loadOnboardingDraft: (projectId) =>
+    ipcRenderer.invoke("onboarding-draft:load", { projectId }),
+  saveOnboardingDraft: (draft) =>
+    ipcRenderer.invoke("onboarding-draft:save", draft),
   getThemePreferences: () => ipcRenderer.invoke("theme:get-preferences"),
   setThemePreference: (theme) => ipcRenderer.invoke("theme:set", { theme }),
   setBaseColor: (baseColor) =>

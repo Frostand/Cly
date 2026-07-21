@@ -87,9 +87,17 @@ async function createGitRepository() {
       ],
     }),
   );
-  await execFileAsync("git", ["add", "analysis.py", "study.ipynb"], {
-    cwd: root,
-  });
+  await writeFile(
+    path.join(root, "secondary.py"),
+    ["def evaluate(model):", "    return model", ""].join("\n"),
+  );
+  await execFileAsync(
+    "git",
+    ["add", "analysis.py", "secondary.py", "study.ipynb"],
+    {
+      cwd: root,
+    },
+  );
   await execFileAsync(
     "git",
     [
@@ -135,13 +143,13 @@ afterEach(async () => {
 });
 
 describe("code research linker", () => {
-  it("indexes Python and Jupyter symbols with bounded GitHub provenance", async () => {
+  it("indexes Python/Jupyter symbols and disambiguates matching names by file path", async () => {
     const { linker } = await setup();
 
     const scan = await linker.scan("project-1");
 
     expect(scan).toMatchObject({
-      filesScanned: 2,
+      filesScanned: 3,
       repositorySlug: "Frostand/science",
     });
     expect(scan.commitSha).toMatch(/^[a-f0-9]{40}$/);
@@ -173,6 +181,18 @@ describe("code research linker", () => {
         }),
       ]),
     );
+    expect(
+      linker
+        .listEntities("project-1", { kind: "symbol" })
+        .filter((entity) => entity.symbol === "evaluate")
+        .map((entity) => entity.path),
+    ).toEqual(["analysis.py", "secondary.py"]);
+    expect(
+      linker.getContext("project-1", {
+        path: "secondary.py",
+        symbol: "evaluate",
+      }).entity,
+    ).toMatchObject({ path: "secondary.py", symbol: "evaluate" });
   });
 
   it("keeps inferred links evidence-backed and unverified until human review", async () => {

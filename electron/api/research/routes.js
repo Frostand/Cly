@@ -12,6 +12,7 @@ import { createNotebookImporter } from "./notebook-importer.js";
 import { registerNotebookRoutes } from "./notebook-routes.js";
 import { registerObligationRoutes } from "./obligation-routes.js";
 import { createObligationService } from "./obligation-service.js";
+import { createOnboardingDiagnosticsService } from "./onboarding-diagnostics.js";
 import { registerPreregistrationRoutes } from "./preregistration-routes.js";
 import { createResearchRepository } from "./repository.js";
 import { createRepositoryObserver } from "./repository-observer.js";
@@ -347,6 +348,10 @@ export function registerResearchRoutes(
       );
     },
     getNextStepPlanner = () => createNextStepPlanner(getStateDatabase()),
+    getOnboardingDiagnostics = () =>
+      createOnboardingDiagnosticsService(
+        createResearchRepository(getStateDatabase()),
+      ),
   } = {},
 ) {
   let repositoryWorkflowCoordinator;
@@ -370,6 +375,21 @@ export function registerResearchRoutes(
   registerNotebookRoutes(app, { getImporter: getNotebookImporter });
   registerStalenessRoutes(app, { getRepository });
   registerNextStepPlannerRoutes(app, { getPlanner: getNextStepPlanner });
+
+  app.get("/api/projects/:projectId/onboarding/diagnostics", async (c) => {
+    try {
+      return c.json(
+        await getOnboardingDiagnostics().diagnose(c.req.param("projectId")),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error
+          ? error.message
+          : "Project readiness checks failed.",
+        400,
+      );
+    }
+  });
 
   app.put("/api/projects/:projectId/research", async (c) => {
     const body = await readJson(c);

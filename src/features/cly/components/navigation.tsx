@@ -45,7 +45,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { createOnboardingDraft } from "../domain/onboarding";
 import type { DevSection, ProductArea, ScreenId } from "../domain/types";
+import { saveOnboardingDraft } from "../services/onboarding-storage";
 import { useClyStore } from "../store/cly-store";
 import { ClyLogo, ThemeSwitcher } from "./brand";
 import { Button } from "./primitives";
@@ -818,12 +820,12 @@ export function ProjectSwitcherPopover() {
           type="button"
           onClick={() => {
             setOpen(false);
-            useClyStore
-              .getState()
-              .notify(
-                "Open Project",
-                "The native folder picker is retained from Dream and will be connected to Cly project creation in Phase 2.",
-              );
+            void saveOnboardingDraft({
+              ...createOnboardingDraft(),
+              currentStep: "project",
+            }).then(() => {
+              useClyStore.getState().setOnboardingRequested("new");
+            });
           }}
         >
           <Lightbulb size={15} /> Open another project…

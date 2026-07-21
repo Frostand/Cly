@@ -75,6 +75,7 @@ import {
   type ResearchData,
 } from "../services/api-client";
 import { CapabilityUnavailableError } from "../services/capabilities";
+import { loadOnboardingDraft } from "../services/onboarding-storage";
 import {
   createProductionRepository,
   emptyCostLedger,
@@ -101,6 +102,7 @@ interface ClyState {
   activityOpen: boolean;
   commandPaletteOpen: boolean;
   projectSwitcherOpen: boolean;
+  onboardingRequested: "current" | "new" | null;
   fixtureSwitcherOpen: boolean;
   globalSearch: string;
   toasts: ToastMessage[];
@@ -159,12 +161,14 @@ interface ClyState {
   setDevSection: (section: DevSection) => void;
   setSelected: (id: string | null) => void;
   setActiveProject: (id: string) => void;
+  selectOnboardingProject: (id: string) => void;
   setFixtureMode: (mode: FixtureMode) => void;
   toggleSidebar: () => void;
   toggleInspector: () => void;
   toggleActivity: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setProjectSwitcherOpen: (open: boolean) => void;
+  setOnboardingRequested: (request: "current" | "new" | null) => void;
   setFixtureSwitcherOpen: (open: boolean) => void;
   setGlobalSearch: (value: string) => void;
   notify: (title: string, detail?: string) => void;
@@ -978,7 +982,7 @@ const applyAgentContextSnapshot = (
 export const useClyStore = create<ClyState>((set, get) => ({
   data: initialData,
   fixtureMode: initialFixtureMode,
-  activeProjectId: saved.activeProjectId ?? "project-cly",
+  activeProjectId: saved.activeProjectId ?? "",
   activeScreen:
     saved.activeProduct === "dev" ? "dev" : (saved.activeScreen ?? "overview"),
   activeProduct: saved.activeProduct ?? "research",
@@ -995,6 +999,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
   activityOpen: false,
   commandPaletteOpen: false,
   projectSwitcherOpen: false,
+  onboardingRequested: null,
   fixtureSwitcherOpen: false,
   globalSearch: "",
   toasts: [],
@@ -1158,7 +1163,48 @@ export const useClyStore = create<ClyState>((set, get) => ({
       lastResearchSelectedId: null,
     }));
     persistUi({ activeProjectId, lastResearchSelectedId: null });
-    void get().loadFromApi(activeProjectId);
+    void loadOnboardingDraft(activeProjectId)
+      .then((draft) => {
+        if (get().activeProjectId !== activeProjectId) return;
+        if (draft.completed || draft.privacyReviewed) {
+          void get().loadFromApi(activeProjectId);
+          return;
+        }
+        set({ agentContextLoading: false });
+      })
+      .catch(() => {
+        // Durable setup state is the privacy authority. A failed read must
+        // remain fail-closed and the onboarding gate will expose retry UI.
+        if (get().activeProjectId === activeProjectId)
+          set({ agentContextLoading: false });
+      });
+  },
+  selectOnboardingProject: (activeProjectId) => {
+    set((state) => ({
+      activeProjectId,
+      data: clearPersistedResearchData(state.data),
+      agentContext: emptyAgentContext(),
+      agentContextProjectId: null,
+      agentContextLoading: false,
+      agentContextError: null,
+      lineageSuggestions: [],
+      lineageMeasurement: null,
+      decisionBriefs: [],
+      decisionBriefsLoading: false,
+      decisionBriefsError: null,
+      preregistrations: [],
+      preregistrationsLoading: false,
+      preregistrationsError: null,
+      costLedger: emptyCostLedger(),
+      claimCosts: {},
+      costsLoading: false,
+      costsError: null,
+      selectedCostEntryId: null,
+      projectSwitcherOpen: false,
+      selectedId: null,
+      lastResearchSelectedId: null,
+    }));
+    persistUi({ activeProjectId, lastResearchSelectedId: null });
   },
   setFixtureMode: (fixtureMode) => {
     if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
@@ -1251,6 +1297,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
   toggleActivity: () => set((state) => ({ activityOpen: !state.activityOpen })),
   setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
   setProjectSwitcherOpen: (projectSwitcherOpen) => set({ projectSwitcherOpen }),
+  setOnboardingRequested: (onboardingRequested) => set({ onboardingRequested }),
   setFixtureSwitcherOpen: (fixtureSwitcherOpen) => set({ fixtureSwitcherOpen }),
   setGlobalSearch: (globalSearch) => set({ globalSearch }),
   notify: (title, detail) => {

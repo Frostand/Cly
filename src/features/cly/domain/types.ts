@@ -83,6 +83,19 @@ export interface ResearchProject {
   description: string;
   localOnly: boolean;
   externalTransmissionApprovals?: Array<"arxiv" | "semantic-scholar">;
+  setup?: {
+    discipline: string;
+    expectedOutputs: string[];
+    repositories: string[];
+    datasets: string[];
+    tools: string[];
+    collaborators: string[];
+    deadline: string;
+    providerPreferences: string[];
+    optionalIntegrations: string[];
+    reconstructLineage: boolean;
+    completed: boolean;
+  };
   updatedAt: string;
 }
 
