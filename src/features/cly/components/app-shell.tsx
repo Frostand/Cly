@@ -11,9 +11,9 @@ import {
   ProvenanceScreen,
   ReproducibilityScreen,
 } from "../screens/integrity";
+import { LiveDevWorkspaceScreen } from "../screens/live-dev-workspace";
 import { OverviewScreen } from "../screens/overview";
 import {
-  DevWorkspaceScreen,
   ObjectivesScreen,
   ReviewerCapsulesScreen,
 } from "../screens/platform-workspaces";
@@ -60,7 +60,7 @@ const screens: Record<ScreenId, () => React.JSX.Element> = {
   decisions: DecisionsScreen,
   "next-steps": NextStepsScreen,
   "reviewer-capsules": ReviewerCapsulesScreen,
-  dev: DevWorkspaceScreen,
+  dev: LiveDevWorkspaceScreen,
   integrations: IntegrationsScreen,
   models: ModelsAgentsScreen,
   settings: SettingsScreen,

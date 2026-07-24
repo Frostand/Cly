@@ -1,5 +1,4 @@
 import { useTranslations } from "next-intl";
-import dreamSvg from "@/assets/dream.svg";
 import Sparkles from "@/components/ui/sparkles";
 
 type AppLoadingScreenProps = {
@@ -46,7 +45,7 @@ export const AppLoadingScreen = ({
           syncKey={syncKey}
         >
           <div className="relative z-10 flex h-64 w-16 items-center justify-center">
-            <img alt="" className="size-16" draggable={false} src={dreamSvg} />
+            <img alt="" className="size-16" draggable={false} src="/icon.png" />
           </div>
         </Sparkles>
       </div>

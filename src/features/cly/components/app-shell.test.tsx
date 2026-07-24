@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useIdeStore } from "../../../components/ide/ide-store";
 import type { AgentConfiguration } from "../agent-sessions/types";
 import type { ScreenId } from "../domain/types";
 import { createCostLedgerFixture } from "../fixtures/cost-ledger";
@@ -72,6 +73,12 @@ describe("Cly application shell", () => {
 
   beforeEach(() => {
     localStorage.clear();
+    useIdeStore.setState({
+      appReady: false,
+      settingsOpen: false,
+      settingsSection: "appearance",
+      stateHydrated: false,
+    });
     const data = createFixtureRepository("active");
     const costs = createCostLedgerFixture("active", data);
     useClyStore.setState({
@@ -347,23 +354,22 @@ describe("Cly application shell", () => {
     ).toBeVisible();
   });
 
-  it("switches between Cly Research and the Cly Dev command center", async () => {
+  it("switches between Cly Research and the live Cly Dev workspace", async () => {
     const user = userEvent.setup();
     render(<ClyAppShell />);
 
     await user.click(screen.getByTestId("product-dev"));
     expect(
-      screen.getByRole("heading", { name: "Projects", level: 1 }),
+      screen.getByRole("region", { name: "Cly Dev AI workspace" }),
     ).toBeVisible();
     expect(document.querySelector(".cly-shell")).toHaveAttribute(
       "data-product",
       "dev",
     );
 
-    await user.click(screen.getByTestId("nav-dev-features"));
-    expect(
-      screen.getByRole("heading", { name: "Features", level: 1 }),
-    ).toBeVisible();
+    await user.click(screen.getByTestId("nav-dev-agents"));
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    expect(screen.getByRole("tablist", { name: "AI harnesses" })).toBeVisible();
 
     await user.click(screen.getByTestId("product-research"));
     expect(
@@ -374,42 +380,21 @@ describe("Cly application shell", () => {
     ).toBeVisible();
   });
 
-  it("opens a real session flow from the Cly Dev primary action", async () => {
+  it("opens provider setup from the Cly Dev titlebar", async () => {
     const user = userEvent.setup();
     render(<ClyAppShell />);
 
     await user.click(screen.getByTestId("product-dev"));
-    const devWorkspace = document.querySelector(
-      ".cly-route-dev",
-    ) as HTMLElement;
     await user.click(
-      within(devWorkspace).getByRole("button", { name: "New session" }),
+      screen.getByRole("button", { name: "Configure AI providers" }),
     );
 
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
     expect(
-      screen.getByRole("dialog", { name: "New agent session" }),
+      screen.getByText(
+        "Connect the local AI tools Cly can run in your projects.",
+      ),
     ).toBeVisible();
-    expect(useClyStore.getState()).toMatchObject({
-      activeProduct: "dev",
-      activeScreen: "agents",
-      agentSessionsMode: "overview",
-    });
-  });
-
-  it("opens handoff details instead of using a toast-only action", async () => {
-    const user = userEvent.setup();
-    render(<ClyAppShell />);
-
-    await user.click(screen.getByTestId("product-dev"));
-    await user.click(screen.getByRole("button", { name: "Prepare handoff" }));
-
-    const dialog = screen.getByRole("dialog", { name: "Handoff summary" });
-    expect(dialog).toBeVisible();
-    expect(within(dialog).getByText("When LDL-C misleads")).toBeVisible();
-    expect(
-      within(dialog).getByRole("button", { name: "Copy summary" }),
-    ).toBeEnabled();
-    expect(screen.queryByText("Handoff prepared")).not.toBeInTheDocument();
   });
 
   it("opens the command palette and executes navigation", async () => {

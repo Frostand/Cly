@@ -1,35 +1,33 @@
-name: Cly Beta Release
+name: Cly Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: Package version expected in package.json (for example 0.5.0)
+        description: Version in package.json, without the v prefix
         required: true
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: cly-beta-release
+  group: cly-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  macos-beta:
-    name: signed-notarized-macos-beta
-    runs-on: macos-14
-    environment: cly-beta-release
-    timeout-minutes: 90
-    env:
-      CLY_UPDATE_FEED_URL: ${{ vars.CLY_UPDATE_FEED_URL }}
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+  quality:
+    name: Release quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
     steps:
-      - name: Check out exact release commit
+      - name: Check out release source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -42,71 +40,149 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.12.0
           cache: pnpm
 
-      - name: Verify protected release inputs
+      - name: Validate release version
+        id: release
+        shell: bash
         env:
-          EXPECTED_VERSION: ${{ inputs.version }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          test -n "$EXPECTED_VERSION"
-          test "$(node -p "require('./package.json').version")" = "$EXPECTED_VERSION"
-          test -n "$CLY_UPDATE_FEED_URL"
-          test -n "$CSC_LINK"
-          test -n "$CSC_KEY_PASSWORD"
-          test -n "$APPLE_ID"
-          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          test -n "$APPLE_TEAM_ID"
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_VERSION" != "$VERSION" ]; then
+            echo "Requested version $DISPATCH_VERSION does not match package.json ($VERSION)." >&2
+            exit 1
+          fi
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF_NAME" != "$TAG" ]; then
+            echo "Tag $REF_NAME does not match package.json ($VERSION)." >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install browser test runtime
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Run release gates
         run: |
+          pnpm doctor
           pnpm lint
           pnpm typecheck
           pnpm capabilities:check
           pnpm licenses:check
-          pnpm test --run
-          pnpm exec playwright install chromium
-          pnpm test:e2e
-
-      - name: Build signed application bundle
-        run: |
+          pnpm test
+          xvfb-run --auto-servernum pnpm test:e2e
           pnpm vite:build
-          pnpm exec electron-builder --mac dir --arm64
-          codesign --verify --deep --strict --verbose=2 release/mac-arm64/Cly.app
-          codesign -dv --verbose=4 release/mac-arm64/Cly.app 2>&1 | tee release/codesign-details.txt
 
-      - name: Notarize and staple application bundle
-        run: scripts/notarize-macos-app.sh release/mac-arm64/Cly.app
+  package:
+    name: Package ${{ matrix.label }}
+    needs: quality
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS
+            os: macos-14
+            command: pnpm exec electron-builder --mac dmg zip --arm64 --x64 --publish never
+            artifact: cly-macos
+            metadata: release/latest-mac.yml
+            files: |
+              release/Cly-*-mac-arm64.dmg
+              release/Cly-*-mac-arm64.zip
+              release/Cly-*-mac-x64.dmg
+              release/Cly-*-mac-x64.zip
+              release/latest-mac.yml
+          - label: Windows x64
+            os: windows-latest
+            command: pnpm exec electron-builder --win nsis --x64 --publish never
+            artifact: cly-windows-x64
+            metadata: release/latest.yml
+            files: |
+              release/Cly-*-windows-x64-setup.exe
+              release/Cly-*-windows-x64-setup.exe.blockmap
+              release/latest.yml
+          - label: Linux x64
+            os: ubuntu-latest
+            command: pnpm exec electron-builder --linux AppImage deb rpm --x64 --publish never
+            artifact: cly-linux-x64
+            metadata: release/latest-linux.yml
+            files: |
+              release/Cly-*-linux-x64.AppImage
+              release/Cly-*-linux-x64.deb
+              release/Cly-*-linux-x64.rpm
+              release/latest-linux.yml
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
 
-      - name: Build installers from notarized application
-        run: pnpm exec electron-builder --mac dmg zip --arm64 --prepackaged release/mac-arm64/Cly.app
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
 
-      - name: Notarize and staple disk image
-        run: |
-          DMG_PATH="$(find release -maxdepth 1 -name 'Cly-*-mac-arm64.dmg' -print -quit)"
-          test -n "$DMG_PATH"
-          xcrun notarytool submit "$DMG_PATH" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-          xcrun stapler staple "$DMG_PATH"
-          xcrun stapler validate "$DMG_PATH"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: pnpm
 
-      - name: Verify Gatekeeper acceptance
-        run: |
-          codesign --verify --deep --strict --verbose=2 release/mac-arm64/Cly.app
-          spctl --assess --type execute --verbose=4 release/mac-arm64/Cly.app
-          xcrun stapler validate release/mac-arm64/Cly.app
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Upload release evidence and installers
+      - name: Build application
+        run: pnpm vite:build
+
+      - name: Package application
+        run: ${{ matrix.command }}
+
+      - name: Verify update metadata
+        shell: bash
+        run: test -f "${{ matrix.metadata }}"
+
+      - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
-          name: cly-${{ inputs.version }}-macos-beta
+          name: ${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: 30
-          path: |
-            release/Cly-*-mac-arm64.dmg
-            release/Cly-*-mac-arm64.zip
-            release/latest-mac.yml
-            release/codesign-details.txt
-            macos-package-logs/**
+          path: ${{ matrix.files }}
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - quality
+      - package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packaged installers
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: release-assets
+
+      - name: Generate checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.quality.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.quality.outputs.version }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/* --target "$GITHUB_SHA" --generate-notes --title "Cly $RELEASE_VERSION"
+          fi

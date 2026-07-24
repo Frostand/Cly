@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useMemo } from "react";
-import dreamSvg from "@/assets/dream.svg";
 import { ProviderIcon } from "@/components/ai-elements/provider-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -181,7 +180,7 @@ export const EmptyProjectWorkspace = () => {
     return (
       <Empty className="h-full gap-6 rounded-none border-0 p-6">
         <EmptyHeader className="max-w-xl gap-4">
-          <img alt="" className="size-16" draggable={false} src={dreamSvg} />
+          <img alt="" className="size-16" draggable={false} src="/icon.png" />
           <EmptyMedia className="mb-0 size-10 rounded-full" variant="icon">
             <Plug className="size-5" />
           </EmptyMedia>
@@ -223,7 +222,7 @@ export const EmptyProjectWorkspace = () => {
   return (
     <Empty className="h-full gap-6 rounded-none border-0 p-6">
       <EmptyHeader className="max-w-xl gap-4">
-        <img alt="" className="size-16" draggable={false} src={dreamSvg} />
+        <img alt="" className="size-16" draggable={false} src="/icon.png" />
         <EmptyTitle>{emptyT("getStarted")}</EmptyTitle>
       </EmptyHeader>
 

@@ -18,6 +18,10 @@ import {
   getCursorCliUnavailableMessage,
   isCursorCliAvailable,
 } from "./providers/cursor-cli.js";
+import {
+  checkClaudeAuthentication,
+  checkOpenCodeAuthentication,
+} from "./providers/provider-health.js";
 import { createContextRepository } from "./research/context-repository.js";
 import { createObligationService } from "./research/obligation-service.js";
 import { isCliCommandAvailable } from "./shared/cli.js";
@@ -54,11 +58,18 @@ const validateCodexReady = async () => {
 };
 
 const validateClaudeReady = async () => {
-  const claudeInstalled = await isCliCommandAvailable("claude");
-  if (!claudeInstalled) {
+  const authentication = await checkClaudeAuthentication();
+  if (!authentication.installed) {
     return {
       message: "Claude Code CLI is not installed or not available on PATH.",
       status: 400,
+    };
+  }
+  if (!authentication.authenticated) {
+    return {
+      message:
+        "Claude Code login not found. Run `claude` and sign in, then try again.",
+      status: 401,
     };
   }
 
@@ -66,11 +77,18 @@ const validateClaudeReady = async () => {
 };
 
 const validateOpenCodeReady = async () => {
-  const openCodeInstalled = await isCliCommandAvailable("opencode");
-  if (!openCodeInstalled) {
+  const authentication = await checkOpenCodeAuthentication();
+  if (!authentication.installed) {
     return {
       message: "OpenCode CLI is not installed or not available on PATH.",
       status: 400,
+    };
+  }
+  if (!authentication.authenticated) {
+    return {
+      message:
+        "OpenCode login not found. Run `opencode auth login` and try again.",
+      status: 401,
     };
   }
 

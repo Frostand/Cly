@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { useIdeStore } from "../../../components/ide/ide-store";
 import { getDesktopApi } from "../../../lib/electron";
 import type { ClyDevWorkspaceMode } from "../agent-sessions/types";
 import { seedWorkspaceSnapshot } from "../agent-sessions/window-sync";
@@ -138,10 +139,18 @@ export function Titlebar() {
   const createObject = async () => {
     try {
       if (activeProduct === "dev") {
-        setDevSection("sessions");
-        const state = useClyStore.getState();
-        state.setAgentSessionsMode("overview");
-        state.setNewAgentSessionOpen(true);
+        const desktopApi = getDesktopApi();
+        if (!desktopApi) {
+          notify(
+            "Desktop app required",
+            "Open Cly in Electron to select a local project folder.",
+          );
+          return;
+        }
+        const selectedPath = await desktopApi.pickProjectDirectory();
+        if (selectedPath) {
+          useIdeStore.getState().addProject(selectedPath);
+        }
         return;
       }
       const screen = useClyStore.getState().activeScreen;
@@ -230,12 +239,21 @@ export function Titlebar() {
           <Button
             variant="ghost"
             iconOnly
-            aria-label={`${activeSessions} active agent sessions`}
-            onClick={() =>
+            aria-label={
               activeProduct === "dev"
-                ? setDevSection("sessions")
-                : setScreen("agents")
+                ? "Configure AI providers"
+                : `${activeSessions} active agent sessions`
             }
+            onClick={() => {
+              if (activeProduct === "dev") {
+                setDevSection("agents");
+                const ide = useIdeStore.getState();
+                ide.setSettingsSection("providers");
+                ide.setSettingsOpen(true);
+              } else {
+                setScreen("agents");
+              }
+            }}
           >
             <Activity size={14} />
             {activeSessions ? (
@@ -251,7 +269,7 @@ export function Titlebar() {
             onClick={() =>
               notify(
                 "Local-first status",
-                "Research records are stored by the project-scoped local service. External effects remain unavailable until their approval flows are implemented.",
+                "Research records stay in the project-scoped local service. AI prompts are sent only to the harness you select and pass Cly's data-obligation check first.",
               )
             }
           >
@@ -302,16 +320,19 @@ export function Titlebar() {
         ) : null}
         <Button
           variant="primary"
-          aria-label="Create new object"
-          disabled={activeProduct === "dev" && !isClyDemoRuntime}
+          aria-label={
+            activeProduct === "dev"
+              ? "Open project folder"
+              : "Create new object"
+          }
           title={
-            activeProduct === "dev" && !isClyDemoRuntime
-              ? capabilityUnavailableMessage("agents.execute")
+            activeProduct === "dev"
+              ? "Open project folder"
               : "Create new object"
           }
           onClick={createObject}
         >
-          <Plus size={14} /> {activeProduct === "dev" ? "New session" : "New"}
+          <Plus size={14} /> {activeProduct === "dev" ? "Open project" : "New"}
         </Button>
         <ClyTooltip label="Toggle inspector">
           <Button
@@ -335,7 +356,16 @@ export function Titlebar() {
             variant="ghost"
             iconOnly
             aria-label="Settings"
-            onClick={() => setScreen("settings")}
+            onClick={() => {
+              if (activeProduct === "dev") {
+                setDevSection("settings");
+                const ide = useIdeStore.getState();
+                ide.setSettingsSection("appearance");
+                ide.setSettingsOpen(true);
+              } else {
+                setScreen("settings");
+              }
+            }}
           >
             <Settings size={14} />
           </Button>

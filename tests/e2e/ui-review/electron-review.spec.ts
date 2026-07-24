@@ -356,6 +356,7 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
       ).toContainText("Developer workspace detached");
       await window.getByRole("button", { name: "Reattach workspace" }).click();
       await expect(window.getByLabel("Session workbench")).toBeVisible();
+      await expect.poll(() => app.windows().length).toBe(1);
     });
 
     await runScenario("8. Restart and resume", async () => {
@@ -383,14 +384,40 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
         cwd: root,
         env: launchEnvironment,
       });
-      window = await app.firstWindow();
+      await app.firstWindow();
+      await expect
+        .poll(
+          () =>
+            app
+              .windows()
+              .find((page) => !page.url().includes("clyWindowRole"))
+              ?.url() ?? "",
+          { timeout: 45_000 },
+        )
+        .toContain("http://127.0.0.1:43741");
+      const restoredAgentWindow = app
+        .windows()
+        .find((page) => !page.url().includes("clyWindowRole"));
+      if (!restoredAgentWindow) {
+        throw new Error("The restored Cly agent window was not available.");
+      }
+      window = restoredAgentWindow;
+      // Electron exposes the new Page as soon as navigation begins. Give the
+      // replacement renderer one task turn to mount before native window
+      // inspection; otherwise Playwright can keep polling the outgoing static
+      // boot document through the navigation handoff.
+      await window.waitForTimeout(1_000);
+      await window
+        .getByRole("heading", { level: 1 })
+        .first()
+        .waitFor({ timeout: 45_000 });
       browserWindow = await app.browserWindow(window);
       await browserWindow.evaluate((nativeWindow) => {
         nativeWindow.setSize(1024, 700);
       });
       await expect(
         window.getByRole("button", { name: "Resume task" }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 45_000 });
       await window.getByRole("button", { name: "Resume task" }).click();
       await expect(
         window.getByRole("button", { name: "Resume task" }),

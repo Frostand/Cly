@@ -24,6 +24,10 @@ import {
   selectLowCostOpenAiModel,
   sortCursorModelOptions,
 } from "./model-options.js";
+import {
+  checkClaudeAuthentication,
+  checkOpenCodeAuthentication,
+} from "./provider-health.js";
 
 const OPENAI_CODEX_CHATGPT_MODELS_URL =
   "https://chatgpt.com/backend-api/codex/models";
@@ -393,8 +397,8 @@ export const fetchCursorModels = async ({ force = false } = {}) => {
 };
 
 export const fetchOpenCodeModels = async ({ force = false } = {}) => {
-  const installed = await isCliCommandAvailable("opencode");
-  if (!installed) {
+  const authentication = await checkOpenCodeAuthentication();
+  if (!authentication.installed) {
     return {
       error: "OpenCode CLI is not installed or not available on PATH.",
       installed: false,
@@ -404,6 +408,16 @@ export const fetchOpenCodeModels = async ({ force = false } = {}) => {
     };
   }
   const version = await getCliVersion("opencode", { force });
+  if (!authentication.authenticated) {
+    return {
+      error:
+        "OpenCode login not found. Run `opencode auth login`, then refresh.",
+      installed: true,
+      models: [],
+      source: "unavailable",
+      version,
+    };
+  }
 
   try {
     const args = ["models", ...(force ? ["--refresh"] : [])];
@@ -446,8 +460,8 @@ export const fetchOpenCodeModels = async ({ force = false } = {}) => {
 };
 
 export const fetchAnthropicModels = async ({ force = false } = {}) => {
-  const installed = await isCliCommandAvailable("claude");
-  if (!installed) {
+  const authentication = await checkClaudeAuthentication();
+  if (!authentication.installed) {
     return {
       error: "Claude Code CLI is not installed or not available on PATH.",
       installed: false,
@@ -457,6 +471,16 @@ export const fetchAnthropicModels = async ({ force = false } = {}) => {
     };
   }
   const version = await getCliVersion("claude", { force });
+  if (!authentication.authenticated) {
+    return {
+      error:
+        "Claude Code login not found. Run `claude` and sign in, then refresh.",
+      installed: true,
+      models: [],
+      source: "unavailable",
+      version,
+    };
+  }
 
   try {
     const models = await fetchClaudeCodeModelOptionsFromModelsDev();

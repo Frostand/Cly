@@ -75,6 +75,22 @@ function getPackagedUpdateFeedUrl() {
   }
 }
 
+function hasPackagedUpdateConfig() {
+  if (!process.resourcesPath) {
+    return false;
+  }
+
+  try {
+    const config = readFileSync(
+      path.join(process.resourcesPath, "app-update.yml"),
+      "utf8",
+    );
+    return /^\s*provider:\s*(?:github|generic)\s*$/m.test(config);
+  } catch {
+    return false;
+  }
+}
+
 function getBaseUpdateFeedUrl() {
   return getUpdateFeedUrl() ?? getPackagedUpdateFeedUrl();
 }
@@ -253,7 +269,9 @@ export function initializeAutoUpdater({
     : null;
   const updateFeedUrl = getBaseUpdateFeedUrl();
   const updatesEnabled =
-    (app.isPackaged && !isDevelopment && Boolean(updateFeedUrl)) ||
+    (app.isPackaged &&
+      !isDevelopment &&
+      (Boolean(updateFeedUrl) || hasPackagedUpdateConfig())) ||
     (devUpdatesEnabled && Boolean(updateFeedUrl));
   let checkInFlight = null;
   let initialUpdateCheckTimer = null;

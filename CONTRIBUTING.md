@@ -14,11 +14,11 @@ bug reports, workflow proposals, documentation improvements, tests, and code.
 
 ## Local setup
 
-Requirements: Node.js 22 or newer and pnpm 11.
+Requirements: Node.js 22.12 or newer and pnpm 11.12.
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm approve-builds
+pnpm doctor
 pnpm dev
 ```
 

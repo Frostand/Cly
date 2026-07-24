@@ -220,6 +220,16 @@
     "reason": "Integration setup is unavailable until provider credentials and approval flows are implemented."
   },
   {
+    "id": "dev.ai-workspace",
+    "route": "dev",
+    "action": "Open a project and run coding chats through Codex, Claude Code, OpenCode, or Cursor",
+    "state": "production",
+    "service": "IdeShell provider chat runtime",
+    "api": "POST /api/chat; POST /api/provider-models",
+    "test": "electron/api/chat-routes.test.ts",
+    "reason": null
+  },
+  {
     "id": "agents.configure",
     "route": "models-agents",
     "action": "Save an agent configuration",

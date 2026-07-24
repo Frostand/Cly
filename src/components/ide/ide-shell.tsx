@@ -18,7 +18,7 @@ import { dedupeModels } from "./ide-types";
 import { ProjectWorkspace } from "./project-workspace";
 import { SettingsDialog } from "./settings-dialog";
 
-export const IdeShell = () => {
+export const IdeShell = ({ embedded = false }: { embedded?: boolean }) => {
   // ── Store selectors ─────────────────────────────────────────────────
   const appReady = useIdeStore((s) => s.appReady);
   const setAppReady = useIdeStore((s) => s.setAppReady);
@@ -358,7 +358,12 @@ export const IdeShell = () => {
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-surface-50 dark:bg-surface-900 text-foreground">
+    <div
+      className={cn(
+        "flex flex-col overflow-hidden bg-surface-50 dark:bg-surface-900 text-foreground",
+        embedded ? "h-full" : "h-screen",
+      )}
+    >
       {!appReady && <AppLoadingScreen />}
       <IdeHeader />
 

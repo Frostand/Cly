@@ -1,163 +1,154 @@
-# Cly
+<p align="center">
+  <img src="./public/icon.png" alt="Cly logo" width="112" height="112" />
+</p>
 
-**Cly is an open-source, local-first research operating system.**
+<h1 align="center">Cly</h1>
 
-**Cly Research** is the system of record for computational research. **Cly Dev** is a local-first, multi-provider coding-agent workspace. **Cly Core** connects both applications through one research graph, context system, permission boundary, and provenance history.
+<p align="center">
+  <strong>Local-first research software that carries a question from evidence to an auditable result.</strong>
+</p>
 
-Together they connect papers, objectives, code, experiments, outputs, and claims in one auditable workspace while preserving development context across agents, devices, and machines. Cly runs on the researcher’s machine and keeps the scientific record inspectable at every step.
+<p align="center">
+  Research graph · reproducible analysis · coding agents · provenance
+</p>
 
-## What Cly answers
+<p align="center">
+  <a href="https://github.com/Frostand/Cly/actions/workflows/cly-ci.yml"><img src="https://github.com/Frostand/Cly/actions/workflows/cly-ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Frostand/Cly/releases"><img src="https://img.shields.io/github/v/release/Frostand/Cly?display_name=tag&sort=semver" alt="GitHub release" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0 license" /></a>
+  <img src="https://img.shields.io/badge/status-open%20beta-f59e0b" alt="Open beta" />
+</p>
 
-- What is the project trying to prove?
-- Which evidence supports or contradicts each claim?
-- Which code, notebook, data, environment, and run produced a result?
-- Which decisions changed the project direction, and why?
-- Which artifacts are stale, manually edited, or irreproducible?
-- What should happen next?
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#ai-harnesses">AI harnesses</a> ·
+  <a href="#development">Development</a> ·
+  <a href="./CONTRIBUTING.md">Contributing</a>
+</p>
 
-## Architecture
+---
 
-```
-Shared Cly Core (graph, context, permissions, sync, provenance)
-    ├── Cly Research (objectives, evidence, experiments, claims, audits)
-    └── Cly Dev (sessions, repositories, machines, tests, pull requests)
-            ↓
-External tools (VS Code, Jupyter, GitHub, Linear, model providers)
-```
+Cly combines a scientific system of record with a multi-provider coding workspace. Research questions, sources, hypotheses, experiments, datasets, runs, metrics, claims, and review findings stay connected instead of being scattered across chats and folders.
 
-The research core — graph, sources, claims, provenance, memory, and agent orchestration — is independent of any single editor, model provider, or hosted service.
+Everything runs on the researcher's computer. Cly stores project state locally, asks before opening local data, and uses the existing authenticated session of an optional AI command-line harness. Raw analysis rows are not copied into Cly.
 
-## Why Cly
+## What Cly does
 
-- **The method is visible.** The Research Loop shows the first missing scientific gate instead of hiding the process inside an agent transcript.
-- **Out-of-order work is explicit.** Sources, experiments, or claims created before the question or method are flagged as unanchored rather than shown as complete.
-- **Evidence is a first-class object.** Claims retain supporting and contradicting sources, experiment links, limitations, confidence, and reviewer risks.
-- **The analysis can run locally.** A fresh project can import numeric CSV or TSV data, run deterministic cross-validated analysis, save the resulting artifacts, and recover them after restart.
-- **Review is part of the loop.** Reproducibility and integrity gates stay open until the evidence trail is ready to share.
+- Guides a project through **Question → Method → Evidence → Analysis → Claims → Review** and identifies the first incomplete gate.
+- Imports numeric CSV/TSV data and runs deterministic cross-validated binary classification or regression locally.
+- Saves metrics, coefficients, dataset checksums, limitations, generated claims, evidence links, and provenance so a result survives restart.
+- Connects sources and experiments to claims in an inspectable research graph.
+- Audits reproducibility and integrity before a result is shared.
+- Opens real coding projects and streams local agent chats through **Codex, Claude Code, OpenCode, or Cursor**.
+- Exports project backups for recovery and review.
 
-## Status
+## Install
 
-Cly Open Beta includes a two-application Research/Dev shell, objective planning,
-reviewer-capsule workflows, a local-first development command center, desktop
-menus, keyboard navigation, automated workflows, and responsive research and
-integrity workspaces. Project-scoped local services now persist core claim,
-source, experiment, relationship, context, agent-configuration, and agent-session
-workflows. A fresh local project can also import a numeric CSV/TSV dataset, run
-deterministic cross-validated binary classification or regression, save metrics
-and coefficients, generate a bounded result claim, audit the evidence trail,
-recover it after restart, and export a project backup. The checked-in
-[capability inventory](docs/cly-v1-capabilities.json)
-is the release boundary; the UI labels unfinished routes as Preview and disables
-unavailable mutations with an explanation. Agent Sessions includes durable local session events plus secure
-device registration and end-to-end encrypted, resumable synchronization of
-explicitly approved chat, context, and handoff records. Pairing requires
-fingerprint verification; OS-protected device keys, rotation, revocation,
-offline queues, acknowledgements, and explicit conflict resolution are built
-into the local service. The sync protocol is transport-neutral and does not
-yet ship with a hosted relay. The Overview and Orchestrator Chat workspace also
-includes deterministic delegated-agent fixtures and a Browser, Terminal, Code
-Diff, Agents, and Live Files preview. Notebook/code scanning, agent execution,
-external integration configuration, planner mutations, and decision creation are
-not included in the open beta.
+### Desktop builds
 
-The open beta is local-first and free of billing code, but it is not approved
-for sensitive or regulated data. Export a project backup before testing. Local
-beta testers can run Cly from source or use the unpacked development package;
-public macOS distribution, signing, and notarization are a separate release
-track.
+Tagged releases produce installers for macOS (Apple Silicon and Intel), Windows x64, and Linux x64 on the [Releases page](https://github.com/Frostand/Cly/releases). Download the installer for your platform and launch Cly.
 
-## Open source
+The current macOS beta is intentionally unsigned. macOS may require **Control-click → Open** on first launch. Cly does not yet support regulated or sensitive data.
 
-Cly’s original source code is licensed under the
-[Apache License 2.0](LICENSE). Contributions are welcome; see
-[CONTRIBUTING.md](CONTRIBUTING.md) for the local setup, quality bar, and pull
-request checklist.
+### Run from source
 
-Third-party components retain their own licenses. Scoped attribution for
-inherited MIT-licensed material is preserved in [NOTICE.md](NOTICE.md) and
-[licenses/DREAM_IDE-MIT.txt](licenses/DREAM_IDE-MIT.txt); that notice does not
-change Cly’s Apache-2.0 license.
-
-## Development
-
-Requirements: Node.js 22 or newer and pnpm 11.
+Requirements: [Git](https://git-scm.com/), Node.js 22.12 or newer, and pnpm 11.12.
 
 ```bash
+git clone https://github.com/Frostand/Cly.git
+cd Cly
+corepack enable
+corepack prepare pnpm@11.12.0 --activate
 pnpm install --frozen-lockfile
-pnpm approve-builds     # approve electron, node-pty, esbuild, sharp builds
+pnpm doctor
 pnpm dev
 ```
 
-Quality checks:
+`pnpm doctor` checks the local toolchain and reports which optional AI harnesses are installed and signed in. Cly Research works without an AI harness.
+
+## Quickstart
+
+### Finish a research question
+
+1. Create a local project and open **Research Loop**.
+2. Enter the research question, working hypothesis, and scope.
+3. Add sources and connect them to a preliminary claim.
+4. Create an experiment and choose **Run analysis**.
+5. Select a CSV or TSV file, outcome, predictors, fold count, and seed.
+6. Review cross-validated performance, the baseline, coefficients, warnings, and generated result claim.
+7. Open **Reproducibility**, run the audit, and resolve the evidence gaps before sharing.
+8. Export a project backup from **Settings → Privacy**.
+
+The supported local analysis boundary and an independent tester checklist are in [Beta testing](./docs/BETA_TESTING.md). The included LDL-C walkthrough demonstrates the full blank-to-result path: [Can basic health data predict when LDL cholesterol gives a misleading picture of heart-disease risk?](./docs/LDL_DISCORDANCE_DEMO.md)
+
+### Use the coding workspace
+
+1. Select **Dev** in the application switcher.
+2. Choose **Open project** and select a local repository.
+3. Open **AI Providers**, select an installed harness, and complete sign-in if needed.
+4. Start a chat, select a model, and review tool activity and file changes in the workspace.
+
+Provider credentials remain in each provider's own CLI session; Cly does not collect or save them.
+
+## AI harnesses
+
+Install and authenticate at least one harness to use Cly Dev chat. Provider accounts and usage charges are managed by the provider, not Cly.
+
+| Harness | Install | Sign in | Documentation |
+| --- | --- | --- | --- |
+| Codex | `npm install -g @openai/codex` | `codex login` | [Codex CLI](https://developers.openai.com/codex/cli/) |
+| Claude Code | `npm install -g @anthropic-ai/claude-code` | `claude` | [Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started) |
+| OpenCode | `npm install -g opencode-ai` | `opencode auth login` | [OpenCode CLI](https://opencode.ai/docs/cli/) |
+
+Cly checks both CLI availability and authentication. A binary on `PATH` is not displayed as connected until its session is usable. Provider and model errors are surfaced in **AI Providers**, where setup commands can be copied and status refreshed.
+
+## How it is organized
+
+```text
+Cly Core (local project store, research graph, context, permissions, provenance)
+├── Cly Research (question, sources, experiments, analysis, claims, review)
+└── Cly Dev (projects, files, terminal, diffs, multi-provider agent chat)
+```
+
+The [capability inventory](./docs/cly-v1-capabilities.json) is the machine-checked beta boundary. Production actions have a local service, API boundary, and test. Deferred actions are labeled Preview or disabled with a reason instead of behaving like completed features.
+
+## Beta boundary
+
+The end-to-end local research loop, persistent research objects, CSV/TSV analysis, evidence linkage, audits, backups, and live Cly Dev provider chat are available now. Research Agent Sessions also persist configuration and event history, but their separate orchestration controls and browser/terminal workbench remain a preview; they are not the runtime used by the live Cly Dev chat workspace.
+
+Notebook import, code scanning, hosted sync relay, external integration configuration, and automatic research-decision planning are not part of this beta. Use de-identified, non-sensitive data and export a backup before testing. Please report defects through [GitHub Issues](https://github.com/Frostand/Cly/issues).
+
+## Development
+
+```bash
+pnpm install --frozen-lockfile
+pnpm doctor
+pnpm dev
+```
+
+Run the same quality gates used by CI:
 
 ```bash
 pnpm lint
 pnpm typecheck
-pnpm test --run
-pnpm vite:build
 pnpm capabilities:check
 pnpm licenses:check
+pnpm test
+pnpm test:e2e
+pnpm package:dir
 ```
 
-Professor demo:
+Useful commands:
 
 ```bash
-pnpm demo
-pnpm demo:video
+pnpm demo          # launch the deterministic professor demo
+pnpm demo:video    # record the captioned LDL-C walkthrough
+pnpm package:mac   # platform installer targets also exist for win and linux
 ```
 
-See the [LDL-C blank-to-result walkthrough](docs/LDL_DISCORDANCE_DEMO.md).
-For an independent beta run with a tester-supplied dataset, use the
-[local beta testing guide](docs/BETA_TESTING.md).
-
-## Documentation
-
-### Product
-- [Product plan](docs/product-plan.md)
-- [Product background](docs/PRODUCT_BACKGROUND.md)
-- [Roadmap](docs/roadmap.md)
-
-### Architecture and design
-- [Architecture](docs/architecture.md)
-- [Domain model](docs/DOMAIN_MODEL.md)
-- [Backend boundaries](docs/BACKEND_BOUNDARIES.md)
-- [Local service security model](docs/LOCAL_SERVICE_SECURITY_MODEL.md)
-- [Design system](docs/DESIGN_SYSTEM.md)
-
-### UI
-- [UI shell completion report](docs/UI_SHELL_COMPLETION_REPORT.md)
-- [UI map](docs/UI_MAP.md)
-- [Feature matrix](docs/FEATURE_MATRIX.md)
-- [Information architecture](docs/INFORMATION_ARCHITECTURE.md)
-- [Interaction specification](docs/INTERACTION_SPEC.md)
-- [Keyboard shortcuts](docs/KEYBOARD_SHORTCUTS.md)
-- [Fixture states](docs/FIXTURE_STATES.md)
-- [UI testing](docs/UI_TESTING.md)
-- [UI visual audit](docs/UI_VISUAL_AUDIT.md)
-- [Design system V2](docs/DESIGN_SYSTEM_V2.md)
-- [Application shell V2](docs/APP_SHELL_V2.md)
-- [Route layout patterns](docs/ROUTE_LAYOUT_PATTERNS.md)
-- [Interaction patterns](docs/INTERACTION_PATTERNS.md)
-- [Accessibility](docs/ACCESSIBILITY.md)
-- [Visual testing](docs/VISUAL_TESTING.md)
-- [UI migration plan](docs/UI_MIGRATION_PLAN.md)
-- [UI visual refactor report](docs/UI_VISUAL_REFACTOR_COMPLETION_REPORT.md)
-- [UI polish iteration log](docs/UI_POLISH_ITERATION_LOG.md)
-- [UI manual review](docs/UI_MANUAL_REVIEW.md)
-- [UI copy guide](docs/UI_COPY_GUIDE.md)
-- [Agent Sessions redesign](docs/AGENT_SESSIONS_REDESIGN.md)
-- [Agent Sessions completion report](docs/AGENT_SESSIONS_COMPLETION_REPORT.md)
-
-### Planning
-- [Phase 2 backend plan](docs/PHASE_2_BACKEND_PLAN.md)
-- [Architecture decisions](docs/adr/README.md)
-
-### Infrastructure
-- [Dream UI audit](docs/DREAM_UI_AUDIT.md) (current implementation component)
-- [Phase 0 assessment](docs/phase-0/)
-- [Delivery workflow](docs/DELIVERY_WORKFLOW.md)
+See [Contributing](./CONTRIBUTING.md), [Security](./SECURITY.md), the [architecture](./docs/architecture.md), and the [product roadmap](./docs/roadmap.md).
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) for Cly’s license and
-[NOTICE.md](NOTICE.md) for third-party attribution.
+Cly is licensed under [Apache License 2.0](./LICENSE). Third-party components retain their own licenses. Scoped attribution for inherited MIT-licensed material is preserved in [NOTICE.md](./NOTICE.md) and [licenses/DREAM_IDE-MIT.txt](./licenses/DREAM_IDE-MIT.txt); it does not change Cly's Apache-2.0 license.

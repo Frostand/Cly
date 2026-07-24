@@ -15,7 +15,6 @@ import {
   useRef,
   useState,
 } from "react";
-import dreamSvg from "@/assets/dream.svg";
 import {
   Conversation,
   ConversationContent,
@@ -1220,7 +1219,7 @@ export const ChatPanel = ({
                   alt=""
                   className="size-16"
                   draggable={false}
-                  src={dreamSvg}
+                  src="/icon.png"
                 />
                 <p className="font-medium text-lg">{chatT("buildAnything")}</p>
               </div>

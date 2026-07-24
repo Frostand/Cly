@@ -3,8 +3,9 @@ import { streamText, tool } from "ai";
 import { claudeCode, createAiSdkMcpServer } from "ai-sdk-provider-claude-code";
 import { z } from "zod";
 import { normalizeClaudeCodeModel } from "../../providers/model-options.js";
+import { checkClaudeAuthentication } from "../../providers/provider-health.js";
 import { fetchAnthropicModels } from "../../providers/provider-models.js";
-import { execCliCommand, resolveCliCommandPath } from "../../shared/cli.js";
+import { resolveCliCommandPath } from "../../shared/cli.js";
 import { hashToolArguments } from "./approval-gate.js";
 
 export const CLY_DEV_CLAUDE_MCP_SERVER = "clyDev";
@@ -88,15 +89,6 @@ export const createClyDevClaudeMcp = ({
   });
 };
 
-const parseAuthentication = (value) => {
-  try {
-    const parsed = JSON.parse(value);
-    return parsed?.loggedIn === true || parsed?.authenticated === true;
-  } catch {
-    return /logged\s+in|authenticated/i.test(String(value ?? ""));
-  }
-};
-
 const loadProjectPath = (db, request) => {
   const row = db
     .prepare(
@@ -122,16 +114,11 @@ const loadProjectPath = (db, request) => {
 };
 
 const defaultAuthentication = async () => {
-  const executable = await resolveCliCommandPath("claude");
-  if (!executable) return { status: "unavailable" };
-  try {
-    const result = await execCliCommand("claude", ["auth", "status", "--json"]);
-    return parseAuthentication(result.stdout)
-      ? { status: "authenticated" }
-      : { status: "absent" };
-  } catch {
-    return { status: "absent" };
-  }
+  const authentication = await checkClaudeAuthentication();
+  if (!authentication.installed) return { status: "unavailable" };
+  return authentication.authenticated
+    ? { status: "authenticated" }
+    : { status: "absent" };
 };
 
 const defaultModelStream = ({ model, prompt, settings, signal }) =>

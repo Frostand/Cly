@@ -2133,7 +2133,7 @@ export function CodeLinkerScreen() {
                       onClick={() =>
                         notify(
                           "External editor boundary",
-                          "Dream’s open-in-editor infrastructure is retained for Phase 2 wiring.",
+                          "Cly’s open-in-editor infrastructure is retained for Phase 2 wiring.",
                         )
                       }
                     >

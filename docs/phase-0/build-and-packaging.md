@@ -18,35 +18,31 @@ pnpm dev
 pnpm package:dir
 ```
 
-Local development packages intentionally omit `app-update.yml` when
-`CLY_UPDATE_FEED_URL` is unset. CI/release packaging still requires the
-explicit Cly feed and fails closed when it is missing.
+Packages use electron-builder's GitHub Releases updater configuration by
+default. Set `CLY_UPDATE_FEED_URL` only when a Cly-owned generic update mirror
+should override GitHub Releases. Packaging never requires a private feed URL.
 
 Platform packages are produced with `pnpm package:mac`, `pnpm package:win`, or `pnpm package:linux` and written to `release/`.
 
 ## Identity and publishing
 
-The application ID is `ai.cly.cly`, product/executable name is `Cly`, and electron-builder publishes only to `Frostand/Cly`. Update checks have no Dream feed fallback. Development update testing requires both `CLY_ENABLE_DEV_UPDATES=1` and an explicit `CLY_UPDATE_FEED_URL`.
+The application ID is `ai.cly.cly`, product/executable name is `Cly`, and
+electron-builder publishes only to `Frostand/Cly`. Update checks have no Dream
+feed fallback. Development update testing requires both
+`CLY_ENABLE_DEV_UPDATES=1` and an explicit `CLY_UPDATE_FEED_URL`.
 
-Unsigned artifacts are development-only. Public or external distribution requires Cly-owned Apple and Windows signing identities, notarization credentials, protected GitHub environments, and a verified update feed.
+The open beta currently distributes unsigned artifacts. macOS testers may need
+to Control-click the app and choose **Open** on first launch.
 
 ## Free beta release gate
 
-The `Cly Beta Release` workflow is the only supported macOS beta distribution
-path. It runs the quality, capability, license, unit, and browser gates before
-building an arm64 app with the hardened-runtime entitlements in
-`build/entitlements.mac.plist`. It then notarizes and staples both the app and
-DMG and requires Gatekeeper acceptance before uploading the installers.
+The `Cly Release` workflow is the supported beta distribution path. A version
+tag, or a manual dispatch matching `package.json`, runs the toolchain doctor,
+lint, type checks, capability and license checks, unit tests, the Electron E2E
+suite, and a production build. It then creates unsigned macOS arm64/x64,
+Windows x64, and Linux x64 installers with update metadata and SHA-256 checksums
+and attaches them to the GitHub Release.
 
-Configure a protected GitHub environment named `cly-beta-release` with:
-
-- environment variable `CLY_UPDATE_FEED_URL` pointing at the Cly-owned update
-  feed;
-- secrets `CSC_LINK` and `CSC_KEY_PASSWORD` for the Cly Developer ID
-  Application certificate;
-- secrets `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` for
-  Apple notarization.
-
-The workflow fails before packaging when any release input is absent. A local
-`pnpm package:dir` result remains an internal development artifact even when
-`codesign --verify` succeeds with an ad-hoc signature.
+No private signing or update-feed secrets are required for this beta workflow.
+`CLY_UPDATE_FEED_URL` remains an optional build-time override for a future
+Cly-owned generic mirror.

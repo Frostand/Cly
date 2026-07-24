@@ -8923,6 +8923,13 @@
     overflow: auto;
     scrollbar-width: thin;
   }
+  .cly-shell[data-product="dev"] .cly-screen,
+  .cly-shell[data-product="dev"] .cly-route-transition,
+  .cly-live-dev-workspace {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
   .cly-page {
     width: 100%;
     max-width: 1460px;

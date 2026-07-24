@@ -19,21 +19,19 @@ import {
   HardDrive,
   Library,
   ListChecks,
-  ListTodo,
-  Monitor,
   PackageCheck,
   PanelLeftClose,
   PanelLeftOpen,
   PanelsTopLeft,
+  Plug,
   Plus,
   ScrollText,
   Settings,
   ShieldCheck,
-  TestTube2,
-  Tickets,
   WalletCards,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { useIdeStore } from "../../../components/ide/ide-store";
 import type { DevSection, ScreenId } from "../domain/types";
 import { openBetaScreenNotice } from "../services/capabilities";
 import { isClyDemoRuntime } from "../services/runtime";
@@ -169,47 +167,15 @@ interface DevNavigationItem {
 
 const devGroups: { label: string; items: DevNavigationItem[] }[] = [
   {
-    label: "Development",
-    items: [
-      { id: "projects", label: "Projects", icon: PanelsTopLeft },
-      { id: "repositories", label: "Repositories", icon: GitBranch },
-      { id: "features", label: "Features", icon: ListTodo },
-      { id: "issues", label: "Issues", icon: Tickets },
-    ],
+    label: "Workspace",
+    items: [{ id: "projects", label: "AI Workspace", icon: PanelsTopLeft }],
   },
   {
-    label: "Execution",
+    label: "Configure",
     items: [
-      {
-        id: "sessions",
-        label: "Sessions",
-        icon: Bot,
-        count: (s) =>
-          s.data.agentSessions.filter((session) =>
-            ["running", "waiting_approval"].includes(session.status),
-          ).length,
-      },
-      { id: "agents", label: "Agents", icon: Activity },
-      { id: "machines", label: "Machines", icon: Monitor },
+      { id: "agents", label: "AI Providers", icon: Plug },
+      { id: "settings", label: "Workspace Settings", icon: Settings },
     ],
-  },
-  {
-    label: "Delivery",
-    items: [
-      { id: "pull-requests", label: "Pull Requests", icon: GitPullRequest },
-      { id: "tests", label: "Tests", icon: TestTube2 },
-      {
-        id: "context",
-        label: "Context",
-        icon: BrainCircuit,
-        count: (s) =>
-          s.data.contextItems.filter((item) => item.included).length,
-      },
-    ],
-  },
-  {
-    label: "System",
-    items: [{ id: "settings", label: "Settings", icon: Settings }],
   },
 ];
 
@@ -230,6 +196,19 @@ export function Sidebar() {
   const setDevSection = useClyStore((s) => s.setDevSection);
   const toggleSidebar = useClyStore((s) => s.toggleSidebar);
   const state = useClyStore();
+  const openDevDestination = (section: DevSection) => {
+    setDevSection(section);
+    const ide = useIdeStore.getState();
+    if (section === "agents") {
+      ide.setSettingsSection("providers");
+      ide.setSettingsOpen(true);
+    } else if (section === "settings") {
+      ide.setSettingsSection("appearance");
+      ide.setSettingsOpen(true);
+    } else {
+      ide.setSettingsOpen(false);
+    }
+  };
 
   return (
     <aside className="cly-sidebar" aria-label="Main navigation">
@@ -247,7 +226,10 @@ export function Sidebar() {
           aria-selected={activeProduct === "research"}
           aria-label="Cly Research"
           title={sidebarCollapsed ? "Cly Research" : undefined}
-          onClick={() => setProductArea("research")}
+          onClick={() => {
+            useIdeStore.getState().setSettingsOpen(false);
+            setProductArea("research");
+          }}
           data-testid="product-research"
         >
           <Library size={14} />
@@ -342,7 +324,7 @@ export function Sidebar() {
                       aria-current={active ? "page" : undefined}
                       aria-label={item.label}
                       title={sidebarCollapsed ? item.label : undefined}
-                      onClick={() => setDevSection(item.id)}
+                      onClick={() => openDevDestination(item.id)}
                       key={item.id}
                       data-testid={`nav-dev-${item.id}`}
                     >

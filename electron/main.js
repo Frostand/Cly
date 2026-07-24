@@ -1,5 +1,4 @@
 import "./load-env.js";
-import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -37,6 +36,7 @@ import {
   savePersistedThemePreference,
 } from "./persisted-state.js";
 import { createProcessSessionManager } from "./process-sessions.js";
+import { launchProviderLogin } from "./provider-login.js";
 import { createRendererServerManager } from "./renderer-server.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
 import { initializeAutoUpdater } from "./updater.js";
@@ -762,55 +762,6 @@ ipcMain.handle("shell:open-external", (_event, { url }) => {
   return true;
 });
 
-const PROVIDER_LOGIN_COMMANDS = {
-  anthropic: "claude",
-  cursor: "agent login",
-  openai: "codex login",
-  opencode: "opencode auth login",
-};
-
-const launchProviderLogin = (provider) => {
-  const command = PROVIDER_LOGIN_COMMANDS[provider];
-  if (!command) {
-    return false;
-  }
-
-  try {
-    if (process.platform === "darwin") {
-      const script = `tell application "Terminal" to do script ${JSON.stringify(command)}`;
-      const child = spawn("osascript", ["-e", script], {
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-      return true;
-    }
-
-    if (process.platform === "win32") {
-      const child = spawn(
-        "cmd.exe",
-        ["/c", "start", "", "cmd.exe", "/k", command],
-        {
-          detached: true,
-          stdio: "ignore",
-          windowsHide: false,
-        },
-      );
-      child.unref();
-      return true;
-    }
-
-    const child = spawn("x-terminal-emulator", ["-e", "sh", "-lc", command], {
-      detached: true,
-      stdio: "ignore",
-    });
-    child.unref();
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 ipcMain.handle("providers:launch-login", (_event, { provider } = {}) => {
   return launchProviderLogin(provider);
 });
@@ -973,7 +924,13 @@ app.on("before-quit", (event) => {
   }
   event.preventDefault();
   appIsQuitting = true;
-  saveWorkspaceWindowLayout(true);
+  if (
+    workspaceWindow &&
+    !workspaceWindow.isDestroyed() &&
+    !workspaceWindowsClosingForReattach.has(workspaceWindow)
+  ) {
+    saveWorkspaceWindowLayout(true);
+  }
 
   updateManager?.stop();
   processSessionManager.stopAllProcesses();

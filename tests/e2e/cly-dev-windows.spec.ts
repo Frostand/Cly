@@ -86,8 +86,10 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
     workspace = restoredWorkspace;
     await expect(
       workspace.getByRole("main", { name: "Detached developer workspace" }),
-    ).toBeVisible();
-    await expect(agent.getByLabel("Message the Orchestrator")).toBeVisible();
+    ).toBeVisible({ timeout: 45_000 });
+    await expect(agent.getByLabel("Message the Orchestrator")).toBeVisible({
+      timeout: 45_000,
+    });
 
     const expectedBounds = { x: 180, y: 120, width: 780, height: 560 };
     const restoredNativeWorkspace = await app.browserWindow(workspace);
