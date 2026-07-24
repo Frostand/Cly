@@ -1,25 +1,27 @@
 import type { PrImpactReview } from "../../domain/pr-impact-review";
 
 const finding = {
-  id: "methodology-src-methods-calibration",
+  id: "methodology-analysis-discordance",
   category: "methodology" as const,
   title: "Methodology review",
-  summary: "A calibration threshold changed.",
+  summary: "The ApoB–LDL-C discordance threshold changed.",
   severity: "warning" as const,
-  changedFiles: [{ path: "src/methods/calibration.ts", status: "modified" }],
-  changedCommits: [{ sha: "2222222", subject: "Change calibration threshold" }],
+  changedFiles: [{ path: "analysis/discordance.py", status: "modified" }],
+  changedCommits: [
+    { sha: "2222222", subject: "Make discordance threshold explicit" },
+  ],
   commitLabel: "committed changes",
   researchObjects: [
     {
-      id: "method-calibration",
+      id: "method-discordance",
       type: "method",
-      label: "Temperature calibration",
+      label: "Weighted percentile discordance",
       linkStatus: "verified" as const,
     },
     {
-      id: "claim-calibration",
+      id: "claim-discordance",
       type: "claim",
-      label: "Calibration improves interval reliability",
+      label: "Basic data flag discordantly high ApoB",
       linkStatus: "inferred" as const,
     },
   ],
@@ -28,7 +30,7 @@ const finding = {
       id: "evidence-method",
       type: "commit-experiment-link",
       fromObjectId: "2222222",
-      toObjectId: "experiment-calibration",
+      toObjectId: "experiment-discordance",
       linkStatus: "verified" as const,
     },
   ],
@@ -50,19 +52,19 @@ export const populatedPrImpactReviewFixture: PrImpactReview = {
   generatedFrom: "local-git-and-project-provenance",
   externalTransmission: false,
   researchMotivation: {
-    value: "Make uncertainty estimates reliable under shift.",
+    value: "Identify when LDL-C understates ApoB particle burden.",
     linkStatus: "verified",
   },
   linkedObjective: {
-    value: "Improve calibrated uncertainty",
+    value: "Validate the LDL-C discordance flag",
     linkStatus: "verified",
   },
   methodsChanged: finding.researchObjects.slice(0, 1),
   experimentsMayNeedRerun: [
     {
-      id: "experiment-calibration",
+      id: "experiment-discordance",
       type: "experiment",
-      label: "Calibration sweep",
+      label: "Discordance prediction benchmark",
       linkStatus: "verified",
     },
   ],
@@ -70,16 +72,16 @@ export const populatedPrImpactReviewFixture: PrImpactReview = {
     claims: finding.researchObjects.slice(1),
     figuresAndArtifacts: [
       {
-        id: "figure-calibration",
-        type: "figure",
-        label: "Calibration Figure",
+        id: "table-model-comparison",
+        type: "table",
+        label: "Model comparison table",
         linkStatus: "verified",
       },
     ],
     datasets: [],
   },
   risks: [
-    "Data-leakage review is required before interpreting affected results.",
+    "Target-leakage review is required before interpreting affected results.",
   ],
   unresolvedAssumptions: [
     "Inferred relationships have not been verified by a human.",
@@ -172,9 +174,9 @@ export const populatedPrImpactReviewFixture: PrImpactReview = {
   ],
   downstreamImpact: [
     {
-      id: "figure-calibration",
-      type: "figure",
-      label: "Calibration Figure",
+      id: "table-model-comparison",
+      type: "table",
+      label: "Model comparison table",
       linkStatus: "verified",
       state: "would-need-review-after-merge",
       recommendedAction:

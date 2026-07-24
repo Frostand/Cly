@@ -1,0 +1,112 @@
+name: Cly Beta Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version expected in package.json (for example 0.5.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cly-beta-release
+  cancel-in-progress: false
+
+jobs:
+  macos-beta:
+    name: signed-notarized-macos-beta
+    runs-on: macos-14
+    environment: cly-beta-release
+    timeout-minutes: 90
+    env:
+      CLY_UPDATE_FEED_URL: ${{ vars.CLY_UPDATE_FEED_URL }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Verify protected release inputs
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          test -n "$EXPECTED_VERSION"
+          test "$(node -p "require('./package.json').version")" = "$EXPECTED_VERSION"
+          test -n "$CLY_UPDATE_FEED_URL"
+          test -n "$CSC_LINK"
+          test -n "$CSC_KEY_PASSWORD"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run release gates
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm capabilities:check
+          pnpm licenses:check
+          pnpm test --run
+          pnpm exec playwright install chromium
+          pnpm test:e2e
+
+      - name: Build signed application bundle
+        run: |
+          pnpm vite:build
+          pnpm exec electron-builder --mac dir --arm64
+          codesign --verify --deep --strict --verbose=2 release/mac-arm64/Cly.app
+          codesign -dv --verbose=4 release/mac-arm64/Cly.app 2>&1 | tee release/codesign-details.txt
+
+      - name: Notarize and staple application bundle
+        run: scripts/notarize-macos-app.sh release/mac-arm64/Cly.app
+
+      - name: Build installers from notarized application
+        run: pnpm exec electron-builder --mac dmg zip --arm64 --prepackaged release/mac-arm64/Cly.app
+
+      - name: Notarize and staple disk image
+        run: |
+          DMG_PATH="$(find release -maxdepth 1 -name 'Cly-*-mac-arm64.dmg' -print -quit)"
+          test -n "$DMG_PATH"
+          xcrun notarytool submit "$DMG_PATH" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+
+      - name: Verify Gatekeeper acceptance
+        run: |
+          codesign --verify --deep --strict --verbose=2 release/mac-arm64/Cly.app
+          spctl --assess --type execute --verbose=4 release/mac-arm64/Cly.app
+          xcrun stapler validate release/mac-arm64/Cly.app
+
+      - name: Upload release evidence and installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: cly-${{ inputs.version }}-macos-beta
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            release/Cly-*-mac-arm64.dmg
+            release/Cly-*-mac-arm64.zip
+            release/latest-mac.yml
+            release/codesign-details.txt
+            macos-package-logs/**

@@ -7,9 +7,11 @@ import {
   Code2,
   Copy,
   Cpu,
+  Download,
   HardDrive,
   KeyRound,
   Laptop,
+  LifeBuoy,
   PanelRightOpen,
   Play,
   Plus,
@@ -20,6 +22,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState } from "react";
+import { getDesktopApi } from "../../../lib/electron";
 import type {
   AgentConfiguration,
   AgentConfigurationEstimate,
@@ -1177,10 +1180,100 @@ export function ModelsAgentsScreen() {
 
 export function SettingsScreen() {
   const { theme, setTheme } = useTheme();
+  const data = useClyStore((s) => s.data);
+  const activeProjectId = useClyStore((s) => s.activeProjectId);
   const fixtureMode = useClyStore((s) => s.fixtureMode);
   const setFixtureMode = useClyStore((s) => s.setFixtureMode);
   const notify = useClyStore((s) => s.notify);
   const [section, setSection] = useState("Appearance");
+  const project =
+    data.projects.find((item) => item.id === activeProjectId) ??
+    data.projects[0];
+  const diagnostics = [
+    "Cly 0.5.0 (Free Beta)",
+    "Renderer: React 19 / Vite 8",
+    "Desktop: Electron 41",
+    "Storage: project-scoped local SQLite research repository",
+    "Network: local authenticated research API",
+    `Runtime: ${isClyDemoRuntime ? `demo fixture (${fixtureMode})` : "production"}`,
+    `Project: ${project?.id ?? "none"}`,
+  ].join("\n");
+
+  const copyDiagnostics = async () => {
+    const desktopApi = getDesktopApi();
+    const copied = desktopApi
+      ? await desktopApi.writeClipboardText(diagnostics)
+      : Boolean(
+          typeof navigator !== "undefined" &&
+            navigator.clipboard &&
+            (await navigator.clipboard
+              .writeText(diagnostics)
+              .then(() => true)
+              .catch(() => false)),
+        );
+    notify(
+      copied ? "Diagnostics copied" : "Diagnostics not copied",
+      copied
+        ? "Paste these details into a beta issue report."
+        : "Clipboard permission was denied. The details remain visible here.",
+    );
+  };
+
+  const exportProject = async () => {
+    if (!project) return;
+    const contents = JSON.stringify(
+      {
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        app: "Cly Free Beta 0.5.0",
+        project,
+        repository: data,
+      },
+      null,
+      2,
+    );
+    const safeName =
+      project.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "") || "cly-project";
+    const fileName = `${safeName}-backup.json`;
+    const desktopApi = getDesktopApi();
+    if (desktopApi) {
+      const saved = await desktopApi.saveTextFile({
+        contents,
+        defaultPath: fileName,
+        title: "Export Cly project backup",
+      });
+      notify(
+        saved ? "Project backup exported" : "Project backup canceled",
+        saved
+          ? `${fileName} contains the current local research state.`
+          : undefined,
+      );
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([contents], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+    notify(
+      "Project backup exported",
+      `${fileName} contains the current local research state.`,
+    );
+  };
+
+  const reportProblem = () => {
+    const url =
+      "https://github.com/Frostand/Cly/issues/new?template=bug_report.md";
+    const desktopApi = getDesktopApi();
+    if (desktopApi) void desktopApi.openExternal(url);
+    else window.open(url, "_blank", "noopener,noreferrer");
+  };
   return (
     <div className="cly-page cly-route-settings">
       <PageHeader
@@ -1256,14 +1349,30 @@ export function SettingsScreen() {
           ) : null}
           {section === "Privacy" ? (
             <Panel className="cly-panel-body cly-stack">
-              <div className="cly-callout">
-                <strong>Local-first by default</strong>
+              <div className="cly-callout" data-tone="warning">
+                <strong>Free beta safety boundary</strong>
                 <p className="cly-muted cly-small">
-                  Research records use the project-scoped local SQLite service.
-                  External and sensitive effects require an implemented approval
-                  flow before their controls become available.
+                  Keep beta projects local and de-identified. Do not enter
+                  health records, secrets, personal identifiers, or other
+                  regulated data. Cly has not completed a security or compliance
+                  review for those uses.
                 </p>
               </div>
+              <div className="cly-row-between">
+                <span>
+                  <strong>Export a recovery copy</strong>
+                  <span
+                    className="cly-muted cly-small"
+                    style={{ display: "block" }}
+                  >
+                    Save the current project state before beta testing.
+                  </span>
+                </span>
+                <Button onClick={() => void exportProject()}>
+                  <Download size={13} /> Export project
+                </Button>
+              </div>
+              <div className="cly-divider" />
               {[
                 "Never include secrets in context",
                 "Require approval before file modification",
@@ -1349,6 +1458,7 @@ export function SettingsScreen() {
                 {(
                   [
                     "empty",
+                    "guided",
                     "new",
                     "active",
                     "large",
@@ -1406,14 +1516,13 @@ export function SettingsScreen() {
               </div>
               <Button
                 style={{ marginTop: 14 }}
-                onClick={() =>
-                  notify(
-                    "Diagnostics copied",
-                    "Renderer, Electron, storage, and service-boundary details copied.",
-                  )
-                }
+                onClick={() => void copyDiagnostics()}
               >
+                <Copy size={13} />
                 Copy diagnostics
+              </Button>
+              <Button style={{ marginTop: 14 }} onClick={reportProblem}>
+                <LifeBuoy size={13} /> Report a problem
               </Button>
             </Panel>
           ) : null}

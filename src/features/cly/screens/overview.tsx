@@ -9,11 +9,12 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, type ReactNode, useState } from "react";
 import { LocalStatusBanner } from "../components/chrome";
 import {
   Badge,
   Button,
+  Dialog,
   EmptyState,
   PageHeader,
   Panel,
@@ -42,35 +43,35 @@ const OVERVIEW_ACTIVITY: Array<{
   screen: ScreenId;
 }> = [
   {
-    id: "exp-02",
+    id: "exp-03",
     icon: Beaker,
-    title: "OOD coverage stress test is running",
-    detail: "Compound-shift grid · 68% complete",
-    time: "Today · 08:36",
+    title: "Discordance sensitivity analysis is running",
+    detail: "Threshold grid · 3 of 4 definitions complete",
+    time: "Today · 19:29",
     screen: "experiments",
   },
   {
     id: "nb-02",
     icon: FileText,
-    title: "Notebook scan found four integrity issues",
-    detail: "Hidden state, seed, path, and stale outputs",
-    time: "Today · 08:31",
+    title: "Prediction notebook passed deterministic rerun",
+    detail: "Cohort, AUC, Brier score, and subgroup results match",
+    time: "Today · 19:18",
     screen: "notebooks",
   },
   {
     id: "session-01",
     icon: Bot,
-    title: "Claim audit entered adversarial review",
-    detail: "Baseline fairness is the leading reviewer concern",
-    time: "Today · 08:12",
+    title: "Claim audit entered clinical-language review",
+    detail: "Separating biomarker discordance from event prediction",
+    time: "Today · 19:04",
     screen: "agents",
   },
   {
     id: "decision-04",
     icon: Lightbulb,
-    title: "New baseline decision recorded",
-    detail: "Compute-matched Gaussian process is proposed",
-    time: "Yesterday",
+    title: "Outcome guardrail recorded",
+    detail: "Model predicts LDL-C/ApoB discordance, not heart attacks",
+    time: "Today · 18:56",
     screen: "decisions",
   },
 ];
@@ -178,6 +179,14 @@ export function OverviewScreen() {
   const activeProjectId = useClyStore((s) => s.activeProjectId);
   const setScreen = useClyStore((s) => s.setScreen);
   const setSelected = useClyStore((s) => s.setSelected);
+  const updateActiveProject = useClyStore((s) => s.updateActiveProject);
+  const notify = useClyStore((s) => s.notify);
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [briefName, setBriefName] = useState("");
+  const [briefQuestion, setBriefQuestion] = useState("");
+  const [briefHypothesis, setBriefHypothesis] = useState("");
+  const [briefDescription, setBriefDescription] = useState("");
+  const [savingBrief, setSavingBrief] = useState(false);
   const project =
     data.projects.find((item) => item.id === activeProjectId) ??
     data.projects[0];
@@ -189,6 +198,58 @@ export function OverviewScreen() {
   )[0];
   const audit = data.audits[0];
   const next = data.nextSteps.find((item) => item.status === "Recommended");
+  const lifecycleStep = data.claims.length
+    ? 5
+    : data.runs.length
+      ? 4
+      : data.experiments.length
+        ? 3
+        : data.sources.length
+          ? 1
+          : 0;
+
+  const openBrief = () => {
+    if (!project) return;
+    setBriefName(
+      project.name === "Untitled research project" ? "" : project.name,
+    );
+    setBriefQuestion(project.question);
+    setBriefHypothesis(project.hypothesis);
+    setBriefDescription(
+      project.description ===
+        "Define the project brief, then connect data and evidence."
+        ? ""
+        : project.description,
+    );
+    setBriefOpen(true);
+  };
+
+  const saveBrief = async () => {
+    if (!briefName.trim() || !briefQuestion.trim()) return;
+    setSavingBrief(true);
+    try {
+      await updateActiveProject({
+        name: briefName.trim(),
+        question: briefQuestion.trim(),
+        hypothesis:
+          briefHypothesis.trim() || "No working hypothesis recorded yet.",
+        description:
+          briefDescription.trim() || "Local research project in Cly.",
+      });
+      setBriefOpen(false);
+      notify(
+        "Research brief saved",
+        "The question now anchors sources, experiments, evidence, and claims.",
+      );
+    } catch (error) {
+      notify(
+        "Research brief was not saved",
+        error instanceof Error ? error.message : "Try again.",
+      );
+    } finally {
+      setSavingBrief(false);
+    }
+  };
 
   if (!project) {
     return (
@@ -216,12 +277,15 @@ export function OverviewScreen() {
             <Button onClick={() => setScreen("graph")}>
               <GitBranch aria-hidden="true" /> Open project graph
             </Button>
+            <Button data-testid="edit-project-brief" onClick={openBrief}>
+              Edit brief
+            </Button>
           </>
         }
       />
       <LocalStatusBanner />
 
-      <ResearchLifecycle steps={LIFECYCLE_STEPS} current={4} />
+      <ResearchLifecycle steps={LIFECYCLE_STEPS} current={lifecycleStep} />
 
       <section className="cly-visual-metrics" aria-label="Project summary">
         <VisualMetric
@@ -261,11 +325,11 @@ export function OverviewScreen() {
         <div className="cly-project-brief">
           <Panel className="cly-panel-body">
             <div className="cly-page-kicker">Research question</div>
-            <strong>{project.question}</strong>
+            <strong>{project.question || "No research question yet"}</strong>
           </Panel>
           <Panel className="cly-panel-body">
             <div className="cly-page-kicker">Current hypothesis</div>
-            <strong>{project.hypothesis}</strong>
+            <strong>{project.hypothesis || "No working hypothesis yet"}</strong>
           </Panel>
         </div>
       </Section>
@@ -307,7 +371,11 @@ export function OverviewScreen() {
                   <EvidenceLedgerRow
                     tone={toneForStatus(weakClaim.status)}
                     status={weakClaim.status}
-                    context="Weakest active claim"
+                    context={
+                      weakClaim.type === "Limitation"
+                        ? "Key limitation"
+                        : "Weakest active claim"
+                    }
                     title={weakClaim.text}
                     detail={`Next evidence: ${weakClaim.nextExperiment}`}
                     onClick={() => {
@@ -447,6 +515,73 @@ export function OverviewScreen() {
           </aside>
         </div>
       )}
+      <Dialog
+        open={briefOpen}
+        onClose={() => setBriefOpen(false)}
+        title="Research project brief"
+        description="Define the question before adding sources or planning an experiment."
+        footer={
+          <>
+            <Button onClick={() => setBriefOpen(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={
+                savingBrief || !briefName.trim() || !briefQuestion.trim()
+              }
+              onClick={() => void saveBrief()}
+            >
+              {savingBrief ? "Saving…" : "Save brief"}
+            </Button>
+          </>
+        }
+      >
+        <div className="cly-stack">
+          <div className="cly-field">
+            <label htmlFor="project-brief-name">Project name</label>
+            <input
+              autoFocus
+              className="cly-input"
+              id="project-brief-name"
+              value={briefName}
+              onChange={(event) => setBriefName(event.target.value)}
+              placeholder="Short, specific project name"
+            />
+          </div>
+          <div className="cly-field">
+            <label htmlFor="project-brief-question">Research question</label>
+            <textarea
+              className="cly-textarea"
+              id="project-brief-question"
+              rows={3}
+              value={briefQuestion}
+              onChange={(event) => setBriefQuestion(event.target.value)}
+              placeholder="What are you trying to learn?"
+            />
+          </div>
+          <div className="cly-field">
+            <label htmlFor="project-brief-hypothesis">Working hypothesis</label>
+            <textarea
+              className="cly-textarea"
+              id="project-brief-hypothesis"
+              rows={3}
+              value={briefHypothesis}
+              onChange={(event) => setBriefHypothesis(event.target.value)}
+              placeholder="What pattern do you expect, and why?"
+            />
+          </div>
+          <div className="cly-field">
+            <label htmlFor="project-brief-description">Scope note</label>
+            <textarea
+              className="cly-textarea"
+              id="project-brief-description"
+              rows={2}
+              value={briefDescription}
+              onChange={(event) => setBriefDescription(event.target.value)}
+              placeholder="Population, data boundaries, or intended use"
+            />
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

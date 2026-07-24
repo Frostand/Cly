@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
 const routes = [
-  ["overview", "Neural surrogate reliability"],
+  ["overview", "When LDL-C misleads"],
   ["agents", "Agent Sessions"],
   ["context", "Context Composer"],
   ["graph", "Research Object Graph"],
@@ -103,7 +103,7 @@ test("captures contextual inspector closed and open", async ({ page }) => {
   });
 
   await page
-    .getByText("Calibration-aware ensembles reduce simulation cost", {
+    .getByText("Basic health data identify adults", {
       exact: false,
     })
     .first()
@@ -137,7 +137,7 @@ test("uses opacity-only route feedback when reduced motion is requested", async 
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await openRoute(page, "overview", "Neural surrogate reliability");
+  await openRoute(page, "overview", "When LDL-C misleads");
   await page.getByTestId("nav-context").click();
   await expect(
     page.getByRole("heading", { name: "Context Composer", level: 1 }),

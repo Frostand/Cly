@@ -6,6 +6,8 @@
   "private": true,
   "scripts": {
     "dev": "pnpm electron:dev",
+    "demo": "cross-env VITE_CLY_DEMO_MODE=1 pnpm electron:dev",
+    "demo:video": "node scripts/demo-video/record-ldl-demo.mjs",
     "build": "pnpm package:dir",
     "vite:dev": "vite --host 127.0.0.1 --port 3210 --strictPort",
     "vite:build": "vite build",

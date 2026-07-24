@@ -79,7 +79,10 @@ import {
 import { capabilityUnavailableMessage } from "../services/capabilities";
 import { desktopLiteratureService } from "../services/literature-service";
 import { projectServices } from "../services/project-services";
-import { isClyDemoRuntime } from "../services/runtime";
+import {
+  isClyDemoRuntime,
+  isClyExplicitDemoRuntime,
+} from "../services/runtime";
 import { claimStatusTone, useClyStore } from "../store/cly-store";
 
 const noInheritedRestrictions: InheritedRestriction[] = [];
@@ -189,7 +192,7 @@ export function SourcesScreen() {
     setImportFormat(format);
     setImportType("Paper");
     setImportOpen(true);
-    if (activeProject) {
+    if (activeProject && !isClyExplicitDemoRuntime) {
       void apiClient
         .fetchReadingLists(activeProject.id)
         .then(setReadingLists)
@@ -261,6 +264,8 @@ export function SourcesScreen() {
       const source = await projectServices.sources.create({
         title: title.trim() || "Imported source",
         type: importType,
+        url: sourceUrl.trim() || undefined,
+        summary: sourceAbstract.trim() || undefined,
       });
       setImportOpen(false);
       resetImport();
@@ -671,10 +676,39 @@ export function SourcesScreen() {
             </div>
           </>
         ) : (
-          <div className="cly-callout" style={{ marginTop: 12 }}>
-            This source type is saved as a metadata placeholder for later
-            extraction.
-          </div>
+          <>
+            <div className="cly-field" style={{ marginTop: 12 }}>
+              <label htmlFor="source-location">
+                {importType === "Dataset" ? "Dataset location" : "Source URL"}
+              </label>
+              <input
+                className="cly-input"
+                id="source-location"
+                value={sourceUrl}
+                onChange={(event) => setSourceUrl(event.target.value)}
+                placeholder={
+                  importType === "Dataset"
+                    ? "Local path, DOI, or official download URL"
+                    : "https://…"
+                }
+              />
+            </div>
+            <div className="cly-field" style={{ marginTop: 12 }}>
+              <label htmlFor="source-notes">Role in this project</label>
+              <textarea
+                className="cly-textarea"
+                id="source-notes"
+                rows={3}
+                value={sourceAbstract}
+                onChange={(event) => setSourceAbstract(event.target.value)}
+                placeholder="What does this source contribute to the research question?"
+              />
+            </div>
+            <div className="cly-callout" style={{ marginTop: 12 }}>
+              Cly saves the location and research role now. Content extraction
+              remains unavailable in the free beta.
+            </div>
+          </>
         )}
       </Dialog>
     </div>
@@ -720,7 +754,7 @@ export function LiteratureScreen() {
     useState<LiteratureResultSort>("Relevance");
   const [answer, setAnswer] = useState("");
   const [importedAnswers, setImportedAnswers] = useState<string[]>([
-    "The cited literature supports regime-stratified coverage reporting but does not establish compound-shift reliability.",
+    "The cited literature supports substantial ApoB variation at a given LDL-C level, but it does not turn this cross-sectional model into a cardiovascular event predictor.",
   ]);
   const [searchResults, setSearchResults] = useState<LiteratureSearchResult[]>(
     [],
@@ -1348,10 +1382,10 @@ export function LiteratureScreen() {
       {view === "Themes" ? (
         <div className="cly-grid-3">
           {[
-            "Calibration & uncertainty",
-            "Distribution shift",
-            "Cost-normalized baselines",
-            "Reproducibility",
+            "ApoB discordance",
+            "Metabolic signals",
+            "Lipid measurement",
+            "Clinical validation",
           ].map((theme, index) => (
             <Panel key={theme}>
               <div className="cly-panel-header">
@@ -1361,8 +1395,8 @@ export function LiteratureScreen() {
               <div className="cly-panel-body">
                 <p className="cly-muted cly-small">
                   {index === 2
-                    ? "A clear literature gap remains: few comparisons include tuning cost and coverage simultaneously."
-                    : "Sources converge on the need for regime-specific evaluation and explicit failure reporting."}
+                    ? "Laboratory methods and LDL-C calculation differ across survey cycles and need explicit harmonization."
+                    : "Sources converge on wide person-level ApoB variation at a given LDL-C level and the need for external outcome validation."}
                 </p>
                 <Button onClick={() => notify("Theme focused", theme)}>
                   Focus cluster <ArrowRight size={13} />

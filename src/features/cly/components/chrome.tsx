@@ -40,6 +40,11 @@ const fixtureModes: { id: FixtureMode; label: string; description: string }[] =
   [
     { id: "empty", label: "Empty", description: "No research objects yet" },
     {
+      id: "guided",
+      label: "Guided Research Demo",
+      description: "Blank project for a question-to-result walkthrough",
+    },
+    {
       id: "new",
       label: "New Project",
       description: "Early setup with one source",
@@ -121,6 +126,7 @@ export function Titlebar() {
   const setFixtureOpen = useClyStore((s) => s.setFixtureSwitcherOpen);
   const setScreen = useClyStore((s) => s.setScreen);
   const setDevSection = useClyStore((s) => s.setDevSection);
+  const startGuidedDemo = useClyStore((s) => s.startGuidedDemo);
   const toggleInspector = useClyStore((s) => s.toggleInspector);
   const selectedId = useClyStore((s) => s.selectedId);
   const notify = useClyStore((s) => s.notify);
@@ -267,6 +273,21 @@ export function Titlebar() {
             <Bell size={14} />
           </Button>
         </ClyTooltip>
+        {__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime ? (
+          <Button
+            data-testid="guided-demo-start"
+            onClick={() =>
+              void startGuidedDemo().then(() =>
+                notify(
+                  "Guided demo reset",
+                  "Start by defining the research question.",
+                ),
+              )
+            }
+          >
+            <Sparkles size={14} /> Start demo
+          </Button>
+        ) : null}
         {__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime ? (
           <Button
             variant="ghost"

@@ -61,6 +61,7 @@ import type {
   ProductArea,
   ReproducibilityAudit,
   ResearchDecision,
+  ResearchProject,
   ScreenId,
   Source,
 } from "../domain/types";
@@ -154,6 +155,14 @@ interface ClyState {
   setSelected: (id: string | null) => void;
   setActiveProject: (id: string) => void;
   setFixtureMode: (mode: FixtureMode) => void;
+  startGuidedDemo: () => Promise<void>;
+  updateActiveProject: (
+    patch: Pick<
+      ResearchProject,
+      "name" | "question" | "hypothesis" | "description"
+    >,
+  ) => Promise<ResearchProject>;
+  finishGuidedLdlAnalysis: () => Promise<void>;
   toggleSidebar: () => void;
   toggleInspector: () => void;
   toggleActivity: () => void;
@@ -1094,6 +1103,77 @@ export const useClyStore = create<ClyState>((set, get) => ({
           ? false
           : state.fixtureSwitcherOpen,
       }));
+    });
+  },
+  startGuidedDemo: async () => {
+    if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
+    const { createFixtureRepository } = await import("../fixtures/repository");
+    const data = createFixtureRepository("guided");
+    const project = data.projects[0];
+    if (!project) throw new Error("The guided demo project is unavailable.");
+    set({
+      data,
+      activeProjectId: project.id,
+      activeProduct: "research",
+      activeScreen: "overview",
+      fixtureMode: "guided",
+      selectedId: null,
+      costLedger: emptyCostLedger(),
+      claimCosts: {},
+      selectedCostEntryId: null,
+    });
+  },
+  updateActiveProject: async (patch) => {
+    const state = get();
+    const project = state.data.projects.find(
+      (item) => item.id === state.activeProjectId,
+    );
+    if (!project) throw new Error("Active research project was not found.");
+    const updated: ResearchProject = {
+      ...project,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    if (!demoFixtureRuntime) await apiClient.ensureProject(updated);
+    set((current) => ({
+      data: {
+        ...current.data,
+        projects: current.data.projects.map((item) =>
+          item.id === updated.id ? updated : item,
+        ),
+      },
+    }));
+    return updated;
+  },
+  finishGuidedLdlAnalysis: async () => {
+    if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
+    const currentProject = get().data.projects.find(
+      (item) => item.id === get().activeProjectId,
+    );
+    const [{ createFixtureRepository }, { createCostLedgerFixture }] =
+      await Promise.all([
+        import("../fixtures/repository"),
+        import("../fixtures/cost-ledger"),
+      ]);
+    const data = createFixtureRepository("active");
+    if (currentProject && data.projects[0]) {
+      data.projects[0] = {
+        ...data.projects[0],
+        ...currentProject,
+        phase: "Evidence review",
+        description:
+          "Predicting ApoB–LDL-C discordance from basic health data.",
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    const costs = createCostLedgerFixture("active", data);
+    set({
+      data,
+      fixtureMode: "active",
+      selectedId: null,
+      costLedger: costs.ledger,
+      claimCosts: costs.claimCosts,
+      selectedCostEntryId: costs.ledger.entries[0]?.id ?? null,
     });
   },
   toggleSidebar: () =>

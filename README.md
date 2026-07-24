@@ -29,22 +29,29 @@ The coding workspace is currently powered by Dream IDE as an implementation comp
 
 ## Status
 
-Cly now includes a two-application Research/Dev shell, objective planning,
-reviewer-capsule workflows, a local-first development command center, shared fixtures,
-mock service boundaries, all primary research and integrity workspaces, desktop
-menus, keyboard navigation, automated workflows, and responsive visual
-fixtures. Agent Sessions includes durable local session events plus secure
+Cly Free Beta includes a two-application Research/Dev shell, objective planning,
+reviewer-capsule workflows, a local-first development command center, desktop
+menus, keyboard navigation, automated workflows, and responsive research and
+integrity workspaces. Project-scoped local services now persist core claim,
+source, experiment, relationship, context, agent-configuration, and agent-session
+workflows. The checked-in [capability inventory](docs/cly-v1-capabilities.json)
+is the release boundary; the UI labels unfinished routes as Preview and disables
+unavailable mutations with an explanation. Agent Sessions includes durable local session events plus secure
 device registration and end-to-end encrypted, resumable synchronization of
 explicitly approved chat, context, and handoff records. Pairing requires
 fingerprint verification; OS-protected device keys, rotation, revocation,
 offline queues, acknowledgements, and explicit conflict resolution are built
 into the local service. The sync protocol is transport-neutral and does not
 yet ship with a hosted relay. The Overview and Orchestrator Chat workspace also
-includes delegated-agent fixtures and a Browser, Terminal, Code Diff, Agents,
-and Live Files workbench. Real research persistence,
-scanners, model execution, external
-integrations, and orchestration remain Phase 2 work. Do not use the current
-fixture-backed build as a source of truth for production research data.
+includes deterministic delegated-agent fixtures and a Browser, Terminal, Code
+Diff, Agents, and Live Files preview. Notebook/code scanning, agent execution,
+external integration configuration, planner mutations, and decision creation are
+not included in the free beta.
+
+The free beta is local-first and free of billing code, but it is not approved
+for sensitive or regulated data. Export a project backup before testing. Only a
+Developer ID-signed, Apple-notarized artifact from the protected beta release
+workflow may be shared outside the development team.
 
 ## Development
 
@@ -63,7 +70,18 @@ pnpm lint
 pnpm typecheck
 pnpm test --run
 pnpm vite:build
+pnpm capabilities:check
+pnpm licenses:check
 ```
+
+Professor demo:
+
+```bash
+pnpm demo
+pnpm demo:video
+```
+
+See the [LDL-C blank-to-result walkthrough](docs/LDL_DISCORDANCE_DEMO.md).
 
 ## Documentation
 

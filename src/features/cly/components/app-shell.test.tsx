@@ -368,7 +368,7 @@ describe("Cly application shell", () => {
     await user.click(screen.getByTestId("product-research"));
     expect(
       screen.getByRole("heading", {
-        name: "Neural surrogate reliability",
+        name: "When LDL-C misleads",
         level: 1,
       }),
     ).toBeVisible();
@@ -405,9 +405,7 @@ describe("Cly application shell", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Handoff summary" });
     expect(dialog).toBeVisible();
-    expect(
-      within(dialog).getByText("Neural surrogate reliability"),
-    ).toBeVisible();
+    expect(within(dialog).getByText("When LDL-C misleads")).toBeVisible();
     expect(
       within(dialog).getByRole("button", { name: "Copy summary" }),
     ).toBeEnabled();
@@ -440,29 +438,26 @@ describe("Cly application shell", () => {
     render(<ClyAppShell />);
 
     const toggle = screen.getByRole("switch", {
-      name: "Include Raman et al. 2025",
+      name: "Include Superseded clinical-risk wording",
     });
     expect(toggle).not.toBeChecked();
     await user.click(toggle);
 
     expect(toggle).toBeChecked();
-    expect(screen.getByText("28,720 tokens")).toBeVisible();
+    expect(screen.getByText("32,100 tokens")).toBeVisible();
   });
 
   it("renders source, notebook, claim, experiment, provenance, finding, integration, and decision components", () => {
     const { rerender } = render(<ClyAppShell />);
     const expectations: [ScreenId, string][] = [
-      ["sources", "Reliable neural surrogates for nonlinear dynamical systems"],
-      ["notebooks", "Ensemble size and calibration"],
-      ["claims", "Calibration-aware ensembles reduce simulation cost"],
-      ["experiments", "Calibrated ensemble sweep"],
-      ["provenance", "Figure 2 · Cost vs calibration"],
-      [
-        "reproducibility",
-        "Figure 4 includes an undocumented manual annotation",
-      ],
+      ["sources", "NHANES 2005–2006 fasting lipids"],
+      ["notebooks", "Cohort and discordance definition"],
+      ["claims", "Basic health data identify adults"],
+      ["experiments", "NHANES cohort assembly"],
+      ["provenance", "Model comparison table"],
+      ["reproducibility", "Cardiovascular outcomes are not observed"],
       ["integrations", "NotebookLM"],
-      ["decisions", "Use ensemble ×5 as the canonical configuration"],
+      ["decisions", "Use ApoB–LDL-C percentile discordance as the demo target"],
     ];
 
     for (const [activeScreen, text] of expectations) {
@@ -510,7 +505,7 @@ describe("Cly application shell", () => {
 
     await user.click(
       screen
-        .getAllByText(/Calibration-aware ensembles reduce simulation cost/)
+        .getAllByText(/Basic health data identify adults/)
         .at(0) as HTMLElement,
     );
     expect(document.querySelector(".cly-inspector")).toBeInTheDocument();

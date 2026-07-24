@@ -37,7 +37,7 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
     await agent.getByRole("heading", { level: 1 }).first().waitFor();
     await agent.getByTestId("nav-agents").click();
     await agent
-      .getByRole("article", { name: /Audit primary claim evidence/ })
+      .getByRole("article", { name: /Audit LDL-C discordance evidence/ })
       .getByRole("button", { name: /Open chat/ })
       .click();
 
@@ -61,10 +61,10 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
 
     await workspace.getByRole("tab", { name: "Code Diff" }).click();
     await workspace
-      .getByRole("button", { name: /calibration\.test\.ts/ })
+      .getByRole("button", { name: /test_discordance\.py/ })
       .click();
     await expect(
-      workspace.getByLabel("Diff for src/evaluation/calibration.test.ts"),
+      workspace.getByLabel("Diff for tests/analysis/test_discordance.py"),
     ).toBeVisible();
 
     await app.close();
@@ -116,7 +116,7 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
     await expect.poll(() => app.windows().length).toBe(1);
     await expect(agent.getByLabel("Session workbench")).toBeVisible();
     await expect(
-      agent.getByLabel("Diff for src/evaluation/calibration.test.ts"),
+      agent.getByLabel("Diff for tests/analysis/test_discordance.py"),
     ).toBeVisible();
     await expect(
       agent.getByRole("button", { name: "Detach workspace" }),

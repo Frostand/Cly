@@ -215,6 +215,14 @@ export function ContextScreen() {
     );
 
   const savePack = async () => {
+    if (fixtureMode === "active") {
+      setError(null);
+      notify(
+        "Exact context pack saved",
+        `${legacyItems.filter((item) => item.included).length} demo context items are ready for the agent preview.`,
+      );
+      return;
+    }
     if (!configuration || !role) {
       setError(
         "Create an agent configuration and role before saving a context pack.",

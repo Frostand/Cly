@@ -8,8 +8,8 @@ import { DataObligationsScreen } from "./data-obligations";
 const obligation = {
   id: "obligation-a",
   projectId: "project-cly",
-  datasetObjectId: "src-03",
-  datasetTitle: "Cylinder-flow reference trajectories v2",
+  datasetObjectId: "src-01",
+  datasetTitle: "NHANES 2005–2006 fasting laboratory data",
   consentProtocolScope: "Approved benchmark research",
   approvedPurposes: ["peer-review"],
   permittedCollaborators: [],
@@ -90,7 +90,7 @@ describe("data obligations screen", () => {
 
     expect(await screen.findByText(/Revision 2/)).toBeVisible();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/projects/project-cly/datasets/src-03/obligation",
+      "/api/projects/project-cly/datasets/src-01/obligation",
       expect.objectContaining({ method: "PUT" }),
     );
     expect(screen.getByText(/does not provide legal advice/i)).toBeVisible();

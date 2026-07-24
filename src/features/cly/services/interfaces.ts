@@ -147,7 +147,10 @@ export interface ExperimentService {
 }
 
 export interface SourceService {
-  create(input: Pick<Source, "title" | "type">): Promise<Source>;
+  create(
+    input: Pick<Source, "title" | "type"> &
+      Partial<Pick<Source, "authors" | "year" | "url" | "summary">>,
+  ): Promise<Source>;
   createFromSearch(result: LiteratureSearchResult): Promise<Source>;
   addToNotebookBundle(id: string): Promise<void>;
   linkClaim(sourceId: string, claimId: string): Promise<void>;

@@ -41,17 +41,35 @@ test("completes and recovers the production evidence loop with demos disabled", 
     let window = await app.firstWindow();
     await window.getByRole("heading", { level: 1 }).first().waitFor();
     await expect(window.getByTestId("fixture-selector")).toHaveCount(0);
+    await expect(
+      window.getByText(/Cly Free Beta · Local research data only/),
+    ).toBeVisible();
+
+    await window.getByTestId("nav-notebooks").click();
+    await expect(
+      window.getByText(
+        /Notebook scanning is a preview until imported scans can be persisted/,
+      ),
+    ).toBeVisible();
+    await expect(
+      window.getByRole("button", { name: "Import notebook" }).first(),
+    ).toBeDisabled();
+
+    await window.getByTestId("nav-settings").click();
+    await window.getByRole("button", { name: "Privacy" }).click();
+    await expect(window.getByText("Free beta safety boundary")).toBeVisible();
+    await expect(
+      window.getByRole("button", { name: "Export project" }),
+    ).toBeEnabled();
+    await window.getByRole("button", { name: "Diagnostics" }).click();
+    await window.getByRole("button", { name: "Copy diagnostics" }).click();
+    await expect(window.getByText("Diagnostics copied")).toBeVisible();
 
     await window.getByTestId("nav-agents").click();
     await expect(
       window.getByRole("heading", { name: "Agent Sessions", level: 1 }),
     ).toBeVisible();
     await expect(window.getByText("No durable sessions yet")).toBeVisible();
-
-    await window.getByTestId("nav-notebooks").click();
-    await expect(
-      window.getByRole("button", { name: "Import notebook" }).first(),
-    ).toBeDisabled();
 
     await window.getByTestId("nav-claims").click();
     await window.getByRole("button", { name: "New claim" }).click();

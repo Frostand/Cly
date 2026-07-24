@@ -1,0 +1,51 @@
+1
+00:00:00,003 --> 00:00:04,733
+Can basic health data predict when LDL cholesterol gives a misleading picture of heart-disease risk?
+
+2
+00:00:04,733 --> 00:00:10,266
+Cly opens as a desktop research workspace. We start a fresh guided project so none of the results are preloaded.
+
+3
+00:00:10,266 --> 00:00:19,839
+The project begins with an explicit question, hypothesis, and scope. The scope keeps biomarker discordance separate from heart-attack prediction.
+
+4
+00:00:19,839 --> 00:00:29,078
+Now we add the checked-in CDC NHANES fasting laboratory, demographic, body measurement, and blood-pressure inputs.
+
+5
+00:00:29,078 --> 00:00:38,696
+The experiment records the research goal and the comparison we expect: basic health data should outperform LDL-C alone.
+
+6
+00:00:38,696 --> 00:00:44,382
+Before execution, Cly requires the dataset, outcome definition, random seed, cross-validation folds, and exact feature set.
+
+7
+00:00:44,382 --> 00:00:50,515
+Cly builds the 1,950-adult fasting cohort, runs deterministic five-fold validation, and verifies the saved metrics and provenance.
+
+8
+00:00:50,515 --> 00:00:57,547
+The basic-health model reaches weighted AUC 0.925 versus 0.683 for LDL-C alone. The weighted Brier score is 0.0458.
+
+9
+00:00:57,547 --> 00:01:05,663
+Cly links the primary claim to its sources, experiment, runs, and caveats. It also records the explicit limitation: this does not predict heart attacks.
+
+10
+00:01:05,663 --> 00:01:13,782
+The model comparison table points back to the canonical run, generator, source data, commit, and supported claim.
+
+11
+00:01:13,782 --> 00:01:21,210
+The audit preserves passing data-hash and deterministic-rerun checks while surfacing environment, survey-variance, and external-validation gaps.
+
+12
+00:01:21,210 --> 00:01:30,311
+Cly finishes with a linked answer: 7.4% weighted discordance prevalence, strong internal discrimination, and a clear next step—validate in later cohorts.
+
+13
+00:01:30,320 --> 00:01:38,321
+The model predicts biomarker discordance—not heart attacks, treatment decisions, or an individual diagnosis.

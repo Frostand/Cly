@@ -63,9 +63,9 @@ test("runs the complete fixture-backed Agent Sessions workflow", async ({
 
   await page.getByRole("tab", { name: "Tests" }).click();
   await expect(page.getByLabel("Fixture terminal output")).toBeVisible();
-  await expect(page.getByText(/calibration\.test\.ts/)).toBeVisible();
+  await expect(page.getByText(/test_discordance\.py/)).toBeVisible();
 
-  await page.getByRole("tab", { name: "Calibration paper" }).click();
+  await page.getByRole("tab", { name: "ApoB paper" }).click();
   await expect(page.getByLabel("Research browser fixture")).toBeVisible();
   await page.getByRole("button", { name: "Add page as source" }).click();
   await expect(
@@ -75,11 +75,11 @@ test("runs the complete fixture-backed Agent Sessions workflow", async ({
   await page.getByRole("tab", { name: "Live Files" }).click();
   await expect(page.getByLabel("Live file observation")).toBeVisible();
   await expect(
-    page.getByText(/Editing src\/evaluation\/calibration\.py/),
+    page.getByText(/Editing analysis\/discordance\.py/),
   ).toBeVisible();
   await page.getByRole("button", { name: "Open corresponding diff" }).click();
   await expect(
-    page.getByLabel("Diff for src/evaluation/calibration.py"),
+    page.getByLabel("Diff for analysis/discordance.py"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByText("approved")).toBeVisible();
@@ -114,9 +114,9 @@ test("runs the complete fixture-backed Agent Sessions workflow", async ({
 
   await page
     .getByLabel("Switch agent session")
-    .selectOption({ label: "Plan compute-matched baseline" });
+    .selectOption({ label: "Plan external validation" });
   await expect(
-    page.getByText("Approval required · high-cost experiment"),
+    page.getByText("Approval required · download later cycles"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByText("approved")).toBeVisible();
@@ -127,7 +127,7 @@ test("keeps chat and delegated-agent panes independently scrollable", async ({
 }) => {
   await page.setViewportSize({ width: 1180, height: 720 });
   await page
-    .getByRole("article", { name: /Audit primary claim evidence/ })
+    .getByRole("article", { name: /Audit LDL-C discordance evidence/ })
     .getByRole("button", { name: /Open chat/ })
     .click();
 
@@ -213,14 +213,14 @@ test("validates Cly Dev identity, workspace ownership, restoration, and fallback
   await page.keyboard.press("Control+Shift+O");
   await page
     .getByRole("dialog", { name: "Project switcher" })
-    .getByRole("button", { name: /Neural surrogate reliability/ })
+    .getByRole("button", { name: /When LDL-C misleads/ })
     .press("Enter");
   await page.getByTestId("fixture-selector").click();
   await page
     .getByRole("button", { name: /^Active Project Coherent linked/ })
     .click();
   await page
-    .getByRole("article", { name: /Audit primary claim evidence/ })
+    .getByRole("article", { name: /Audit LDL-C discordance evidence/ })
     .getByRole("button", { name: /Open chat/ })
     .click();
 
@@ -253,7 +253,7 @@ test("validates Cly Dev identity, workspace ownership, restoration, and fallback
     identity
       .getByRole("group", { name: "Project" })
       .locator(".cly-dev-identity-detail"),
-  ).toContainText("Neural Surrogate Reliability");
+  ).toContainText("When LDL-C misleads");
   for (const control of [
     page.getByRole("radiogroup", { name: "Task workspace mode" }),
     page.getByRole("button", { name: "Inspect tests" }),
@@ -279,24 +279,20 @@ test("validates Cly Dev identity, workspace ownership, restoration, and fallback
   ).toBeVisible();
 
   await page.getByRole("radio", { name: "Inline workspace" }).click();
-  await page
-    .getByRole("button", { name: "Detach workspace (prototype)" })
-    .click();
+  await page.getByRole("button", { name: "Detach workspace" }).click();
   await expect(
     page.getByTestId("agent-sessions-chat").getByRole("status"),
-  ).toContainText("Detached workspace intent recorded");
+  ).toContainText("Developer workspace detached");
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Reattach workspace (prototype)" }),
+    page.getByRole("button", { name: "Reattach workspace" }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Reattach workspace (prototype)" })
-    .click();
+  await page.getByRole("button", { name: "Reattach workspace" }).click();
   await expect(page.getByLabel("Session workbench")).toBeVisible();
 
   await page
     .getByLabel("Switch agent session")
-    .selectOption({ label: "Review OOD notebook" });
+    .selectOption({ label: "Review prediction notebook" });
   await expect(
     page.getByTestId("agent-sessions-chat").getByRole("status"),
   ).toContainText("Offline");
@@ -307,7 +303,7 @@ test("validates Cly Dev identity, workspace ownership, restoration, and fallback
     .getByRole("button", { name: /^Integration Errors Partial data/ })
     .click();
   await page
-    .getByRole("article", { name: /Audit primary claim evidence/ })
+    .getByRole("article", { name: /Audit LDL-C discordance evidence/ })
     .getByRole("button", { name: /Open chat/ })
     .click();
   await expect(
@@ -352,7 +348,7 @@ test("captures Agent Sessions visual regression fixtures", async ({ page }) => {
   await page.getByRole("tab", { name: /Active/ }).click();
 
   await page
-    .getByRole("article", { name: /Audit primary claim evidence/ })
+    .getByRole("article", { name: /Audit LDL-C discordance evidence/ })
     .getByRole("button", { name: /Open chat/ })
     .click();
   await expect(
@@ -368,7 +364,7 @@ test("captures Agent Sessions visual regression fixtures", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 
   for (const [tabName, fileName] of [
-    ["Calibration paper", "agent-browser.png"],
+    ["ApoB paper", "agent-browser.png"],
     ["Tests", "agent-terminal.png"],
     ["Code Diff", "agent-code-diff.png"],
     ["Live Files", "agent-live-files.png"],
@@ -408,7 +404,7 @@ test("captures Agent Sessions visual regression fixtures", async ({ page }) => {
 
   await page
     .getByLabel("Switch agent session")
-    .selectOption({ label: "Plan compute-matched baseline" });
+    .selectOption({ label: "Plan external validation" });
   await page.screenshot({
     path: "output/playwright/agent-chat-approval.png",
     fullPage: true,
@@ -419,7 +415,7 @@ test("captures Agent Sessions visual regression fixtures", async ({ page }) => {
     .getByRole("button", { name: /^Integration Errors Partial data/ })
     .click();
   await page
-    .getByRole("article", { name: /Audit primary claim evidence/ })
+    .getByRole("article", { name: /Audit LDL-C discordance evidence/ })
     .getByRole("button", { name: /Open chat/ })
     .click();
   await page.screenshot({

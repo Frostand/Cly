@@ -35,20 +35,21 @@ describe("cost ledger UI", () => {
     const user = userEvent.setup();
     render(<CostLedgerScreen />);
 
-    expect(screen.getByText("USD 826.60")).toBeVisible();
+    expect(screen.getByText("USD 0.30")).toBeVisible();
     expect(screen.getByText("5 raw entries")).toBeVisible();
-    await user.click(screen.getByText("Single shift grid"));
+    await user.click(screen.getByText("Basic-health-data model"));
     expect(screen.getByText(/aws-cur\.v1/)).toBeVisible();
-    expect(screen.getByText(/aws-cur-july\.csv/)).toBeVisible();
+    expect(screen.getByText(/demo-cost-ledger\.csv/)).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Waste only" }));
-    expect(screen.getByText("3 entries")).toBeVisible();
+    expect(screen.getByText("1 entry needs review")).toBeVisible();
+    expect(screen.getAllByText("Non–HDL-C comparator")[0]).toBeVisible();
     expect(
       within(
         document.querySelector('[data-table-id="cost-ledger"]') as HTMLElement,
-      ).queryByText("Single shift grid"),
+      ).queryByText("Basic-health-data model"),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Failed")).toBeVisible();
+    expect(screen.getAllByText("Abandoned")[0]).toBeVisible();
   });
 
   it("converts manual decimal input to integer minor units before saving", async () => {
@@ -134,8 +135,8 @@ describe("cost ledger UI", () => {
       ),
     ).toBeVisible();
     expect(screen.getByText("4 deduplicated runs")).toBeVisible();
-    expect(screen.getAllByText("GPU").length).toBeGreaterThan(0);
-    await user.click(screen.getByText("Ensemble ×5"));
+    expect(screen.getAllByText("Cloud").length).toBeGreaterThan(0);
+    await user.click(screen.getByText("Hash verification"));
     expect(screen.getAllByText(/cly\.manual-cost\.v1/).length).toBeGreaterThan(
       0,
     );

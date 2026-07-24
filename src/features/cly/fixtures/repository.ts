@@ -6,6 +6,7 @@ import type {
   GraphEdge,
   GraphNode,
 } from "../domain/types";
+import { applyLdlDiscordanceDemo } from "./ldl-discordance";
 
 const now = "2026-07-11T08:40:00.000Z";
 
@@ -1687,11 +1688,27 @@ const withLargeData = (data: ClyRepositoryData): ClyRepositoryData => {
 export const createFixtureRepository = (
   mode: FixtureMode,
 ): ClyRepositoryData => {
-  const data = clone(coreData);
+  const data = applyLdlDiscordanceDemo(clone(coreData));
 
-  if (mode === "empty") {
+  if (mode === "empty" || mode === "guided") {
+    const projects =
+      mode === "guided" && data.projects[0]
+        ? [
+            {
+              ...data.projects[0],
+              name: "Untitled research project",
+              question: "",
+              hypothesis: "",
+              phase: "Question",
+              description:
+                "Define the project brief, then connect data and evidence.",
+              updatedAt: new Date().toISOString(),
+            },
+          ]
+        : data.projects;
     return {
       ...data,
+      projects,
       sources: [],
       claims: [],
       experiments: [],

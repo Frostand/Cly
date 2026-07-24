@@ -658,17 +658,24 @@ export function createClyDevSessionRepository({
         for (const event of envelope.events.toSorted(
           (left, right) => left.sequence - right.sequence,
         )) {
-          repository.appendEvent(projectId, envelope.sessionId, {
-            id: event.id,
-            schemaVersion: event.schemaVersion,
-            payloadVersion: event.payloadVersion,
-            idempotencyKey: event.idempotencyKey,
-            type: event.type,
-            transferability: event.transferability,
-            occurredAt: event.occurredAt,
-            actor: event.actor,
-            payload: event.payload,
-          });
+          repository.appendEvent(
+            projectId,
+            envelope.sessionId,
+            {
+              id: event.id,
+              schemaVersion: event.schemaVersion,
+              payloadVersion: event.payloadVersion,
+              idempotencyKey: event.idempotencyKey,
+              type: event.type,
+              transferability: event.transferability,
+              occurredAt: event.occurredAt,
+              actor: event.actor,
+              payload: event.payload,
+            },
+            event.type === "context.manifest.recorded"
+              ? { outboundContext: envelope.context }
+              : undefined,
+          );
         }
         const updatedProjection = db
           .prepare(
@@ -773,12 +780,9 @@ export function createClyDevSessionRepository({
                 manifestId: sessionRow.context_manifest_id,
               });
             } else {
-              const built = buildOutboundContext(db, projectId, sessionId);
-              outbound = {
-                envelope: built.envelope,
-                bytes: built.bytes,
-                sha256: built.sha256,
-              };
+              throw new Error(
+                "A normalized outbound context is required for transferable context events.",
+              );
             }
           } else {
             outbound = buildOutboundEvent({

@@ -75,12 +75,12 @@ describe("claim audit and reproducibility board", () => {
       expect(useClyStore.getState().data.audits[0].areas).toHaveLength(6),
     );
     expect(
-      screen.getAllByText("Claim needs review after upstream changes").length,
+      screen.getAllByText(/does not have a pinned environment/).length,
     ).toBeGreaterThan(0);
     expect(useClyStore.getState().data.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          area: "Outputs",
+          area: "Environment",
           recommendedFix: expect.any(String),
         }),
       ]),

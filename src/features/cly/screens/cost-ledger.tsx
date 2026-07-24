@@ -157,7 +157,7 @@ export function CostLedgerScreen() {
         <Metric
           label="Flagged spend"
           value={formatMoneyTotals(ledger.waste.totals)}
-          detail={`${ledger.waste.entryCount} entries need review`}
+          detail={`${ledger.waste.entryCount} ${ledger.waste.entryCount === 1 ? "entry needs" : "entries need"} review`}
         />
         <Metric
           label="Categories"

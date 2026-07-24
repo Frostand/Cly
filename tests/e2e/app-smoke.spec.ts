@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const destinations = [
-  ["overview", "Neural surrogate reliability"],
+  ["overview", "When LDL-C misleads"],
   ["agents", "Agent Sessions"],
   ["context", "Context Composer"],
   ["graph", "Research Object Graph"],
@@ -37,7 +37,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page).toHaveTitle("Cly");
   await expect(
     page.getByRole("heading", {
-      name: "Neural surrogate reliability",
+      name: "When LDL-C misleads",
       level: 1,
     }),
   ).toBeVisible();
@@ -61,6 +61,127 @@ test("launches Cly and navigates every major destination", async ({ page }) => {
   expect(consoleProblems).toEqual([]);
 });
 
+test("completes the guided LDL question-to-result demo from blank inputs", async ({
+  page,
+}) => {
+  await page.getByTestId("guided-demo-start").click();
+  await expect(
+    page.getByRole("heading", { name: "Untitled research project" }),
+  ).toBeVisible();
+  await expect(page.getByText("No research question yet")).toBeVisible();
+
+  await page.getByTestId("edit-project-brief").click();
+  await page.getByLabel("Project name").fill("When LDL-C misleads");
+  await page
+    .getByLabel("Research question")
+    .fill(
+      "Can basic health data predict when LDL cholesterol gives a misleading picture of heart-disease risk?",
+    );
+  await page
+    .getByLabel("Working hypothesis")
+    .fill(
+      "Triglycerides, HDL-C, BMI, blood pressure, age, and sex can flag people whose ApoB percentile is much higher than their LDL-C percentile.",
+    );
+  await page
+    .getByLabel("Scope note")
+    .fill(
+      "Adults in the NHANES 2005–2006 fasting sample; predicts biomarker discordance, not cardiovascular events.",
+    );
+  await page.getByRole("button", { name: "Save brief" }).click();
+  await expect(
+    page.getByRole("heading", { name: "When LDL-C misleads" }),
+  ).toBeVisible();
+
+  await page.getByTestId("nav-sources").click();
+  await page.getByRole("button", { name: "Import source" }).first().click();
+  const sourceDialog = page.getByRole("dialog", { name: "Import source" });
+  await sourceDialog
+    .getByLabel("Source type", { exact: true })
+    .selectOption("Dataset");
+  await sourceDialog
+    .getByLabel("Source title")
+    .fill("NHANES 2005–2006 fasting lipids and ApoB");
+  await sourceDialog
+    .getByLabel("Dataset location")
+    .fill("demo-data/nhanes-2005-2006/raw");
+  await sourceDialog
+    .getByLabel("Role in this project")
+    .fill(
+      "Official CDC fasting laboratory, demographic, body measurement, and blood pressure inputs.",
+    );
+  await sourceDialog.getByRole("button", { name: "Import and scan" }).click();
+  await expect(
+    page
+      .locator("#main-workspace")
+      .getByText("NHANES 2005–2006 fasting lipids and ApoB", {
+        exact: true,
+      })
+      .first(),
+  ).toBeVisible();
+
+  await page.getByTestId("nav-experiments").click();
+  await page.getByRole("button", { name: "New experiment" }).first().click();
+  const experimentDialog = page.getByRole("dialog", {
+    name: "New experiment",
+  });
+  await experimentDialog
+    .getByLabel("Name")
+    .fill("LDL-C discordance prediction benchmark");
+  await experimentDialog
+    .getByLabel("Research goal")
+    .fill("Predict ApoB–LDL-C percentile discordance from basic health data.");
+  await experimentDialog
+    .getByLabel("Hypothesis")
+    .fill(
+      "The basic-health model performs better than an LDL-C-only baseline.",
+    );
+  await experimentDialog
+    .getByLabel("Type")
+    .selectOption("Statistical analysis");
+  await experimentDialog
+    .getByRole("button", { name: "Create experiment" })
+    .click();
+  await expect(
+    page
+      .locator("#main-workspace")
+      .getByText("LDL-C discordance prediction benchmark", { exact: true })
+      .first(),
+  ).toBeVisible();
+
+  await page.getByTestId("run-guided-analysis").click();
+  const analysisDialog = page.getByRole("dialog", {
+    name: "Run LDL-C discordance analysis",
+  });
+  await analysisDialog
+    .getByLabel("Dataset")
+    .fill("NHANES 2005–2006 fasting sample");
+  await analysisDialog
+    .getByLabel("Outcome definition")
+    .fill("ApoB percentile ≥ LDL-C percentile + 20");
+  await analysisDialog.getByLabel("Random seed").fill("20260722");
+  await analysisDialog.getByLabel("Cross-validation folds").fill("5");
+  await analysisDialog
+    .getByLabel("Basic health features")
+    .fill(
+      "Age, sex, race/ethnicity, BMI, blood pressure, HDL-C, triglycerides",
+    );
+  await analysisDialog
+    .getByRole("button", { name: "Run verified analysis" })
+    .click();
+
+  await expect(page.getByText("Analysis complete")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByText("Comparison selection")).toBeVisible();
+  await expect(page.getByText("0.9249", { exact: true })).toBeVisible();
+  await page.getByTestId("nav-claims").click();
+  await expect(
+    page.getByText(
+      /Basic health data identify adults with discordantly high ApoB/,
+    ),
+  ).toBeVisible();
+});
+
 test("completes the linked research workflow", async ({ page }) => {
   // Create a claim from the command palette.
   await page.getByTestId("global-search").click();
@@ -81,7 +202,9 @@ test("completes the linked research workflow", async ({ page }) => {
 
   // Add a source to a NotebookLM bundle.
   await page.getByTestId("nav-sources").click();
-  await page.getByRole("row", { name: /Reliable neural surrogates/ }).click();
+  await page
+    .getByRole("row", { name: /NHANES 2005–2006 fasting lipids/ })
+    .click();
   await page.getByText("Source actions", { exact: true }).click();
   await page.getByRole("button", { name: "Add to NotebookLM bundle" }).click();
   await expect(page.getByText("Added to NotebookLM bundle")).toBeVisible();
@@ -103,26 +226,29 @@ test("completes the linked research workflow", async ({ page }) => {
   await page.getByRole("radio", { name: "Compare" }).click();
   await expect(page.getByText("Comparison selection")).toBeVisible();
   await page.getByTestId("nav-graph").click();
-  await page.getByText(/20× speedup with decision accuracy/).click();
+  await page.getByText(/Basic health data flag discordance/).click();
   await page.getByRole("button", { name: "Evidence", exact: true }).click();
   await expect(page.getByText("Evidence path traced")).toBeVisible();
 
   // Compose context.
   await page.getByTestId("nav-context").click();
   const contextToggle = page.getByRole("switch", {
-    name: "Include Raman et al. 2025",
+    name: "Include Superseded clinical-risk wording",
   });
   await contextToggle.click();
   await expect(
-    page.getByRole("switch", { name: "Exclude Raman et al. 2025" }),
+    page.getByRole("switch", {
+      name: "Exclude Superseded clinical-risk wording",
+    }),
   ).toBeChecked();
-  await page.getByRole("button", { name: "Save pack" }).click();
-  await expect(page.getByText("Context pack saved")).toBeVisible();
+  await page.getByRole("button", { name: "Save exact pack" }).click();
+  await expect(page.getByText("Exact context pack saved")).toBeVisible();
 
   // Save an agent preset and run an audit.
   await page.getByTestId("nav-models").click();
-  await page.getByRole("button", { name: "Save preset" }).click();
-  await expect(page.getByText("Agent preset saved")).toBeVisible();
+  await page.getByRole("button", { name: "Review estimate" }).click();
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect(page.getByText("Agent configuration saved")).toBeVisible();
   await page.getByTestId("nav-reproducibility").click();
   await page.getByRole("button", { name: "Run audit" }).click();
   await expect(page.getByText("Reproducibility audit complete")).toBeVisible();
@@ -303,7 +429,7 @@ test("supports shell controls, shortcuts, command execution, and inspector selec
     page.getByRole("heading", { name: "Claim Audit Board" }),
   ).toBeVisible();
   await page
-    .getByText("Calibration-aware ensembles reduce simulation cost", {
+    .getByText("Basic health data identify adults", {
       exact: false,
     })
     .first()
@@ -314,7 +440,7 @@ test("supports shell controls, shortcuts, command execution, and inspector selec
   );
   await expect(
     page.getByRole("heading", {
-      name: /Calibration-aware ensembles reduce simulation cost/,
+      name: /Basic health data identify adults/,
       level: 2,
     }),
   ).toBeVisible();
@@ -372,8 +498,9 @@ test("filters and sorts data, configures providers, and persists preferences", a
   const firstModel = page.locator(".cly-agent-model").first();
   await firstModel.fill("Claude Sonnet");
   await expect(firstModel).toHaveValue("Claude Sonnet");
-  await page.getByRole("button", { name: "Save preset" }).click();
-  await expect(page.getByText("Agent preset saved")).toBeVisible();
+  await page.getByRole("button", { name: "Review estimate" }).click();
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect(page.getByText("Agent configuration saved")).toBeVisible();
 
   await page.getByTestId("nav-settings").click();
   await page.getByRole("radio", { name: "light" }).click();

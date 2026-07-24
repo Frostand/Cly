@@ -54,7 +54,7 @@ window.on("console", (message) => {
 window.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
 
 const routes = [
-  ["overview", "overview", "Neural surrogate reliability"],
+  ["overview", "overview", "When LDL-C misleads"],
   ["agents", "agent-sessions-overview", "Agent Sessions"],
   ["context", "context", "Context Composer"],
   ["graph", "research-graph", "Research Object Graph"],
@@ -138,7 +138,7 @@ await window
 await window.getByRole("button", { name: "Switch project" }).click();
 await window
   .getByRole("dialog", { name: "Project switcher" })
-  .getByRole("button", { name: /Neural surrogate reliability/ })
+  .getByRole("button", { name: /When LDL-C misleads/ })
   .click();
 
 await window.locator(".cly-title-overflow summary").click();
@@ -158,7 +158,7 @@ await window.keyboard.press("Meta+J");
 await window.getByTestId("nav-claims").click();
 await capture("inspector-closed");
 await window
-  .getByText("Calibration-aware ensembles reduce simulation cost", {
+  .getByText("Basic health data identify adults", {
     exact: false,
   })
   .first()
@@ -171,7 +171,7 @@ await window.getByRole("button", { name: "New session" }).click();
 await capture("agent-sessions-new-dialog");
 await window.keyboard.press("Escape");
 const session = window.getByRole("article", {
-  name: /Audit primary claim evidence/,
+  name: /Audit LDL-C discordance evidence/,
 });
 await session.getByRole("button", { name: /Open chat/ }).click();
 const composer = window.getByLabel("Message the Orchestrator");
@@ -203,25 +203,30 @@ await window.getByRole("tab", { name: "Code Diff" }).click();
 await capture("agent-sessions-code-diff");
 await window
   .getByLabel("Switch agent session")
-  .selectOption({ label: "Plan compute-matched baseline" });
-await window.getByText("Approval required · high-cost experiment").waitFor();
+  .selectOption({ label: "Plan external validation" });
+await window.getByText("Approval required · download later cycles").waitFor();
 await window.getByRole("button", { name: "Approve" }).click();
 await window
   .getByLabel("Switch agent session")
-  .selectOption({ label: "Audit primary claim evidence" });
+  .selectOption({ label: "Audit LDL-C discordance evidence" });
 
 await window.getByTestId("nav-context").click();
 const include = window.getByRole("switch", {
-  name: "Include Raman et al. 2025",
+  name: "Include Superseded clinical-risk wording",
 });
 if (await include.isVisible()) await include.click();
-const pinRaman = window.getByRole("button", { name: "Pin Raman et al. 2025" });
+const pinRaman = window.getByRole("button", {
+  name: "Pin Superseded clinical-risk wording",
+});
 if (await pinRaman.isVisible()) await pinRaman.click();
 const representation = window.getByRole("button", {
-  name: /Use (summary|raw) representation for Raman et al. 2025/,
+  name: /Use (summary|raw) representation for Superseded clinical-risk wording/,
 });
 await representation.click();
-await window.getByText("Raman et al. 2025", { exact: true }).first().click();
+await window
+  .getByText("Superseded clinical-risk wording", { exact: true })
+  .first()
+  .click();
 await window.getByText("Item actions", { exact: true }).click();
 await window.getByRole("button", { name: "Compress" }).click();
 await window.getByText("Agent preview", { exact: true }).click();
@@ -234,26 +239,30 @@ await claimAuditPack.getByRole("button", { name: "Apply" }).click();
 await capture("context-selection-updated");
 
 await window.getByTestId("nav-sources").click();
-await window.getByRole("row", { name: /Reliable neural surrogates/ }).click();
+await window
+  .getByRole("row", { name: /NHANES 2005–2006 fasting lipids/ })
+  .click();
 await window.getByText("Source actions", { exact: true }).click();
 await window.getByRole("button", { name: "Link to claim" }).click();
 await window.getByTestId("nav-claims").click();
 await window
-  .getByText("Calibration-aware ensembles reduce simulation cost", {
+  .getByText("Basic health data identify adults", {
     exact: false,
   })
   .first()
   .click();
 await window.getByTestId("nav-experiments").click();
-await window.getByText("Calibrated ensemble sweep", { exact: true }).click();
+await window
+  .getByText("Discordance prediction benchmark", { exact: true })
+  .click();
 await window.getByTestId("nav-provenance").click();
 await window
-  .getByText("Figure 2 · Cost vs calibration", { exact: true })
+  .getByText("Model comparison table", { exact: true })
   .first()
   .click();
 await window.getByTestId("nav-reproducibility").click();
 await window
-  .getByText("Figure 4 includes an undocumented manual annotation", {
+  .getByText("Cardiovascular outcomes are not observed", {
     exact: true,
   })
   .click();
@@ -266,13 +275,15 @@ const decisionDialog = window.getByRole("dialog", {
 });
 await decisionDialog
   .getByLabel("Title")
-  .fill("Adopt calibrated ensemble baseline");
+  .fill("Validate discordance in later NHANES cycles");
 await decisionDialog
   .getByRole("textbox", { name: "Decision", exact: true })
-  .fill("Use ensemble ×5 as the canonical comparison.");
+  .fill(
+    "Prioritize temporal validation before stronger clinical interpretation.",
+  );
 await decisionDialog.getByRole("button", { name: "Record decision" }).click();
 await window.getByTestId("nav-graph").click();
-await window.getByText(/20× speedup with decision accuracy/).click();
+await window.getByText(/Basic health data flag discordance/).click();
 await capture("research-evidence-flow-complete");
 
 await window.getByTestId("nav-models").click();
@@ -297,7 +308,7 @@ for (const [width, height] of [
 ]) {
   await resize(width, height);
   for (const [id, fileName, heading] of [
-    ["overview", "overview", "Neural surrogate reliability"],
+    ["overview", "overview", "When LDL-C misleads"],
     ["sources", "sources", "Source Manager"],
     ["graph", "research-graph", "Research Object Graph"],
     ["agents", "agent-sessions", "Agent Sessions"],

@@ -43,6 +43,7 @@ export type DevSection =
 
 export type FixtureMode =
   | "empty"
+  | "guided"
   | "new"
   | "active"
   | "large"

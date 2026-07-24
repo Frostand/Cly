@@ -38,7 +38,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
     await window.getByRole("heading", { level: 1 }).first().waitFor();
 
     for (const [id, heading] of [
-      ["overview", "Neural surrogate reliability"],
+      ["overview", "When LDL-C misleads"],
       ["agents", "Agent Sessions"],
       ["context", "Context Composer"],
       ["graph", "Research Object Graph"],
@@ -78,7 +78,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
 
     await window.getByTestId("nav-agents").click();
     await window
-      .getByRole("article", { name: /Audit primary claim evidence/ })
+      .getByRole("article", { name: /Audit LDL-C discordance evidence/ })
       .getByRole("button", { name: /Open chat/ })
       .click();
     const identity = window.getByRole("region", { name: "Task identity" });
@@ -179,7 +179,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
       identity
         .getByRole("group", { name: "Project" })
         .locator(".cly-dev-identity-detail"),
-    ).toContainText("Neural Surrogate Reliability");
+    ).toContainText("When LDL-C misleads");
     await window.screenshot({
       path: "output/playwright/electron-cly-dev-chat-1024x700-200pct-identity.png",
       animations: "disabled",
@@ -312,9 +312,9 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
     await runScenario("4. Approve an action", async () => {
       await window
         .getByLabel("Switch agent session")
-        .selectOption({ label: "Plan compute-matched baseline" });
+        .selectOption({ label: "Plan external validation" });
       await expect(
-        window.getByText("Approval required · high-cost experiment"),
+        window.getByText("Approval required · download later cycles"),
       ).toBeVisible();
       await window.getByRole("button", { name: "Approve" }).click();
       await expect(
@@ -340,32 +340,28 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
     await runScenario("6. Switch session", async () => {
       await window
         .getByLabel("Switch agent session")
-        .selectOption({ label: "Audit primary claim evidence" });
+        .selectOption({ label: "Audit LDL-C discordance evidence" });
       await expect(
         window
           .getByRole("region", { name: "Task identity" })
           .getByRole("group", { name: "Objective" }),
-      ).toContainText("Audit primary claim evidence");
+      ).toContainText("Audit LDL-C discordance evidence");
     });
 
     await runScenario("7. Detach and reattach prototype", async () => {
       await window.getByRole("radio", { name: "Inline workspace" }).click();
-      await window
-        .getByRole("button", { name: "Detach workspace (prototype)" })
-        .click();
+      await window.getByRole("button", { name: "Detach workspace" }).click();
       await expect(
         window.getByTestId("agent-sessions-chat").getByRole("status"),
-      ).toContainText("Detached workspace intent recorded");
-      await window
-        .getByRole("button", { name: "Reattach workspace (prototype)" })
-        .click();
+      ).toContainText("Developer workspace detached");
+      await window.getByRole("button", { name: "Reattach workspace" }).click();
       await expect(window.getByLabel("Session workbench")).toBeVisible();
     });
 
     await runScenario("8. Restart and resume", async () => {
       await window
         .getByLabel("Switch agent session")
-        .selectOption({ label: "Review OOD notebook" });
+        .selectOption({ label: "Review prediction notebook" });
       await expect(
         window.getByRole("button", { name: "Resume task" }),
       ).toBeVisible();
@@ -519,7 +515,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
     await runCommand(window, "Use Inline Workspace");
     await runCommand(window, "Detach Workspace (Prototype Intent)");
     await expect(
-      window.getByRole("button", { name: "Reattach workspace (prototype)" }),
+      window.getByRole("button", { name: "Reattach workspace" }),
     ).toBeVisible();
     await runCommand(window, "Reattach Workspace (Prototype Intent)");
     await expect(window.getByLabel("Session workbench")).toBeVisible();

@@ -35,6 +35,8 @@ import {
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { DevSection, ScreenId } from "../domain/types";
+import { freeBetaScreenNotice } from "../services/capabilities";
+import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { ClyLogo, ThemeSwitcher } from "./brand";
 
@@ -278,6 +280,8 @@ export function Sidebar() {
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const count = item.count?.(state);
+                  const preview =
+                    !isClyDemoRuntime && Boolean(freeBetaScreenNotice(item.id));
                   return (
                     <button
                       type="button"
@@ -286,7 +290,13 @@ export function Sidebar() {
                         activeScreen === item.id ? "page" : undefined
                       }
                       aria-label={item.ariaLabel ?? item.label}
-                      title={sidebarCollapsed ? item.label : undefined}
+                      title={
+                        preview
+                          ? `${item.label} · Free beta preview`
+                          : sidebarCollapsed
+                            ? item.label
+                            : undefined
+                      }
                       onClick={() => setScreen(item.id)}
                       key={item.id}
                       data-testid={`nav-${item.id}`}
@@ -295,6 +305,11 @@ export function Sidebar() {
                       <span className="cly-sidebar-item-label">
                         {item.label}
                       </span>
+                      {preview ? (
+                        <span className="cly-nav-preview" aria-hidden="true">
+                          Preview
+                        </span>
+                      ) : null}
                       {count ? (
                         <span className="cly-nav-count">
                           {count > 999 ? "999+" : count}

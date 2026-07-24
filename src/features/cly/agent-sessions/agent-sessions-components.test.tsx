@@ -41,7 +41,7 @@ describe("Agent Sessions workspace", () => {
     ).toBeVisible();
     expect(screen.getByText("1 running")).toBeVisible();
     expect(
-      screen.getAllByText("Audit primary claim evidence")[0],
+      screen.getAllByText("Audit LDL-C discordance evidence")[0],
     ).toBeVisible();
     expect(
       screen.getAllByRole("button", { name: /Open chat/ }),
@@ -126,9 +126,9 @@ describe("Agent Sessions workspace", () => {
 
     await user.click(screen.getByRole("tab", { name: /Tests/ }));
     expect(screen.getByLabelText("Fixture terminal output")).toBeVisible();
-    expect(screen.getByText(/calibration.test.ts/)).toBeVisible();
+    expect(screen.getByText(/test_discordance.py/)).toBeVisible();
 
-    await user.click(screen.getByRole("tab", { name: /Calibration paper/ }));
+    await user.click(screen.getByRole("tab", { name: /ApoB paper/ }));
     expect(screen.getByLabelText("Research browser fixture")).toBeVisible();
     await user.click(
       screen.getByRole("button", { name: "Add page as source" }),
@@ -137,16 +137,14 @@ describe("Agent Sessions workspace", () => {
 
     await user.click(screen.getByRole("tab", { name: /Code Diff/ }));
     expect(
-      screen.getByLabelText(/Diff for src\/evaluation\/calibration.py/),
+      screen.getByLabelText(/Diff for analysis\/discordance.py/),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: /Approve/ }));
     expect(screen.getByText("approved")).toBeVisible();
 
     await user.click(screen.getByRole("tab", { name: /Live Files/ }));
     expect(screen.getByLabelText("Live file observation")).toBeVisible();
-    expect(
-      screen.getByText(/Editing src\/evaluation\/calibration.py/),
-    ).toBeVisible();
+    expect(screen.getByText(/Editing analysis\/discordance.py/)).toBeVisible();
   });
 
   it("shows full delegated-agent configuration, steering, and approval actions", async () => {
@@ -186,7 +184,7 @@ describe("Agent Sessions workspace", () => {
     useClyStore.getState().openAgentSession("session-02");
     await waitFor(() =>
       expect(
-        screen.getByText("Approval required · high-cost experiment"),
+        screen.getByText("Approval required · download later cycles"),
       ).toBeVisible(),
     );
     await user.click(screen.getByRole("button", { name: "Approve" }));
@@ -213,7 +211,7 @@ describe("Agent Sessions workspace", () => {
     const menu = within(trigger.closest("details") as HTMLElement).getByRole(
       "menu",
     );
-    expect(within(menu).getByText("agent/calibration-audit")).toBeVisible();
+    expect(within(menu).getByText("agent/discordance-audit")).toBeVisible();
     expect(within(menu).getByText("$2.84 · 58.2k tokens")).toBeVisible();
   });
 
@@ -275,10 +273,8 @@ describe("Agent Sessions workspace", () => {
         within(identity).getByRole("group", { name: label }),
       ).toBeVisible();
     }
-    expect(
-      within(identity).getByText("Neural Surrogate Reliability"),
-    ).toBeVisible();
-    expect(within(identity).getByText("agent/calibration-audit")).toBeVisible();
+    expect(within(identity).getByText("When LDL-C misleads")).toBeVisible();
+    expect(within(identity).getByText("agent/discordance-audit")).toBeVisible();
     expect(within(identity).getByText(/GPT-5 · high/)).toBeVisible();
   });
 
@@ -300,7 +296,7 @@ describe("Agent Sessions workspace", () => {
     expect(impactGroup.querySelector(".cly-dev-identity-detail")).toBeVisible();
     expect(
       within(impactGroup).getAllByText(
-        "Changes calibration semantics linked to the primary reliability claim.",
+        "Changes the discordance definition linked to the primary claim.",
       ),
     ).toHaveLength(2);
   });

@@ -48,6 +48,50 @@ describe("Cly UI store", () => {
     });
   });
 
+  it("moves the guided demo from a blank brief to verified LDL results", async () => {
+    await useClyStore.getState().startGuidedDemo();
+
+    expect(useClyStore.getState()).toMatchObject({
+      fixtureMode: "guided",
+      activeScreen: "overview",
+      data: {
+        projects: [
+          {
+            name: "Untitled research project",
+            question: "",
+            hypothesis: "",
+          },
+        ],
+        sources: [],
+        experiments: [],
+        runs: [],
+        claims: [],
+      },
+    });
+
+    await useClyStore.getState().updateActiveProject({
+      name: "When LDL-C misleads",
+      question:
+        "Can basic health data predict when LDL cholesterol gives a misleading picture of heart-disease risk?",
+      hypothesis:
+        "Basic health variables can flag ApoB–LDL-C percentile discordance.",
+      description: "Predicts biomarker discordance, not cardiovascular events.",
+    });
+    await useClyStore.getState().finishGuidedLdlAnalysis();
+
+    const state = useClyStore.getState();
+    expect(state.fixtureMode).toBe("active");
+    expect(state.data.projects[0]).toMatchObject({
+      name: "When LDL-C misleads",
+      phase: "Evidence review",
+    });
+    expect(state.data.runs.some((run) => run.metrics.auc === 0.9249)).toBe(
+      true,
+    );
+    expect(state.data.claims[0]?.text).toMatch(/Basic health data/);
+    expect(state.data.audits[0]).toMatchObject({ score: 91 });
+  });
+
   it("switches projects and navigation state", () => {
     useClyStore.setState({
       agentContext: {
@@ -1037,9 +1081,17 @@ describe("Cly UI store", () => {
   });
 
   it("persists a source before updating local state and leaves state unchanged on failure", async () => {
-    const source = createFixtureRepository("active").sources.at(0);
-    if (!source)
+    const fixtureSource = createFixtureRepository("active").sources.at(0);
+    if (!fixtureSource)
       throw new Error("Expected the active fixture to include a source.");
+    const source = {
+      ...fixtureSource,
+      id: "src-new",
+      title: "Prospective LDL-C discordance validation protocol",
+      url: undefined,
+      doi: undefined,
+      providerId: undefined,
+    };
     const sourceCount = useClyStore.getState().data.sources.length;
     const fetchMock = vi
       .fn()
@@ -1572,8 +1624,8 @@ describe("Cly UI store", () => {
     );
 
     await expect(mockServices.sources.enrich("src-01")).resolves.toMatchObject({
-      methods: expect.arrayContaining(["Deep ensembles"]),
-      limitations: expect.arrayContaining(["Only low-dimensional PDE systems"]),
+      methods: expect.arrayContaining(["Complex probability sample"]),
+      limitations: expect.arrayContaining(["Cross-sectional survey"]),
     });
     expect(fetch).toHaveBeenCalledWith(
       "/api/projects/project-cly/research/objects/src-01",

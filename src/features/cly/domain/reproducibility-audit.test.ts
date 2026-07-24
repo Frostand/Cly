@@ -4,8 +4,24 @@ import { generateReproducibilityAudit } from "./reproducibility-audit";
 
 describe("generateReproducibilityAudit", () => {
   it("reports contradictions, failed evidence, unpinned environments, and stale outputs", () => {
+    const data = createFixtureRepository("active");
+    data.claims = data.claims.map((claim) =>
+      claim.id === "claim-02"
+        ? { ...claim, contradictingSourceIds: ["src-04"] }
+        : claim,
+    );
+    data.experiments = data.experiments.map((experiment) =>
+      experiment.id === "exp-03"
+        ? { ...experiment, status: "Failed" }
+        : experiment,
+    );
+    data.artifacts = data.artifacts.map((artifact) =>
+      artifact.id === "artifact-03"
+        ? { ...artifact, regeneration: "Broken" }
+        : artifact,
+    );
     const result = generateReproducibilityAudit(
-      createFixtureRepository("active"),
+      data,
       "2026-07-14T12:00:00.000Z",
     );
 
@@ -23,7 +39,7 @@ describe("generateReproducibilityAudit", () => {
         expect.objectContaining({
           area: "Claims",
           severity: "Blocking",
-          objectIds: expect.arrayContaining(["claim-01", "src-04"]),
+          objectIds: expect.arrayContaining(["claim-02", "src-04"]),
         }),
         expect.objectContaining({
           area: "Experiments",

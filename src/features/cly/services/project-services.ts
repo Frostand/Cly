@@ -274,9 +274,36 @@ export const projectServices: ClyServices = {
       throw new CapabilityUnavailableError("agents.execute");
     },
     async listConfigurations(projectId) {
+      if (isClyExplicitDemoRuntime) {
+        return stateForProject(projectId)?.data.agentConfigurations ?? [];
+      }
       return apiClient.fetchAgentConfigurations(projectId);
     },
     async saveConfiguration(projectId, configuration) {
+      if (isClyExplicitDemoRuntime) {
+        const timestamp = isoNow();
+        const persisted: AgentConfiguration = {
+          ...configuration,
+          id:
+            "id" in configuration
+              ? configuration.id
+              : `configuration-demo-${projectId}`,
+          projectId,
+          revision:
+            "revision" in configuration ? configuration.revision + 1 : 1,
+          createdAt:
+            "createdAt" in configuration ? configuration.createdAt : timestamp,
+          updatedAt: timestamp,
+        };
+        const state = stateForProject(projectId);
+        state?.setAgentConfigurations([
+          ...(state.data.agentConfigurations ?? []).filter(
+            (item) => item.id !== persisted.id,
+          ),
+          persisted,
+        ]);
+        return persisted;
+      }
       const input: AgentConfigurationInput = {
         name: configuration.name,
         maxParallel: configuration.maxParallel,
@@ -302,6 +329,15 @@ export const projectServices: ClyServices = {
       return persisted;
     },
     async removeConfiguration(projectId, configurationId, expectedRevision) {
+      if (isClyExplicitDemoRuntime) {
+        const state = stateForProject(projectId);
+        state?.setAgentConfigurations(
+          (state.data.agentConfigurations ?? []).filter(
+            (item) => item.id !== configurationId,
+          ),
+        );
+        return;
+      }
       await apiClient.removeAgentConfiguration(
         projectId,
         configurationId,
@@ -315,6 +351,36 @@ export const projectServices: ClyServices = {
       );
     },
     async estimateConfiguration(projectId, configurationId, configuration) {
+      if (isClyExplicitDemoRuntime) {
+        if (!configuration) {
+          throw new Error(
+            "Agent configuration input is required in demo mode.",
+          );
+        }
+        return {
+          inputTokens: Math.min(
+            configuration.maxTotalBudget.maxInputTokens,
+            24_000,
+          ),
+          outputTokens: Math.min(
+            configuration.maxTotalBudget.maxOutputTokens,
+            6_000,
+          ),
+          costMinorUnits: Math.min(
+            configuration.maxTotalBudget.maxCostMinorUnits,
+            180,
+          ),
+          runtimeMs: Math.min(
+            configuration.maxTotalBudget.maxRuntimeMs,
+            900_000,
+          ),
+          inaccessibleContext: [],
+          inaccessibleTools: [],
+          reasons: [
+            "Deterministic demo estimate; no provider request was made.",
+          ],
+        };
+      }
       return apiClient.estimateAgentConfiguration(
         projectId,
         configurationId,
@@ -324,6 +390,42 @@ export const projectServices: ClyServices = {
   },
   experiments: {
     async create(input) {
+      if (isClyExplicitDemoRuntime) {
+        const experiment: Experiment = {
+          id: id("exp"),
+          name: input.name,
+          goal: input.goal,
+          hypothesis: input.hypothesis?.trim() || "To be specified",
+          type: input.type,
+          status: "Planned",
+          command: "Not configured",
+          environment: "Not captured",
+          claimIds: [],
+          dataset: "Not linked",
+          limitations: [],
+          nextStep: "Complete configuration",
+          runIds: [],
+          updatedAt: isoNow(),
+        };
+        useClyStore.setState((state) => ({
+          data: {
+            ...state.data,
+            experiments: [experiment, ...state.data.experiments],
+            graphNodes: [
+              {
+                id: experiment.id,
+                type: "experiment",
+                label: experiment.name,
+                status: "Suggested",
+                x: 390,
+                y: 235,
+              },
+              ...state.data.graphNodes,
+            ],
+          },
+        }));
+        return experiment;
+      }
       const projectId = await ensureActiveProject();
       const object = await apiClient.createExperiment(projectId, {
         title: input.name,
@@ -399,13 +501,14 @@ export const projectServices: ClyServices = {
       const source: Source = {
         id: id("src"),
         title: input.title,
-        authors: "Metadata pending",
-        year: new Date().getFullYear(),
+        authors: input.authors ?? "Metadata pending",
+        year: input.year ?? new Date().getFullYear(),
         type: input.type,
         status: "Needs metadata",
         relevance: "Medium",
         confidence: 0,
-        summary: "Imported source awaiting extraction.",
+        summary: input.summary ?? "Imported source awaiting extraction.",
+        url: input.url,
         methods: [],
         findings: [],
         limitations: [],
@@ -416,6 +519,26 @@ export const projectServices: ClyServices = {
         path: "sources/imported",
         updatedAt: isoNow(),
       };
+      if (isClyExplicitDemoRuntime) {
+        useClyStore.setState((state) => ({
+          data: {
+            ...state.data,
+            sources: [source, ...state.data.sources],
+            graphNodes: [
+              {
+                id: source.id,
+                type: source.type === "Dataset" ? "dataset" : "source",
+                label: source.title,
+                status: "Suggested",
+                x: 80,
+                y: 80 + state.data.sources.length * 90,
+              },
+              ...state.data.graphNodes,
+            ],
+          },
+        }));
+        return source;
+      }
       const persistedSource = await useClyStore.getState().addSource(source);
       if (!persistedSource) throw new Error("Source was not saved.");
       return persistedSource;

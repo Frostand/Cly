@@ -69,34 +69,34 @@ export function ObjectivesScreen() {
         ? [
             {
               id: "O-01",
-              title: "Establish a defensible primary reliability claim",
+              title: "Test whether basic data flag LDL-C discordance",
               description: project.question,
               status: "Active",
-              progress: 72,
+              progress: 82,
               owner: "Research lead",
-              method: "Calibration-aware ensemble benchmark",
+              method: "Survey-weighted five-fold prediction benchmark",
               success:
-                "Current evidence supports a bounded, reproducible claim.",
+                "A reproducible model improves meaningfully over LDL-C alone without clinical overclaiming.",
               linked: [
                 `${data.claims.length} claims`,
                 `${data.experiments.length} experiments`,
                 `${data.sources.length} sources`,
               ],
-              nextAction: "Resolve the highest-risk contradictory evidence.",
+              nextAction: "Complete alternate discordance definitions.",
             },
             {
               id: "O-02",
-              title: "Map the out-of-distribution failure envelope",
+              title: "Validate the result beyond one survey cycle",
               description:
-                "Measure where calibration and ranking quality degrade under compound shift.",
+                "Repeat the analysis in later NHANES cycles and quantify transportability.",
               status: "At risk",
-              progress: 46,
-              owner: "Evaluation team",
-              method: "Compound-shift stress grid",
+              progress: 28,
+              owner: "Methods team",
+              method: "Temporal external validation",
               success:
-                "Failure boundaries are reported with confidence intervals.",
-              linked: ["2 runs", "1 notebook", "2 open findings"],
-              nextAction: "Complete the missing high-shift baseline run.",
+                "Direction, discrimination, and calibration hold in a separated cohort.",
+              linked: ["1 planned experiment", "2 sources", "2 open findings"],
+              nextAction: "Approve the official CDC data download.",
             },
             {
               id: "O-03",
@@ -109,7 +109,7 @@ export function ObjectivesScreen() {
               method: "Reviewer capsule and reproducibility audit",
               success:
                 "A reviewer can audit the conclusion without the original author.",
-              linked: ["1 audit", "3 figures", "0 exported capsules"],
+              linked: ["1 audit", "4 artifacts", "0 exported capsules"],
               nextAction:
                 "Select publication claims and preview the capsule manifest.",
             },
@@ -564,23 +564,23 @@ function useDevRecords(section: DevSection): DevRecord[] {
         },
         {
           id: "repo-eval",
-          title: "surrogate-reliability",
-          detail: "Evaluation code, notebooks, and experiment configurations",
+          title: "ldl-apob-discordance",
+          detail: "NHANES source files, analysis code, notebooks, and reports",
           status: "3 changes",
-          meta: "research/O-02-compound-shift",
-          owner: "Evaluation team",
-          impact: "Claims C-01 and C-03 may require reruns",
+          meta: "research/O-02-external-validation",
+          owner: "Methods team",
+          impact: "Claims C-01 through C-04 may require reruns",
         },
       ],
       features: [
         {
           id: "feature-01",
-          title: "Compound-shift reliability audit",
-          detail: "Add complete OOD coverage and a compute-matched baseline",
+          title: "Discordance sensitivity audit",
+          detail: "Compare thresholds, residual definitions, and non–HDL-C",
           status: "Active",
-          meta: "CLY-244 · research/O-02-compound-shift",
-          owner: "Codex + evaluation team",
-          impact: "Objective O-02 · Claims C-01 and C-03",
+          meta: "CLY-244 · research/O-01-sensitivity",
+          owner: "Codex + methods team",
+          impact: "Objective O-01 · Claims C-01 and C-04",
         },
         {
           id: "feature-02",
@@ -595,9 +595,9 @@ function useDevRecords(section: DevSection): DevRecord[] {
       issues: [
         {
           id: "CLY-244",
-          title: "Validate calibration under compound shift",
+          title: "Validate discordance across later NHANES cycles",
           detail:
-            "Missing empirical boundary for the primary reliability claim",
+            "Missing temporal validation for the primary discordance claim",
           status: "In progress",
           meta: "High priority · linked objective O-02",
           owner: "Evaluation team",
@@ -605,12 +605,13 @@ function useDevRecords(section: DevSection): DevRecord[] {
         },
         {
           id: "CLY-247",
-          title: "Regenerate Figure 4 without manual annotation",
-          detail: "Replace the untracked edit with a plotting-code change",
+          title: "Add survey-design confidence intervals",
+          detail:
+            "Account for fasting weights, strata, and primary sampling units",
           status: "Ready",
           meta: "Integrity finding · 1 dependency",
           owner: "Implementation agent",
-          impact: "Figure F-04 · Claim C-01",
+          impact: "Tables T-01 and T-02 · Claims C-02 and C-03",
         },
       ],
       machines: [
@@ -625,8 +626,8 @@ function useDevRecords(section: DevSection): DevRecord[] {
         },
         {
           id: "machine-gpu",
-          title: "Lab GPU runner",
-          detail: "4 × A100 · approved project artifacts only",
+          title: "Lab analysis runner",
+          detail: "Approved public data and analysis artifacts only",
           status: "Idle",
           meta: "Remote · encrypted transport",
           owner: "Lab infrastructure",
@@ -636,14 +637,14 @@ function useDevRecords(section: DevSection): DevRecord[] {
       "pull-requests": [
         {
           id: "pr-84",
-          title: "PR #84 · Update preprocessing and calibration checks",
+          title: "PR #84 · Add threshold sensitivity and survey checks",
           detail:
             "12 files changed · software review passed · research review open",
           status: "Needs research review",
           meta: "3 checks passed · 2 reruns required",
           owner: "Implementation agent",
           impact:
-            "Runs R-18–R-24 · Figures F-03 and F-05 · Claims C-01 and C-03",
+            "Runs R-03–R-06 · Tables T-01 and T-02 · Claims C-01 and C-04",
         },
       ],
       tests: [
@@ -661,9 +662,9 @@ function useDevRecords(section: DevSection): DevRecord[] {
           id: "tests-research",
           title: "Research validation",
           detail:
-            "Calibration, data leakage, deterministic output, and claim impact",
+            "Cohort eligibility, data leakage, deterministic output, and claim impact",
           status: "2 required",
-          meta: "Waiting for compound-shift rerun",
+          meta: "Waiting for threshold sensitivity rerun",
           owner: "Lab GPU runner",
           impact: "Objective O-02 · reviewer capsule blocked",
         },

@@ -61,7 +61,7 @@ describe("pull request impact review workspace", () => {
       screen.getAllByText("Inferred — review required").length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByText("src/methods/calibration.ts").length,
+      screen.getAllByText("analysis/discordance.py").length,
     ).toBeGreaterThan(0);
     expect(screen.getAllByText("2222222").length).toBeGreaterThan(0);
     expect(

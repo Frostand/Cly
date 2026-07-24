@@ -29,6 +29,8 @@ import {
   ModelsAgentsScreen,
   SettingsScreen,
 } from "../screens/system";
+import { freeBetaScreenNotice } from "../services/capabilities";
+import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
 import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
@@ -150,6 +152,7 @@ export function ClyAppShell() {
   const fixtureMode = useClyStore((s) => s.fixtureMode);
   const setScreen = useClyStore((s) => s.setScreen);
   const ActiveScreen = screens[activeScreen];
+  const betaNotice = freeBetaScreenNotice(activeScreen);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -251,7 +254,9 @@ export function ClyAppShell() {
     <ClyMotionProvider>
       <main className="cly-app">
         <Titlebar />
-        {fixtureMode !== "empty" && fixtureMode !== "loading" ? (
+        {isClyDemoRuntime &&
+        fixtureMode !== "empty" &&
+        fixtureMode !== "loading" ? (
           <div
             role="status"
             style={{
@@ -264,7 +269,14 @@ export function ClyAppShell() {
               textAlign: "center",
             }}
           >
-            Demo data · These are simulated records, not project research.
+            {fixtureMode === "guided"
+              ? "Guided demo · No results are loaded; enter the research inputs to begin."
+              : "Demo project · Results reproduce official CDC data; workflow records are fixtures."}
+          </div>
+        ) : !isClyDemoRuntime ? (
+          <div className="cly-beta-banner" role="status">
+            Cly Free Beta · Local research data only · Do not use sensitive or
+            regulated data
           </div>
         ) : null}
         <div
@@ -290,9 +302,17 @@ export function ClyAppShell() {
                   />
                 </div>
               ) : (
-                <RouteTransition route={activeScreen}>
-                  <ActiveScreen />
-                </RouteTransition>
+                <>
+                  {!isClyDemoRuntime && betaNotice ? (
+                    <div className="cly-beta-route-notice" role="note">
+                      <strong>Preview</strong>
+                      <span>{betaNotice}</span>
+                    </div>
+                  ) : null}
+                  <RouteTransition route={activeScreen}>
+                    <ActiveScreen />
+                  </RouteTransition>
+                </>
               )}
             </div>
             <ActivityDrawer />
