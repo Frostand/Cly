@@ -198,6 +198,10 @@ describe("research repository", () => {
   it("gets registered projects and records reviewable system provenance", () => {
     const repository = createResearchRepository(database);
 
+    expect(repository.listProjects()).toEqual([
+      expect.objectContaining({ id: "project-1", updatedAt: "2026-07-11" }),
+      expect.objectContaining({ id: "project-2", updatedAt: "2026-07-11" }),
+    ]);
     expect(repository.getProject("project-1")).toMatchObject({
       id: "project-1",
       name: "Project 1",

@@ -8,6 +8,7 @@ import {
   type LiteratureSearchResult,
   rankLiteratureWithRrf,
 } from "../domain/literature-search";
+import { type LocalAnalysisResult, sha256Hex } from "../domain/local-analysis";
 import { generateReproducibilityAudit } from "../domain/reproducibility-audit";
 import type {
   Claim,
@@ -486,6 +487,133 @@ export const projectServices: ClyServices = {
       stateForProject(projectId)?.addExperiment(persistedDuplicate);
       return persistedDuplicate;
     },
+    async recordLocalAnalysis(input) {
+      if (isClyExplicitDemoRuntime) {
+        throw new Error(
+          "Use the guided verified workflow in demo mode. Local dataset execution is available in the free beta workspace.",
+        );
+      }
+      const projectId = await ensureActiveProject();
+      const state = stateForProject(projectId);
+      const experiment = state?.data.experiments.find(
+        (item) => item.id === input.experimentId,
+      );
+      if (!experiment) throw new Error("Experiment not found.");
+      const source = state?.data.sources.find(
+        (item) => item.id === input.datasetSourceId,
+      );
+      if (!source || source.type !== "Dataset")
+        throw new Error("The imported dataset source was not found.");
+
+      const result: LocalAnalysisResult = input.result;
+      const engineHash = await sha256Hex(result.engineVersion);
+      const datasetVersion = input.datasetHash.slice(0, 12);
+      const datasets = [
+        {
+          id: input.datasetSourceId,
+          version: datasetVersion,
+          contentHash: input.datasetHash,
+          uri: input.datasetFileName,
+        },
+      ];
+      const configuration: Record<string, unknown> = {
+        experimentType: "Statistical analysis",
+        analysisTask: result.task,
+        outcome: result.outcome,
+        predictors: result.predictors.join(", "),
+        folds: result.folds,
+        seed: result.seed,
+        rowsUsed: result.rowsUsed,
+        rowsExcluded: result.rowsExcluded,
+        engineVersion: `${result.engineVersion}@sha256:${engineHash}`,
+        datasetFile: input.datasetFileName,
+        datasetHash: input.datasetHash,
+        coefficientSummary: result.coefficients
+          .slice(0, 8)
+          .map((item) => `${item.feature}=${item.value}`)
+          .join("; "),
+        warnings: result.warnings.join(" | "),
+      };
+      await apiClient.reviseExperimentDefinition(
+        projectId,
+        input.experimentId,
+        {
+          hypothesis: experiment.hypothesis,
+          objective: experiment.goal,
+          configuration,
+          datasets,
+          declaredMetrics: Object.keys(result.metrics),
+        },
+      );
+      const startedAt = isoNow();
+      const run = await apiClient.createExperimentRun(
+        projectId,
+        input.experimentId,
+        {
+          title: `${experiment.name} · local cross-validation`,
+          description: result.conclusion,
+          status: "running",
+          commitSha: engineHash,
+          configuration,
+          datasets,
+          codeRefs: [
+            {
+              path: `builtin://${result.engineVersion}`,
+              contentHash: engineHash,
+            },
+          ],
+          startedAt,
+        },
+      );
+      await apiClient.logExperimentRunMetrics(
+        projectId,
+        run.id,
+        Object.entries(result.metrics)
+          .filter(([, value]) => Number.isFinite(value))
+          .map(([name, value]) => ({ name, value })),
+      );
+      const resultJson = JSON.stringify(result, null, 2);
+      const resultHash = await sha256Hex(resultJson);
+      await apiClient.registerExperimentRunArtifact(projectId, run.id, {
+        title: "Local analysis summary",
+        description: `${result.conclusion} Limitations: ${result.warnings.join(" ")}`,
+        kind: "file",
+        path: `cly://analysis/${run.id}/summary.json`,
+        mediaType: "application/json",
+        contentHash: resultHash,
+        generatorPath: `builtin://${result.engineVersion}`,
+        generatorHash: engineHash,
+      });
+      await apiClient.updateExperimentRunStatus(projectId, run.id, {
+        status: "completed",
+        finishedAt: isoNow(),
+        exitCode: 0,
+      });
+
+      const claim = await projectServices.claims.create(
+        `${result.conclusion} Predictors: ${result.predictors.join(", ")}; outcome: ${result.outcome}.`,
+      );
+      await projectServices.claims.linkExperiment(claim.id, input.experimentId);
+      await projectServices.claims.linkEvidence(
+        claim.id,
+        input.datasetSourceId,
+        "supports",
+      );
+      const exceedsBaseline =
+        result.task === "classification"
+          ? (result.metrics.auc ?? 0.5) >= 0.6 &&
+            (result.metrics.accuracy ?? 0) >
+              (result.metrics.baselineAccuracy ?? 1)
+          : (result.metrics.r2 ?? 0) > 0.1 &&
+            (result.metrics.rmse ?? Number.POSITIVE_INFINITY) <
+              (result.metrics.baselineRmse ?? 0);
+      await projectServices.claims.setStatus(
+        claim.id,
+        exceedsBaseline ? "Medium" : "Needs review",
+      );
+      await useClyStore.getState().loadFromApi(projectId);
+      return { runId: run.id, claimId: claim.id };
+    },
   },
   literature: {
     async search(_project, query) {
@@ -882,17 +1010,14 @@ export const projectServices: ClyServices = {
   },
   reproducibility: {
     async runAudit() {
-      if (isClyDemoRuntime) {
-        const state = useClyStore.getState();
-        const generated = generateReproducibilityAudit(state.data);
-        state.replaceReproducibilityAudit(generated.audit, generated.findings);
-        state.notify(
-          "Reproducibility audit complete",
-          `${generated.findings.filter((finding) => finding.severity !== "Passed").length} findings across code, data, environment, experiments, outputs, and claims.`,
-        );
-        return generated.audit;
-      }
-      throw new CapabilityUnavailableError("reproducibility.audit");
+      const state = useClyStore.getState();
+      const generated = generateReproducibilityAudit(state.data);
+      state.replaceReproducibilityAudit(generated.audit, generated.findings);
+      state.notify(
+        "Reproducibility audit complete",
+        `${generated.findings.filter((finding) => finding.severity !== "Passed").length} findings across code, data, environment, experiments, outputs, and claims.`,
+      );
+      return generated.audit;
     },
     async resolveFinding(findingId) {
       if (isClyDemoRuntime) {

@@ -1903,6 +1903,20 @@ export function createResearchRepository(
       return { objects, relationships };
     },
 
+    listProjects() {
+      return database
+        .prepare(
+          `SELECT * FROM projects
+           WHERE status = 'open'
+           ORDER BY updated_at DESC, created_at DESC, id`,
+        )
+        .all()
+        .map((row) => ({
+          ...mapProject(row),
+          updatedAt: row.updated_at,
+        }));
+    },
+
     getProject(projectId) {
       ensureProject(projectId);
       return mapProject(

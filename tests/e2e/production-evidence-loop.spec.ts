@@ -15,6 +15,15 @@ test("completes and recovers the production evidence loop with demos disabled", 
   const claimTitle = `Production evidence claim ${suffix}`;
   const experimentTitle = `Production evidence experiment ${suffix}`;
   const sourceTitle = `Production evidence source ${suffix}`;
+  const projectTitle = `Beta research project ${suffix}`;
+  const datasetTitle = `beta-risk-${suffix}.csv`;
+  const datasetCsv = [
+    "age,bmi,hdl,outcome",
+    ...Array.from({ length: 120 }, (_, index) => {
+      const outcome = index % 2;
+      return `${20 + (index % 50)},${21 + outcome * 8 + (index % 5)},${65 - outcome * 20},${outcome}`;
+    }),
+  ].join("\n");
 
   execFileSync(process.execPath, [viteCli, "build"], {
     cwd: root,
@@ -39,10 +48,59 @@ test("completes and recovers the production evidence loop with demos disabled", 
   let app = await launch();
   try {
     let window = await app.firstWindow();
+    const captureAnalysisDialog = async (name: string) => {
+      if (process.env.CLY_CAPTURE_LOCAL_ANALYSIS !== "1") return;
+      const browserWindow = await app.browserWindow(window);
+      for (const [width, height] of [
+        [1024, 700],
+        [1280, 800],
+        [1440, 900],
+        [1728, 1117],
+      ]) {
+        await browserWindow.evaluate(
+          (nativeWindow, size) => nativeWindow.setSize(size.width, size.height),
+          { width, height },
+        );
+        await window.waitForTimeout(120);
+        await window.screenshot({
+          path: `artifacts/ui-review/beta-local-analysis-final/${name}-${width}x${height}.png`,
+          animations: "disabled",
+        });
+      }
+      await browserWindow.evaluate((nativeWindow) =>
+        nativeWindow.setSize(1440, 900),
+      );
+    };
     await window.getByRole("heading", { level: 1 }).first().waitFor();
     await expect(window.getByTestId("fixture-selector")).toHaveCount(0);
     await expect(
       window.getByText(/Cly Free Beta · Local research data only/),
+    ).toBeVisible();
+
+    await window.getByTestId("project-switcher").click();
+    await window.getByTestId("new-local-project").click();
+    await expect(
+      window.getByRole("heading", {
+        name: "Untitled research project",
+        level: 1,
+      }),
+    ).toBeVisible();
+    await window.getByTestId("edit-project-brief").click();
+    await window.getByLabel("Project name").fill(projectTitle);
+    await window
+      .getByLabel("Research question")
+      .fill("Can basic measurements predict a binary health-risk flag?");
+    await window
+      .getByLabel("Working hypothesis")
+      .fill(
+        "BMI and HDL will improve prediction beyond the majority baseline.",
+      );
+    await window
+      .getByLabel("Scope note")
+      .fill("Synthetic, de-identified local beta validation data.");
+    await window.getByRole("button", { name: "Save brief" }).click();
+    await expect(
+      window.getByRole("heading", { name: projectTitle, level: 1 }),
     ).toBeVisible();
 
     await window.getByTestId("nav-notebooks").click();
@@ -102,6 +160,40 @@ test("completes and recovers the production evidence loop with demos disabled", 
       .click();
     await expect(window.getByText("Experiment created")).toBeVisible();
 
+    await window.getByTestId("run-local-analysis").click();
+    const analysisDialog = window.getByRole("dialog", {
+      name: "Run local dataset analysis",
+    });
+    await analysisDialog.getByTestId("local-analysis-file").setInputFiles({
+      name: datasetTitle,
+      mimeType: "text/csv",
+      buffer: Buffer.from(datasetCsv),
+    });
+    await expect(analysisDialog.getByText("120 rows")).toBeVisible();
+    await expect(analysisDialog.getByLabel("Outcome column")).toHaveValue(
+      "outcome",
+    );
+    await captureAnalysisDialog("analysis-setup");
+    await analysisDialog.getByTestId("execute-local-analysis").click();
+    await expect(
+      analysisDialog.getByTestId("local-analysis-result"),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(analysisDialog.getByText(/Cross-validated AUC/)).toBeVisible();
+    await expect(
+      analysisDialog.getByText(
+        /predictive association, not evidence of causation/i,
+      ),
+    ).toBeVisible();
+    await captureAnalysisDialog("analysis-result");
+    await analysisDialog
+      .getByRole("button", { name: /Review saved run/ })
+      .click();
+    await expect(
+      window.getByText(`${experimentTitle} · local cross-validation`, {
+        exact: true,
+      }),
+    ).toBeVisible();
+
     await window.getByTestId("nav-claims").click();
     await window
       .locator("#main-workspace")
@@ -129,10 +221,19 @@ test("completes and recovers the production evidence loop with demos disabled", 
     await window.getByRole("button", { name: "Link to claim" }).click();
     await expect(window.getByText("Evidence linked")).toBeVisible();
 
+    await window.getByTestId("nav-reproducibility").click();
+    await window.getByRole("button", { name: "Run audit" }).first().click();
+    await expect(
+      window.getByText("Reproducibility audit complete"),
+    ).toBeVisible();
+
     await app.close();
     app = await launch();
     window = await app.firstWindow();
     await window.getByRole("heading", { level: 1 }).first().waitFor();
+    await expect(
+      window.getByRole("heading", { name: projectTitle, level: 1 }),
+    ).toBeVisible();
 
     await window.getByTestId("nav-claims").click();
     await window.getByPlaceholder("Search claims…").fill(claimTitle);
@@ -150,6 +251,12 @@ test("completes and recovers the production evidence loop with demos disabled", 
     await expect(
       window.getByText(experimentTitle, { exact: true }),
     ).toBeVisible();
+    await window.getByRole("radio", { name: "Runs" }).click();
+    await expect(
+      window.getByRole("row", {
+        name: new RegExp(`${experimentTitle} · local cross-validation`),
+      }),
+    ).toBeVisible();
 
     await window.getByTestId("nav-sources").click();
     await window
@@ -159,6 +266,15 @@ test("completes and recovers the production evidence loop with demos disabled", 
       window
         .locator("#main-workspace")
         .getByText(sourceTitle, { exact: true })
+        .first(),
+    ).toBeVisible();
+    await window
+      .getByPlaceholder("Search titles, authors, and tags…")
+      .fill(datasetTitle);
+    await expect(
+      window
+        .locator("#main-workspace")
+        .getByText(datasetTitle, { exact: true })
         .first(),
     ).toBeVisible();
   } finally {

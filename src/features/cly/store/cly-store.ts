@@ -155,6 +155,7 @@ interface ClyState {
   setSelected: (id: string | null) => void;
   setActiveProject: (id: string) => void;
   setFixtureMode: (mode: FixtureMode) => void;
+  createResearchProject: () => Promise<ResearchProject>;
   startGuidedDemo: () => Promise<void>;
   updateActiveProject: (
     patch: Pick<
@@ -369,27 +370,31 @@ const persistUi = (partial: Record<string, unknown>) => {
   }
 };
 
+type SavedUiState = Partial<
+  Pick<
+    ClyState,
+    | "activeScreen"
+    | "activeProduct"
+    | "activeDevSection"
+    | "sidebarCollapsed"
+    | "inspectorOpen"
+    | "activeProjectId"
+    | "agentSessionsMode"
+    | "selectedAgentSessionId"
+    | "selectedOverviewSessionId"
+    | "agentSessionFilter"
+    | "agentSessionSort"
+    | "agentSessionLayouts"
+  >
+> & { projects?: ResearchProject[] };
+
 const loadUi = () => {
   try {
-    return JSON.parse(localStorage.getItem(uiStorageKey) ?? "{}") as Partial<
-      Pick<
-        ClyState,
-        | "activeScreen"
-        | "activeProduct"
-        | "activeDevSection"
-        | "sidebarCollapsed"
-        | "inspectorOpen"
-        | "activeProjectId"
-        | "agentSessionsMode"
-        | "selectedAgentSessionId"
-        | "selectedOverviewSessionId"
-        | "agentSessionFilter"
-        | "agentSessionSort"
-        | "agentSessionLayouts"
-      >
-    >;
+    return JSON.parse(
+      localStorage.getItem(uiStorageKey) ?? "{}",
+    ) as SavedUiState;
   } catch {
-    return {};
+    return {} as SavedUiState;
   }
 };
 
@@ -422,8 +427,58 @@ const snapshotAgentSessionLayouts = (sessions: AgentSession[]) =>
     ]),
   ) as ClyState["agentSessionLayouts"];
 
+const savedProjects = Array.isArray(saved.projects)
+  ? saved.projects.filter((project): project is ResearchProject =>
+      Boolean(
+        project &&
+          typeof project.id === "string" &&
+          typeof project.name === "string" &&
+          typeof project.path === "string" &&
+          typeof project.question === "string" &&
+          typeof project.hypothesis === "string",
+      ),
+    )
+  : undefined;
+
+const researchProjectFromCatalog = (record: {
+  id: string;
+  name: string;
+  path: string;
+  metadata: Record<string, unknown>;
+  updatedAt: string;
+}): ResearchProject | null => {
+  const metadata = record.metadata;
+  if (
+    typeof metadata.question !== "string" ||
+    typeof metadata.hypothesis !== "string"
+  ) {
+    return null;
+  }
+  const approvals = Array.isArray(metadata.externalTransmissionApprovals)
+    ? metadata.externalTransmissionApprovals.filter(
+        (approval): approval is "arxiv" | "semantic-scholar" =>
+          approval === "arxiv" || approval === "semantic-scholar",
+      )
+    : undefined;
+  return {
+    id: record.id,
+    name: record.name,
+    path: record.path,
+    question: metadata.question,
+    hypothesis: metadata.hypothesis,
+    phase: typeof metadata.phase === "string" ? metadata.phase : "Exploration",
+    description:
+      typeof metadata.description === "string"
+        ? metadata.description
+        : "Project-scoped local research workspace.",
+    localOnly:
+      typeof metadata.localOnly === "boolean" ? metadata.localOnly : true,
+    ...(approvals?.length ? { externalTransmissionApprovals: approvals } : {}),
+    updatedAt: record.updatedAt,
+  };
+};
 const initialData = hydrateAgentSessionLayouts(
-  createProductionRepository(),
+  createProductionRepository(savedProjects?.length ? savedProjects : undefined),
   saved.agentSessionLayouts,
 );
 const initialCosts = {
@@ -643,7 +698,12 @@ const mapResearchData = (
             : `${Math.max(0, Math.round(durationMs / 1000))}s`,
         codeVersion:
           detailed?.commitSha ?? object.payload.commitSha ?? "Not recorded",
-        environment: detailed ? "Inputs captured" : "Not captured",
+        environment:
+          typeof detailed?.configuration.engineVersion === "string"
+            ? detailed.configuration.engineVersion
+            : detailed
+              ? "Inputs captured"
+              : "Not captured",
         metrics: detailed
           ? Object.fromEntries(
               detailed.metrics.map((metric) => [metric.name, metric.value]),
@@ -674,6 +734,8 @@ const mapResearchData = (
         (run) => run.experimentId === object.id,
       );
       const configuredType = latestDefinition?.configuration.experimentType;
+      const engineVersion = latestDefinition?.configuration.engineVersion;
+      const analysisWarnings = latestDefinition?.configuration.warnings;
       const validTypes = new Set([
         "Training run",
         "Simulation",
@@ -710,8 +772,16 @@ const mapResearchData = (
                 experimentRuns.every((run) => run.status === "Complete")
               ? ("Complete" as const)
               : ("Planned" as const),
-        command: "Not configured",
-        environment: lineage ? "Inputs captured per run" : "Not captured",
+        command:
+          typeof engineVersion === "string"
+            ? `builtin://${engineVersion.split("@", 1)[0]}`
+            : "Not configured",
+        environment:
+          typeof engineVersion === "string"
+            ? engineVersion
+            : lineage
+              ? "Inputs captured per run"
+              : "Not captured",
         claimIds: relationships
           .filter(
             (relationship) =>
@@ -724,7 +794,10 @@ const mapResearchData = (
           latestDefinition?.datasets
             .map((dataset) => `${dataset.id}@${dataset.version}`)
             .join(", ") || "Not linked",
-        limitations: [],
+        limitations:
+          typeof analysisWarnings === "string"
+            ? analysisWarnings.split(" | ").filter(Boolean)
+            : [],
         nextStep: experimentRuns.length ? "Review run lineage" : "Record a run",
         runIds: experimentRuns.map((run) => run.id),
         updatedAt: latestDefinition?.createdAt ?? object.updatedAt,
@@ -914,7 +987,11 @@ const applyAgentContextSnapshot = (
 export const useClyStore = create<ClyState>((set, get) => ({
   data: initialData,
   fixtureMode: initialFixtureMode,
-  activeProjectId: saved.activeProjectId ?? "project-cly",
+  activeProjectId: initialData.projects.some(
+    (project) => project.id === saved.activeProjectId,
+  )
+    ? (saved.activeProjectId ?? initialData.projects[0]?.id ?? "project-cly")
+    : (initialData.projects[0]?.id ?? "project-cly"),
   activeScreen:
     saved.activeProduct === "dev" ? "dev" : (saved.activeScreen ?? "overview"),
   activeProduct: saved.activeProduct ?? "research",
@@ -1105,6 +1182,49 @@ export const useClyStore = create<ClyState>((set, get) => ({
       }));
     });
   },
+  createResearchProject: async () => {
+    const project: ResearchProject = {
+      id: `project-${crypto.randomUUID()}`,
+      name: "Untitled research project",
+      path: `~/Research/project-${new Date().toISOString().slice(0, 10)}`,
+      question: "",
+      hypothesis: "",
+      phase: "Exploration",
+      description: "Define the project brief, then connect data and evidence.",
+      localOnly: true,
+      updatedAt: new Date().toISOString(),
+    };
+    if (!demoFixtureRuntime) await apiClient.ensureProject(project);
+    set((state) => {
+      const cleared = clearPersistedResearchData(state.data);
+      return {
+        data: {
+          ...cleared,
+          projects: [...state.data.projects, project],
+        },
+        activeProjectId: project.id,
+        activeProduct: "research",
+        activeScreen: "overview",
+        selectedId: null,
+        projectSwitcherOpen: false,
+        lineageSuggestions: [],
+        decisionBriefs: [],
+        preregistrations: [],
+        datasetObligations: [],
+        obligationAlerts: [],
+        costLedger: emptyCostLedger(),
+        claimCosts: {},
+        selectedCostEntryId: null,
+      };
+    });
+    persistUi({
+      activeProjectId: project.id,
+      activeProduct: "research",
+      activeScreen: "overview",
+      projects: [...get().data.projects],
+    });
+    return project;
+  },
   startGuidedDemo: async () => {
     if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
     const { createFixtureRepository } = await import("../fixtures/repository");
@@ -1143,6 +1263,11 @@ export const useClyStore = create<ClyState>((set, get) => ({
         ),
       },
     }));
+    persistUi({
+      projects: get().data.projects.map((item) =>
+        item.id === updated.id ? updated : item,
+      ),
+    });
     return updated;
   },
   finishGuidedLdlAnalysis: async () => {
@@ -1213,7 +1338,29 @@ export const useClyStore = create<ClyState>((set, get) => ({
     }));
   },
   loadFromApi: async (requestedProjectId) => {
-    const projectId = requestedProjectId ?? get().activeProjectId;
+    let projectId = requestedProjectId ?? get().activeProjectId;
+    if (!requestedProjectId && !demoFixtureRuntime) {
+      try {
+        const catalog = (await apiClient.fetchProjects())
+          .map(researchProjectFromCatalog)
+          .filter((project): project is ResearchProject => project !== null);
+        if (catalog.length > 0) {
+          const preferredId =
+            typeof saved.activeProjectId === "string" &&
+            catalog.some((project) => project.id === saved.activeProjectId)
+              ? saved.activeProjectId
+              : catalog[0].id;
+          projectId = preferredId;
+          set((state) => ({
+            activeProjectId: preferredId,
+            data: { ...state.data, projects: catalog },
+          }));
+          persistUi({ activeProjectId: preferredId, projects: catalog });
+        }
+      } catch {
+        // Older local APIs do not expose the catalog; use the boot project.
+      }
+    }
     const project = get().data.projects.find((item) => item.id === projectId);
     if (!project) return false;
     if (get().activeProjectId === projectId)

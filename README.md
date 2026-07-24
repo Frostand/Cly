@@ -34,7 +34,11 @@ reviewer-capsule workflows, a local-first development command center, desktop
 menus, keyboard navigation, automated workflows, and responsive research and
 integrity workspaces. Project-scoped local services now persist core claim,
 source, experiment, relationship, context, agent-configuration, and agent-session
-workflows. The checked-in [capability inventory](docs/cly-v1-capabilities.json)
+workflows. A fresh local project can also import a numeric CSV/TSV dataset, run
+deterministic cross-validated binary classification or regression, save metrics
+and coefficients, generate a bounded result claim, audit the evidence trail,
+recover it after restart, and export a project backup. The checked-in
+[capability inventory](docs/cly-v1-capabilities.json)
 is the release boundary; the UI labels unfinished routes as Preview and disables
 unavailable mutations with an explanation. Agent Sessions includes durable local session events plus secure
 device registration and end-to-end encrypted, resumable synchronization of
@@ -49,9 +53,10 @@ external integration configuration, planner mutations, and decision creation are
 not included in the free beta.
 
 The free beta is local-first and free of billing code, but it is not approved
-for sensitive or regulated data. Export a project backup before testing. Only a
-Developer ID-signed, Apple-notarized artifact from the protected beta release
-workflow may be shared outside the development team.
+for sensitive or regulated data. Export a project backup before testing. Local
+beta testers can run Cly from source or use the unpacked development package;
+public macOS distribution, signing, and notarization are a separate release
+track.
 
 ## Development
 
@@ -82,6 +87,8 @@ pnpm demo:video
 ```
 
 See the [LDL-C blank-to-result walkthrough](docs/LDL_DISCORDANCE_DEMO.md).
+For an independent beta run with a tester-supplied dataset, use the
+[local beta testing guide](docs/BETA_TESTING.md).
 
 ## Documentation
 

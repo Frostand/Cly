@@ -17,6 +17,7 @@ import type {
   PersistedContextManifest,
 } from "../domain/agent-context";
 import type { LiteratureSearchResult } from "../domain/literature-search";
+import type { LocalAnalysisResult } from "../domain/local-analysis";
 import type {
   AgentPreset,
   Claim,
@@ -144,6 +145,13 @@ export interface ExperimentService {
     },
   ): Promise<Experiment>;
   duplicate(id: string): Promise<Experiment>;
+  recordLocalAnalysis(input: {
+    experimentId: string;
+    datasetSourceId: string;
+    datasetFileName: string;
+    datasetHash: string;
+    result: LocalAnalysisResult;
+  }): Promise<{ runId: string; claimId: string }>;
 }
 
 export interface SourceService {

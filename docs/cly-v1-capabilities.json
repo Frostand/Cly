@@ -182,12 +182,12 @@
   {
     "id": "reproducibility.audit",
     "route": "reproducibility",
-    "action": "Run or resolve a reproducibility audit",
+    "action": "Persist reproducibility finding dispositions",
     "state": "unavailable",
     "service": null,
     "api": null,
     "test": null,
-    "reason": "Reproducibility audits are unavailable until audit findings have a durable local service."
+    "reason": "Local audits run now, but resolved, assigned, or deferred finding choices are unavailable until dispositions have a durable local service."
   },
   {
     "id": "planner.update",

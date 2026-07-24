@@ -53,7 +53,7 @@ export const freeBetaScreenNotices: Partial<Record<ScreenId, string>> = {
     "Notebook scanning is a preview until imported scans can be persisted and recovered.",
   code: "Code scanning is a preview until filesystem approval and indexed provenance are available.",
   reproducibility:
-    "Audit results are read-only until reproducibility findings have a durable local service.",
+    "Audits run locally and are included in project backups; finding-resolution choices reset after reload in this beta.",
   decisions:
     "Decision history is a preview until create and supersede operations are persisted.",
   "next-steps":

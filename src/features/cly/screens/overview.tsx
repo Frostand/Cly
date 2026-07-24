@@ -34,47 +34,24 @@ const LIFECYCLE_STEPS = [
   "Claim",
 ];
 
-const OVERVIEW_ACTIVITY: Array<{
+type OverviewActivity = {
   id: string;
   icon: LucideIcon;
   title: string;
   detail: string;
   time: string;
   screen: ScreenId;
-}> = [
-  {
-    id: "exp-03",
-    icon: Beaker,
-    title: "Discordance sensitivity analysis is running",
-    detail: "Threshold grid · 3 of 4 definitions complete",
-    time: "Today · 19:29",
-    screen: "experiments",
-  },
-  {
-    id: "nb-02",
-    icon: FileText,
-    title: "Prediction notebook passed deterministic rerun",
-    detail: "Cohort, AUC, Brier score, and subgroup results match",
-    time: "Today · 19:18",
-    screen: "notebooks",
-  },
-  {
-    id: "session-01",
-    icon: Bot,
-    title: "Claim audit entered clinical-language review",
-    detail: "Separating biomarker discordance from event prediction",
-    time: "Today · 19:04",
-    screen: "agents",
-  },
-  {
-    id: "decision-04",
-    icon: Lightbulb,
-    title: "Outcome guardrail recorded",
-    detail: "Model predicts LDL-C/ApoB discordance, not heart attacks",
-    time: "Today · 18:56",
-    screen: "decisions",
-  },
-];
+};
+
+const formatActivityTime = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+};
 
 function EvidenceLedgerRow({
   tone,
@@ -207,6 +184,50 @@ export function OverviewScreen() {
         : data.sources.length
           ? 1
           : 0;
+  const recentActivity: OverviewActivity[] = [
+    ...data.activity.map((item) => ({
+      id: item.id,
+      icon:
+        item.type === "agent"
+          ? Bot
+          : item.type === "audit"
+            ? ShieldCheck
+            : FileText,
+      title: item.title,
+      detail: item.detail,
+      time: formatActivityTime(item.time),
+      screen:
+        item.type === "agent"
+          ? ("agents" as const)
+          : item.type === "audit"
+            ? ("reproducibility" as const)
+            : ("sources" as const),
+    })),
+    ...data.runs.map((run) => ({
+      id: run.id,
+      icon: Beaker,
+      title: `${run.name} is ${run.status.toLowerCase()}`,
+      detail: `${Object.keys(run.metrics).length} recorded metrics · ${run.reproducibility} reproducibility`,
+      time: formatActivityTime(run.startedAt),
+      screen: "experiments" as const,
+    })),
+    ...data.sources.map((source) => ({
+      id: source.id,
+      icon: FileText,
+      title: `${source.title} added to sources`,
+      detail: `${source.type} · ${source.status}`,
+      time: formatActivityTime(source.updatedAt),
+      screen: "sources" as const,
+    })),
+    ...data.claims.map((claim) => ({
+      id: claim.id,
+      icon: Lightbulb,
+      title: "Research claim updated",
+      detail: `${claim.status} · ${claim.text}`,
+      time: formatActivityTime(claim.updatedAt),
+      screen: "claims" as const,
+    })),
+  ].slice(0, 4);
 
   const openBrief = () => {
     if (!project) return;
@@ -416,18 +437,26 @@ export function OverviewScreen() {
               title="Recent research activity"
               subtitle="A linked timeline across experiments, notebooks, sources, and decisions"
             >
-              <div className="cly-timeline">
-                {OVERVIEW_ACTIVITY.map((item) => (
-                  <ResearchActivityItem
-                    key={item.id}
-                    {...item}
-                    onClick={() => {
-                      setScreen(item.screen);
-                      setSelected(item.id);
-                    }}
-                  />
-                ))}
-              </div>
+              {recentActivity.length ? (
+                <div className="cly-timeline">
+                  {recentActivity.map((item) => (
+                    <ResearchActivityItem
+                      key={item.id}
+                      {...item}
+                      onClick={() => {
+                        setScreen(item.screen);
+                        setSelected(item.id);
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  title="No research activity yet"
+                  description="Create a source, experiment, run, or claim to begin the project timeline."
+                  icon={<Beaker aria-hidden="true" />}
+                />
+              )}
             </Section>
           </div>
 

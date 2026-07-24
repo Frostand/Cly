@@ -156,6 +156,139 @@
   }
 }
 
+@layer components {
+  .cly-file-input {
+    position: relative;
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    gap: var(--cly-space-3);
+    border: 1px dashed var(--cly-border);
+    border-radius: var(--cly-radius);
+    background: var(--cly-workspace);
+    padding: var(--cly-space-3);
+    color: var(--cly-text);
+    cursor: pointer;
+  }
+
+  .cly-file-input:hover {
+    border-color: var(--cly-accent);
+    background: var(--cly-surface-hover);
+  }
+
+  .cly-file-input:focus-within {
+    border-color: var(--cly-accent);
+    box-shadow: 0 0 0 3px var(--cly-focus-ring);
+  }
+
+  .cly-file-input svg {
+    color: var(--cly-text-muted);
+  }
+
+  .cly-file-input input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+  }
+
+  .cly-analysis-predictors {
+    min-width: 0;
+    margin: 0;
+    border: 1px solid var(--cly-divider);
+    border-radius: var(--cly-radius);
+    padding: var(--cly-space-3);
+  }
+
+  .cly-analysis-predictors legend {
+    padding-inline: var(--cly-space-1);
+    color: var(--cly-text);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .cly-analysis-predictors > p {
+    margin: 0 0 var(--cly-space-2);
+    color: var(--cly-text-muted);
+    font-size: 10px;
+  }
+
+  .cly-analysis-predictors > div {
+    max-height: 190px;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-top: 1px solid var(--cly-divider);
+  }
+
+  .cly-analysis-predictors label {
+    min-width: 0;
+    min-height: 34px;
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--cly-space-2);
+    border-bottom: 1px solid var(--cly-divider);
+    padding: 0 var(--cly-space-2);
+    font-size: 10px;
+  }
+
+  .cly-analysis-predictors label:nth-child(odd) {
+    border-right: 1px solid var(--cly-divider);
+  }
+
+  .cly-analysis-predictors label span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cly-analysis-predictors label small {
+    color: var(--cly-text-faint);
+    font-size: 9px;
+  }
+
+  .cly-analysis-result-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--cly-space-3);
+  }
+
+  .cly-analysis-result-grid .cly-row-between {
+    min-height: 28px;
+    border-bottom: 1px solid var(--cly-divider);
+  }
+
+  .cly-analysis-warning-list {
+    border-block: 1px solid var(--cly-divider);
+    padding-block: var(--cly-space-3);
+  }
+
+  .cly-analysis-warning-list p {
+    margin: var(--cly-space-1) 0;
+    color: var(--cly-text-muted);
+    font-size: 10px;
+    line-height: 1.45;
+  }
+
+  .cly-callout[data-tone="success"] {
+    border-left-color: var(--cly-success);
+    background: var(--cly-success-soft);
+  }
+
+  @media (max-width: 620px) {
+    .cly-analysis-predictors > div,
+    .cly-analysis-result-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .cly-analysis-predictors label:nth-child(odd) {
+      border-right: 0;
+    }
+  }
+}
+
 @layer v4 {
   .cly-beta-banner {
     min-height: 32px;
@@ -9110,12 +9243,15 @@
     display: grid;
     place-items: start center;
     background: rgb(0 0 0 / 0.42);
-    padding-top: min(16vh, 140px);
+    padding: clamp(16px, 8vh, 100px) 16px;
     backdrop-filter: blur(2px);
   }
   .cly-dialog {
     width: min(520px, calc(100vw - 32px));
-    max-height: min(700px, calc(100vh - 70px));
+    max-height: min(
+      700px,
+      calc(100vh - clamp(16px, 8vh, 100px) - clamp(16px, 8vh, 100px))
+    );
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -9127,7 +9263,7 @@
   .cly-dialog[data-state] {
     position: fixed;
     z-index: 81;
-    top: min(16vh, 140px);
+    top: clamp(16px, 8vh, 100px);
     left: 50%;
     transform: translateX(-50%);
   }
@@ -9237,7 +9373,7 @@
   }
   .cly-toast-stack {
     position: fixed;
-    z-index: 100;
+    z-index: 70;
     right: 16px;
     bottom: 16px;
     width: min(360px, calc(100vw - 32px));

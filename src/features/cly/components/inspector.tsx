@@ -71,6 +71,18 @@ const inspectorFields: Record<string, string[]> = {
     "limitations",
     "nextStep",
   ],
+  run: [
+    "status",
+    "experimentId",
+    "startedAt",
+    "duration",
+    "environment",
+    "codeVersion",
+    "metrics",
+    "config",
+    "reproducibility",
+    "canonical",
+  ],
   notebook: [
     "path",
     "status",

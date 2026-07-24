@@ -2,6 +2,10 @@ import type {
   ExperimentDefinitionContent,
   ExperimentDefinitionVersion,
   ExperimentLineage,
+  ExperimentRun as ProvenanceExperimentRun,
+  RunArtifact,
+  RunMetric,
+  RunStatus,
 } from "../../research/contracts/experiment-provenance";
 import type {
   AgentConfiguration,
@@ -228,6 +232,18 @@ const projectPath = (projectId: string) =>
 
 /** Typed client for the SQLite-backed research API. */
 export const apiClient = {
+  fetchProjects() {
+    return request<
+      Array<{
+        id: string;
+        name: string;
+        path: string;
+        metadata: Record<string, unknown>;
+        updatedAt: string;
+      }>
+    >("/api/research/projects");
+  },
+
   ensureProject(project: ResearchProject) {
     return request<{
       id: string;
@@ -486,6 +502,89 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify(input),
     });
+  },
+
+  reviseExperimentDefinition(
+    projectId: string,
+    experimentId: string,
+    definition: ExperimentDefinitionContent,
+  ) {
+    return request<ExperimentDefinitionVersion>(
+      `/api/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/definitions`,
+      { method: "POST", body: JSON.stringify({ definition }) },
+    );
+  },
+
+  createExperimentRun(
+    projectId: string,
+    experimentId: string,
+    input: {
+      title: string;
+      description?: string;
+      status?: RunStatus;
+      commitSha: string;
+      configuration?: Record<string, unknown>;
+      datasets?: ExperimentDefinitionContent["datasets"];
+      codeRefs?: Array<{ path: string; contentHash?: string }>;
+      startedAt?: string;
+    },
+  ) {
+    return request<ProvenanceExperimentRun>(
+      `/api/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/runs`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  logExperimentRunMetrics(
+    projectId: string,
+    runId: string,
+    metrics: Array<{
+      name: string;
+      value: number;
+      unit?: string | null;
+      step?: number | null;
+    }>,
+  ) {
+    return request<RunMetric[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/metrics`,
+      { method: "POST", body: JSON.stringify({ metrics }) },
+    );
+  },
+
+  registerExperimentRunArtifact(
+    projectId: string,
+    runId: string,
+    input: {
+      title: string;
+      description?: string;
+      kind: "figure" | "table" | "file";
+      path: string;
+      mediaType: string;
+      contentHash: string;
+      generatorPath?: string | null;
+      generatorHash?: string | null;
+      generatedAt?: string;
+    },
+  ) {
+    return request<RunArtifact>(
+      `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/artifacts`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  updateExperimentRunStatus(
+    projectId: string,
+    runId: string,
+    input: {
+      status: Exclude<RunStatus, "planned">;
+      finishedAt?: string | null;
+      exitCode?: number | null;
+    },
+  ) {
+    return request<ProvenanceExperimentRun>(
+      `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/status`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
   },
 
   fetchPreregistrations(projectId: string) {

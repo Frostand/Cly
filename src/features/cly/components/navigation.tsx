@@ -18,7 +18,6 @@ import {
   Goal,
   HardDrive,
   Library,
-  Lightbulb,
   ListChecks,
   ListTodo,
   Monitor,
@@ -26,6 +25,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelsTopLeft,
+  Plus,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -435,6 +435,7 @@ export function ProjectSwitcherPopover() {
   const activeProjectId = useClyStore((s) => s.activeProjectId);
   const setProject = useClyStore((s) => s.setActiveProject);
   const setOpen = useClyStore((s) => s.setProjectSwitcherOpen);
+  const createProject = useClyStore((s) => s.createResearchProject);
   if (!open) return null;
   return (
     <>
@@ -477,17 +478,28 @@ export function ProjectSwitcherPopover() {
         <button
           className="cly-popover-item"
           type="button"
+          data-testid="new-local-project"
           onClick={() => {
-            setOpen(false);
-            useClyStore
-              .getState()
-              .notify(
-                "Open Project",
-                "The native folder picker is retained from Dream and will be connected to Cly project creation in Phase 2.",
-              );
+            void createProject()
+              .then(() => {
+                useClyStore
+                  .getState()
+                  .notify(
+                    "Local project created",
+                    "Define the research question and hypothesis to begin.",
+                  );
+              })
+              .catch((error) => {
+                useClyStore
+                  .getState()
+                  .notify(
+                    "Project was not created",
+                    error instanceof Error ? error.message : "Try again.",
+                  );
+              });
           }}
         >
-          <Lightbulb size={15} /> Open another project…
+          <Plus size={15} /> New local project
         </button>
       </div>
     </>

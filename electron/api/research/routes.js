@@ -178,6 +178,17 @@ export function registerResearchRoutes(
   registerPreregistrationRoutes(app, { getRepository });
   registerObligationRoutes(app, { getService: getObligationService });
 
+  app.get("/api/research/projects", (c) => {
+    try {
+      return c.json(getRepository().listProjects());
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Project query failed.",
+        400,
+      );
+    }
+  });
+
   app.put("/api/projects/:projectId/research", async (c) => {
     const body = await readJson(c);
     if (body.error) return body.error;

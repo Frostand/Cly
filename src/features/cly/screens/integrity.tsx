@@ -434,8 +434,7 @@ export function ReproducibilityScreen() {
             </Button>
             <Button
               variant="primary"
-              disabled={!isClyDemoRuntime || running}
-              title={capabilityUnavailableMessage("reproducibility.audit")}
+              disabled={running}
               onClick={() => void runAudit()}
             >
               <RefreshCw size={13} className={running ? "animate-spin" : ""} />
@@ -451,8 +450,7 @@ export function ReproducibilityScreen() {
           action={
             <Button
               variant="primary"
-              disabled={!isClyDemoRuntime || running}
-              title={capabilityUnavailableMessage("reproducibility.audit")}
+              disabled={running}
               onClick={() => void runAudit()}
             >
               Run audit

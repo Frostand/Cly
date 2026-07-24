@@ -22,6 +22,7 @@ import {
   Play,
   Plus,
   Sparkles,
+  Upload,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -38,6 +39,14 @@ import {
 } from "../components/primitives";
 import { ClyDataTable, ClyMenu } from "../components/toolkit";
 import { VisualMetric } from "../components/visuals";
+import {
+  type AnalysisTask,
+  type LocalAnalysisResult,
+  type ParsedDataset,
+  parseDelimitedDataset,
+  runLocalAnalysis,
+  sha256Hex,
+} from "../domain/local-analysis";
 import type {
   Experiment,
   ExperimentRun,
@@ -115,6 +124,20 @@ export function ExperimentsScreen() {
   const [analysisSeed, setAnalysisSeed] = useState("");
   const [analysisFolds, setAnalysisFolds] = useState("");
   const [analysisFeatures, setAnalysisFeatures] = useState("");
+  const [localDataset, setLocalDataset] = useState<ParsedDataset | null>(null);
+  const [localDatasetText, setLocalDatasetText] = useState("");
+  const [localDatasetHash, setLocalDatasetHash] = useState("");
+  const [localTask, setLocalTask] = useState<AnalysisTask>("auto");
+  const [localOutcome, setLocalOutcome] = useState("");
+  const [localPredictors, setLocalPredictors] = useState<string[]>([]);
+  const [localSeed, setLocalSeed] = useState("42");
+  const [localFolds, setLocalFolds] = useState("5");
+  const [localAnalysisError, setLocalAnalysisError] = useState("");
+  const [localResult, setLocalResult] = useState<LocalAnalysisResult | null>(
+    null,
+  );
+  const [localRunId, setLocalRunId] = useState<string | null>(null);
+  const guidedAnalysis = isClyDemoRuntime && fixtureMode === "guided";
   const experiments = data.experiments.filter(
     (item) =>
       (!query ||
@@ -259,6 +282,110 @@ export function ExperimentsScreen() {
     }
   };
 
+  const openAnalysis = () => {
+    setLocalAnalysisError("");
+    setLocalResult(null);
+    setLocalRunId(null);
+    setAnalysisOpen(true);
+  };
+
+  const importLocalDataset = async (file: File | undefined) => {
+    if (!file) return;
+    setLocalAnalysisError("");
+    setLocalResult(null);
+    setLocalRunId(null);
+    if (file.size > 20_000_000) {
+      setLocalDataset(null);
+      setLocalAnalysisError(
+        "The free beta supports dataset files up to 20 MB.",
+      );
+      return;
+    }
+    try {
+      const text = await file.text();
+      const parsed = parseDelimitedDataset(text, file.name);
+      const hash = await sha256Hex(text);
+      const outcomeCandidate = parsed.columns.at(-1)?.name ?? "";
+      const predictors = parsed.columns
+        .filter(
+          (column) =>
+            column.kind === "numeric" && column.name !== outcomeCandidate,
+        )
+        .slice(0, 12)
+        .map((column) => column.name);
+      setLocalDataset(parsed);
+      setLocalDatasetText(text);
+      setLocalDatasetHash(hash);
+      setLocalOutcome(outcomeCandidate);
+      setLocalPredictors(predictors);
+    } catch (error) {
+      setLocalDataset(null);
+      setLocalDatasetText("");
+      setLocalDatasetHash("");
+      setLocalAnalysisError(
+        error instanceof Error
+          ? error.message
+          : "The dataset could not be read.",
+      );
+    }
+  };
+
+  const runConfiguredAnalysis = async () => {
+    if (
+      !selectedExperiment ||
+      !localDataset ||
+      !localDatasetText ||
+      !localDatasetHash ||
+      !localOutcome ||
+      !localPredictors.length
+    )
+      return;
+    setAnalysisRunning(true);
+    setLocalAnalysisError("");
+    try {
+      setAnalysisStage("Validating rows and building deterministic folds…");
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      const result = runLocalAnalysis({
+        dataset: localDataset,
+        outcome: localOutcome,
+        predictors: localPredictors,
+        task: localTask,
+        folds: Number(localFolds),
+        seed: Number(localSeed),
+      });
+      setAnalysisStage(
+        "Saving metrics, provenance, result artifact, and claim…",
+      );
+      const source = await projectServices.sources.create({
+        title: localDataset.fileName,
+        type: "Dataset",
+        authors: "Local dataset import",
+        year: new Date().getFullYear(),
+        summary: `${localDataset.rowCount} rows · ${localDataset.columns.length} columns · SHA-256 ${localDatasetHash}. Imported locally for ${result.task}.`,
+      });
+      const recorded = await projectServices.experiments.recordLocalAnalysis({
+        experimentId: selectedExperiment.id,
+        datasetSourceId: source.id,
+        datasetFileName: localDataset.fileName,
+        datasetHash: localDatasetHash,
+        result,
+      });
+      setLocalResult(result);
+      setLocalRunId(recorded.runId);
+      notify(
+        "Local analysis complete",
+        "Computed metrics, dataset checksum, provenance, result artifact, and a reviewable claim were saved locally.",
+      );
+    } catch (error) {
+      setLocalAnalysisError(
+        error instanceof Error ? error.message : "The local analysis failed.",
+      );
+    } finally {
+      setAnalysisRunning(false);
+      setAnalysisStage("");
+    }
+  };
+
   return (
     <div className="cly-page cly-page-wide cly-route-experiments">
       <PageHeader
@@ -276,11 +403,13 @@ export function ExperimentsScreen() {
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               <Plus size={13} /> New experiment
             </Button>
-            {isClyDemoRuntime && fixtureMode === "guided" ? (
+            {data.experiments.length ? (
               <Button
-                data-testid="run-guided-analysis"
-                disabled={!data.sources.length || !data.experiments.length}
-                onClick={() => setAnalysisOpen(true)}
+                data-testid={
+                  guidedAnalysis ? "run-guided-analysis" : "run-local-analysis"
+                }
+                disabled={guidedAnalysis && !data.sources.length}
+                onClick={openAnalysis}
               >
                 <Play size={13} /> Run analysis
               </Button>
@@ -638,7 +767,7 @@ export function ExperimentsScreen() {
         </div>
       </Dialog>
       <Dialog
-        open={analysisOpen}
+        open={analysisOpen && guidedAnalysis}
         onClose={() => {
           if (!analysisRunning) setAnalysisOpen(false);
         }}
@@ -751,6 +880,265 @@ export function ExperimentsScreen() {
             </div>
           )}
         </div>
+      </Dialog>
+      <Dialog
+        open={analysisOpen && !guidedAnalysis}
+        onClose={() => {
+          if (!analysisRunning) setAnalysisOpen(false);
+        }}
+        wide
+        title="Run local dataset analysis"
+        description="Import a numeric CSV or TSV, map an outcome and predictors, and save a real cross-validated result without sending data off-device."
+        footer={
+          localResult ? (
+            <>
+              <Button onClick={() => setAnalysisOpen(false)}>Close</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setAnalysisOpen(false);
+                  setView("Runs");
+                  setSelected(localRunId);
+                }}
+              >
+                Review saved run <ArrowRight size={13} />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                disabled={analysisRunning}
+                onClick={() => setAnalysisOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={
+                  analysisRunning ||
+                  !localDataset ||
+                  !localOutcome ||
+                  !localPredictors.length ||
+                  !Number.isInteger(Number(localSeed)) ||
+                  !Number.isInteger(Number(localFolds)) ||
+                  Number(localFolds) < 2 ||
+                  Number(localFolds) > 10
+                }
+                onClick={() => void runConfiguredAnalysis()}
+                data-testid="execute-local-analysis"
+              >
+                {analysisRunning ? (
+                  <>
+                    <LoaderCircle className="animate-spin" size={13} /> Running…
+                  </>
+                ) : (
+                  <>
+                    <Play size={13} /> Compute and save result
+                  </>
+                )}
+              </Button>
+            </>
+          )
+        }
+      >
+        {localResult ? (
+          <div className="cly-stack" data-testid="local-analysis-result">
+            <div className="cly-callout" data-tone="success">
+              <Check size={14} />
+              <span>
+                <strong>Computed locally and saved.</strong>{" "}
+                {localResult.conclusion}
+              </span>
+            </div>
+            <div className="cly-analysis-result-grid">
+              <Panel className="cly-panel-body">
+                <div className="cly-inspector-label">
+                  Cross-validation metrics
+                </div>
+                {Object.entries(localResult.metrics).map(([name, value]) => (
+                  <div className="cly-row-between" key={name}>
+                    <span className="cly-muted cly-small">{name}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </Panel>
+              <Panel className="cly-panel-body">
+                <div className="cly-inspector-label">
+                  Standardized coefficients
+                </div>
+                {localResult.coefficients.slice(0, 8).map((coefficient) => (
+                  <div className="cly-row-between" key={coefficient.feature}>
+                    <span className="cly-small">{coefficient.feature}</span>
+                    <span className="cly-mono cly-small">
+                      {coefficient.value}
+                    </span>
+                  </div>
+                ))}
+              </Panel>
+            </div>
+            <div className="cly-analysis-warning-list">
+              <div className="cly-inspector-label">
+                Required interpretation limits
+              </div>
+              {localResult.warnings.map((warning) => (
+                <p key={warning}>{warning}</p>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="cly-stack">
+            <div className="cly-callout" data-tone="warning">
+              Use de-identified, non-regulated data only. Cly reads this file in
+              the local renderer and records its checksum; the raw rows are not
+              copied into the project database.
+            </div>
+            <div className="cly-field">
+              <label htmlFor="local-analysis-file">Dataset file</label>
+              <label className="cly-file-input" htmlFor="local-analysis-file">
+                <Upload size={15} />
+                <span>
+                  {localDataset
+                    ? localDataset.fileName
+                    : "Choose a CSV, TSV, or delimited text file"}
+                </span>
+                <input
+                  id="local-analysis-file"
+                  data-testid="local-analysis-file"
+                  type="file"
+                  accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"
+                  onChange={(event) =>
+                    void importLocalDataset(event.target.files?.[0])
+                  }
+                />
+              </label>
+              {localDataset ? (
+                <div className="cly-inline-metadata">
+                  <span>{localDataset.rowCount.toLocaleString()} rows</span>
+                  <span>{localDataset.columns.length} columns</span>
+                  <span>{localDatasetHash.slice(0, 12)}… SHA-256</span>
+                </div>
+              ) : null}
+            </div>
+            {localDataset ? (
+              <>
+                <div className="cly-grid-2">
+                  <div className="cly-field">
+                    <label htmlFor="local-analysis-outcome">
+                      Outcome column
+                    </label>
+                    <select
+                      id="local-analysis-outcome"
+                      className="cly-select"
+                      value={localOutcome}
+                      onChange={(event) => {
+                        const outcome = event.target.value;
+                        setLocalOutcome(outcome);
+                        setLocalPredictors((current) =>
+                          current.filter((predictor) => predictor !== outcome),
+                        );
+                      }}
+                    >
+                      {localDataset.columns.map((column) => (
+                        <option key={column.name} value={column.name}>
+                          {column.name} · {column.kind} · {column.uniqueCount}{" "}
+                          values
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="cly-field">
+                    <label htmlFor="local-analysis-task">Analysis type</label>
+                    <select
+                      id="local-analysis-task"
+                      className="cly-select"
+                      value={localTask}
+                      onChange={(event) =>
+                        setLocalTask(event.target.value as AnalysisTask)
+                      }
+                    >
+                      <option value="auto">Auto-detect</option>
+                      <option value="classification">
+                        Binary classification
+                      </option>
+                      <option value="regression">Numeric regression</option>
+                    </select>
+                  </div>
+                </div>
+                <fieldset className="cly-analysis-predictors">
+                  <legend>Numeric predictors</legend>
+                  <p>
+                    Select variables available at prediction time. Do not
+                    include downstream outcomes.
+                  </p>
+                  <div>
+                    {localDataset.columns
+                      .filter(
+                        (column) =>
+                          column.kind === "numeric" &&
+                          column.name !== localOutcome,
+                      )
+                      .map((column) => (
+                        <label key={column.name}>
+                          <input
+                            type="checkbox"
+                            checked={localPredictors.includes(column.name)}
+                            onChange={(event) =>
+                              setLocalPredictors((current) =>
+                                event.target.checked
+                                  ? [...current, column.name]
+                                  : current.filter(
+                                      (predictor) => predictor !== column.name,
+                                    ),
+                              )
+                            }
+                          />
+                          <span>{column.name}</span>
+                          <small>
+                            {Math.round(column.missingRate * 100)}% missing
+                          </small>
+                        </label>
+                      ))}
+                  </div>
+                </fieldset>
+                <div className="cly-grid-2">
+                  <div className="cly-field">
+                    <label htmlFor="local-analysis-seed">Random seed</label>
+                    <input
+                      id="local-analysis-seed"
+                      className="cly-input"
+                      inputMode="numeric"
+                      value={localSeed}
+                      onChange={(event) => setLocalSeed(event.target.value)}
+                    />
+                  </div>
+                  <div className="cly-field">
+                    <label htmlFor="local-analysis-folds">
+                      Cross-validation folds
+                    </label>
+                    <input
+                      id="local-analysis-folds"
+                      className="cly-input"
+                      inputMode="numeric"
+                      value={localFolds}
+                      onChange={(event) => setLocalFolds(event.target.value)}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : null}
+            {analysisStage ? (
+              <div className="cly-callout" role="status">
+                <LoaderCircle className="animate-spin" size={13} />
+                {analysisStage}
+              </div>
+            ) : null}
+            {localAnalysisError ? (
+              <div className="cly-callout" data-tone="danger" role="alert">
+                {localAnalysisError}
+              </div>
+            ) : null}
+          </div>
+        )}
       </Dialog>
     </div>
   );
