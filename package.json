@@ -4,6 +4,7 @@
   "description": "Cly is an AI-native research operating system.",
   "version": "0.5.0",
   "private": true,
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "pnpm electron:dev",
     "demo": "cross-env VITE_CLY_DEMO_MODE=1 pnpm electron:dev",
@@ -165,6 +166,14 @@
       {
         "from": "public/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "NOTICE.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "licenses/DREAM_IDE-MIT.txt",
+        "to": "licenses/DREAM_IDE-MIT.txt"
       }
     ],
     "icon": "public/icon.png",

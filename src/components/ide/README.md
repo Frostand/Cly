@@ -25,5 +25,8 @@ not Cly product code.
 ## Upstream
 
 These files originated from [Dream IDE](https://github.com/dreamide/dream).
+They remain covered by Dream IDE's MIT license, preserved at
+[`licenses/DREAM_IDE-MIT.txt`](../../../licenses/DREAM_IDE-MIT.txt). That
+third-party license does not apply to Cly's original source code.
 See `docs/DREAM_UI_AUDIT.md` for the full inventory of what was retained,
 replaced, or deferred.

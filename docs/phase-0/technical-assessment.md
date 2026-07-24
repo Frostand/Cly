@@ -10,7 +10,7 @@ Dream is a viable foundation for Cly. It is an MIT-licensed Electron application
 
 | Area | Evidence | Finding | Cly action |
 |---|---|---|---|
-| License | `LICENSE`, `README.md` | MIT permits commercial modification and distribution with notice preservation. | Reuse; preserve license and `NOTICE.md`. |
+| License | `licenses/DREAM_IDE-MIT.txt`, `NOTICE.md`, `README.md` | Dream IDE's MIT license permits commercial modification and distribution with notice preservation; it does not require Cly's original code to be open source. | Reuse Dream-derived code under its scoped third-party notice; keep Cly proprietary. |
 | Desktop | `electron/main.js`, `package.json` | Electron desktop targets macOS, Windows, and Linux. There is no supported standalone browser product. | Reuse desktop shell. |
 | Renderer | `src/main.tsx`, `vite.config.ts` | React 19 and Vite 8 renderer with Tailwind/shadcn-style components. | Reuse and extend feature-by-feature. |
 | Editor | `src/components/ide/project-workspace.tsx` | File navigation/diffs and external-editor launching; not an embedded Monaco/VS Code extension host. | Extend; do not assume VS Code extension compatibility. |

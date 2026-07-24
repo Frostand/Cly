@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Product name is `Cly`; package and executable identifiers use lowercase `cly` where required.
-- Preserve the MIT license and explicitly attribute `dreamide/dream` as the upstream foundation.
+- Preserve Dream IDE's MIT license as a scoped third-party notice and explicitly attribute `dreamide/dream` as the upstream foundation; do not license Cly's original code under it.
 - Never publish to Dream's release repository or contact Dream's update feed from Cly builds.
 - Keep `origin` as `Frostand/Cly` and `upstream` as `dreamide/dream`.
 - Keep research data local-first; provider secrets must not be stored in SQLite or project files.
@@ -111,7 +111,7 @@
 - [ ] Inspect Electron main/preload/renderer boundaries, API routes, DB schema, agent adapters, Git/terminal services, updater, packaging, and test coverage.
 - [ ] Record concrete file references and current risks; do not claim unsupported extension APIs.
 - [ ] Classify each major subsystem as reuse unchanged, extend behind an interface, or replace.
-- [ ] Document the MIT license obligations, upstream release strategy, and packaging commands.
+- [ ] Document Dream IDE's scoped MIT obligations, Cly's proprietary ownership, upstream release strategy, and packaging commands.
 - [ ] Run a link/path scan over the reports and commit as `docs: complete Dream phase zero assessment`.
 
 ### Task 5: Research domain primitives and relational graph
@@ -187,4 +187,3 @@
 - [ ] Inspect `git diff origin/main...HEAD`, generated files, release coordinates, and all remaining `dreamide` references.
 - [ ] Confirm remaining Dream references are attribution, upstream-sync, migration compatibility, or third-party provider identifiers.
 - [ ] Push the feature branch and open a draft pull request with validation results and known limitations.
-

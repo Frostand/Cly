@@ -1,9 +1,13 @@
-# Attribution
+# Third-party notices
 
-Cly previously incorporated Dream IDE code, originally developed by the Dream contributors:
+Cly includes code derived from Dream IDE, originally developed by the Dream
+contributors:
 
 - Upstream source: https://github.com/dreamide/dream
 - Upstream project: https://dreamide.app
 - License: MIT
 
-The original copyright and permission notice are preserved in `LICENSE` and in the repository history. Dream IDE runtime code has been removed from the active Cly tree; Cly is not presented as an official Dream IDE release.
+The original Dream IDE copyright and permission notice are preserved in
+`licenses/DREAM_IDE-MIT.txt`. That license applies only to Dream IDE-derived
+material and does not license Cly's original source code. Cly is not presented
+as an official Dream IDE release.

@@ -58,6 +58,17 @@ beta testers can run Cly from source or use the unpacked development package;
 public macOS distribution, signing, and notarization are a separate release
 track.
 
+## Ownership
+
+Cly is proprietary software and is not distributed under an open-source
+license. Copyright © 2026 Cly. All rights reserved. No permission is granted to
+copy, modify, distribute, sublicense, or sell Cly's original source code.
+
+Third-party components retain their own licenses. Cly includes code derived
+from MIT-licensed Dream IDE; the attribution and license for that inherited
+material are preserved in [NOTICE.md](NOTICE.md) and
+[licenses/DREAM_IDE-MIT.txt](licenses/DREAM_IDE-MIT.txt).
+
 ## Development
 
 Requirements: Node.js 22 or newer and pnpm 11.
