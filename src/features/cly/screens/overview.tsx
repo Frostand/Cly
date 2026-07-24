@@ -7,9 +7,8 @@ import {
   Lightbulb,
   type LucideIcon,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
-import { type CSSProperties, type ReactNode, useState } from "react";
+import { type CSSProperties, type ReactNode, useRef, useState } from "react";
 import { LocalStatusBanner } from "../components/chrome";
 import {
   Badge,
@@ -21,18 +20,13 @@ import {
   Section,
   toneForStatus,
 } from "../components/primitives";
-import { ResearchLifecycle, VisualMetric } from "../components/visuals";
+import {
+  deriveResearchLoop,
+  hasSubstantiveResearchText,
+  ResearchLoopWorkspace,
+} from "../components/research-loop";
 import type { ScreenId, StatusTone } from "../domain/types";
 import { useClyStore } from "../store/cly-store";
-
-const LIFECYCLE_STEPS = [
-  "Question",
-  "Sources",
-  "Method",
-  "Experiment",
-  "Evidence",
-  "Claim",
-];
 
 type OverviewActivity = {
   id: string;
@@ -158,12 +152,14 @@ export function OverviewScreen() {
   const setSelected = useClyStore((s) => s.setSelected);
   const updateActiveProject = useClyStore((s) => s.updateActiveProject);
   const notify = useClyStore((s) => s.notify);
+  const preregistrations = useClyStore((s) => s.preregistrations);
   const [briefOpen, setBriefOpen] = useState(false);
   const [briefName, setBriefName] = useState("");
   const [briefQuestion, setBriefQuestion] = useState("");
   const [briefHypothesis, setBriefHypothesis] = useState("");
   const [briefDescription, setBriefDescription] = useState("");
   const [savingBrief, setSavingBrief] = useState(false);
+  const briefTriggerRef = useRef<HTMLElement | null>(null);
   const project =
     data.projects.find((item) => item.id === activeProjectId) ??
     data.projects[0];
@@ -175,15 +171,30 @@ export function OverviewScreen() {
   )[0];
   const audit = data.audits[0];
   const next = data.nextSteps.find((item) => item.status === "Recommended");
-  const lifecycleStep = data.claims.length
-    ? 5
-    : data.runs.length
-      ? 4
-      : data.experiments.length
-        ? 3
-        : data.sources.length
-          ? 1
-          : 0;
+  const researchLoop = deriveResearchLoop({
+    hasQuestion: hasSubstantiveResearchText(project?.question ?? ""),
+    hasHypothesis: hasSubstantiveResearchText(project?.hypothesis ?? ""),
+    reviewedSourceCount: data.sources.filter(
+      (source) => source.status === "Reviewed",
+    ).length,
+    preregistrationCount: preregistrations.length,
+    completedRunCount: data.runs.filter((run) => run.status === "Complete")
+      .length,
+    reproducibleRunCount: data.runs.filter(
+      (run) => run.status === "Complete" && run.reproducibility === "Verified",
+    ).length,
+    evidenceLinkCount: data.graphEdges.length,
+    claimCount: data.claims.length,
+    supportedClaimCount: data.claims.filter(
+      (claim) =>
+        ["Medium", "Strong", "Paper-ready"].includes(claim.status) &&
+        claim.supportingSourceIds.length + claim.experimentIds.length > 0,
+    ).length,
+    auditScore: audit?.score ?? null,
+    openIntegrityFindingCount: data.findings.filter(
+      (finding) => finding.status === "Open",
+    ).length,
+  });
   const recentActivity: OverviewActivity[] = [
     ...data.activity.map((item) => ({
       id: item.id,
@@ -229,8 +240,9 @@ export function OverviewScreen() {
     })),
   ].slice(0, 4);
 
-  const openBrief = () => {
+  const openBrief = (trigger?: HTMLElement) => {
     if (!project) return;
+    if (trigger) briefTriggerRef.current = trigger;
     setBriefName(
       project.name === "Untitled research project" ? "" : project.name,
     );
@@ -245,6 +257,11 @@ export function OverviewScreen() {
     setBriefOpen(true);
   };
 
+  const closeBrief = () => {
+    setBriefOpen(false);
+    window.requestAnimationFrame(() => briefTriggerRef.current?.focus());
+  };
+
   const saveBrief = async () => {
     if (!briefName.trim() || !briefQuestion.trim()) return;
     setSavingBrief(true);
@@ -257,7 +274,7 @@ export function OverviewScreen() {
         description:
           briefDescription.trim() || "Local research project in Cly.",
       });
-      setBriefOpen(false);
+      closeBrief();
       notify(
         "Research brief saved",
         "The question now anchors sources, experiments, evidence, and claims.",
@@ -287,7 +304,7 @@ export function OverviewScreen() {
   return (
     <div className="cly-page cly-route-overview">
       <PageHeader
-        kicker="Project overview"
+        kicker="Research workspace"
         title={project.name}
         description={project.description}
         actions={
@@ -298,7 +315,10 @@ export function OverviewScreen() {
             <Button onClick={() => setScreen("graph")}>
               <GitBranch aria-hidden="true" /> Open project graph
             </Button>
-            <Button data-testid="edit-project-brief" onClick={openBrief}>
+            <Button
+              data-testid="edit-project-brief"
+              onClick={(event) => openBrief(event.currentTarget)}
+            >
               Edit brief
             </Button>
           </>
@@ -306,74 +326,24 @@ export function OverviewScreen() {
       />
       <LocalStatusBanner />
 
-      <ResearchLifecycle steps={LIFECYCLE_STEPS} current={lifecycleStep} />
+      <ResearchLoopWorkspace
+        snapshot={researchLoop}
+        question={project.question}
+        hypothesis={project.hypothesis}
+        recommendedNext={
+          next ? { title: next.title, rationale: next.rationale } : null
+        }
+        onOpenBrief={openBrief}
+        onOpenScreen={setScreen}
+      />
 
-      <section className="cly-visual-metrics" aria-label="Project summary">
-        <VisualMetric
-          label="Research phase"
-          value={project.phase}
-          detail="Updated today"
-        />
-        <VisualMetric
-          label="Active claims"
-          value={data.claims.length}
-          detail={`${data.claims.filter((item) => item.status === "Weak" || item.status === "Needs review").length} need attention`}
-          tone="warning"
-        />
-        <VisualMetric
-          label="Experiments"
-          value={data.experiments.length}
-          detail={`${data.experiments.filter((item) => item.status === "Running").length} running`}
-        />
-        <VisualMetric
-          label="Reproducibility"
-          value={audit ? `${audit.score}%` : "—"}
-          detail={audit?.status ?? "Not audited"}
-          tone={audit && audit.score >= 80 ? "success" : "warning"}
-        />
-        <VisualMetric
-          label="Evidence graph"
-          value={data.graphNodes.length}
-          detail={`${data.graphEdges.length} relationships`}
-        />
-      </section>
-
-      <Section
-        title="Research direction"
-        subtitle="The question and hypothesis currently organizing this project"
-        className="cly-direction-section"
-      >
-        <div className="cly-project-brief">
-          <Panel className="cly-panel-body">
-            <div className="cly-page-kicker">Research question</div>
-            <strong>{project.question || "No research question yet"}</strong>
-          </Panel>
-          <Panel className="cly-panel-body">
-            <div className="cly-page-kicker">Current hypothesis</div>
-            <strong>{project.hypothesis || "No working hypothesis yet"}</strong>
-          </Panel>
-        </div>
-      </Section>
-
-      {data.claims.length === 0 ? (
-        <Section title="Build the evidence trail">
-          <EmptyState
-            title="No claims yet"
-            description="Start with a precise claim, then link sources, experiments, and outputs as evidence."
-            action={
-              <Button variant="primary" onClick={() => setScreen("claims")}>
-                Create first claim
-              </Button>
-            }
-          />
-        </Section>
-      ) : (
-        <div className="cly-overview-grid">
-          <div className="cly-overview-primary">
-            <Section
-              title="Claims and integrity"
-              subtitle="What is strongest, what is weakest, and what could block publication"
-            >
+      <div className="cly-overview-grid">
+        <div className="cly-overview-primary">
+          <Section
+            title="Claims and integrity"
+            subtitle="The strongest result, the weakest link, and anything that blocks sharing"
+          >
+            {data.claims.length ? (
               <Panel className="cly-evidence-ledger">
                 {strongClaim ? (
                   <EvidenceLedgerRow
@@ -388,7 +358,7 @@ export function OverviewScreen() {
                     }}
                   />
                 ) : null}
-                {weakClaim ? (
+                {weakClaim && weakClaim.id !== strongClaim?.id ? (
                   <EvidenceLedgerRow
                     tone={toneForStatus(weakClaim.status)}
                     status={weakClaim.status}
@@ -431,88 +401,70 @@ export function OverviewScreen() {
                     />
                   ))}
               </Panel>
-            </Section>
+            ) : (
+              <EmptyState
+                title="No claims yet"
+                description="Complete the earlier research stages, then state the result the evidence supports."
+                action={
+                  <Button
+                    variant="primary"
+                    onClick={(event) =>
+                      researchLoop.currentStage?.id === "question"
+                        ? openBrief(event.currentTarget)
+                        : setScreen("claims")
+                    }
+                  >
+                    {researchLoop.currentStage?.id === "question"
+                      ? "Define question"
+                      : "Draft claim"}
+                  </Button>
+                }
+              />
+            )}
+          </Section>
 
-            <Section
-              title="Recent research activity"
-              subtitle="A linked timeline across experiments, notebooks, sources, and decisions"
-            >
-              {recentActivity.length ? (
-                <div className="cly-timeline">
-                  {recentActivity.map((item) => (
-                    <ResearchActivityItem
-                      key={item.id}
-                      {...item}
-                      onClick={() => {
-                        setScreen(item.screen);
-                        setSelected(item.id);
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  title="No research activity yet"
-                  description="Create a source, experiment, run, or claim to begin the project timeline."
-                  icon={<Beaker aria-hidden="true" />}
-                />
-              )}
-            </Section>
-          </div>
-
-          <aside className="cly-overview-rail" aria-label="Project actions">
-            <Section
-              title="Recommended next action"
-              subtitle="Derived from claims, failed runs, sources, and audit findings"
-            >
-              {next ? (
-                <Panel className="cly-panel-body cly-next-action">
-                  <div className="cly-row-between">
-                    <Badge tone="warning">{next.urgency}</Badge>
-                    <span className="cly-faint cly-small">
-                      {next.effort} effort
-                    </span>
-                  </div>
-                  <h3>{next.title}</h3>
-                  <p>{next.rationale}</p>
-                  <div className="cly-row cly-next-action-buttons">
-                    <Button
-                      variant="primary"
-                      onClick={() => {
-                        setScreen("next-steps");
-                        setSelected(next.id);
-                      }}
-                    >
-                      Review action <ArrowRight aria-hidden="true" />
-                    </Button>
-                    <Button onClick={() => setScreen("agents")}>
-                      <Sparkles aria-hidden="true" /> Agent plan
-                    </Button>
-                  </div>
-                </Panel>
-              ) : (
-                <div className="cly-overview-empty">
-                  <EmptyState
-                    title="No recommendations yet"
-                    description="Cly will surface the next best action as evidence and risks are added."
+          <Section
+            title="Recent research activity"
+            subtitle="Sources, experiments, outputs, claims, and audits in one timeline"
+          >
+            {recentActivity.length ? (
+              <div className="cly-timeline">
+                {recentActivity.map((item) => (
+                  <ResearchActivityItem
+                    key={item.id}
+                    {...item}
+                    onClick={() => {
+                      setScreen(item.screen);
+                      setSelected(item.id);
+                    }}
                   />
-                </div>
-              )}
-            </Section>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="No research activity yet"
+                description="Add a source or run an experiment to begin the project timeline."
+                icon={<Beaker aria-hidden="true" />}
+              />
+            )}
+          </Section>
+        </div>
 
-            <Section
-              title="Project graph preview"
-              subtitle={`${data.graphNodes.length} objects · ${data.graphEdges.length} links`}
-              actions={
-                <Button variant="ghost" onClick={() => setScreen("graph")}>
-                  Open graph <ArrowRight aria-hidden="true" />
-                </Button>
-              }
-            >
-              <GraphPreview />
-            </Section>
+        <aside className="cly-overview-rail" aria-label="Project context">
+          <Section
+            title="Project graph"
+            subtitle={`${data.graphNodes.length} objects · ${data.graphEdges.length} links`}
+            actions={
+              <Button variant="ghost" onClick={() => setScreen("graph")}>
+                Open graph <ArrowRight aria-hidden="true" />
+              </Button>
+            }
+          >
+            <GraphPreview />
+          </Section>
 
-            <Section title="Recent reports">
+          <Section title="Recent reports">
+            {data.reports.length ? (
               <Panel className="cly-report-list">
                 {data.reports.map((report) => (
                   <button
@@ -540,18 +492,23 @@ export function OverviewScreen() {
                   </button>
                 ))}
               </Panel>
-            </Section>
-          </aside>
-        </div>
-      )}
+            ) : (
+              <EmptyState
+                title="No reports yet"
+                description="Reports appear after evidence and integrity review are complete."
+              />
+            )}
+          </Section>
+        </aside>
+      </div>
       <Dialog
         open={briefOpen}
-        onClose={() => setBriefOpen(false)}
+        onClose={closeBrief}
         title="Research project brief"
         description="Define the question before adding sources or planning an experiment."
         footer={
           <>
-            <Button onClick={() => setBriefOpen(false)}>Cancel</Button>
+            <Button onClick={closeBrief}>Cancel</Button>
             <Button
               variant="primary"
               disabled={

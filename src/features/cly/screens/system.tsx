@@ -1190,7 +1190,7 @@ export function SettingsScreen() {
     data.projects.find((item) => item.id === activeProjectId) ??
     data.projects[0];
   const diagnostics = [
-    "Cly 0.5.0 (Free Beta)",
+    "Cly 0.5.0 (Open Beta)",
     "Renderer: React 19 / Vite 8",
     "Desktop: Electron 41",
     "Storage: project-scoped local SQLite research repository",
@@ -1225,7 +1225,7 @@ export function SettingsScreen() {
       {
         schemaVersion: 1,
         exportedAt: new Date().toISOString(),
-        app: "Cly Free Beta 0.5.0",
+        app: "Cly Open Beta 0.5.0",
         project,
         repository: data,
       },
@@ -1427,7 +1427,7 @@ export function SettingsScreen() {
                 ["Open project", "⌘O"],
                 ["Project switcher", "⌘⇧O"],
                 ["Create contextual object", "⌘N"],
-                ["Overview", "⌘1"],
+                ["Research Loop", "⌘1"],
                 ["Agent sessions", "⌘2"],
                 ["Context", "⌘3"],
                 ["Research graph", "⌘4"],

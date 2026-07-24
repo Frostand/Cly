@@ -1,10 +1,10 @@
 # Cly
 
-**Cly is a connected platform for computational research and development.**
+**Cly is an open-source, local-first research operating system.**
 
 **Cly Research** is the system of record for computational research. **Cly Dev** is a local-first, multi-provider coding-agent workspace. **Cly Core** connects both applications through one research graph, context system, permission boundary, and provenance history.
 
-Together they connect papers, objectives, code, experiments, outputs, and claims in one auditable workspace while preserving development context across agents, devices, and machines.
+Together they connect papers, objectives, code, experiments, outputs, and claims in one auditable workspace while preserving development context across agents, devices, and machines. Cly runs on the researcher’s machine and keeps the scientific record inspectable at every step.
 
 ## What Cly answers
 
@@ -25,11 +25,19 @@ Shared Cly Core (graph, context, permissions, sync, provenance)
 External tools (VS Code, Jupyter, GitHub, Linear, model providers)
 ```
 
-The coding workspace is currently powered by Dream IDE as an implementation component. The research core — graph, sources, claims, provenance, memory, and agent orchestration — is independent of the editor and will remain so.
+The research core — graph, sources, claims, provenance, memory, and agent orchestration — is independent of any single editor, model provider, or hosted service.
+
+## Why Cly
+
+- **The method is visible.** The Research Loop shows the first missing scientific gate instead of hiding the process inside an agent transcript.
+- **Out-of-order work is explicit.** Sources, experiments, or claims created before the question or method are flagged as unanchored rather than shown as complete.
+- **Evidence is a first-class object.** Claims retain supporting and contradicting sources, experiment links, limitations, confidence, and reviewer risks.
+- **The analysis can run locally.** A fresh project can import numeric CSV or TSV data, run deterministic cross-validated analysis, save the resulting artifacts, and recover them after restart.
+- **Review is part of the loop.** Reproducibility and integrity gates stay open until the evidence trail is ready to share.
 
 ## Status
 
-Cly Free Beta includes a two-application Research/Dev shell, objective planning,
+Cly Open Beta includes a two-application Research/Dev shell, objective planning,
 reviewer-capsule workflows, a local-first development command center, desktop
 menus, keyboard navigation, automated workflows, and responsive research and
 integrity workspaces. Project-scoped local services now persist core claim,
@@ -50,24 +58,25 @@ yet ship with a hosted relay. The Overview and Orchestrator Chat workspace also
 includes deterministic delegated-agent fixtures and a Browser, Terminal, Code
 Diff, Agents, and Live Files preview. Notebook/code scanning, agent execution,
 external integration configuration, planner mutations, and decision creation are
-not included in the free beta.
+not included in the open beta.
 
-The free beta is local-first and free of billing code, but it is not approved
+The open beta is local-first and free of billing code, but it is not approved
 for sensitive or regulated data. Export a project backup before testing. Local
 beta testers can run Cly from source or use the unpacked development package;
 public macOS distribution, signing, and notarization are a separate release
 track.
 
-## Ownership
+## Open source
 
-Cly is proprietary software and is not distributed under an open-source
-license. Copyright © 2026 Cly. All rights reserved. No permission is granted to
-copy, modify, distribute, sublicense, or sell Cly's original source code.
+Cly’s original source code is licensed under the
+[Apache License 2.0](LICENSE). Contributions are welcome; see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the local setup, quality bar, and pull
+request checklist.
 
-Third-party components retain their own licenses. Cly includes code derived
-from MIT-licensed Dream IDE; the attribution and license for that inherited
-material are preserved in [NOTICE.md](NOTICE.md) and
-[licenses/DREAM_IDE-MIT.txt](licenses/DREAM_IDE-MIT.txt).
+Third-party components retain their own licenses. Scoped attribution for
+inherited MIT-licensed material is preserved in [NOTICE.md](NOTICE.md) and
+[licenses/DREAM_IDE-MIT.txt](licenses/DREAM_IDE-MIT.txt); that notice does not
+change Cly’s Apache-2.0 license.
 
 ## Development
 
@@ -150,4 +159,5 @@ For an independent beta run with a tester-supplied dataset, use the
 
 ## License
 
-MIT. See [LICENSE](LICENSE) for terms and [NOTICE.md](NOTICE.md) for attribution.
+Apache-2.0. See [LICENSE](LICENSE) for Cly’s license and
+[NOTICE.md](NOTICE.md) for third-party attribution.

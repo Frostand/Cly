@@ -1,6 +1,6 @@
-# Local beta testing
+# Cly Open Beta testing
 
-This is the supported start-to-finish Cly Free Beta path. It does not require a
+This is the supported start-to-finish Cly Open Beta path. It does not require a
 signed or notarized public macOS build.
 
 ## Before the session
@@ -18,8 +18,8 @@ by `pnpm package:dir`.
 ## Tester workflow
 
 1. Open the project switcher and choose **New local project**.
-2. Select **Edit brief** and enter the project name, research question, working
-   hypothesis, and scope note.
+2. In **Research Loop**, select the current **Question** step and enter the
+   project name, research question, working hypothesis, and scope note.
 3. Create a preliminary claim in **Claims** if the study has an expected result.
 4. In **Experiments**, create an experiment with its goal and hypothesis.
 5. Select **Run analysis**, choose the local CSV/TSV file, confirm the outcome,

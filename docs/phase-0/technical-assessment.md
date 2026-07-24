@@ -2,6 +2,10 @@
 
 Assessment date: 2026-07-10. Assessed upstream baseline: Dream `v0.5.0` / commit `5578425`.
 
+> Historical assessment: Cly is now licensed under Apache-2.0. The scoped
+> Dream MIT notice remains only for inherited material documented in
+> `NOTICE.md`.
+
 ## Executive conclusion
 
 Dream is a viable foundation for Cly. It is an MIT-licensed Electron application with a React/Vite renderer, local SQLite persistence, a token-protected loopback API, integrated Git and terminal services, and provider-specific agent adapters. Cly should reuse the workspace shell and execution infrastructure, extend persistence/API/navigation through narrow modules, and replace product identity, release/update ownership, and several security-sensitive defaults.
@@ -10,7 +14,7 @@ Dream is a viable foundation for Cly. It is an MIT-licensed Electron application
 
 | Area | Evidence | Finding | Cly action |
 |---|---|---|---|
-| License | `licenses/DREAM_IDE-MIT.txt`, `NOTICE.md`, `README.md` | Dream IDE's MIT license permits commercial modification and distribution with notice preservation; it does not require Cly's original code to be open source. | Reuse Dream-derived code under its scoped third-party notice; keep Cly proprietary. |
+| License | `LICENSE`, `licenses/DREAM_IDE-MIT.txt`, `NOTICE.md`, `README.md` | Dream IDE's MIT license permits modification and distribution with notice preservation. | License Cly contributions under Apache-2.0 and retain the scoped MIT notice for inherited material. |
 | Desktop | `electron/main.js`, `package.json` | Electron desktop targets macOS, Windows, and Linux. There is no supported standalone browser product. | Reuse desktop shell. |
 | Renderer | `src/main.tsx`, `vite.config.ts` | React 19 and Vite 8 renderer with Tailwind/shadcn-style components. | Reuse and extend feature-by-feature. |
 | Editor | `src/components/ide/project-workspace.tsx` | File navigation/diffs and external-editor launching; not an embedded Monaco/VS Code extension host. | Extend; do not assume VS Code extension compatibility. |

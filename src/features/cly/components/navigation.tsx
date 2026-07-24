@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { DevSection, ScreenId } from "../domain/types";
-import { freeBetaScreenNotice } from "../services/capabilities";
+import { openBetaScreenNotice } from "../services/capabilities";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { ClyLogo, ThemeSwitcher } from "./brand";
@@ -54,7 +54,7 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
   {
     label: "Workspace",
     items: [
-      { id: "overview", label: "Overview", icon: CircleGauge },
+      { id: "overview", label: "Research Loop", icon: CircleGauge },
       { id: "objectives", label: "Objectives", icon: Goal },
       {
         id: "agents",
@@ -281,7 +281,7 @@ export function Sidebar() {
                   const Icon = item.icon;
                   const count = item.count?.(state);
                   const preview =
-                    !isClyDemoRuntime && Boolean(freeBetaScreenNotice(item.id));
+                    !isClyDemoRuntime && Boolean(openBetaScreenNotice(item.id));
                   return (
                     <button
                       type="button"

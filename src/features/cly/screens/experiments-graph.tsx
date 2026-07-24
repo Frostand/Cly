@@ -297,7 +297,7 @@ export function ExperimentsScreen() {
     if (file.size > 20_000_000) {
       setLocalDataset(null);
       setLocalAnalysisError(
-        "The free beta supports dataset files up to 20 MB.",
+        "The open beta supports dataset files up to 20 MB.",
       );
       return;
     }

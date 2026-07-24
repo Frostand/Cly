@@ -74,7 +74,7 @@ test("completes and recovers the production evidence loop with demos disabled", 
     await window.getByRole("heading", { level: 1 }).first().waitFor();
     await expect(window.getByTestId("fixture-selector")).toHaveCount(0);
     await expect(
-      window.getByText(/Cly Free Beta · Local research data only/),
+      window.getByText(/Cly Open Beta · Local research data only/),
     ).toBeVisible();
 
     await window.getByTestId("project-switcher").click();

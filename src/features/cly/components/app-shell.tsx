@@ -29,7 +29,7 @@ import {
   ModelsAgentsScreen,
   SettingsScreen,
 } from "../screens/system";
-import { freeBetaScreenNotice } from "../services/capabilities";
+import { openBetaScreenNotice } from "../services/capabilities";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
@@ -152,7 +152,7 @@ export function ClyAppShell() {
   const fixtureMode = useClyStore((s) => s.fixtureMode);
   const setScreen = useClyStore((s) => s.setScreen);
   const ActiveScreen = screens[activeScreen];
-  const betaNotice = freeBetaScreenNotice(activeScreen);
+  const betaNotice = openBetaScreenNotice(activeScreen);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -275,7 +275,7 @@ export function ClyAppShell() {
           </div>
         ) : !isClyDemoRuntime ? (
           <div className="cly-beta-banner" role="status">
-            Cly Free Beta · Local research data only · Do not use sensitive or
+            Cly Open Beta · Local research data only · Do not use sensitive or
             regulated data
           </div>
         ) : null}

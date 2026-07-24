@@ -45,10 +45,10 @@ export class CapabilityUnavailableError extends Error {
   }
 }
 
-/** Route-level limits shown in the free beta outside deterministic demos. */
-export const freeBetaScreenNotices: Partial<Record<ScreenId, string>> = {
+/** Route-level limits shown in the open beta outside deterministic demos. */
+export const openBetaScreenNotices: Partial<Record<ScreenId, string>> = {
   agents:
-    "Session history is durable, but starting or controlling agents is not included in the free beta.",
+    "Session history is durable, but starting or controlling agents is not included in the open beta.",
   notebooks:
     "Notebook scanning is a preview until imported scans can be persisted and recovered.",
   code: "Code scanning is a preview until filesystem approval and indexed provenance are available.",
@@ -62,6 +62,6 @@ export const freeBetaScreenNotices: Partial<Record<ScreenId, string>> = {
     "Provider connections are unavailable until credentials and approval flows are implemented.",
 };
 
-export function freeBetaScreenNotice(screen: ScreenId): string | null {
-  return freeBetaScreenNotices[screen] ?? null;
+export function openBetaScreenNotice(screen: ScreenId): string | null {
+  return openBetaScreenNotices[screen] ?? null;
 }

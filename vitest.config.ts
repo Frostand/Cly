@@ -7,6 +7,9 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    // The full suite renders several Electron-scale workspaces in parallel.
+    // Keep legitimate interaction tests from becoming load-dependent flakes.
+    testTimeout: 10_000,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}", "electron/**/*.test.{ts,tsx}"],
     coverage: {

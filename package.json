@@ -1,10 +1,19 @@
 {
   "name": "cly",
   "productName": "Cly",
-  "description": "Cly is an AI-native research operating system.",
+  "description": "Cly is an open-source, local-first research operating system.",
   "version": "0.5.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
+  "author": "Cly contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Frostand/Cly.git"
+  },
+  "homepage": "https://github.com/Frostand/Cly#readme",
+  "bugs": {
+    "url": "https://github.com/Frostand/Cly/issues"
+  },
   "scripts": {
     "dev": "pnpm electron:dev",
     "demo": "cross-env VITE_CLY_DEMO_MODE=1 pnpm electron:dev",
@@ -170,6 +179,10 @@
       {
         "from": "NOTICE.md",
         "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.txt"
       },
       {
         "from": "licenses/DREAM_IDE-MIT.txt",

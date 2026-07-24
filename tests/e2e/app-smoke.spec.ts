@@ -68,9 +68,11 @@ test("completes the guided LDL question-to-result demo from blank inputs", async
   await expect(
     page.getByRole("heading", { name: "Untitled research project" }),
   ).toBeVisible();
-  await expect(page.getByText("No research question yet")).toBeVisible();
+  await expect(page.getByText("0 of 7 complete")).toBeVisible();
+  const questionStep = page.getByTestId("research-loop-question");
+  await expect(questionStep).toHaveAttribute("aria-current", "step");
 
-  await page.getByTestId("edit-project-brief").click();
+  await questionStep.click();
   await page.getByLabel("Project name").fill("When LDL-C misleads");
   await page
     .getByLabel("Research question")
@@ -91,6 +93,11 @@ test("completes the guided LDL question-to-result demo from blank inputs", async
   await expect(
     page.getByRole("heading", { name: "When LDL-C misleads" }),
   ).toBeVisible();
+  await expect(page.getByText("1 of 7 complete")).toBeVisible();
+  await expect(page.getByTestId("research-loop-sources")).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
 
   await page.getByTestId("nav-sources").click();
   await page.getByRole("button", { name: "Import source" }).first().click();

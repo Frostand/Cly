@@ -1,4 +1,13 @@
-# Third-party notices
+# Cly notices
+
+Cly
+Copyright 2026 Cly contributors
+
+Cly's original source code is available under the Apache License 2.0. This
+notice documents third-party material included in the repository and packaged
+application; it does not replace or narrow Cly's root license.
+
+## Third-party software
 
 Cly includes code derived from Dream IDE, originally developed by the Dream
 contributors:
@@ -8,6 +17,5 @@ contributors:
 - License: MIT
 
 The original Dream IDE copyright and permission notice are preserved in
-`licenses/DREAM_IDE-MIT.txt`. That license applies only to Dream IDE-derived
-material and does not license Cly's original source code. Cly is not presented
-as an official Dream IDE release.
+`licenses/DREAM_IDE-MIT.txt`. That MIT license applies only to the inherited
+material. Cly is not presented as an official Dream IDE release.

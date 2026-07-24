@@ -490,7 +490,7 @@ export const projectServices: ClyServices = {
     async recordLocalAnalysis(input) {
       if (isClyExplicitDemoRuntime) {
         throw new Error(
-          "Use the guided verified workflow in demo mode. Local dataset execution is available in the free beta workspace.",
+          "Use the guided verified workflow in demo mode. Local dataset execution is available in the open beta workspace.",
         );
       }
       const projectId = await ensureActiveProject();

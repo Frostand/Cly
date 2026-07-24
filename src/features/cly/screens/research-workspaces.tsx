@@ -706,7 +706,7 @@ export function SourcesScreen() {
             </div>
             <div className="cly-callout" style={{ marginTop: 12 }}>
               Cly saves the location and research role now. Content extraction
-              remains unavailable in the free beta.
+              remains unavailable in the open beta.
             </div>
           </>
         )}
