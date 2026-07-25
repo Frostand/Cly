@@ -8,7 +8,7 @@ export interface ClyDevTaskIdentity {
   provider: {
     id: string;
     model: string;
-    reasoningLevel: "low" | "medium" | "high";
+    reasoningLevel: ReasoningLevel;
   };
   budget: {
     usedTokens: number;
@@ -85,7 +85,11 @@ export interface ClyDevProvenance {
   worktree: { id: string; branch: string; baseRef?: string };
   commit: { sha: string };
   machine: { id: string; platform: "darwin" | "linux" | "win32" };
-  provider: { id: string; model: string };
+  provider: {
+    id: string;
+    model: string;
+    reasoningEffort?: ReasoningLevel;
+  };
   research: { objectIds: string[] };
 }
 
@@ -163,6 +167,76 @@ export interface ClyDevSessionOverview extends ClyDevSessionRecord {
 export interface ClyDevSessionOverviewPage {
   items: ClyDevSessionOverview[];
   nextOffset: number | null;
+}
+
+export type ClyDevExecutionMode = "read_only" | "workspace_write";
+
+export interface ClyDevRuntimeProvider {
+  family: "openai" | "anthropic";
+  id: "openai-codex" | "anthropic-claude";
+  label: string;
+  authentication: "authenticated" | "absent" | "expired" | "unavailable";
+  capabilities: {
+    streaming: boolean;
+    reasoning: boolean;
+    toolCalls: boolean;
+    interceptBeforeEffect: boolean;
+  };
+  supportedModes: ClyDevExecutionMode[];
+  models: Array<{
+    id: string;
+    label: string;
+    reasoningEfforts: ReasoningLevel[];
+  }>;
+  error?: { code: string; message: string; retryable: boolean };
+}
+
+export interface ClyDevExecutionInput {
+  schemaVersion: 1;
+  payloadVersion: 1;
+  requestId: string;
+  prompt: string;
+  mode: "execute" | "plan" | "read_only";
+  tools: Array<{ name: string }>;
+  approvals?: Record<string, { approvalId: string }>;
+  actorId?: string;
+  budget?: {
+    maxInputTokens?: number;
+    maxOutputTokens?: number;
+    maxTotalTokens?: number;
+    maxCostMinor?: number;
+  };
+}
+
+export interface ClyDevExecutionResult {
+  status: "completed" | "canceled" | "failed" | "awaiting_approval";
+  error?: { code: string; message: string; retryable: boolean };
+  approval?: Record<string, unknown> & { approvalId: string };
+}
+
+export interface ClyDevSessionLaunchInput {
+  schemaVersion: 1;
+  payloadVersion: 1;
+  idempotencyKey: string;
+  title: string;
+  objective: string;
+  mode: ClyDevExecutionMode;
+  provider: {
+    id: ClyDevRuntimeProvider["id"];
+    model: string;
+    reasoningEffort?: ReasoningLevel;
+  };
+}
+
+export interface ClyDevSessionLaunchResult {
+  workspace: ClyDevWorkspace;
+  contextManifest: ClyDevContextManifest;
+  task: ClyDevTask;
+  session: ClyDevSessionRecord;
+  execution: {
+    mode: ClyDevExecutionMode;
+    tools: string[];
+  };
 }
 
 export interface ClyDevContextManifest {
@@ -341,7 +415,20 @@ export interface AgentPermissions {
   requiresApprovalForNetwork: boolean;
 }
 
-export type ReasoningLevel = "low" | "medium" | "high";
+export type ReasoningLevel =
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
+export type AgentReasoningLabel =
+  | "Low"
+  | "Medium"
+  | "High"
+  | "Extra High"
+  | "Max"
+  | "Ultra";
 
 export interface AgentResourceBudget {
   maxInputTokens: number;
@@ -424,7 +511,7 @@ export interface AgentIdentity {
   roleLabel: string;
   provider: string;
   model: string;
-  reasoningLevel: "Low" | "Medium" | "High";
+  reasoningLevel: AgentReasoningLabel;
   instanceCount?: number;
   maxParallel?: number;
   budget?: AgentResourceBudget;
@@ -637,7 +724,7 @@ export interface NewAgentSessionInput {
   objective: string;
   provider: string;
   model: string;
-  reasoningLevel: "Low" | "Medium" | "High";
+  reasoningLevel: AgentReasoningLabel;
   preset: string;
   contextPackName: string;
   approvalPolicy: string;

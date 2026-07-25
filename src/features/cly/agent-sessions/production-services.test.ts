@@ -2,6 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { createProductionAgentSessionServices } from "./production-services";
 
 describe("production agent-session services", () => {
+  it("does not request session pages before a project is selected", async () => {
+    const fetchClyDevSessionOverviews = vi.fn();
+    const services = createProductionAgentSessionServices({
+      api: { fetchClyDevSessionOverviews } as never,
+    });
+
+    await expect(services.hydrate("")).resolves.toEqual([]);
+    expect(fetchClyDevSessionOverviews).not.toHaveBeenCalled();
+  });
+
   it("hydrates one lightweight overview projection without renderer recovery or N+1 snapshot reads", async () => {
     const api = {
       fetchClyDevSessionOverviews: vi.fn().mockResolvedValue({
@@ -92,9 +102,14 @@ describe("production agent-session services", () => {
 
   it("persists approval decisions as idempotent ordered events", async () => {
     const appendClyDevSessionEvent = vi.fn().mockResolvedValue({ sequence: 7 });
+    const respondToClyDevApproval = vi.fn().mockResolvedValue({
+      handled: false,
+      status: "not-found",
+    });
     const services = createProductionAgentSessionServices({
       api: {
         appendClyDevSessionEvent,
+        respondToClyDevApproval,
       } as never,
       idempotencyKey: () => "key-1",
       now: () => "2026-07-15T12:00:00.000Z",
@@ -121,5 +136,32 @@ describe("production agent-session services", () => {
         },
       }),
     );
+    expect(respondToClyDevApproval).toHaveBeenCalledWith({
+      approved: true,
+      id: "approval-1",
+      reason: null,
+      scope: "once",
+    });
+  });
+
+  it("lets the live approval broker own the durable resolution while execution is active", async () => {
+    const appendClyDevSessionEvent = vi.fn();
+    const respondToClyDevApproval = vi.fn().mockResolvedValue({
+      handled: true,
+      status: "ok",
+    });
+    const services = createProductionAgentSessionServices({
+      api: { appendClyDevSessionEvent, respondToClyDevApproval },
+    });
+
+    await expect(
+      services.resolveApproval(
+        "project-a",
+        "session-1",
+        "approval-1",
+        "approved",
+      ),
+    ).resolves.toEqual({ handled: true, status: "ok" });
+    expect(appendClyDevSessionEvent).not.toHaveBeenCalled();
   });
 });

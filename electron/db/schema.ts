@@ -137,6 +137,7 @@ export const agentRoleConfigurations = sqliteTable(
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     reasoningLevel: text("reasoning_level").notNull(),
+    reasoningEffort: text("reasoning_effort"),
     maxInputTokens: integer("max_input_tokens").notNull(),
     maxOutputTokens: integer("max_output_tokens").notNull(),
     maxCostMinorUnits: integer("max_cost_minor_units").notNull(),
@@ -176,6 +177,10 @@ export const agentRoleConfigurations = sqliteTable(
     check(
       "agent_roles_reasoning",
       sql`${table.reasoningLevel} IN ('low', 'medium', 'high')`,
+    ),
+    check(
+      "agent_roles_reasoning_effort",
+      sql`${table.reasoningEffort} IS NULL OR ${table.reasoningEffort} IN ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')`,
     ),
     check(
       "agent_roles_budget_nonnegative",
@@ -2275,6 +2280,124 @@ export const agentContextAuditEvents = sqliteTable(
     check(
       "agent_context_audit_metadata_json",
       sql`json_valid(${table.metadataJson})`,
+    ),
+  ],
+);
+
+export const researchDecisions = sqliteTable(
+  "research_decisions",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    decisionText: text("decision_text").notNull(),
+    reason: text("reason").notNull(),
+    alternativesJson: text("alternatives_json").notNull().default("[]"),
+    evidenceIdsJson: text("evidence_ids_json").notNull().default("[]"),
+    affectedIdsJson: text("affected_ids_json").notNull().default("[]"),
+    status: text("status").notNull().default("Active"),
+    outcome: text("outcome"),
+    supersededBy: text("superseded_by"),
+    origin: text("origin").notNull().default("Researcher"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_research_decisions_project_updated").on(
+      table.projectId,
+      table.updatedAt,
+      table.id,
+    ),
+  ],
+);
+
+export const plannerSteps = sqliteTable(
+  "planner_steps",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    category: text("category").notNull(),
+    rationale: text("rationale").notNull(),
+    impact: text("impact").notNull(),
+    effort: text("effort").notNull(),
+    urgency: text("urgency").notNull(),
+    evidenceIdsJson: text("evidence_ids_json").notNull().default("[]"),
+    claimId: text("claim_id"),
+    experimentId: text("experiment_id"),
+    agentPreset: text("agent_preset").notNull(),
+    contextPack: text("context_pack").notNull(),
+    status: text("status").notNull().default("Recommended"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_planner_steps_project_status").on(
+      table.projectId,
+      table.status,
+      table.updatedAt,
+      table.id,
+    ),
+  ],
+);
+
+export const reproducibilityAudits = sqliteTable(
+  "reproducibility_audits",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    score: integer("score").notNull(),
+    status: text("status").notNull(),
+    areasJson: text("areas_json").notNull().default("[]"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("idx_reproducibility_audits_project_created").on(
+      table.projectId,
+      table.createdAt,
+      table.id,
+    ),
+  ],
+);
+
+export const reproducibilityFindings = sqliteTable(
+  "reproducibility_findings",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    auditId: text("audit_id")
+      .notNull()
+      .references(() => reproducibilityAudits.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    title: text("title").notNull(),
+    detail: text("detail").notNull(),
+    severity: text("severity").notNull(),
+    status: text("status").notNull().default("Open"),
+    objectIdsJson: text("object_ids_json").notNull().default("[]"),
+    area: text("area"),
+    affectedClaimIdsJson: text("affected_claim_ids_json")
+      .notNull()
+      .default("[]"),
+    recommendedFix: text("recommended_fix"),
+    assignee: text("assignee"),
+    deferredReason: text("deferred_reason"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_reproducibility_findings_project_audit").on(
+      table.projectId,
+      table.auditId,
+      table.status,
+      table.id,
     ),
   ],
 );

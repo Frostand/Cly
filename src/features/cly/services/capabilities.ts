@@ -1,11 +1,6 @@
 import inventory from "../../../../docs/cly-v1-capabilities.json";
-import type { ScreenId } from "../domain/types";
 
-export type CapabilityState =
-  | "production"
-  | "read-only-preview"
-  | "unavailable"
-  | "demo-only";
+export type CapabilityState = "production" | "unavailable" | "demo-only";
 
 export interface ClyCapability {
   id: string;
@@ -43,25 +38,4 @@ export class CapabilityUnavailableError extends Error {
     this.name = "CapabilityUnavailableError";
     this.capabilityId = capabilityId;
   }
-}
-
-/** Route-level limits shown in the open beta outside deterministic demos. */
-export const openBetaScreenNotices: Partial<Record<ScreenId, string>> = {
-  agents:
-    "Session history is durable, but starting or controlling agents is not included in the open beta.",
-  notebooks:
-    "Notebook scanning is a preview until imported scans can be persisted and recovered.",
-  code: "Code scanning is a preview until filesystem approval and indexed provenance are available.",
-  reproducibility:
-    "Audits run locally and are included in project backups; finding-resolution choices reset after reload in this beta.",
-  decisions:
-    "Decision history is a preview until create and supersede operations are persisted.",
-  "next-steps":
-    "Recommendations are read-only until planner decisions are persisted.",
-  integrations:
-    "Provider connections are unavailable until credentials and approval flows are implemented.",
-};
-
-export function openBetaScreenNotice(screen: ScreenId): string | null {
-  return openBetaScreenNotices[screen] ?? null;
 }

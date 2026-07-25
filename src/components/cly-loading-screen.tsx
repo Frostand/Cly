@@ -1,0 +1,62 @@
+import { useTranslations } from "next-intl";
+import clyMarkUrl from "@/assets/cly-mark.svg";
+import Sparkles from "@/components/ui/sparkles";
+
+type AppLoadingScreenProps = {
+  clockSync?: boolean;
+  density?: number;
+  height?: number;
+  palette?: string[];
+  position?: "top" | "bottom";
+  shape?: "mixed" | "star" | "dot" | "glow" | "diamond" | "plus";
+  sizeMul?: number;
+  speed?: number;
+  syncKey?: string;
+};
+
+export const AppLoadingScreen = ({
+  clockSync = true,
+  density = 50,
+  height = 256,
+  palette = ["#ffffff", "#e0e4ff", "#b8beff", "#9098c9"],
+  position = "bottom",
+  shape = "mixed",
+  sizeMul = 0.8,
+  speed = 0.6,
+  syncKey = "cly-loading-sparkles",
+}: AppLoadingScreenProps) => {
+  const t = useTranslations("app");
+
+  return (
+    <div
+      aria-label={t("loadingCly")}
+      className="fixed inset-0 z-50 grid place-items-center bg-background"
+      role="status"
+    >
+      <div className="relative">
+        <Sparkles
+          clockSync={clockSync}
+          density={density}
+          height={height}
+          palette={palette}
+          position={position}
+          shape={shape}
+          sizeMul={sizeMul}
+          speed={speed}
+          syncKey={syncKey}
+        >
+          <div className="relative z-10 flex h-64 w-16 items-center justify-center">
+            <span className="grid size-16 place-items-center rounded-2xl bg-white p-2.5 shadow-xl">
+              <img
+                alt=""
+                className="size-full"
+                draggable={false}
+                src={clyMarkUrl}
+              />
+            </span>
+          </div>
+        </Sparkles>
+      </div>
+    </div>
+  );
+};

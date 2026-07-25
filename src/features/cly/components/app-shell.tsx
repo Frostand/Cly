@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { CLY_MENU_COMMANDS } from "../../../../electron/menu-commands.js";
 import { AgentSessionsScreen } from "../agent-sessions";
 import type { ScreenId } from "../domain/types";
 import { ContextScreen } from "../screens/context";
@@ -29,7 +30,6 @@ import {
   ModelsAgentsScreen,
   SettingsScreen,
 } from "../screens/system";
-import { openBetaScreenNotice } from "../services/capabilities";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
@@ -40,7 +40,7 @@ import { PrImpactReviewScreen } from "./pr-impact-review/pr-impact-review";
 import { LoadingState } from "./primitives";
 import { ClyMotionProvider, RouteTransition } from "./visuals";
 
-const screens: Record<ScreenId, () => React.JSX.Element> = {
+export const screens: Record<ScreenId, () => React.JSX.Element> = {
   overview: OverviewScreen,
   objectives: ObjectivesScreen,
   agents: AgentSessionsScreen,
@@ -75,28 +75,24 @@ const shortcutScreens: Record<string, ScreenId> = {
   "6": "claims",
 };
 
-function runMenuCommand(command: string) {
+export function runMenuCommand(command: string) {
+  if (!CLY_MENU_COMMANDS.includes(command)) return false;
   const store = useClyStore.getState();
   const screenCommands: Record<string, ScreenId> = {
-    "new-claim": "claims",
-    "new-experiment": "experiments",
-    "new-decision": "decisions",
-    "import-sources": "sources",
-    "import-notebook": "notebooks",
+    "open-research-brief": "overview",
+    "open-claims": "claims",
+    "open-experiments": "experiments",
+    "open-decisions": "decisions",
+    "open-sources": "sources",
     "context-composer": "context",
     "configure-agents": "models",
-    "claim-audit": "claims",
-    "data-obligations": "obligations",
-    "code-review": "code",
-    "run-audit": "reproducibility",
-    "generate-next-steps": "next-steps",
-    "manage-integrations": "integrations",
-    "notebooklm-bundle": "literature",
-    "new-agent-session": "agents",
+    "open-reproducibility": "reproducibility",
+    "open-next-steps": "next-steps",
+    "open-integrations": "integrations",
+    "open-literature": "literature",
     settings: "settings",
   };
   if (screenCommands[command]) store.setScreen(screenCommands[command]);
-  if (command === "new-agent-session") store.setNewAgentSessionOpen(true);
   if (command === "agent-sessions-overview")
     store.setAgentSessionsMode("overview");
   if (command === "agent-sessions-chat") store.setAgentSessionsMode("chat");
@@ -121,24 +117,19 @@ function runMenuCommand(command: string) {
   if (command === "toggle-activity") store.toggleActivity();
   if (command === "command-palette") store.setCommandPaletteOpen(true);
   if (command === "project-switcher") store.setProjectSwitcherOpen(true);
+  if (command === "focus-search") {
+    document.querySelector<HTMLElement>("[data-search-input]")?.focus();
+  }
   if (command === "reset-layout")
     useClyStore.setState({
       sidebarCollapsed: false,
       inspectorOpen: true,
       activityOpen: false,
     });
-  if (
-    ["documentation", "shortcuts", "diagnostics", "about"].includes(command)
-  ) {
-    if (command === "shortcuts" || command === "diagnostics")
-      store.setScreen("settings");
-    store.notify(
-      command === "about" ? "Cly 0.5.0" : `Open ${command}`,
-      command === "documentation"
-        ? "Documentation is available in the repository docs directory."
-        : undefined,
-    );
+  if (["shortcuts", "diagnostics"].includes(command)) {
+    store.setScreen("settings");
   }
+  return true;
 }
 
 export function ClyAppShell() {
@@ -152,7 +143,6 @@ export function ClyAppShell() {
   const fixtureMode = useClyStore((s) => s.fixtureMode);
   const setScreen = useClyStore((s) => s.setScreen);
   const ActiveScreen = screens[activeScreen];
-  const betaNotice = openBetaScreenNotice(activeScreen);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -302,17 +292,9 @@ export function ClyAppShell() {
                   />
                 </div>
               ) : (
-                <>
-                  {!isClyDemoRuntime && betaNotice ? (
-                    <div className="cly-beta-route-notice" role="note">
-                      <strong>Preview</strong>
-                      <span>{betaNotice}</span>
-                    </div>
-                  ) : null}
-                  <RouteTransition route={activeScreen}>
-                    <ActiveScreen />
-                  </RouteTransition>
-                </>
+                <RouteTransition route={activeScreen}>
+                  <ActiveScreen />
+                </RouteTransition>
               )}
             </div>
             <ActivityDrawer />

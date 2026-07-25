@@ -15,11 +15,16 @@ import type {
   ClyDevDevice,
   ClyDevDevicePublicBundle,
   ClyDevEventInput,
+  ClyDevExecutionInput,
+  ClyDevExecutionResult,
   ClyDevHandoffEnvelope,
   ClyDevHandoffInspection,
   ClyDevOutboundContext,
   ClyDevResumeDestination,
+  ClyDevRuntimeProvider,
   ClyDevSessionEvent,
+  ClyDevSessionLaunchInput,
+  ClyDevSessionLaunchResult,
   ClyDevSessionOverviewPage,
   ClyDevSessionRecord,
   ClyDevSessionSnapshot,
@@ -54,6 +59,7 @@ import type {
 import type { Relationship, ResearchObject } from "../domain/research-bridge";
 import type {
   AnalysisDeviation,
+  AuditFinding,
   ClaimCostSummary,
   ClaimStatus,
   CostCategory,
@@ -65,15 +71,22 @@ import type {
   LineageReviewDecision,
   LineageScanMeasurement,
   LineageSuggestion,
+  NextStep,
   PreregistrationComparison,
   PreregistrationContent,
   PreregistrationSnapshot,
+  ReproducibilityAudit,
+  ResearchDecision,
   ResearchProject,
 } from "../domain/types";
 
 export interface ResearchData {
   objects: ResearchObject[];
   relationships: Relationship[];
+  decisions?: ResearchDecision[];
+  nextSteps?: NextStep[];
+  audits?: ReproducibilityAudit[];
+  findings?: AuditFinding[];
 }
 
 export interface CreateObjectInput {
@@ -325,6 +338,88 @@ export const apiClient = {
 
   fetchResearchData(projectId: string) {
     return request<ResearchData>(projectPath(projectId));
+  },
+
+  createDecision(
+    projectId: string,
+    input: Omit<ResearchDecision, "id" | "date" | "supersededBy"> & {
+      actor?: string;
+    },
+  ) {
+    return request<ResearchDecision>(
+      `/api/projects/${encodeURIComponent(projectId)}/decisions`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+  updateDecision(
+    projectId: string,
+    decisionId: string,
+    input: Partial<Omit<ResearchDecision, "id" | "date" | "supersededBy">> & {
+      actor?: string;
+    },
+  ) {
+    return request<ResearchDecision>(
+      `/api/projects/${encodeURIComponent(projectId)}/decisions/${encodeURIComponent(decisionId)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
+  },
+  supersedeDecision(
+    projectId: string,
+    decisionId: string,
+    input: Omit<ResearchDecision, "id" | "date" | "supersededBy" | "status"> & {
+      actor?: string;
+    },
+  ) {
+    return request<{
+      decision: ResearchDecision;
+      replacement: ResearchDecision;
+    }>(
+      `/api/projects/${encodeURIComponent(projectId)}/decisions/${encodeURIComponent(decisionId)}/supersede`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+  savePlannerSteps(projectId: string, steps: NextStep[], actor = "local-user") {
+    return request<NextStep[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/planner/generate`,
+      { method: "POST", body: JSON.stringify({ steps, actor }) },
+    );
+  },
+  updatePlannerStep(
+    projectId: string,
+    stepId: string,
+    status: NextStep["status"],
+    actor = "local-user",
+  ) {
+    return request<NextStep>(
+      `/api/projects/${encodeURIComponent(projectId)}/planner/${encodeURIComponent(stepId)}`,
+      { method: "PATCH", body: JSON.stringify({ status, actor }) },
+    );
+  },
+  saveReproducibilityAudit(
+    projectId: string,
+    audit: ReproducibilityAudit,
+    findings: AuditFinding[],
+    actor = "local-user",
+  ) {
+    return request<{ audit: ReproducibilityAudit; findings: AuditFinding[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/reproducibility/audits`,
+      { method: "POST", body: JSON.stringify({ audit, findings, actor }) },
+    );
+  },
+  updateReproducibilityFinding(
+    projectId: string,
+    findingId: string,
+    input: {
+      status: AuditFinding["status"];
+      assignee?: string;
+      reason?: string;
+      actor?: string;
+    },
+  ) {
+    return request<AuditFinding>(
+      `/api/projects/${encodeURIComponent(projectId)}/reproducibility/findings/${encodeURIComponent(findingId)}`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
   },
 
   fetchAgentContext(projectId: string) {
@@ -876,6 +971,13 @@ export const apiClient = {
     );
   },
 
+  setSourceArchived(projectId: string, sourceId: string, archived: boolean) {
+    return request<ResearchObject>(
+      `${projectPath(projectId)}/sources/${encodeURIComponent(sourceId)}/archive`,
+      { method: "PATCH", body: JSON.stringify({ archived }) },
+    );
+  },
+
   updateClaimStatus(projectId: string, claimId: string, status: ClaimStatus) {
     return request<ResearchObject>(
       `${projectPath(projectId)}/claims/${encodeURIComponent(claimId)}`,
@@ -1062,6 +1164,68 @@ export const apiClient = {
     return request<ClyDevSessionOverviewPage>(
       `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions?offset=${offset}&limit=${limit}`,
     );
+  },
+
+  fetchClyDevRuntimeProviders() {
+    return request<ClyDevRuntimeProvider[]>("/api/cly-dev/providers");
+  },
+
+  launchClyDevSession(projectId: string, input: ClyDevSessionLaunchInput) {
+    return request<ClyDevSessionLaunchResult>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/session-launches`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  executeClyDevSession(
+    projectId: string,
+    sessionId: string,
+    input: ClyDevExecutionInput,
+  ) {
+    return request<ClyDevExecutionResult>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/execute`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  resumeClyDevSession(
+    projectId: string,
+    sessionId: string,
+    input: ClyDevExecutionInput,
+  ) {
+    return request<ClyDevExecutionResult>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/resume`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+
+  cancelClyDevSession(projectId: string, sessionId: string, requestId: string) {
+    return request<{ status: "cancellation_requested" }>(
+      `/api/projects/${encodeURIComponent(projectId)}/cly-dev/sessions/${encodeURIComponent(sessionId)}/cancel`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          schemaVersion: 1,
+          payloadVersion: 1,
+          requestId,
+        }),
+      },
+    );
+  },
+
+  respondToClyDevApproval(input: {
+    approved: boolean;
+    id: string;
+    reason?: string | null;
+    scope?: "once" | "session";
+  }) {
+    return request<{
+      handled: boolean;
+      status: "ok" | "not-found" | "expired";
+    }>("/api/tool-approval-response", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   },
 
   createClyDevSession(

@@ -8,7 +8,6 @@ import {
   execCursorCliCommand,
   getCursorCliUnavailableMessage,
   getCursorCliVersion,
-  isCursorCliAvailable,
 } from "./cursor-cli.js";
 import {
   createModelOption,
@@ -26,6 +25,7 @@ import {
 } from "./model-options.js";
 import {
   checkClaudeAuthentication,
+  checkCursorAuthentication,
   checkOpenCodeAuthentication,
 } from "./provider-health.js";
 
@@ -109,9 +109,31 @@ const formatCursorModelLabel = (id) => {
   return trimmed;
 };
 
-const createCursorDefaultModels = () => [
-  createModelOption("cursor", CURSOR_AUTO_MODEL, "Cursor Auto"),
-];
+const lastGoodModelCatalogs = new Map();
+
+const rememberLastGoodCatalog = (provider, result) => {
+  if (result.models.length > 0) {
+    lastGoodModelCatalogs.set(provider, {
+      fetchedAt: new Date().toISOString(),
+      models: result.models,
+    });
+  }
+  return result;
+};
+
+const unavailableOrLastGood = ({ error, installed, provider, version }) => {
+  const cached = lastGoodModelCatalogs.get(provider);
+  if (cached) {
+    return {
+      error: `${error} Using the last known catalog from ${cached.fetchedAt}.`,
+      installed,
+      models: cached.models,
+      source: "cli",
+      version,
+    };
+  }
+  return { error, installed, models: [], source: "unavailable", version };
+};
 
 const parseCursorModelsOutput = (value) => {
   const clean = stripAnsi(value);
@@ -204,7 +226,10 @@ const createOpenAiModelOptionsFromCodexEntries = (entries) =>
     return isVisibleOpenAiModelOption(model) ? [model] : [];
   });
 
-const fetchOpenAiModelsWithCodexChatgpt = async (accessToken) => {
+export const fetchOpenAiModelsWithCodexChatgpt = async (
+  accessToken,
+  { signal, timeoutMs = 8000 } = {},
+) => {
   const cachedModels = await readCodexModelsCache();
   const cachedModelsById = new Map(
     cachedModels
@@ -222,6 +247,9 @@ const fetchOpenAiModelsWithCodexChatgpt = async (accessToken) => {
       "Content-Type": "application/json",
     },
     method: "GET",
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     throw new Error(`Codex model request failed (${response.status}).`);
@@ -325,8 +353,17 @@ export const fetchOpenAiLowCostModel = async () => {
   return selectLowCostOpenAiModel(dedupeAndSort(cachedModels));
 };
 
-export const fetchAnthropicLowCostModel = async () =>
-  selectLowCostAnthropicModel(await fetchClaudeCodeModelOptionsFromModelsDev());
+export const fetchAnthropicLowCostModel = async () => {
+  try {
+    return selectLowCostAnthropicModel(
+      await fetchClaudeCodeModelOptionsFromModelsDev(),
+    );
+  } catch {
+    return selectLowCostAnthropicModel(
+      lastGoodModelCatalogs.get("anthropic")?.models ?? [],
+    );
+  }
+};
 
 export const fetchOpenCodeLowCostModel = async (selectedModel) => {
   const model = typeof selectedModel === "string" ? selectedModel.trim() : "";
@@ -346,15 +383,16 @@ export const fetchOpenCodeLowCostModel = async (selectedModel) => {
     // Fall back to stable defaults below when model discovery is unavailable.
   }
 
-  return model || OPENCODE_LOW_COST_MODEL;
+  return model;
 };
 
 export const fetchCursorLowCostModel = async (selectedModel) =>
   selectedModel?.trim() || CURSOR_AUTO_MODEL;
 
 export const fetchCursorModels = async ({ force = false } = {}) => {
-  const installed = await isCursorCliAvailable({ force });
-  if (!installed) {
+  const signal = AbortSignal.timeout(15_000);
+  const authentication = await checkCursorAuthentication({ signal });
+  if (!authentication.installed) {
     return {
       error: getCursorCliUnavailableMessage(),
       installed: false,
@@ -364,40 +402,55 @@ export const fetchCursorModels = async ({ force = false } = {}) => {
     };
   }
   const version = await getCursorCliVersion({ force });
+  if (!authentication.authenticated) {
+    return unavailableOrLastGood({
+      error: "Cursor login not found. Run `cursor-agent login`, then refresh.",
+      installed: true,
+      provider: "cursor",
+      version,
+    });
+  }
 
+  let discoveryError = "Cursor returned no models.";
   for (const args of [["models"], ["--list-models"]]) {
     try {
       const result = await execCursorCliCommand(args, {
         maxBuffer: 1024 * 1024,
-        timeout: 10_000,
+        signal,
+        timeout: 5000,
       });
       const models = dedupeAndSort(
         parseCursorModelsOutput(`${result.stdout}\n${result.stderr}`),
       );
       if (models.length > 0) {
-        return {
+        return rememberLastGoodCatalog("cursor", {
           installed: true,
           models: sortCursorModelOptions(models),
           source: "cli",
           version,
-        };
+        });
       }
-    } catch {
+    } catch (error) {
+      discoveryError =
+        error instanceof Error
+          ? error.message
+          : "Cursor model discovery failed.";
       // Cursor does not currently document a stable model-listing command.
-      // Fall back to the CLI default model below.
+      // Try the alternate command, then use only a previously observed catalog.
     }
   }
 
-  return {
+  return unavailableOrLastGood({
+    error: discoveryError,
     installed: true,
-    models: sortCursorModelOptions(createCursorDefaultModels()),
-    source: "cli",
+    provider: "cursor",
     version,
-  };
+  });
 };
 
 export const fetchOpenCodeModels = async ({ force = false } = {}) => {
-  const authentication = await checkOpenCodeAuthentication();
+  const signal = AbortSignal.timeout(15_000);
+  const authentication = await checkOpenCodeAuthentication({ signal });
   if (!authentication.installed) {
     return {
       error: "OpenCode CLI is not installed or not available on PATH.",
@@ -424,8 +477,10 @@ export const fetchOpenCodeModels = async ({ force = false } = {}) => {
     const [result, contextWindows] = await Promise.all([
       execCliCommand("opencode", args, {
         maxBuffer: 10 * 1024 * 1024,
+        signal,
+        timeout: 10_000,
       }),
-      fetchOpenCodeContextWindowsFromModelsDev(),
+      fetchOpenCodeContextWindowsFromModelsDev({ signal }),
     ]);
     const models = dedupeAndSort(
       parseOpenCodeModelsOutput(
@@ -444,23 +499,28 @@ export const fetchOpenCodeModels = async ({ force = false } = {}) => {
       };
     }
 
-    return { installed: true, models, source: "cli", version };
+    return rememberLastGoodCatalog("opencode", {
+      installed: true,
+      models,
+      source: "cli",
+      version,
+    });
   } catch (error) {
-    return {
+    return unavailableOrLastGood({
       error:
         error instanceof Error
           ? error.message
           : "Unable to fetch OpenCode models.",
       installed: true,
-      models: [],
-      source: "unavailable",
+      provider: "opencode",
       version,
-    };
+    });
   }
 };
 
 export const fetchAnthropicModels = async ({ force = false } = {}) => {
-  const authentication = await checkClaudeAuthentication();
+  const signal = AbortSignal.timeout(15_000);
+  const authentication = await checkClaudeAuthentication({ signal });
   if (!authentication.installed) {
     return {
       error: "Claude Code CLI is not installed or not available on PATH.",
@@ -483,7 +543,7 @@ export const fetchAnthropicModels = async ({ force = false } = {}) => {
   }
 
   try {
-    const models = await fetchClaudeCodeModelOptionsFromModelsDev();
+    const models = await fetchClaudeCodeModelOptionsFromModelsDev({ signal });
     if (models.length === 0) {
       return {
         error: "Claude Code returned no supported models.",
@@ -494,22 +554,21 @@ export const fetchAnthropicModels = async ({ force = false } = {}) => {
       };
     }
 
-    return {
+    return rememberLastGoodCatalog("anthropic", {
       installed: true,
       models,
       source: "cli",
       version,
-    };
+    });
   } catch (error) {
-    return {
+    return unavailableOrLastGood({
       error:
         error instanceof Error
           ? error.message
           : "Unable to fetch Claude Code models.",
       installed: true,
-      models: [],
-      source: "unavailable",
+      provider: "anthropic",
       version,
-    };
+    });
   }
 };

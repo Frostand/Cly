@@ -1,0 +1,67 @@
+[
+  {
+    "id": "overview",
+    "label": "Research Loop",
+    "heading": "When LDL-C misleads"
+  },
+  { "id": "objectives", "label": "Objectives", "heading": "Objectives" },
+  { "id": "agents", "label": "Agent Sessions", "heading": "Agent Sessions" },
+  { "id": "context", "label": "Context", "heading": "Context Composer" },
+  {
+    "id": "graph",
+    "label": "Research Graph",
+    "heading": "Research Object Graph"
+  },
+  {
+    "id": "experiments",
+    "label": "Experiments",
+    "heading": "Experiment Manager"
+  },
+  { "id": "costs", "label": "Costs", "heading": "Cost ledger" },
+  { "id": "sources", "label": "Sources", "heading": "Source Manager" },
+  {
+    "id": "literature",
+    "label": "Literature",
+    "heading": "Literature Workspace"
+  },
+  { "id": "claims", "label": "Claims", "heading": "Claim Audit Board" },
+  {
+    "id": "obligations",
+    "label": "Data Obligations",
+    "heading": "Research Data Obligations"
+  },
+  {
+    "id": "provenance",
+    "label": "Provenance",
+    "heading": "Figure & Table Provenance"
+  },
+  {
+    "id": "reproducibility",
+    "label": "Reproducibility",
+    "heading": "Reproducibility Auditor"
+  },
+  {
+    "id": "impact-review",
+    "label": "Impact Review",
+    "heading": "Research impact review"
+  },
+  {
+    "id": "decisions",
+    "label": "Decisions",
+    "heading": "Research Decision Log"
+  },
+  { "id": "next-steps", "label": "Next Steps", "heading": "Next-Step Planner" },
+  {
+    "id": "reviewer-capsules",
+    "label": "Reviewer Capsules",
+    "heading": "Reviewer Capsules"
+  },
+  { "id": "dev", "label": "Cly Dev", "heading": "Cly Dev AI workspace" },
+  {
+    "id": "integrations",
+    "label": "Integrations",
+    "heading": "Integrations & Providers"
+  },
+  { "id": "models", "label": "Models & Agents", "heading": "Models & Agents" },
+  { "id": "settings", "label": "Settings", "heading": "Settings" }
+]

@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { streamText, tool } from "ai";
 import { claudeCode, createAiSdkMcpServer } from "ai-sdk-provider-claude-code";
 import { z } from "zod";
-import { normalizeClaudeCodeModel } from "../../providers/model-options.js";
+import {
+  CLAUDE_REASONING_EFFORT_MAP,
+  normalizeClaudeCodeModel,
+} from "../../providers/model-options.js";
 import { checkClaudeAuthentication } from "../../providers/provider-health.js";
 import { fetchAnthropicModels } from "../../providers/provider-models.js";
 import { resolveCliCommandPath } from "../../shared/cli.js";
@@ -186,6 +189,13 @@ export function createSignedInClaudeRunner({
           persistSession: false,
           settingSources: [],
           tools: [],
+          ...(request.reasoningEffort
+            ? {
+                effort:
+                  CLAUDE_REASONING_EFFORT_MAP[request.reasoningEffort] ??
+                  request.reasoningEffort,
+              }
+            : {}),
           ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
         };
         const prompt = [

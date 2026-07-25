@@ -1,10 +1,13 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureRepository } from "../fixtures/repository";
+import { localIntegrationService } from "../services/local-integrations";
 import { projectServices } from "../services/project-services";
 import { useClyStore } from "../store/cly-store";
-import { GraphScreen } from "./experiments-graph";
+import { ExperimentsScreen, GraphScreen } from "./experiments-graph";
+import { ProvenanceScreen } from "./integrity";
+import { CodeLinkerScreen } from "./research-workspaces";
 import { IntegrationsScreen } from "./system";
 
 describe("frontend interaction regressions", () => {
@@ -18,20 +21,24 @@ describe("frontend interaction regressions", () => {
     });
   });
 
-  it("offers a keyboard-operable integration details action", async () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers a keyboard-operable integration refresh action", async () => {
     const user = userEvent.setup();
+    const refresh = vi
+      .spyOn(localIntegrationService, "refreshProvider")
+      .mockResolvedValue(undefined);
+    vi.spyOn(localIntegrationService, "detectEditors").mockResolvedValue([]);
     render(<IntegrationsScreen />);
 
-    const details = screen.getByRole("button", {
-      name: "View GitHub details",
-    });
-    details.focus();
+    const refreshAll = screen.getByRole("button", { name: "Refresh all" });
+    await waitFor(() => expect(refreshAll).toBeEnabled());
+    refresh.mockClear();
+    refreshAll.focus();
     await user.keyboard("{Enter}");
 
-    expect(useClyStore.getState().selectedId).toBe("int-github");
-    expect(
-      screen.getAllByText("Not connected")[0].closest("[data-tone]"),
-    ).toHaveAttribute("data-tone", "danger");
+    expect(refresh).toHaveBeenCalledWith();
+    expect(screen.queryByText("NotebookLM")).not.toBeInTheDocument();
   });
 
   it("creates a graph relationship with distinct endpoints", async () => {
@@ -65,5 +72,53 @@ describe("frontend interaction regressions", () => {
         detail: "Relationship endpoint rejected.",
       }),
     );
+  });
+
+  it("keeps only implemented Code Linker views and removes placeholder actions", () => {
+    render(<CodeLinkerScreen />);
+    expect(screen.getByRole("radio", { name: "Files" })).toBeVisible();
+    expect(
+      screen.queryByRole("radio", { name: "Objectives" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("radio", { name: "Claims" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Link object" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Request review" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("exposes experiment output and provenance cards as keyboard buttons", async () => {
+    const user = userEvent.setup();
+    const experimentView = render(<ExperimentsScreen />);
+    await user.click(screen.getByRole("radio", { name: "Outputs" }));
+    const output = screen.getAllByRole("button", { name: /Open output/ })[0];
+    output.focus();
+    await user.keyboard("{Enter}");
+    expect(useClyStore.getState().selectedId).toBeTruthy();
+    experimentView.unmount();
+
+    render(<ProvenanceScreen />);
+    await user.click(screen.getByRole("radio", { name: "Gallery" }));
+    const provenance = screen.getAllByRole("button", {
+      name: /Open provenance for/,
+    })[0];
+    provenance.focus();
+    await user.keyboard(" ");
+    expect(useClyStore.getState().selectedId).toBeTruthy();
+  });
+
+  it("does not request provenance before a project is selected", async () => {
+    useClyStore.setState({ activeProjectId: "", fixtureMode: "empty" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ProvenanceScreen />);
+
+    expect(screen.getByText("Choose a project")).toBeVisible();
+    await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
   });
 });

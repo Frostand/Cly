@@ -15,6 +15,7 @@ const VALID_REASONING_EFFORTS = [
   "high",
   "xhigh",
   "max",
+  "ultra",
 ] as const;
 const HIDDEN_OPENAI_MODEL_LABELS = new Set(["codex auto review"]);
 const HIDDEN_OPENAI_MODEL_IDS = new Set(["codex-auto-review"]);

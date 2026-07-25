@@ -635,6 +635,45 @@ describe("Cly Dev durable execution runtime", () => {
     });
   });
 
+  it("passes a dynamically advertised reasoning effort to the provider", async () => {
+    let providerRequest: Record<string, unknown> | undefined;
+    const harness = createHarness({
+      providerOptions: {
+        models: [{ id: "mock-model", reasoningEfforts: ["ultra"] }],
+      },
+      script: (request) => {
+        providerRequest = request;
+        return [{ type: "completed" }];
+      },
+    });
+
+    await expect(
+      harness.runtime.execute({
+        ...harness.request,
+        reasoningEffort: "ultra",
+      }),
+    ).resolves.toMatchObject({ status: "completed" });
+    expect(providerRequest).toMatchObject({ reasoningEffort: "ultra" });
+  });
+
+  it("rejects a reasoning effort the live model did not advertise", async () => {
+    const harness = createHarness({
+      providerOptions: {
+        models: [{ id: "mock-model", reasoningEfforts: ["medium", "high"] }],
+      },
+    });
+
+    await expect(
+      harness.runtime.execute({
+        ...harness.request,
+        reasoningEffort: "ultra",
+      }),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: { code: "UNSUPPORTED_REASONING_EFFORT" },
+    });
+  });
+
   it.each([
     [Object.assign(new Error("rate limit"), { status: 429 }), "RATE_LIMITED"],
     [

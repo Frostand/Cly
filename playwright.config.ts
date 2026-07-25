@@ -6,9 +6,10 @@ const port = Number(process.env.PLAYWRIGHT_PORT ?? 3211);
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
-  // Electron review suites use fixed isolated ports and are resource-heavy;
-  // serialize CI workers so launches cannot starve or race one another.
-  workers: process.env.CI ? 1 : undefined,
+  // Electron review suites use fixed isolated ports and are resource-heavy.
+  // A single worker prevents local and CI launches from closing or stealing
+  // one another's API, renderer, and workspace windows.
+  workers: 1,
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     trace: "retain-on-failure",

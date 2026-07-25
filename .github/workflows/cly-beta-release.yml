@@ -76,6 +76,7 @@ jobs:
           pnpm lint
           pnpm typecheck
           pnpm capabilities:check
+          pnpm privacy:check
           pnpm licenses:check
           pnpm test
           xvfb-run --auto-servernum pnpm test:e2e
@@ -92,6 +93,8 @@ jobs:
           - label: macOS
             os: macos-14
             command: pnpm exec electron-builder --mac dmg zip --arm64 --x64 --publish never
+            app: release/mac-arm64/Cly.app
+            smoke: pnpm package:smoke -- --app release/mac-arm64/Cly.app
             artifact: cly-macos
             metadata: release/latest-mac.yml
             files: |
@@ -103,6 +106,8 @@ jobs:
           - label: Windows x64
             os: windows-latest
             command: pnpm exec electron-builder --win nsis --x64 --publish never
+            app: release/win-unpacked
+            smoke: pnpm package:smoke -- --app release/win-unpacked
             artifact: cly-windows-x64
             metadata: release/latest.yml
             files: |
@@ -112,6 +117,8 @@ jobs:
           - label: Linux x64
             os: ubuntu-latest
             command: pnpm exec electron-builder --linux AppImage deb rpm --x64 --publish never
+            app: release/linux-unpacked
+            smoke: xvfb-run --auto-servernum pnpm package:smoke -- --app release/linux-unpacked
             artifact: cly-linux-x64
             metadata: release/latest-linux.yml
             files: |
@@ -145,6 +152,12 @@ jobs:
 
       - name: Package application
         run: ${{ matrix.command }}
+
+      - name: Verify packaged contents and permissions
+        run: pnpm package:verify:contents -- --app ${{ matrix.app }}
+
+      - name: Launch packaged application
+        run: ${{ matrix.smoke }}
 
       - name: Verify update metadata
         shell: bash

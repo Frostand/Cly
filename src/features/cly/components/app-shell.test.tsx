@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CLY_MENU_COMMANDS } from "../../../../electron/menu-commands.js";
 import { useIdeStore } from "../../../components/ide/ide-store";
 import type { AgentConfiguration } from "../agent-sessions/types";
 import type { ScreenId } from "../domain/types";
@@ -15,7 +16,7 @@ import { createCostLedgerFixture } from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
 import { projectServices } from "../services/project-services";
 import { useClyStore } from "../store/cly-store";
-import { ClyAppShell } from "./app-shell";
+import { ClyAppShell, runMenuCommand } from "./app-shell";
 
 const loadFromApi = useClyStore.getState().loadFromApi;
 
@@ -38,7 +39,7 @@ const agentConfiguration: AgentConfiguration = {
       instanceCount: 1,
       maxParallel: 1,
       provider: "openai",
-      model: "gpt-5",
+      model: "gpt-5.6-sol",
       reasoningLevel: "medium",
       budget: {
         maxInputTokens: 1_000,
@@ -78,6 +79,47 @@ describe("Cly application shell", () => {
       settingsOpen: false,
       settingsSection: "appearance",
       stateHydrated: false,
+      providerModels: {
+        fetchedAt: new Date().toISOString(),
+        openai: {
+          installed: true,
+          loading: false,
+          error: null,
+          source: "cli",
+          version: "1.0.0",
+          models: [
+            {
+              id: "gpt-5.6-sol",
+              label: "GPT-5.6 Sol",
+              reasoningEfforts: ["low", "medium", "high", "xhigh"],
+            },
+          ],
+        },
+        anthropic: {
+          installed: false,
+          loading: false,
+          error: null,
+          source: "unavailable",
+          version: null,
+          models: [],
+        },
+        opencode: {
+          installed: false,
+          loading: false,
+          error: null,
+          source: "unavailable",
+          version: null,
+          models: [],
+        },
+        cursor: {
+          installed: false,
+          loading: false,
+          error: null,
+          source: "unavailable",
+          version: null,
+          models: [],
+        },
+      },
     });
     const data = createFixtureRepository("active");
     const costs = createCostLedgerFixture("active", data);
@@ -137,6 +179,14 @@ describe("Cly application shell", () => {
   it("navigates every major research component from the grouped sidebar", async () => {
     const user = userEvent.setup();
     render(<ClyAppShell />);
+
+    expect(
+      screen.getByRole("group", { name: "Cly product area" }),
+    ).toBeVisible();
+    expect(screen.getByTestId("product-research")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     const destinations = [
       ["objectives", "Objectives"],
@@ -354,11 +404,22 @@ describe("Cly application shell", () => {
     ).toBeVisible();
   });
 
+  it("handles every command advertised by the native application menu", () => {
+    for (const command of CLY_MENU_COMMANDS) {
+      expect(runMenuCommand(command)).toBe(true);
+    }
+    expect(runMenuCommand("unknown-command")).toBe(false);
+  });
+
   it("switches between Cly Research and the live Cly Dev workspace", async () => {
     const user = userEvent.setup();
     render(<ClyAppShell />);
 
     await user.click(screen.getByTestId("product-dev"));
+    expect(screen.getByTestId("product-dev")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(
       screen.getByRole("region", { name: "Cly Dev AI workspace" }),
     ).toBeVisible();
@@ -441,7 +502,7 @@ describe("Cly application shell", () => {
       ["experiments", "NHANES cohort assembly"],
       ["provenance", "Model comparison table"],
       ["reproducibility", "Cardiovascular outcomes are not observed"],
-      ["integrations", "NotebookLM"],
+      ["integrations", "Local AI providers"],
       ["decisions", "Use ApoB–LDL-C percentile discordance as the demo target"],
     ];
 

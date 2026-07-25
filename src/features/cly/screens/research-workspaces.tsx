@@ -15,7 +15,6 @@ import {
   FileText,
   FolderInput,
   Link2,
-  Merge,
   Notebook,
   Plus,
   ScanSearch,
@@ -59,6 +58,7 @@ import {
 } from "../domain/costs";
 import { previewLiteratureThemes } from "../domain/literature-enrichment";
 import type { LiteratureSearchResult } from "../domain/literature-search";
+import { readSelectedSourceFiles } from "../domain/local-source-import";
 import { filterAndSortClaims } from "../domain/logic";
 import type {
   InheritedRestriction,
@@ -68,12 +68,15 @@ import type {
 import type {
   Claim,
   ClaimStatus,
+  ClyRepositoryData,
+  ExperimentType,
   ResearchProject,
   Source,
 } from "../domain/types";
 import {
   apiClient,
   type LiteratureReadingList,
+  type ProvenanceEvent,
   type ReviewerCapsule,
 } from "../services/api-client";
 import { capabilityUnavailableMessage } from "../services/capabilities";
@@ -118,15 +121,19 @@ export function SourcesScreen() {
   const [readingListId, setReadingListId] = useState("");
   const [newReadingListName, setNewReadingListName] = useState("");
   const [importing, setImporting] = useState(false);
+  const [folderImporting, setFolderImporting] = useState(false);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const selectedSource = sources.find((source) => source.id === selectedId);
   const relevanceRank = { Core: 0, High: 1, Medium: 2, Low: 3 };
   const filtered = sources
     .filter(
       (source) =>
+        (type === "Archived" ? source.archived : !source.archived) &&
         (!query ||
           `${source.title} ${source.authors} ${source.tags.join(" ")}`
             .toLowerCase()
             .includes(query.toLowerCase())) &&
-        (type === "All" || source.type === type),
+        (type === "All" || type === "Archived" || source.type === type),
     )
     .sort((a, b) => {
       if (sort === "Newest") return b.year - a.year;
@@ -284,6 +291,66 @@ export function SourcesScreen() {
     }
   };
 
+  const importSourceFolder = async (files: FileList | null) => {
+    if (!files?.length) return;
+    if (!activeProject) {
+      notify("Folder was not imported", "Select a research project first.");
+      return;
+    }
+    setFolderImporting(true);
+    try {
+      const batch = await readSelectedSourceFiles(files);
+      let importedCount = 0;
+      let duplicateCount = 0;
+      const failures = [...batch.failures];
+      for (const entry of batch.entries) {
+        try {
+          const result = await apiClient.importLiteratureMetadata(
+            activeProject.id,
+            entry.format === "bibtex"
+              ? { format: "bibtex", content: entry.content }
+              : { format: "metadata", records: entry.records },
+          );
+          importedCount += result.importedCount;
+          duplicateCount += result.duplicateCount;
+        } catch (error) {
+          failures.push({
+            fileName: entry.fileName,
+            reason:
+              error instanceof Error ? error.message : "Import request failed.",
+          });
+        }
+      }
+      if (importedCount || duplicateCount) await loadFromApi(activeProject.id);
+      if (!importedCount && !duplicateCount) {
+        notify(
+          "Folder was not imported",
+          failures.length
+            ? failures
+                .slice(0, 3)
+                .map((failure) => `${failure.fileName}: ${failure.reason}`)
+                .join(" ")
+            : "No supported source records were found.",
+        );
+      } else {
+        notify(
+          "Folder import complete",
+          `${importedCount} source${importedCount === 1 ? "" : "s"} imported, ${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"} matched${failures.length ? `, ${failures.length} file${failures.length === 1 ? "" : "s"} skipped` : ""}.`,
+        );
+      }
+    } catch (error) {
+      notify(
+        "Folder was not imported",
+        error instanceof Error
+          ? error.message
+          : "Unable to read selected files.",
+      );
+    } finally {
+      setFolderImporting(false);
+      if (folderInputRef.current) folderInputRef.current.value = "";
+    }
+  };
+
   return (
     <div className="cly-page cly-page-wide cly-route-sources">
       <PageHeader
@@ -292,17 +359,23 @@ export function SourcesScreen() {
         description="Organize and connect research sources."
         actions={
           <>
-            <Button
-              disabled={!isClyDemoRuntime}
-              title={capabilityUnavailableMessage("sources.folder-import")}
-              onClick={() =>
-                notify(
-                  "Folder import preview",
-                  "12 supported source files were discovered. No filesystem changes were made.",
-                )
+            <input
+              ref={folderInputRef}
+              type="file"
+              accept=".bib,.json,application/x-bibtex,application/json"
+              multiple
+              style={{ display: "none" }}
+              {...({ webkitdirectory: "" } as Record<string, string>)}
+              onChange={(event) =>
+                void importSourceFolder(event.currentTarget.files)
               }
+            />
+            <Button
+              disabled={folderImporting}
+              onClick={() => folderInputRef.current?.click()}
             >
-              <FolderInput size={13} /> Import folder
+              <FolderInput size={13} />
+              {folderImporting ? "Importing…" : "Import folder"}
             </Button>
             <Button variant="primary" onClick={() => openImport()}>
               <Upload size={13} /> Import source
@@ -322,9 +395,9 @@ export function SourcesScreen() {
           detail="Linked to active claims"
         />
         <Metric
-          label="NotebookLM bundle"
-          value={sources.filter((item) => item.inNotebookBundle).length}
-          detail="Ready for source manifest"
+          label="Archived"
+          value={sources.filter((item) => item.archived).length}
+          detail="Preserved in project history"
         />
         <Metric
           label="Needs metadata"
@@ -349,6 +422,7 @@ export function SourcesScreen() {
             aria-label="Filter source type"
           >
             <option>All</option>
+            <option>Archived</option>
             {Array.from(new Set(sources.map((item) => item.type))).map(
               (item) => (
                 <option key={item}>{item}</option>
@@ -406,18 +480,6 @@ export function SourcesScreen() {
       >
         <div className="cly-row">
           <Button
-            disabled={!selectedId || !isClyDemoRuntime}
-            title={capabilityUnavailableMessage("exports.notebook-bundle")}
-            onClick={() =>
-              selectedId &&
-              void projectServices.sources
-                .addToNotebookBundle(selectedId)
-                .then(() => notify("Added to NotebookLM bundle"))
-            }
-          >
-            <BookOpen size={13} /> Add to NotebookLM bundle
-          </Button>
-          <Button
             disabled={!selectedId || claims.length === 0}
             onClick={() => {
               const claim = claims[0];
@@ -443,8 +505,7 @@ export function SourcesScreen() {
             <Link2 size={13} /> Link to claim
           </Button>
           <Button
-            disabled={!selectedId || !isClyDemoRuntime}
-            title={capabilityUnavailableMessage("sources.deduplicate")}
+            disabled={!selectedId}
             onClick={() => {
               if (!selectedId) return;
               void projectServices.sources
@@ -469,27 +530,32 @@ export function SourcesScreen() {
           </Button>
           <Button
             disabled={!selectedId}
-            onClick={() =>
-              notify(
-                "Duplicate analysis",
-                "No exact duplicate was found; one possible preprint match remains.",
-              )
-            }
-          >
-            <Merge size={13} /> Merge duplicates
-          </Button>
-          <Button
-            disabled={!selectedId || !isClyDemoRuntime}
             variant="danger"
-            title={capabilityUnavailableMessage("sources.archive")}
-            onClick={() =>
-              notify(
-                "Source archived",
-                "Archived sources remain in provenance and decision history.",
-              )
-            }
+            onClick={() => {
+              if (!selectedId || !selectedSource) return;
+              const archived = !selectedSource.archived;
+              void projectServices.sources
+                .setArchived(selectedId, archived)
+                .then(() =>
+                  notify(
+                    archived ? "Source archived" : "Source restored",
+                    archived
+                      ? "The source remains available in project history and the Archived filter."
+                      : "The source is active again.",
+                  ),
+                )
+                .catch((error) =>
+                  notify(
+                    "Archive update failed",
+                    error instanceof Error
+                      ? error.message
+                      : "Unable to update the source.",
+                  ),
+                );
+            }}
           >
-            <Archive size={13} /> Archive
+            <Archive size={13} />{" "}
+            {selectedSource?.archived ? "Restore" : "Archive"}
           </Button>
         </div>
       </DisclosureRow>
@@ -720,8 +786,7 @@ type LiteratureView =
   | "Themes"
   | "Chronological"
   | "Claims"
-  | "Methods"
-  | "NotebookLM";
+  | "Methods";
 type LiteratureMatrixMode = "Discover" | "Saved matrix";
 type LiteratureResultFilter = "All results" | "Unsaved" | "Saved";
 type LiteratureResultSort = "Relevance" | "Newest" | "Title";
@@ -731,7 +796,6 @@ const literatureViews = [
   "Chronological",
   "Claims",
   "Methods",
-  "NotebookLM",
 ] as const;
 
 export function LiteratureScreen() {
@@ -742,6 +806,8 @@ export function LiteratureScreen() {
   const claims = useClyStore((s) => s.data.claims);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
+  const fixtureMode = useClyStore((s) => s.fixtureMode);
+  const showDemoLiterature = isClyDemoRuntime && fixtureMode !== "empty";
   const [view, setView] = useState<LiteratureView>("Matrix");
   const [matrixMode, setMatrixMode] =
     useState<LiteratureMatrixMode>("Discover");
@@ -752,10 +818,6 @@ export function LiteratureScreen() {
     useState<LiteratureResultFilter>("All results");
   const [resultSort, setResultSort] =
     useState<LiteratureResultSort>("Relevance");
-  const [answer, setAnswer] = useState("");
-  const [importedAnswers, setImportedAnswers] = useState<string[]>([
-    "The cited literature supports substantial ApoB variation at a given LDL-C level, but it does not turn this cross-sectional model into a cardiovascular event predictor.",
-  ]);
   const [searchResults, setSearchResults] = useState<LiteratureSearchResult[]>(
     [],
   );
@@ -800,6 +862,28 @@ export function LiteratureScreen() {
     searchResults.find((result) => result.source.id === selectedResultId) ??
     filteredResults[0] ??
     null;
+  const themes = useMemo(() => {
+    if (showDemoLiterature) {
+      return [
+        "ApoB discordance",
+        "Metabolic signals",
+        "Lipid measurement",
+        "Clinical validation",
+      ].map((title, index) => ({
+        title,
+        count: index + 2,
+        summary:
+          index === 2
+            ? "Laboratory methods and LDL-C calculation differ across survey cycles and need explicit harmonization."
+            : "Sources converge on wide person-level ApoB variation at a given LDL-C level and the need for external outcome validation.",
+      }));
+    }
+    return previewLiteratureThemes(sources).map(({ label, sourceCount }) => ({
+      title: label,
+      count: sourceCount,
+      summary: `${sourceCount} saved source${sourceCount === 1 ? "" : "s"} use this tag or method.`,
+    }));
+  }, [showDemoLiterature, sources]);
   const resultColumns = useMemo<ColumnDef<LiteratureSearchResult, unknown>[]>(
     () => [
       {
@@ -1380,31 +1464,29 @@ export function LiteratureScreen() {
         </section>
       ) : null}
       {view === "Themes" ? (
-        <div className="cly-grid-3">
-          {[
-            "ApoB discordance",
-            "Metabolic signals",
-            "Lipid measurement",
-            "Clinical validation",
-          ].map((theme, index) => (
-            <Panel key={theme}>
-              <div className="cly-panel-header">
-                <strong>{theme}</strong>
-                <Badge>{index + 2} sources</Badge>
-              </div>
-              <div className="cly-panel-body">
-                <p className="cly-muted cly-small">
-                  {index === 2
-                    ? "Laboratory methods and LDL-C calculation differ across survey cycles and need explicit harmonization."
-                    : "Sources converge on wide person-level ApoB variation at a given LDL-C level and the need for external outcome validation."}
-                </p>
-                <Button onClick={() => notify("Theme focused", theme)}>
-                  Focus cluster <ArrowRight size={13} />
-                </Button>
-              </div>
-            </Panel>
-          ))}
-        </div>
+        themes.length ? (
+          <div className="cly-grid-3">
+            {themes.map((theme) => (
+              <Panel key={theme.title}>
+                <div className="cly-panel-header">
+                  <strong>{theme.title}</strong>
+                  <Badge>{theme.count} sources</Badge>
+                </div>
+                <div className="cly-panel-body">
+                  <p className="cly-muted cly-small">{theme.summary}</p>
+                  <Button onClick={() => notify("Theme focused", theme.title)}>
+                    Focus cluster <ArrowRight size={13} />
+                  </Button>
+                </div>
+              </Panel>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="No literature themes yet"
+            description="Add tagged sources or recorded methods to build themes from project evidence."
+          />
+        )
       ) : null}
       {view === "Chronological" ? (
         <Panel className="cly-panel-body">
@@ -1490,31 +1572,26 @@ export function LiteratureScreen() {
           )}
         </div>
       ) : null}
-      {view === "NotebookLM" ? (
-        <NotebookLmWorkspace
-          sources={sources}
-          answer={answer}
-          setAnswer={setAnswer}
-          importedAnswers={importedAnswers}
-          setImportedAnswers={setImportedAnswers}
-        />
-      ) : null}
     </div>
   );
 }
 
+// Retained temporarily for migration compatibility; no production route exposes it.
+// biome-ignore lint/correctness/noUnusedVariables: legacy read-only fixture component
 function NotebookLmWorkspace({
   sources,
   answer,
   setAnswer,
   importedAnswers,
   setImportedAnswers,
+  showDemoContent,
 }: {
   sources: Source[];
   answer: string;
   setAnswer: (value: string) => void;
   importedAnswers: string[];
   setImportedAnswers: (value: string[]) => void;
+  showDemoContent: boolean;
 }) {
   const notify = useClyStore((s) => s.notify);
   const bundle = sources.filter((source) => source.inNotebookBundle);
@@ -1526,20 +1603,32 @@ function NotebookLmWorkspace({
             <div>
               <div className="cly-row">
                 <Notebook size={16} />
-                <strong>Surrogate reliability · NotebookLM companion</strong>
+                <strong>
+                  {showDemoContent
+                    ? "Surrogate reliability · NotebookLM companion"
+                    : "NotebookLM companion"}
+                </strong>
               </div>
               <div className="cly-muted cly-small">
                 Manual companion workflow · no login, scraping, or website
                 automation
               </div>
             </div>
-            <Badge tone="success">Bundle ready</Badge>
+            <Badge tone={bundle.length ? "info" : "neutral"}>
+              {showDemoContent ? "Bundle ready" : `${bundle.length} selected`}
+            </Badge>
           </div>
           <div className="cly-panel-body">
             <div className="cly-metric-row">
               <Metric label="Bundle sources" value={bundle.length} />
-              <Metric label="Manifest" value="Ready" />
-              <Metric label="Last export" value="Yesterday" />
+              <Metric
+                label="Manifest"
+                value={showDemoContent ? "Ready" : "Not generated"}
+              />
+              <Metric
+                label="Last export"
+                value={showDemoContent ? "Yesterday" : "Never"}
+              />
               <Metric label="Imported answers" value={importedAnswers.length} />
             </div>
             <Section title="Source bundle">
@@ -1703,10 +1792,7 @@ export function NotebooksScreen() {
   const experiments = useClyStore((s) => s.data.experiments);
   const selectedId = useClyStore((s) => s.selectedId);
   const setSelected = useClyStore((s) => s.setSelected);
-  const notify = useClyStore((s) => s.notify);
   const [query, setQuery] = useState("");
-  const [importOpen, setImportOpen] = useState(false);
-  const [name, setName] = useState("new-analysis.ipynb");
   const selected =
     notebooks.find((item) => item.id === selectedId) ?? notebooks[0];
   const visible = notebooks.filter(
@@ -1716,50 +1802,17 @@ export function NotebooksScreen() {
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
-  const importNotebook = async () => {
-    const notebook = await projectServices.notebooks.importMock(name);
-    setImportOpen(false);
-    setSelected(notebook.id);
-    notify(
-      "Notebook imported and scanned",
-      `${notebook.codeCells} code cells · ${notebook.outputs} outputs · 1 queued issue`,
-    );
-  };
   return (
     <div className="cly-page cly-page-wide cly-route-notebooks">
       <PageHeader
         kicker="Research"
         title="Notebook Scanner"
-        description="Find execution, output, and reproducibility issues."
-        actions={
-          <Button
-            variant="primary"
-            disabled={!isClyDemoRuntime}
-            title={capabilityUnavailableMessage("notebooks.import")}
-            onClick={() => setImportOpen(true)}
-          >
-            <Upload size={13} /> Import notebook
-          </Button>
-        }
+        description="Review previously indexed notebook execution and reproducibility findings."
       />
       {notebooks.length === 0 ? (
         <EmptyState
-          title="No notebooks discovered"
-          description={
-            isClyDemoRuntime
-              ? "Import a notebook to inspect its execution and outputs."
-              : capabilityUnavailableMessage("notebooks.import")
-          }
-          action={
-            <Button
-              variant="primary"
-              disabled={!isClyDemoRuntime}
-              title={capabilityUnavailableMessage("notebooks.import")}
-              onClick={() => setImportOpen(true)}
-            >
-              Import notebook
-            </Button>
-          }
+          title="No notebooks indexed"
+          description="This project does not have any persisted notebook scan results."
         />
       ) : (
         <div className="cly-overview-grid">
@@ -1867,88 +1920,12 @@ export function NotebooksScreen() {
                       </div>
                     ))}
                   </Section>
-                  <Section title="Notebook actions">
-                    <div className="cly-grid-2">
-                      <Button
-                        disabled={!isClyDemoRuntime}
-                        title={capabilityUnavailableMessage("notebooks.import")}
-                        onClick={() =>
-                          notify(
-                            "Notebook summary ready",
-                            "The summary includes objectives, methods, results, caveats, and linked claims.",
-                          )
-                        }
-                      >
-                        <Sparkles size={12} /> Summarize
-                      </Button>
-                      <Button
-                        disabled={!isClyDemoRuntime}
-                        title={capabilityUnavailableMessage("notebooks.import")}
-                        onClick={() =>
-                          notify(
-                            "Outputs extracted",
-                            `${selected.outputs} output records and ${selected.figures} figures were added to the mock artifact index.`,
-                          )
-                        }
-                      >
-                        <Download size={12} /> Extract
-                      </Button>
-                      <Button
-                        disabled={!isClyDemoRuntime}
-                        title={capabilityUnavailableMessage("notebooks.import")}
-                        onClick={() =>
-                          notify(
-                            "Notebook marked canonical",
-                            "The canonical marker is simulated for this session.",
-                          )
-                        }
-                      >
-                        <Check size={12} /> Canonical
-                      </Button>
-                      <Button
-                        disabled={!isClyDemoRuntime}
-                        title={capabilityUnavailableMessage("notebooks.import")}
-                        onClick={() =>
-                          notify(
-                            "Reproducibility task created",
-                            "A notebook cleanup task was added to Next Steps.",
-                          )
-                        }
-                      >
-                        <ScanSearch size={12} /> Audit
-                      </Button>
-                    </div>
-                  </Section>
                 </div>
               </Panel>
             ) : null}
           </aside>
         </div>
       )}
-      <Dialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        title="Import notebook"
-        description={capabilityUnavailableMessage("notebooks.import")}
-        footer={
-          <>
-            <Button onClick={() => setImportOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => void importNotebook()}>
-              Import and scan
-            </Button>
-          </>
-        }
-      >
-        <div className="cly-field">
-          <label htmlFor="notebook-name">Notebook filename</label>
-          <input
-            id="notebook-name"
-            className="cly-input"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </div>
-      </Dialog>
     </div>
   );
 }
@@ -1957,11 +1934,8 @@ export function CodeLinkerScreen() {
   const code = useClyStore((s) => s.data.code);
   const selectedId = useClyStore((s) => s.selectedId);
   const setSelected = useClyStore((s) => s.setSelected);
-  const notify = useClyStore((s) => s.notify);
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<
-    "Files" | "Objectives" | "Claims" | "Risks" | "Unlinked"
-  >("Files");
+  const [view, setView] = useState<"Files" | "Risks" | "Unlinked">("Files");
   const selected = code.find((item) => item.id === selectedId) ?? code[0];
   const visible = code.filter(
     (item) =>
@@ -1981,9 +1955,7 @@ export function CodeLinkerScreen() {
         actions={
           <Segmented
             value={view}
-            options={
-              ["Files", "Objectives", "Claims", "Risks", "Unlinked"] as const
-            }
+            options={["Files", "Risks", "Unlinked"] as const}
             onChange={setView}
             label="Code linker view"
           />
@@ -1992,12 +1964,7 @@ export function CodeLinkerScreen() {
       {code.length === 0 ? (
         <EmptyState
           title="No code artifacts indexed"
-          description={capabilityUnavailableMessage("code.scan")}
-          action={
-            <Button disabled title={capabilityUnavailableMessage("code.scan")}>
-              Scan project
-            </Button>
-          }
+          description="This project does not have any persisted code scan results."
         />
       ) : (
         <div
@@ -2099,57 +2066,6 @@ export function CodeLinkerScreen() {
                   ) : (
                     <div className="cly-callout">No open code risks.</div>
                   )}
-                </Section>
-                <Section title="Actions">
-                  <div className="cly-row">
-                    <Button
-                      onClick={() =>
-                        notify(
-                          "Research link created",
-                          "Choose a method, claim, experiment, or run in the inspector.",
-                        )
-                      }
-                    >
-                      <Link2 size={13} /> Link object
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        notify("Inferred purpose approved", selected.purpose)
-                      }
-                    >
-                      <Check size={13} /> Approve purpose
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        notify(
-                          "Output trace opened",
-                          "Cly traced code → run → artifact → claim.",
-                        )
-                      }
-                    >
-                      <ArrowRight size={13} /> Trace outputs
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        notify(
-                          "External editor boundary",
-                          "Cly’s open-in-editor infrastructure is retained for Phase 2 wiring.",
-                        )
-                      }
-                    >
-                      <ExternalLink size={13} /> External editor
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        notify(
-                          "Code review preview",
-                          "A research-aware code review agent plan is ready.",
-                        )
-                      }
-                    >
-                      <Sparkles size={13} /> Request review
-                    </Button>
-                  </div>
                 </Section>
               </div>
             </Panel>
@@ -2288,18 +2204,6 @@ export function ClaimsScreen() {
                 <option key={item}>{item}</option>
               ))}
             </select>
-            <Button
-              disabled={!selected || !isClyDemoRuntime}
-              title={capabilityUnavailableMessage("agents.execute")}
-              onClick={() =>
-                notify(
-                  "Adversarial review preview",
-                  "The agent plan will search for missing controls, weak baselines, and alternative explanations.",
-                )
-              }
-            >
-              <Sparkles size={13} /> Adversarial review
-            </Button>
             <Button disabled={!selected} onClick={() => setCapsuleOpen(true)}>
               <Download size={13} /> Reviewer capsule
             </Button>
@@ -2754,6 +2658,52 @@ export function ReviewerCapsuleDialog({
   );
 }
 
+export function buildDeterministicClaimReport(
+  projectId: string,
+  claim: Claim,
+  data: ClyRepositoryData,
+  provenance: ProvenanceEvent[],
+) {
+  const supportingIds = new Set(claim.supportingSourceIds);
+  const contradictingIds = new Set(claim.contradictingSourceIds);
+  const experimentIds = new Set(claim.experimentIds);
+  const artifactIds = new Set(claim.artifactIds);
+  const relatedIds = new Set([
+    claim.id,
+    ...supportingIds,
+    ...contradictingIds,
+    ...experimentIds,
+    ...artifactIds,
+  ]);
+  const byId = <T extends { id: string }>(items: T[], ids: Set<string>) =>
+    items
+      .filter((item) => ids.has(item.id))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  return {
+    schemaVersion: 1,
+    projectId,
+    claim,
+    evidence: {
+      supportingSources: byId(data.sources, supportingIds),
+      contradictingSources: byId(data.sources, contradictingIds),
+    },
+    experiments: byId(data.experiments, experimentIds),
+    artifacts: byId(data.artifacts, artifactIds),
+    relationships: data.graphEdges
+      .filter(
+        (edge) => relatedIds.has(edge.source) && relatedIds.has(edge.target),
+      )
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    provenance: provenance
+      .filter((event) => event.objectId && relatedIds.has(event.objectId))
+      .sort(
+        (a, b) =>
+          (a.sequence ?? Number.MAX_SAFE_INTEGER) -
+            (b.sequence ?? Number.MAX_SAFE_INTEGER) || a.id.localeCompare(b.id),
+      ),
+  };
+}
+
 function ClaimDetail({
   claim,
 }: {
@@ -2761,6 +2711,7 @@ function ClaimDetail({
 }) {
   const data = useClyStore((s) => s.data);
   const notify = useClyStore((s) => s.notify);
+  const activeProjectId = useClyStore((s) => s.activeProjectId);
   const claimCost = useClyStore((s) => s.claimCosts[claim.id]);
   const restrictions = useClyStore(
     (s) => s.inheritedRestrictions[claim.id] ?? noInheritedRestrictions,
@@ -2772,6 +2723,15 @@ function ClaimDetail({
   );
   const [sourceId, setSourceId] = useState(data.sources[0]?.id ?? "");
   const [savingEvidence, setSavingEvidence] = useState(false);
+  const [experimentOpen, setExperimentOpen] = useState(false);
+  const [experimentName, setExperimentName] = useState("");
+  const [experimentGoal, setExperimentGoal] = useState("");
+  const [experimentHypothesis, setExperimentHypothesis] = useState("");
+  const [experimentType, setExperimentType] = useState<ExperimentType>(
+    "Statistical analysis",
+  );
+  const [savingExperiment, setSavingExperiment] = useState(false);
+  const [exportingReport, setExportingReport] = useState(false);
   const evidenceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const closeEvidence = () => {
     setEvidenceOpen(false);
@@ -2818,6 +2778,87 @@ function ClaimDetail({
       );
     } finally {
       setSavingEvidence(false);
+    }
+  };
+  const openExperiment = () => {
+    setExperimentName(`Test claim: ${claim.text.slice(0, 72)}`);
+    setExperimentGoal(
+      claim.nextExperiment || "Design a discriminating test for this claim.",
+    );
+    setExperimentHypothesis(claim.text);
+    setExperimentType("Statistical analysis");
+    setExperimentOpen(true);
+  };
+  const createLinkedExperiment = async () => {
+    if (!experimentName.trim() || !experimentGoal.trim()) return;
+    setSavingExperiment(true);
+    try {
+      const experiment = await projectServices.experiments.create({
+        name: experimentName.trim(),
+        goal: experimentGoal.trim(),
+        hypothesis: experimentHypothesis.trim() || claim.text,
+        type: experimentType,
+      });
+      try {
+        await projectServices.claims.linkExperiment(claim.id, experiment.id);
+      } catch (error) {
+        throw new Error(
+          `Experiment ${experiment.id} was saved, but its claim relationship failed: ${error instanceof Error ? error.message : "unknown error"}`,
+        );
+      }
+      setExperimentOpen(false);
+      notify(
+        "Planned experiment created",
+        "The experiment and claim-testing relationship were persisted.",
+      );
+    } catch (error) {
+      notify(
+        "Experiment was not fully linked",
+        error instanceof Error
+          ? error.message
+          : "Unable to create the planned experiment.",
+      );
+    } finally {
+      setSavingExperiment(false);
+    }
+  };
+  const exportClaimReport = async () => {
+    const desktopApi = getDesktopApi();
+    if (!desktopApi) {
+      notify(
+        "Desktop app required",
+        "Open Cly in Electron to choose where to save the claim report.",
+      );
+      return;
+    }
+    setExportingReport(true);
+    try {
+      const provenance = await apiClient.fetchProvenance(activeProjectId, 500);
+      const report = buildDeterministicClaimReport(
+        activeProjectId,
+        claim,
+        data,
+        provenance,
+      );
+      const safeId = claim.id.replace(/[^a-zA-Z0-9._-]+/g, "-");
+      const saved = await desktopApi.saveTextFile({
+        contents: `${JSON.stringify(report, null, 2)}\n`,
+        defaultPath: `cly-claim-${safeId}.json`,
+        title: "Export Cly claim report",
+      });
+      if (saved) {
+        notify(
+          "Claim report exported",
+          "The saved JSON contains the claim, linked evidence, experiments, relationships, and provenance.",
+        );
+      }
+    } catch (error) {
+      notify(
+        "Claim report was not exported",
+        error instanceof Error ? error.message : "Unable to export the report.",
+      );
+    } finally {
+      setExportingReport(false);
     }
   };
   return (
@@ -3032,17 +3073,7 @@ function ClaimDetail({
         <Panel className="cly-panel-body">
           <div className="cly-page-kicker">Next required experiment</div>
           <h3>{claim.nextExperiment}</h3>
-          <Button
-            variant="primary"
-            disabled={!isClyDemoRuntime}
-            title={capabilityUnavailableMessage("claims.secondary-actions")}
-            onClick={() =>
-              notify(
-                "Experiment proposal created",
-                "A planned experiment and linked next step were created in fixture mode.",
-              )
-            }
-          >
+          <Button variant="primary" onClick={openExperiment}>
             <BeakerIcon /> Generate experiment
           </Button>
         </Panel>
@@ -3081,16 +3112,11 @@ function ClaimDetail({
               <X size={13} /> Add contradiction
             </Button>
             <Button
-              disabled={!isClyDemoRuntime}
-              title={capabilityUnavailableMessage("claims.secondary-actions")}
-              onClick={() =>
-                notify(
-                  "Claim report exported",
-                  "The fixture report includes all evidence, caveats, and provenance links.",
-                )
-              }
+              disabled={exportingReport}
+              onClick={() => void exportClaimReport()}
             >
-              <Download size={13} /> Export claim report
+              <Download size={13} />
+              {exportingReport ? "Exporting…" : "Export claim report"}
             </Button>
             <Button onClick={() => setScreen("graph")}>
               <ArrowRight size={13} /> Trace in graph
@@ -3098,6 +3124,77 @@ function ClaimDetail({
           </div>
         </Panel>
       </aside>
+      <Dialog
+        open={experimentOpen}
+        onClose={() => setExperimentOpen(false)}
+        title="Plan an experiment for this claim"
+        description="Review the proposed test before Cly saves the experiment and its claim relationship."
+        footer={
+          <>
+            <Button onClick={() => setExperimentOpen(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={
+                savingExperiment ||
+                !experimentName.trim() ||
+                !experimentGoal.trim()
+              }
+              onClick={() => void createLinkedExperiment()}
+            >
+              {savingExperiment ? "Saving…" : "Create and link experiment"}
+            </Button>
+          </>
+        }
+      >
+        <div className="cly-field">
+          <label htmlFor={`claim-experiment-name-${claim.id}`}>Name</label>
+          <input
+            id={`claim-experiment-name-${claim.id}`}
+            className="cly-input"
+            value={experimentName}
+            onChange={(event) => setExperimentName(event.target.value)}
+          />
+        </div>
+        <div className="cly-field">
+          <label htmlFor={`claim-experiment-goal-${claim.id}`}>Goal</label>
+          <textarea
+            id={`claim-experiment-goal-${claim.id}`}
+            className="cly-textarea"
+            rows={3}
+            value={experimentGoal}
+            onChange={(event) => setExperimentGoal(event.target.value)}
+          />
+        </div>
+        <div className="cly-field">
+          <label htmlFor={`claim-experiment-hypothesis-${claim.id}`}>
+            Hypothesis
+          </label>
+          <textarea
+            id={`claim-experiment-hypothesis-${claim.id}`}
+            className="cly-textarea"
+            rows={3}
+            value={experimentHypothesis}
+            onChange={(event) => setExperimentHypothesis(event.target.value)}
+          />
+        </div>
+        <div className="cly-field">
+          <label htmlFor={`claim-experiment-type-${claim.id}`}>Type</label>
+          <select
+            id={`claim-experiment-type-${claim.id}`}
+            className="cly-select"
+            value={experimentType}
+            onChange={(event) =>
+              setExperimentType(event.target.value as ExperimentType)
+            }
+          >
+            <option>Statistical analysis</option>
+            <option>Benchmark</option>
+            <option>Reproduction attempt</option>
+            <option>Ablation</option>
+            <option>Custom</option>
+          </select>
+        </div>
+      </Dialog>
       <Dialog
         open={evidenceOpen}
         onClose={closeEvidence}

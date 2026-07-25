@@ -35,6 +35,14 @@ import {
 type ViewState = "loading" | "error" | "ready";
 type SourceMode = "Local diff" | "Pull request";
 
+const isCanonicalLocalPath = (value: string | undefined) =>
+  Boolean(
+    value &&
+      (value.startsWith("/") ||
+        /^[A-Za-z]:[\\/]/.test(value) ||
+        value.startsWith("\\\\")),
+  );
+
 function linkBadge(status: ImpactLinkStatus) {
   if (status === "verified") return <Badge tone="success">Verified</Badge>;
   if (status === "inferred") {
@@ -328,6 +336,9 @@ export function PrImpactReviewScreen({
   initialState?: ViewState;
 } = {}) {
   const activeProjectId = useClyStore((state) => state.activeProjectId);
+  const activeProject = useClyStore((state) =>
+    state.data.projects.find((project) => project.id === state.activeProjectId),
+  );
   const fixtureMode = useClyStore((state) => state.fixtureMode);
   const [status, setStatus] = useState<ViewState>(initialState ?? "loading");
   const [review, setReview] = useState<PrImpactReview | null>(
@@ -344,6 +355,7 @@ export function PrImpactReviewScreen({
   const [approvalStatus, setApprovalStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+  const hasLinkedRepository = isCanonicalLocalPath(activeProject?.path);
 
   const source = useMemo<PrImpactReview["source"]>(() => {
     if (sourceMode === "Pull request") {
@@ -359,6 +371,11 @@ export function PrImpactReviewScreen({
   }, [baseRef, headRef, prNumber, scope, sourceMode]);
 
   const analyze = useCallback(async () => {
+    if (!hasLinkedRepository) {
+      setReview(null);
+      setStatus("ready");
+      return;
+    }
     setStatus("loading");
     setError("The project diff could not be analyzed.");
     try {
@@ -370,19 +387,24 @@ export function PrImpactReviewScreen({
           body: JSON.stringify({ source }),
         },
       );
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) throw new Error("Impact review request failed.");
       setReview((await response.json()) as PrImpactReview);
       setStatus("ready");
-    } catch (caught) {
+    } catch {
       setError(
-        caught instanceof Error ? caught.message : "Impact review failed.",
+        "Cly could not analyze this repository. Check that it is a local Git repository and try again.",
       );
       setStatus("error");
     }
-  }, [activeProjectId, source]);
+  }, [activeProjectId, hasLinkedRepository, source]);
 
   useEffect(() => {
     if (initialState || initialReview) return;
+    if (!hasLinkedRepository) {
+      setReview(null);
+      setStatus("ready");
+      return;
+    }
     if (!__CLY_INCLUDE_DEMOS__) {
       void analyze();
       return;
@@ -406,7 +428,7 @@ export function PrImpactReviewScreen({
       setReview(emptyPrImpactReviewFixture);
       setStatus("ready");
     });
-  }, [analyze, fixtureMode, initialReview, initialState]);
+  }, [analyze, fixtureMode, hasLinkedRepository, initialReview, initialState]);
 
   const effectiveStatus = initialState ?? status;
   const effectiveReview = initialReview ?? review;
@@ -457,7 +479,12 @@ export function PrImpactReviewScreen({
         actions={
           <Button
             onClick={() => void analyze()}
-            disabled={effectiveStatus === "loading"}
+            disabled={effectiveStatus === "loading" || !hasLinkedRepository}
+            title={
+              hasLinkedRepository
+                ? undefined
+                : "Choose a local project folder before analyzing changes."
+            }
           >
             <RefreshCw size={13} aria-hidden="true" /> Analyze
           </Button>
@@ -519,7 +546,13 @@ export function PrImpactReviewScreen({
         </InlineMetadata>
       </Toolbar>
 
-      {effectiveStatus === "loading" ? (
+      {!hasLinkedRepository && !initialReview && !initialState ? (
+        <EmptyState
+          title="Connect a local repository"
+          description="Choose a local project folder before reviewing Git changes. Cly will not scan or transmit a folder until you select it."
+          icon={<FileDiff size={24} />}
+        />
+      ) : effectiveStatus === "loading" ? (
         <LoadingState label="Analyzing research impact" />
       ) : effectiveStatus === "error" ? (
         <ErrorState

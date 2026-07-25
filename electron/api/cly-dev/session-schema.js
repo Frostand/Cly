@@ -151,8 +151,32 @@ export const machineIdentitySchema = z
     architecture: z.string().trim().min(1).max(100).optional(),
   })
   .strict();
+export const clyDevReasoningEffortSchema = z.enum([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+]);
 export const providerIdentitySchema = z
-  .object({ id: idSchema, model: z.string().trim().min(1).max(500) })
+  .object({
+    id: idSchema,
+    model: z.string().trim().min(1).max(500),
+    reasoningEffort: clyDevReasoningEffortSchema.optional(),
+  })
+  .strict();
+
+export const clyDevSessionLaunchInputSchema = z
+  .object({
+    schemaVersion: versionSchema,
+    payloadVersion: versionSchema,
+    idempotencyKey: idSchema,
+    title: z.string().trim().min(1).max(500),
+    objective: z.string().trim().min(1).max(20_000),
+    mode: z.enum(["read_only", "workspace_write"]),
+    provider: providerIdentitySchema,
+  })
   .strict();
 
 const localWorkspaceSchema = z

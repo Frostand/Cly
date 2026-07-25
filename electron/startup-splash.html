@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Starting Cly</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; color: #fafafa; background: radial-gradient(circle at 50% 35%, #202026, #09090b 68%); -webkit-app-region: drag; }
+      main { width: 100%; padding: 48px; text-align: center; }
+      .mark { width: 92px; height: 92px; margin: 0 auto 28px; border-radius: 24px; display: grid; place-items: center; background: #fafafa; box-shadow: 0 24px 70px rgba(0,0,0,.35); }
+      .mark svg { width: 68px; height: 68px; color: #09090b; }
+      h1 { margin: 0; font-size: 26px; letter-spacing: -.03em; }
+      p { min-height: 44px; margin: 12px auto 0; max-width: 390px; color: #a1a1aa; font-size: 14px; line-height: 1.55; }
+      .progress { width: 180px; height: 3px; overflow: hidden; margin: 24px auto 0; border-radius: 99px; background: #27272a; }
+      .progress::after { content: ""; display: block; width: 45%; height: 100%; border-radius: inherit; background: #fafafa; animation: travel 1.2s ease-in-out infinite; }
+      .actions { display: none; justify-content: center; gap: 10px; margin-top: 26px; -webkit-app-region: no-drag; }
+      button { min-height: 38px; border: 1px solid #3f3f46; border-radius: 9px; padding: 0 15px; color: #fafafa; background: #18181b; font: inherit; cursor: pointer; }
+      button.primary { color: #09090b; border-color: #fafafa; background: #fafafa; font-weight: 650; }
+      button:focus-visible { outline: 2px solid #a1a1aa; outline-offset: 3px; }
+      body[data-status="failed"] .progress { display: none; }
+      body[data-status="failed"] .actions { display: flex; }
+      body[data-status="failed"] p { color: #d4d4d8; }
+      @keyframes travel { from { transform: translateX(-120%); } to { transform: translateX(340%); } }
+      @media (prefers-reduced-motion: reduce) { .progress::after { animation: none; width: 100%; opacity: .75; } }
+    </style>
+  </head>
+  <body data-status="starting">
+    <main aria-live="polite">
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 100 100">
+          <title>Cly logo</title>
+          <g fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="butt" stroke-linejoin="miter">
+            <path d="M48 28h-5a24 24 0 1 0 5 47" />
+            <path d="M50 14v39l17 17" />
+            <path d="M67 70 87 39M67 70C61 81 55 86 42 86" />
+          </g>
+        </svg>
+      </div>
+      <h1 id="title">Starting Cly</h1>
+      <p id="message">Preparing your local research workspace…</p>
+      <div class="progress" aria-hidden="true"></div>
+      <div class="actions">
+        <button class="primary" id="retry" type="button">Retry</button>
+        <button id="diagnostics" type="button">Copy diagnostics</button>
+        <button id="quit" type="button">Quit</button>
+      </div>
+    </main>
+    <script>
+      const title = document.getElementById("title");
+      const message = document.getElementById("message");
+      window.clyStartup.onState((state) => {
+        document.body.dataset.status = state.status;
+        title.textContent = state.status === "failed" ? "Cly needs your help" : "Starting Cly";
+        message.textContent = state.message;
+      });
+      document.getElementById("retry").addEventListener("click", () => window.clyStartup.act("retry"));
+      document.getElementById("diagnostics").addEventListener("click", () => window.clyStartup.act("copy-diagnostics"));
+      document.getElementById("quit").addEventListener("click", () => window.clyStartup.act("quit"));
+    </script>
+  </body>
+</html>

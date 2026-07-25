@@ -186,7 +186,7 @@ export function Titlebar() {
         useClyStore.getState().setSelected(source.id);
         notify(
           "Source created",
-          "Metadata extraction is simulated in this prototype.",
+          "Review the source record and add verified metadata before citing it.",
         );
         return;
       }
@@ -744,8 +744,6 @@ export function CommandPalette() {
         label: "New Decision",
         group: "Create",
         icon: FilePlus2,
-        disabled: !isClyDemoRuntime,
-        reason: capabilityUnavailableMessage("decisions.create"),
         run: async () => {
           await projectServices.decisions.create({
             title: "Untitled decision",
@@ -761,41 +759,9 @@ export function CommandPalette() {
         label: "Run Reproducibility Audit",
         group: "Research",
         icon: Sparkles,
-        disabled: !isClyDemoRuntime,
-        reason: capabilityUnavailableMessage("reproducibility.audit"),
         run: async () => {
           await projectServices.reproducibility.runAudit();
           setScreen("reproducibility");
-        },
-      },
-      {
-        id: "claim-audit",
-        label: "Run Claim Audit",
-        group: "Research",
-        icon: Sparkles,
-        disabled: !isClyDemoRuntime,
-        reason: capabilityUnavailableMessage("agents.execute"),
-        run: () => {
-          setScreen("agents");
-          notify(
-            "Claim Audit preview",
-            "A fixture-backed agent session preview is ready.",
-          );
-        },
-      },
-      {
-        id: "notebooklm",
-        label: "Create NotebookLM Bundle",
-        group: "Research",
-        icon: FilePlus2,
-        disabled: !isClyDemoRuntime,
-        reason: capabilityUnavailableMessage("exports.notebook-bundle"),
-        run: () => {
-          setScreen("literature");
-          notify(
-            "NotebookLM bundle ready",
-            "4 fixture sources and a manifest are ready to preview.",
-          );
         },
       },
       {

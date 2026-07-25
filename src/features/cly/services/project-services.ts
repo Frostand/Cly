@@ -14,7 +14,6 @@ import type {
   Claim,
   Experiment,
   NotebookArtifact,
-  ResearchDecision,
   Source,
 } from "../domain/types";
 import { useClyStore } from "../store/cly-store";
@@ -67,6 +66,9 @@ export const projectServices: ClyServices = {
   projects: {
     async switchProject(projectId) {
       useClyStore.getState().setActiveProject(projectId);
+    },
+    async update(patch) {
+      return useClyStore.getState().updateActiveProject(patch);
     },
   },
   context: {
@@ -256,23 +258,6 @@ export const projectServices: ClyServices = {
         return;
       }
       throw new CapabilityUnavailableError("agents.configure");
-    },
-    async startPreview(presetId) {
-      if (isClyDemoRuntime) {
-        const preset = useClyStore
-          .getState()
-          .data.agentPresets.find((item) => item.id === presetId);
-        useClyStore
-          .getState()
-          .notify(
-            "Execution preview ready",
-            preset
-              ? `${preset.name} would run ${preset.nodes.length} agents with approval gates.`
-              : "Preset not found.",
-          );
-        return;
-      }
-      throw new CapabilityUnavailableError("agents.execute");
     },
     async listConfigurations(projectId) {
       if (isClyExplicitDemoRuntime) {
@@ -767,6 +752,21 @@ export const projectServices: ClyServices = {
       stateForProject(projectId)?.updateSource(sourceId, updated);
       return updated;
     },
+    async setArchived(sourceId, archived) {
+      const projectId = activeProjectId();
+      const object = await apiClient.setSourceArchived(
+        projectId,
+        sourceId,
+        archived,
+      );
+      const source = stateForProject(projectId)?.data.sources.find(
+        (item) => item.id === sourceId,
+      );
+      if (!source) throw new Error("Source not found.");
+      const updated = { ...source, archived, updatedAt: object.updatedAt };
+      stateForProject(projectId)?.updateSource(sourceId, updated);
+      return updated;
+    },
   },
   notebooks: {
     async importMock(name) {
@@ -1012,7 +1012,20 @@ export const projectServices: ClyServices = {
     async runAudit() {
       const state = useClyStore.getState();
       const generated = generateReproducibilityAudit(state.data);
-      state.replaceReproducibilityAudit(generated.audit, generated.findings);
+      if (isClyDemoRuntime) {
+        state.replaceReproducibilityAudit(generated.audit, generated.findings);
+        state.notify(
+          "Reproducibility audit complete",
+          `${generated.findings.filter((finding) => finding.severity !== "Passed").length} findings across code, data, environment, experiments, outputs, and claims.`,
+        );
+        return generated.audit;
+      }
+      const saved = await apiClient.saveReproducibilityAudit(
+        activeProjectId(),
+        generated.audit,
+        generated.findings,
+      );
+      state.replaceReproducibilityAudit(saved.audit, saved.findings);
       state.notify(
         "Reproducibility audit complete",
         `${generated.findings.filter((finding) => finding.severity !== "Passed").length} findings across code, data, environment, experiments, outputs, and claims.`,
@@ -1020,20 +1033,21 @@ export const projectServices: ClyServices = {
       return generated.audit;
     },
     async resolveFinding(findingId) {
-      if (isClyDemoRuntime) {
-        useClyStore.getState().updateFinding(findingId, { status: "Resolved" });
-        return;
-      }
-      throw new CapabilityUnavailableError("reproducibility.audit");
+      const finding = await apiClient.updateReproducibilityFinding(
+        activeProjectId(),
+        findingId,
+        { status: "Resolved" },
+      );
+      useClyStore.getState().updateFinding(findingId, finding);
     },
-  },
-  integrations: {
-    async updateStatus(integrationId, status) {
-      if (isClyDemoRuntime) {
-        useClyStore.getState().updateIntegration(integrationId, { status });
-        return;
-      }
-      throw new CapabilityUnavailableError("integrations.configure");
+    async setFindingDisposition(findingId, input) {
+      const finding = await apiClient.updateReproducibilityFinding(
+        activeProjectId(),
+        findingId,
+        input,
+      );
+      useClyStore.getState().updateFinding(findingId, finding);
+      return finding;
     },
   },
   planner: {
@@ -1042,38 +1056,109 @@ export const projectServices: ClyServices = {
         useClyStore.getState().updateNextStep(stepId, status);
         return;
       }
-      throw new CapabilityUnavailableError("planner.update");
+      const step = await apiClient.updatePlannerStep(
+        activeProjectId(),
+        stepId,
+        status,
+      );
+      useClyStore.getState().updateNextStep(stepId, step.status);
+    },
+    async generate(steps) {
+      if (isClyDemoRuntime) {
+        useClyStore.setState((state) => ({
+          data: { ...state.data, nextSteps: steps },
+        }));
+        return steps;
+      }
+      const saved = await apiClient.savePlannerSteps(activeProjectId(), steps);
+      useClyStore.setState((state) => ({
+        data: { ...state.data, nextSteps: saved },
+      }));
+      return saved;
     },
   },
   decisions: {
     async create(input) {
       if (isClyDemoRuntime) {
-        const decision: ResearchDecision = {
+        const decision = {
+          ...input,
           id: id("decision"),
-          title: input.title,
-          date: new Date().toISOString().slice(0, 10),
-          decision: input.decision,
-          reason: input.reason,
+          date: isoNow(),
           alternatives: [],
           evidenceIds: [],
           affectedIds: [],
-          status: "Active",
-          origin: "Researcher",
+          status: "Active" as const,
+          origin: "Researcher" as const,
         };
         useClyStore.getState().addDecision(decision);
         return decision;
       }
-      throw new CapabilityUnavailableError("decisions.create");
+      const decision = await apiClient.createDecision(activeProjectId(), {
+        ...input,
+        alternatives: [],
+        evidenceIds: [],
+        affectedIds: [],
+        status: "Active",
+        origin: "Researcher",
+      });
+      useClyStore.getState().addDecision(decision);
+      return decision;
     },
-    async supersede(decisionId, replacementId) {
+    async update(decisionId, input) {
       if (isClyDemoRuntime) {
+        const current = useClyStore
+          .getState()
+          .data.decisions.find((item) => item.id === decisionId);
+        if (!current) throw new Error("Research decision not found.");
+        const decision = { ...current, ...input };
+        useClyStore.getState().updateDecision(decisionId, decision);
+        return decision;
+      }
+      const decision = await apiClient.updateDecision(
+        activeProjectId(),
+        decisionId,
+        input,
+      );
+      useClyStore.getState().updateDecision(decisionId, decision);
+      return decision;
+    },
+    async supersede(decisionId, replacement) {
+      if (isClyDemoRuntime) {
+        const current = useClyStore
+          .getState()
+          .data.decisions.find((item) => item.id === decisionId);
+        if (!current) throw new Error("Research decision not found.");
+        const nextDecision = {
+          ...replacement,
+          id: id("decision"),
+          date: isoNow(),
+          alternatives: replacement.alternatives ?? [],
+          evidenceIds: replacement.evidenceIds ?? [],
+          affectedIds: replacement.affectedIds ?? [],
+          status: "Active" as const,
+          origin: replacement.origin ?? ("Researcher" as const),
+        };
         useClyStore.getState().updateDecision(decisionId, {
           status: "Superseded",
-          supersededBy: replacementId,
+          supersededBy: nextDecision.id,
         });
-        return;
+        useClyStore.getState().addDecision(nextDecision);
+        return nextDecision;
       }
-      throw new CapabilityUnavailableError("decisions.create");
+      const result = await apiClient.supersedeDecision(
+        activeProjectId(),
+        decisionId,
+        {
+          ...replacement,
+          alternatives: replacement.alternatives ?? [],
+          evidenceIds: replacement.evidenceIds ?? [],
+          affectedIds: replacement.affectedIds ?? [],
+          origin: replacement.origin ?? "Researcher",
+        },
+      );
+      useClyStore.getState().updateDecision(decisionId, result.decision);
+      useClyStore.getState().addDecision(result.replacement);
+      return result.replacement;
     },
   },
 };

@@ -855,4 +855,42 @@ describe("research repository", () => {
       .all("source-enriched") as Array<{ action: string }>;
     expect(events.map((event) => event.action)).toContain("source.enriched");
   });
+
+  it("archives and restores a source without deleting its record or provenance", () => {
+    const repository = createResearchRepository(database, {
+      clock: () => "2026-07-24T12:00:00.000Z",
+    });
+    repository.createObject({
+      id: "source-archive",
+      projectId: "project-1",
+      type: "source",
+      title: "Preserved paper",
+      payload: { kind: "source", citation: "Preserved paper" },
+    });
+
+    expect(
+      repository.setSourceArchived(
+        "project-1",
+        "source-archive",
+        true,
+        "researcher-1",
+      ),
+    ).toMatchObject({
+      id: "source-archive",
+      payload: { archivedAt: "2026-07-24T12:00:00.000Z" },
+    });
+    expect(repository.listProject("project-1").objects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "source-archive" }),
+      ]),
+    );
+    expect(
+      repository.setSourceArchived("project-1", "source-archive", false),
+    ).toMatchObject({ payload: { kind: "source" } });
+    expect(
+      repository
+        .listProvenance("project-1", { limit: 10 })
+        .map((event) => event.action),
+    ).toEqual(expect.arrayContaining(["source.archived", "source.unarchived"]));
+  });
 });

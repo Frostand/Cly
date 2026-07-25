@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
 import axe from "axe-core";
+import { getClyMainWindow } from "../electron-main-window";
 
 const root = process.cwd();
 const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
@@ -25,7 +26,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
   });
 
   try {
-    const window = await app.firstWindow();
+    const window = await getClyMainWindow(app);
     const browserWindow = await app.browserWindow(window);
     await browserWindow.evaluate((nativeWindow) => {
       nativeWindow.setSize(1024, 700);
@@ -258,7 +259,7 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
   });
 
   try {
-    let window = await app.firstWindow();
+    let window = await getClyMainWindow(app);
     let browserWindow = await app.browserWindow(window);
     await browserWindow.evaluate((nativeWindow) => {
       nativeWindow.setSize(1024, 700);
@@ -384,24 +385,7 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
         cwd: root,
         env: launchEnvironment,
       });
-      await app.firstWindow();
-      await expect
-        .poll(
-          () =>
-            app
-              .windows()
-              .find((page) => !page.url().includes("clyWindowRole"))
-              ?.url() ?? "",
-          { timeout: 45_000 },
-        )
-        .toContain("http://127.0.0.1:43741");
-      const restoredAgentWindow = app
-        .windows()
-        .find((page) => !page.url().includes("clyWindowRole"));
-      if (!restoredAgentWindow) {
-        throw new Error("The restored Cly agent window was not available.");
-      }
-      window = restoredAgentWindow;
+      window = await getClyMainWindow(app);
       // Electron exposes the new Page as soon as navigation begins. Give the
       // replacement renderer one task turn to mount before native window
       // inspection; otherwise Playwright can keep polling the outgoing static
@@ -493,7 +477,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
   };
 
   try {
-    let window = await app.firstWindow();
+    let window = await getClyMainWindow(app);
     let browserWindow = await app.browserWindow(window);
     await browserWindow.evaluate((nativeWindow) => {
       nativeWindow.setSize(1024, 700);
@@ -576,7 +560,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
       cwd: root,
       env: launchEnvironment,
     });
-    window = await app.firstWindow();
+    window = await getClyMainWindow(app);
     browserWindow = await app.browserWindow(window);
     await browserWindow.evaluate((nativeWindow) => {
       nativeWindow.setSize(1024, 700);

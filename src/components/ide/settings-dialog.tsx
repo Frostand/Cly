@@ -430,7 +430,7 @@ export const SettingsDialog = () => {
     },
     cursor: {
       installCommand: "curl https://cursor.com/install -fsS | bash",
-      loginCommand: "agent login",
+      loginCommand: "cursor-agent login",
       docsUrl: "https://cursor.com/docs/cli",
       name: "Cursor",
       runtime: "Cursor Agent CLI",

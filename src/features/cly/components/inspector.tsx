@@ -1,13 +1,6 @@
-import {
-  ExternalLink,
-  Link2,
-  PanelRightClose,
-  Pin,
-  Sparkles,
-} from "lucide-react";
+import { ExternalLink, Link2, PanelRightClose, Pin } from "lucide-react";
+import { getDesktopApi } from "../../../lib/electron";
 import type { InheritedRestriction } from "../domain/obligations";
-import { capabilityUnavailableMessage } from "../services/capabilities";
-import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { InheritedRestrictions } from "./inherited-restrictions";
 import { screenLabels } from "./navigation";
@@ -230,6 +223,12 @@ export function Inspector() {
   );
   const setScreen = useClyStore((s) => s.setScreen);
   const selection = selectedId ? findEntity() : null;
+  const originalUrl =
+    selection &&
+    typeof selection.entity.url === "string" &&
+    /^https?:\/\//i.test(selection.entity.url)
+      ? selection.entity.url
+      : null;
 
   return (
     <aside
@@ -304,33 +303,32 @@ export function Inspector() {
                   >
                     <Pin size={13} /> Open in context
                   </Button>
-                  <Button
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage("agents.execute")}
-                    onClick={() =>
-                      notify(
-                        "Agent action preview",
-                        "This action is simulated; no external model call was made.",
-                      )
-                    }
-                  >
-                    <Sparkles size={13} /> Ask agent about this
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage(
-                      "integrations.configure",
-                    )}
-                    onClick={() =>
-                      notify(
-                        "External open unavailable",
-                        "The UI prototype keeps external file/editor actions behind an explicit service boundary.",
-                      )
-                    }
-                  >
-                    <ExternalLink size={13} /> Open original
-                  </Button>
+                  {originalUrl ? (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        const desktopApi = getDesktopApi();
+                        if (!desktopApi) {
+                          notify(
+                            "Desktop app required",
+                            "Open Cly in Electron to open external sources.",
+                          );
+                          return;
+                        }
+                        void desktopApi
+                          .openExternal(originalUrl)
+                          .then((opened) => {
+                            if (!opened)
+                              notify(
+                                "Source was not opened",
+                                "Only valid HTTP and HTTPS source URLs can be opened.",
+                              );
+                          });
+                      }}
+                    >
+                      <ExternalLink size={13} /> Open original
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </>

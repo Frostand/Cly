@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Follow `/Users/al1234/Documents/KnowIT!/AGENTS.md`: local-first, privacy-conscious, and no frontend secrets.
+- Follow the repository `AGENTS.md`: local-first, privacy-conscious, and no frontend secrets.
 - Do not add cloud AI calls in this plan.
 - Do not send full papers, PDFs, local files, extracted notes, or user topics to cloud AI.
 - Ranking must work without paid APIs and without LLM calls.

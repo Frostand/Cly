@@ -9,6 +9,7 @@ import {
   findRateLimitsObject,
   storeProviderUsageLimitSnapshot,
 } from "../providers/usage-limits.js";
+import { terminateProcessTree } from "../shared/process-tree.js";
 import {
   getCodexCliSpawnErrorMessage,
   resolveCodexCliLaunch,
@@ -31,6 +32,11 @@ import {
   getLatestUserMessage,
   prepareCodexPromptAttachments,
 } from "./codex-prompt.js";
+import { logProviderError } from "./errors.js";
+import {
+  assertProviderModelId,
+  assertProviderProjectPath,
+} from "./provider-inputs.js";
 
 const isRecord = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -351,6 +357,8 @@ export const streamCodexAppServerResponse = ({
   turnSandboxPolicy,
   conversationPromptBuilder = buildCodexConversationPrompt,
 }) => {
+  const safeModel = assertProviderModelId(model);
+  const safeProjectPath = assertProviderProjectPath(projectPath);
   const stream = createUIMessageStream({
     originalMessages: messages,
     onError: (error) =>
@@ -375,9 +383,7 @@ export const streamCodexAppServerResponse = ({
           if (finished) return;
           finished = true;
           abortSignal?.removeEventListener("abort", handleAbort);
-          if (child && !child.killed) {
-            child.kill("SIGTERM");
-          }
+          terminateProcessTree(child);
           const attachments = preparedAttachments;
           preparedAttachments = null;
           attachments?.cleanup?.();
@@ -391,6 +397,7 @@ export const streamCodexAppServerResponse = ({
         };
 
         const writeEvent = (event) => {
+          if (finished || abortSignal?.aborted) return;
           writer.write(event);
         };
 
@@ -398,7 +405,7 @@ export const streamCodexAppServerResponse = ({
           pendingToolCompletions.add(completion);
           completion
             .catch((error) => {
-              console.error("[codex app-server tool completion]", error);
+              logProviderError("[codex app-server tool completion]", error);
             })
             .finally(() => {
               pendingToolCompletions.delete(completion);
@@ -412,6 +419,7 @@ export const streamCodexAppServerResponse = ({
         };
 
         const sendJson = (message) => {
+          if (finished || abortSignal?.aborted) return;
           child?.stdin.write(`${JSON.stringify(message)}\n`);
         };
 
@@ -543,7 +551,10 @@ export const streamCodexAppServerResponse = ({
 
           if (item.type === "fileChange") {
             ensureFileToolStarted(item);
-            const output = await buildFileChangeOutput({ item, projectPath });
+            const output = await buildFileChangeOutput({
+              item,
+              projectPath: safeProjectPath,
+            });
             if (finished) {
               return;
             }
@@ -703,7 +714,7 @@ export const streamCodexAppServerResponse = ({
               if (!response.approved) {
                 const message =
                   response.reason || "User cancelled the question request.";
-                writer.write({
+                writeEvent({
                   dynamic: true,
                   errorText: message,
                   providerExecuted: true,
@@ -714,7 +725,7 @@ export const streamCodexAppServerResponse = ({
                 return;
               }
 
-              writer.write({
+              writeEvent({
                 dynamic: true,
                 output: buildQuestionUiOutput({
                   questions,
@@ -766,18 +777,18 @@ export const streamCodexAppServerResponse = ({
 
           if (method === "thread/started" && params?.thread?.id && chatId) {
             codexSessionsByChatId.set(chatId, {
-              model,
+              model: safeModel,
               modelSpeed,
-              projectPath,
+              projectPath: safeProjectPath,
               sessionId: params.thread.id,
             });
-            writer.write({
+            writeEvent({
               messageMetadata: {
                 ...responseMessageMetadata,
                 remoteConversationId: params.thread.id,
-                remoteConversationModel: model,
+                remoteConversationModel: safeModel,
                 remoteConversationModelSpeed: modelSpeed,
-                remoteConversationProjectPath: projectPath,
+                remoteConversationProjectPath: safeProjectPath,
               },
               type: "message-metadata",
             });
@@ -879,13 +890,18 @@ export const streamCodexAppServerResponse = ({
         };
 
         const handleMessage = (message) => {
-          if (!message || typeof message !== "object") {
+          if (
+            finished ||
+            abortSignal?.aborted ||
+            !message ||
+            typeof message !== "object"
+          ) {
             return;
           }
 
           const tokenCountMetadata = getCodexTokenCountMetadata(message);
           if (tokenCountMetadata) {
-            writer.write({
+            writeEvent({
               messageMetadata: {
                 ...responseMessageMetadata,
                 ...tokenCountMetadata,
@@ -922,6 +938,7 @@ export const streamCodexAppServerResponse = ({
         };
 
         const handleStdoutChunk = (chunk) => {
+          if (finished || abortSignal?.aborted) return;
           stdoutBuffer += chunk.toString();
           const lines = stdoutBuffer.split(/\r?\n/);
           stdoutBuffer = lines.pop() ?? "";
@@ -941,6 +958,10 @@ export const streamCodexAppServerResponse = ({
         };
 
         const handleAbort = () => {
+          stdoutBuffer = "";
+          stderrBuffer = "";
+          child?.stdout?.off?.("data", handleStdoutChunk);
+          child?.stderr?.removeAllListeners?.("data");
           finish(resolve);
         };
 
@@ -979,18 +1000,21 @@ export const streamCodexAppServerResponse = ({
                 "app-server",
               ],
               {
-                cwd: projectPath,
-                env: process.env,
-                shell: launch.shell ?? false,
+                cwd: safeProjectPath,
+                detached: process.platform !== "win32",
+                env: { ...process.env, ...(launch.env ?? {}) },
+                shell: false,
                 stdio: ["pipe", "pipe", "pipe"],
               },
             );
 
             child.stdout.on("data", handleStdoutChunk);
             child.stderr.on("data", (chunk) => {
+              if (finished || abortSignal?.aborted) return;
               stderrBuffer += chunk.toString();
             });
             child.on("error", (error) => {
+              if (finished || abortSignal?.aborted) return;
               finish(() =>
                 reject(new Error(getCodexCliSpawnErrorMessage(error))),
               );
@@ -1010,7 +1034,7 @@ export const streamCodexAppServerResponse = ({
               currentTurnAttachments: preparedAttachments?.promptText ?? null,
               currentTurnProjectReferences: projectReferencesPrompt,
               messages,
-              projectPath,
+              projectPath: safeProjectPath,
               systemPrompt,
             });
             const sandbox =
@@ -1030,10 +1054,10 @@ export const streamCodexAppServerResponse = ({
               approvalsReviewer: "user",
               baseInstructions: systemPrompt,
               config: null,
-              cwd: projectPath,
+              cwd: safeProjectPath,
               ephemeral: true,
               experimentalRawEvents: false,
-              model,
+              model: safeModel,
               modelProvider: "openai",
               persistExtendedHistory: false,
               sandbox,
@@ -1054,12 +1078,12 @@ export const streamCodexAppServerResponse = ({
                 text_elements: [],
                 type: "text",
               })),
-              model,
+              model: safeModel,
               sandboxPolicy:
                 turnSandboxPolicy ??
                 getCodexAppTurnSandboxPolicy({
                   codexPermissionMode,
-                  projectPath,
+                  projectPath: safeProjectPath,
                 }),
               threadId,
             });

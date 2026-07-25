@@ -37,6 +37,7 @@ import { Badge, Button, Dialog } from "../components/primitives";
 import { ClySplitPane } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
 import { demoAgentSessionServices } from "./demo-services";
+import { formatAgentModelName } from "./model-catalog";
 import { AgentSessionsModeSwitcher, ClyDevTaskIdentitySurface } from "./shared";
 import type {
   AgentMessage as AgentMessageType,
@@ -546,7 +547,11 @@ export function SessionHeader({ session }: { session: AgentSession }) {
         </div>
         <div className="agent-session-header-meta">
           <span>
-            {session.orchestrator.model} · {session.orchestrator.reasoningLevel}
+            {formatAgentModelName(
+              session.orchestrator.provider,
+              session.orchestrator.model,
+            )}{" "}
+            · {session.orchestrator.reasoningLevel}
           </span>
           <button
             type="button"
@@ -1217,7 +1222,13 @@ export function ChatComposer({ session }: { session: AgentSession }) {
                     notify("Model selector", session.orchestrator.model)
                   }
                 >
-                  Model <span>{session.orchestrator.model}</span>
+                  Model{" "}
+                  <span>
+                    {formatAgentModelName(
+                      session.orchestrator.provider,
+                      session.orchestrator.model,
+                    )}
+                  </span>
                 </button>
                 <button
                   type="button"

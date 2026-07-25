@@ -1,4 +1,5 @@
 import { execCliCommand, resolveCliCommandPath } from "../shared/cli.js";
+import { execCursorCliCommand, getCursorCliCommand } from "./cursor-cli.js";
 
 export const parseClaudeAuthentication = (value) => {
   const text = String(value ?? "").trim();
@@ -22,6 +23,7 @@ export const parseClaudeAuthentication = (value) => {
 export const checkClaudeAuthentication = async ({
   execCommand = execCliCommand,
   resolveCommand = resolveCliCommandPath,
+  signal,
 } = {}) => {
   const executable = await resolveCommand("claude");
   if (!executable) {
@@ -29,9 +31,48 @@ export const checkClaudeAuthentication = async ({
   }
 
   try {
-    const result = await execCommand("claude", ["auth", "status", "--json"]);
+    const result = await execCommand("claude", ["auth", "status", "--json"], {
+      signal,
+      timeout: 5000,
+    });
     return {
       authenticated: parseClaudeAuthentication(
+        `${result.stdout ?? ""}\n${result.stderr ?? ""}`,
+      ),
+      installed: true,
+    };
+  } catch {
+    return { authenticated: false, installed: true };
+  }
+};
+
+export const parseCursorAuthentication = (value) => {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  if (
+    /\b(?:not\s+logged\s+in|not\s+authenticated|unauthenticated|logged\s+out)\b/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  return /\b(?:logged\s+in|authenticated|login\s+successful)\b/i.test(text);
+};
+
+export const checkCursorAuthentication = async ({
+  execCommand = execCursorCliCommand,
+  resolveCommand = getCursorCliCommand,
+  signal,
+} = {}) => {
+  const executable = await resolveCommand();
+  if (!executable) {
+    return { authenticated: false, installed: false };
+  }
+
+  try {
+    const result = await execCommand(["status"], { signal, timeout: 5000 });
+    return {
+      authenticated: parseCursorAuthentication(
         `${result.stdout ?? ""}\n${result.stderr ?? ""}`,
       ),
       installed: true,
@@ -55,6 +96,7 @@ export const parseOpenCodeAuthentication = (value) => {
 export const checkOpenCodeAuthentication = async ({
   execCommand = execCliCommand,
   resolveCommand = resolveCliCommandPath,
+  signal,
 } = {}) => {
   const executable = await resolveCommand("opencode");
   if (!executable) {
@@ -62,7 +104,10 @@ export const checkOpenCodeAuthentication = async ({
   }
 
   try {
-    const result = await execCommand("opencode", ["auth", "list"]);
+    const result = await execCommand("opencode", ["auth", "list"], {
+      signal,
+      timeout: 5000,
+    });
     return {
       authenticated: parseOpenCodeAuthentication(
         `${result.stdout ?? ""}\n${result.stderr ?? ""}`,

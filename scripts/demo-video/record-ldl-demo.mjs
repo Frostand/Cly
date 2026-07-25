@@ -464,7 +464,38 @@ try {
   await clearFocus();
 
   await setCaption(
-    "5 · Supply the analysis inputs",
+    "5 · Freeze the analysis plan",
+    "Before seeing results, we lock the hypothesis, dataset, exclusions, primary metrics, analysis plan, and success criterion in an immutable snapshot.",
+  );
+  await page.getByRole("radio", { name: "Preregistration" }).click();
+  await page.getByTestId("preregistration-workspace").waitFor();
+  const createSnapshot = page.getByRole("button", {
+    name: "Create snapshot",
+  });
+  await focus(createSnapshot);
+  await pause(650);
+  await createSnapshot.click();
+  const snapshotDialog = page.getByRole("dialog", {
+    name: "Preregister analysis",
+  });
+  await snapshotDialog
+    .getByLabel("Primary metrics")
+    .fill("Weighted AUC, weighted Brier score");
+  await snapshotDialog
+    .getByLabel("Success criteria")
+    .fill("Weighted AUC exceeds the LDL-C-only baseline by at least 0.10.");
+  const lockSnapshot = snapshotDialog.getByRole("button", {
+    name: "Lock snapshot",
+  });
+  await focus(lockSnapshot);
+  await pause(650);
+  await lockSnapshot.click();
+  await page.getByRole("heading", { name: "Version 1" }).waitFor();
+  await clearFocus();
+  await pause(3_000);
+
+  await setCaption(
+    "6 · Supply the analysis inputs",
     "Before execution, Cly requires the dataset, outcome definition, random seed, cross-validation folds, and exact feature set.",
   );
   const runAnalysis = page.getByTestId("run-guided-analysis");
@@ -496,7 +527,7 @@ try {
   await pause(1_500);
 
   await setCaption(
-    "6 · Run the verified workflow",
+    "7 · Run the verified workflow",
     "Cly builds the 1,950-adult fasting cohort, runs deterministic five-fold validation, and verifies the saved metrics and provenance.",
   );
   const runVerified = analysisDialog.getByRole("button", {
@@ -510,7 +541,7 @@ try {
   await pause(2_000);
 
   await setCaption(
-    "7 · Compare the result",
+    "8 · Compare the result",
     "The basic-health model reaches weighted AUC 0.925 versus 0.683 for LDL-C alone. The weighted Brier score is 0.0458.",
   );
   const fullAuc = page.getByText("0.9249", { exact: true });
@@ -519,7 +550,7 @@ try {
   await clearFocus();
 
   await setCaption(
-    "8 · Review the bounded claim",
+    "9 · Review the bounded claim",
     "Cly links the primary claim to its sources, experiment, runs, and caveats. It also records the explicit limitation: this does not predict heart attacks.",
   );
   await navigate("claims", "Claim Audit Board");
@@ -531,7 +562,7 @@ try {
   await clearFocus();
 
   await setCaption(
-    "9 · Trace the result",
+    "10 · Trace the result",
     "The model comparison table points back to the canonical run, generator, source data, commit, and supported claim.",
   );
   await navigate("provenance", "Figure & Table Provenance");
@@ -543,8 +574,8 @@ try {
   await clearFocus();
 
   await setCaption(
-    "10 · Audit reproducibility",
-    "The audit preserves passing data-hash and deterministic-rerun checks while surfacing environment, survey-variance, and external-validation gaps.",
+    "11 · Audit reproducibility",
+    "The audit preserves passing data-hash and deterministic-rerun checks while keeping survey-variance, sensitivity, and external-validation gaps visibly open.",
   );
   await navigate("reproducibility", "Reproducibility Auditor");
   const runAudit = page.getByRole("button", { name: "Run audit" });
@@ -556,8 +587,8 @@ try {
   await pause(5_000);
 
   await setCaption(
-    "11 · Finish the question",
-    "Cly finishes with a linked answer: 7.4% weighted discordance prevalence, strong internal discrimination, and a clear next step—validate in later cohorts.",
+    "12 · Finish with an honest release state",
+    "Cly links the answer and completes six core stages. Review stays open until the recorded survey-variance, sensitivity, and later-cohort validation gaps are resolved.",
   );
   await navigate("overview", "When LDL-C misleads");
   await pause(7_500);

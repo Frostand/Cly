@@ -31,7 +31,7 @@
 
 Cly combines a scientific system of record with a multi-provider coding workspace. Research questions, sources, hypotheses, experiments, datasets, runs, metrics, claims, and review findings stay connected instead of being scattered across chats and folders.
 
-Everything runs on the researcher's computer. Cly stores project state locally, asks before opening local data, and uses the existing authenticated session of an optional AI command-line harness. Raw analysis rows are not copied into Cly.
+Cly's research store and deterministic analysis run on the researcher's computer. Cly asks before opening local data and uses the existing authenticated session of an optional AI command-line harness; prompts and approved context sent to a harness are then governed by that provider's account and service terms. Raw analysis rows are not copied into Cly's project database.
 
 ## What Cly does
 
@@ -100,8 +100,9 @@ Install and authenticate at least one harness to use Cly Dev chat. Provider acco
 | Codex | `npm install -g @openai/codex` | `codex login` | [Codex CLI](https://developers.openai.com/codex/cli/) |
 | Claude Code | `npm install -g @anthropic-ai/claude-code` | `claude` | [Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started) |
 | OpenCode | `npm install -g opencode-ai` | `opencode auth login` | [OpenCode CLI](https://opencode.ai/docs/cli/) |
+| Cursor | Install Cursor Agent CLI (`agent` or `cursor-agent`) | `<detected executable> login` | [Cursor Agent CLI](https://cursor.com/docs/cli/installation) |
 
-Cly checks both CLI availability and authentication. A binary on `PATH` is not displayed as connected until its session is usable. Provider and model errors are surfaced in **AI Providers**, where setup commands can be copied and status refreshed.
+Cly checks both CLI availability and authentication. For Cursor it accepts only an `agent` executable whose help identifies it as Cursor, or `cursor-agent`, and checks `<detected executable> status`; installation alone is not treated as connected. Models come from each signed-in CLI's live discovery output. Provider/model failures and any labelled last-known catalog are surfaced in **AI Providers**, where setup commands can be copied and status refreshed.
 
 ## How it is organized
 
@@ -111,13 +112,13 @@ Cly Core (local project store, research graph, context, permissions, provenance)
 └── Cly Dev (projects, files, terminal, diffs, multi-provider agent chat)
 ```
 
-The [capability inventory](./docs/cly-v1-capabilities.json) is the machine-checked beta boundary. Production actions have a local service, API boundary, and test. Deferred actions are labeled Preview or disabled with a reason instead of behaving like completed features.
+The [capability inventory](./docs/cly-v1-capabilities.json) is the machine-checked beta boundary. Every production action has a real local service/API boundary and a test. Unsupported actions are omitted from production controls instead of appearing as previews or behaving like completed features.
 
 ## Beta boundary
 
-The end-to-end local research loop, persistent research objects, CSV/TSV analysis, evidence linkage, audits, backups, and live Cly Dev provider chat are available now. Research Agent Sessions also persist configuration and event history, but their separate orchestration controls and browser/terminal workbench remain a preview; they are not the runtime used by the live Cly Dev chat workspace.
+The end-to-end local research loop, persistent research objects, CSV/TSV analysis, evidence linkage, audits, backups, and live Cly Dev provider chat are available now. Research Agent Sessions can start, stream, approve, stop, resume, restart, and recover authenticated Codex and Claude runs; models and reasoning levels come from live provider discovery. Runtime-owned events are shown in the session record, while fixture-backed browser/terminal/diff panes are absent from production.
 
-Notebook import, code scanning, hosted sync relay, external integration configuration, and automatic research-decision planning are not part of this beta. Use de-identified, non-sensitive data and export a backup before testing. Please report defects through [GitHub Issues](https://github.com/Frostand/Cly/issues).
+Notebook import, code scanning, hosted sync relay, hosted research/data integrations, and automatic research-decision planning are not part of this beta. The Integrations route detects local Codex, Claude Code, OpenCode, and Cursor sessions plus installed editors; provider credentials remain in their own CLIs. Use de-identified, non-sensitive data and export a backup before testing. Please report defects through [GitHub Issues](https://github.com/Frostand/Cly/issues).
 
 ## Development
 
@@ -137,7 +138,11 @@ pnpm licenses:check
 pnpm test
 pnpm test:e2e
 pnpm package:dir
+pnpm package:verify:contents -- --app release/<platform-unpacked-path>
+pnpm package:smoke -- --app release/<platform-unpacked-path>
 ```
+
+Tagged release jobs run the privacy, license, capability, unit, end-to-end, packaged-content, permission-metadata, and unpacked-application launch checks on macOS, Windows, and Linux before publishing installers.
 
 Useful commands:
 

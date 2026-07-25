@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentContextSnapshot } from "../domain/agent-context";
+import type { ResearchProject } from "../domain/types";
 import { createCostLedgerFixture } from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
 import { apiClient } from "../services/api-client";
 import { mockServices } from "../services/mock-services";
-import { resolveInitialFixtureMode, useClyStore } from "./cly-store";
+import {
+  resolveInitialFixtureMode,
+  selectCatalogProjectId,
+  useClyStore,
+} from "./cly-store";
+import { createProductionRepository } from "./production-repository";
 
 describe("Cly UI store", () => {
   it("always starts packaged production with an empty research repository", () => {
@@ -14,6 +20,37 @@ describe("Cly UI store", () => {
     expect(
       resolveInitialFixtureMode({ demoFlag: "1", development: true }),
     ).toBe("active");
+  });
+
+  it("creates a research project from the selected canonical folder", async () => {
+    useClyStore.setState({
+      activeProjectId: "",
+      data: { ...useClyStore.getState().data, projects: [] },
+      fixtureMode: "empty",
+    });
+
+    const project = await useClyStore
+      .getState()
+      .createResearchProject("/tmp/unrelated-heart-study");
+
+    expect(project).toMatchObject({
+      name: "unrelated-heart-study",
+      path: "/tmp/unrelated-heart-study",
+    });
+    expect(useClyStore.getState().activeProjectId).toBe(project.id);
+    expect(
+      JSON.parse(localStorage.getItem("cly-prototype-ui") ?? "{}"),
+    ).toMatchObject({ activeProjectId: project.id });
+  });
+
+  it("resolves an empty project catalog to first-run onboarding", () => {
+    expect(selectCatalogProjectId([], "stale-project")).toBeNull();
+    expect(
+      selectCatalogProjectId(
+        [{ id: "first" }, { id: "preferred" }] as ResearchProject[],
+        "preferred",
+      ),
+    ).toBe("preferred");
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -753,6 +790,22 @@ describe("Cly UI store", () => {
       expect(useClyStore.getState().data.claims.length).toBeGreaterThan(0),
     );
     expect(useClyStore.getState().fixtureSwitcherOpen).toBe(true);
+  });
+
+  it("selects a valid project when an asynchronous demo fixture finishes loading", async () => {
+    useClyStore.setState({
+      activeProjectId: "",
+      data: createProductionRepository(),
+    });
+
+    useClyStore.getState().setFixtureMode("active");
+
+    await vi.waitFor(() =>
+      expect(useClyStore.getState().data.projects.length).toBeGreaterThan(0),
+    );
+    expect(useClyStore.getState().activeProjectId).toBe(
+      useClyStore.getState().data.projects[0]?.id,
+    );
   });
 
   it("persists context and claim mutations across feature views", () => {

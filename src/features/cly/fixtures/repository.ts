@@ -14,7 +14,7 @@ const agentNode = (
   id: string,
   role: string,
   mode: AgentNode["mode"],
-  model = "Codex · GPT-5",
+  model = "Automatic · detected model",
 ): AgentNode => ({
   id,
   role,

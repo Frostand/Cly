@@ -173,6 +173,44 @@ describe("chat project authority", () => {
     });
   });
 
+  it("passes the request abort signal into Claude chat", async () => {
+    const anthropic = vi.fn(() => new Response("claude-response"));
+    const app = new Hono();
+    registerChatRoutes(app, {
+      getDatabase: () => database,
+      getObligationService: () => ({
+        safeEvaluateOperation: vi.fn(() => ({ alerts: [], decision: "allow" })),
+      }),
+      resolveProjectPath: () => null,
+      providerValidators: {
+        openai: async () => null,
+        opencode: async () => null,
+        cursor: async () => null,
+        anthropic: async () => null,
+      },
+      providerStreams: {
+        openai: vi.fn(),
+        opencode: vi.fn(),
+        cursor: vi.fn(),
+        anthropic,
+      },
+    });
+    const controller = new AbortController();
+    const request = createChatRequest({
+      projectId: "project-a",
+      provider: "anthropic",
+    });
+    const requestWithSignal = new Request(request, {
+      signal: controller.signal,
+    });
+
+    await app.request(requestWithSignal);
+
+    expect(anthropic).toHaveBeenCalledWith(
+      expect.objectContaining({ abortSignal: requestWithSignal.signal }),
+    );
+  });
+
   it.each([
     "Persisted context manifest cannot leave a local-only project.",
     "Persisted context manifest references context that is now deleted.",

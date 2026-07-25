@@ -1166,7 +1166,8 @@ export const createProjectPullRequest = async (
     args.push("--draft");
   }
 
-  const createResult = await runGhCommand(repoInfo.repoRoot, args);
+  const { repoRoot } = await ensureProjectGitRepository(projectPath);
+  const createResult = await runGhCommand(repoRoot, args);
   const output = `${createResult.stdout}\n${createResult.stderr}`.trim();
 
   return {

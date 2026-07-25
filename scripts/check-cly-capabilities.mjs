@@ -4,12 +4,7 @@ import { join, relative } from "node:path";
 const root = new URL("..", import.meta.url).pathname;
 const inventoryPath = join(root, "docs/cly-v1-capabilities.json");
 const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
-const states = new Set([
-  "production",
-  "read-only-preview",
-  "unavailable",
-  "demo-only",
-]);
+const states = new Set(["production", "unavailable", "demo-only"]);
 const ids = new Set();
 const failures = [];
 
@@ -60,9 +55,15 @@ if (
 const agentExecution = inventory.find(
   (capability) => capability.id === "agents.execute",
 );
-if (agentExecution?.state === "production") {
+if (
+  agentExecution?.state !== "production" ||
+  agentExecution?.service !== "productionAgentSessionServices" ||
+  !agentExecution?.api?.includes("/execute") ||
+  !agentExecution?.api?.includes("/resume") ||
+  !agentExecution?.api?.includes("/cancel")
+) {
   failures.push(
-    "agents.execute cannot be production until process execution and approval gating are connected",
+    "agents.execute must expose the tested production execute, resume, cancel, and approval-gated runtime lifecycle",
   );
 }
 

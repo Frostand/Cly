@@ -8,6 +8,7 @@ import {
   findRateLimitsObject,
   storeProviderUsageLimitSnapshot,
 } from "../providers/usage-limits.js";
+import { terminateProcessTree } from "../shared/process-tree.js";
 import {
   getCodexCliSpawnErrorMessage,
   resolveCodexCliLaunch,
@@ -29,6 +30,11 @@ import {
   isCodexResumeFailure,
   prepareCodexPromptAttachments,
 } from "./codex-prompt.js";
+import {
+  assertProviderModelId,
+  assertProviderProjectPath,
+  normalizeProviderSessionId,
+} from "./provider-inputs.js";
 
 const CODEX_CLI_FILE_CHANGE_ITEM_TYPES = new Set([
   "apply_patch",
@@ -239,19 +245,21 @@ export const streamCodexCliResponse = ({
   remoteConversationModelSpeed,
   remoteConversationProjectPath,
 }) => {
+  const safeModel = assertProviderModelId(model);
+  const safeProjectPath = assertProviderProjectPath(projectPath);
   const storedSession = chatId
     ? (codexSessionsByChatId.get(chatId) ?? null)
     : null;
   const persistedSessionId =
-    remoteConversationModel === model &&
+    remoteConversationModel === safeModel &&
     (remoteConversationModelSpeed ?? "standard") === modelSpeed &&
-    remoteConversationProjectPath === projectPath
-      ? getCodexSessionId(remoteConversationId)
+    remoteConversationProjectPath === safeProjectPath
+      ? normalizeProviderSessionId(getCodexSessionId(remoteConversationId))
       : null;
   const canResumeStoredSession =
-    storedSession?.model === model &&
+    storedSession?.model === safeModel &&
     (storedSession?.modelSpeed ?? "standard") === modelSpeed &&
-    storedSession?.projectPath === projectPath;
+    storedSession?.projectPath === safeProjectPath;
   if (chatId && storedSession && !canResumeStoredSession) {
     codexSessionsByChatId.delete(chatId);
   }
@@ -290,6 +298,7 @@ export const streamCodexCliResponse = ({
         };
 
         const writeEvent = (event) => {
+          if (finished || abortSignal?.aborted) return;
           hasStreamedOutput = true;
           writer.write(event);
         };
@@ -369,7 +378,12 @@ export const streamCodexCliResponse = ({
         };
 
         const handleEvent = (event) => {
-          if (!event || typeof event !== "object") {
+          if (
+            finished ||
+            abortSignal?.aborted ||
+            !event ||
+            typeof event !== "object"
+          ) {
             return;
           }
 
@@ -425,17 +439,17 @@ export const streamCodexCliResponse = ({
             chatId
           ) {
             codexSessionsByChatId.set(chatId, {
-              model,
+              model: safeModel,
               modelSpeed,
-              projectPath,
+              projectPath: safeProjectPath,
               sessionId: event.thread_id,
             });
             writer.write({
               messageMetadata: {
                 ...responseMessageMetadata,
                 remoteConversationId: event.thread_id,
-                remoteConversationModel: model,
-                remoteConversationProjectPath: projectPath,
+                remoteConversationModel: safeModel,
+                remoteConversationProjectPath: safeProjectPath,
               },
               type: "message-metadata",
             });
@@ -510,7 +524,10 @@ export const streamCodexCliResponse = ({
 
           if (isCodexCliFileChangeItem(item)) {
             ensureFileToolStarted(item);
-            const outputWrite = buildFileChangeOutput({ item, projectPath })
+            const outputWrite = buildFileChangeOutput({
+              item,
+              projectPath: safeProjectPath,
+            })
               .then((output) => {
                 if (finished) {
                   return;
@@ -541,6 +558,7 @@ export const streamCodexCliResponse = ({
         };
 
         const handleStdoutChunk = (chunk) => {
+          if (finished || abortSignal?.aborted) return;
           stdoutBuffer += chunk.toString();
           const lines = stdoutBuffer.split(/\r?\n/);
           stdoutBuffer = lines.pop() ?? "";
@@ -560,7 +578,11 @@ export const streamCodexCliResponse = ({
         };
 
         const handleAbort = () => {
-          child?.kill("SIGTERM");
+          stdoutBuffer = "";
+          stderrBuffer = "";
+          child?.stdout?.off?.("data", handleStdoutChunk);
+          child?.stderr?.removeAllListeners?.("data");
+          terminateProcessTree(child);
           finish(resolve);
         };
 
@@ -587,9 +609,9 @@ export const streamCodexCliResponse = ({
             addDirs: preparedAttachments?.addDirs ?? [],
             codexPermissionMode,
             imagePaths: preparedAttachments?.imagePaths ?? [],
-            model,
+            model: safeModel,
             modelSpeed,
-            projectPath,
+            projectPath: safeProjectPath,
             reasoningEffort,
             sessionId,
           });
@@ -601,22 +623,26 @@ export const streamCodexCliResponse = ({
               }
 
               child = spawn(launch.command, [...launch.argsPrefix, ...args], {
-                cwd: projectPath,
-                env: process.env,
-                shell: launch.shell ?? false,
+                cwd: safeProjectPath,
+                detached: process.platform !== "win32",
+                env: { ...process.env, ...(launch.env ?? {}) },
+                shell: false,
                 stdio: ["pipe", "pipe", "pipe"],
               });
 
               child.stdout.on("data", handleStdoutChunk);
               child.stderr.on("data", (chunk) => {
+                if (finished || abortSignal?.aborted) return;
                 stderrBuffer += chunk.toString();
               });
               child.on("error", (error) => {
+                if (finished || abortSignal?.aborted) return;
                 finish(() =>
                   reject(new Error(getCodexCliSpawnErrorMessage(error))),
                 );
               });
               child.on("close", (code) => {
+                if (finished || abortSignal?.aborted) return;
                 const trimmed = stdoutBuffer.trim();
                 if (trimmed) {
                   try {
@@ -680,7 +706,7 @@ export const streamCodexCliResponse = ({
               currentTurnAttachments: attachments?.promptText ?? null,
               currentTurnProjectReferences: projectReferencesPrompt,
               messages,
-              projectPath,
+              projectPath: safeProjectPath,
               systemPrompt,
             });
             latestUserPrompt = getLatestUserPrompt(

@@ -43,6 +43,7 @@ import { useState } from "react";
 import { Badge, Button, Segmented, Toggle } from "../components/primitives";
 import { ClyTerminal } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
+import { formatAgentModelName, formatAgentProviderName } from "./model-catalog";
 import type {
   AgentIdentity,
   AgentSession,
@@ -768,7 +769,8 @@ function AgentPane({
       </header>
       <div className="agent-pane-model">
         <span>
-          {agent.provider} · {agent.model}
+          {formatAgentProviderName(agent.provider)} ·{" "}
+          {formatAgentModelName(agent.provider, agent.model)}
         </span>
         <span>{agent.reasoningLevel} reasoning</span>
       </div>

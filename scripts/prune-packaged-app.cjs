@@ -1,5 +1,17 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
+
+const execFileAsync = promisify(execFile);
+
+const UNUSED_MAC_PRIVACY_USAGE_KEYS = [
+  "NSAudioCaptureUsageDescription",
+  "NSBluetoothAlwaysUsageDescription",
+  "NSBluetoothPeripheralUsageDescription",
+  "NSCameraUsageDescription",
+  "NSMicrophoneUsageDescription",
+];
 
 const ARCH_BY_NUMBER = {
   1: "x64",
@@ -221,12 +233,37 @@ function getResourcesDirectory(context) {
   return path.join(context.appOutDir, "resources");
 }
 
+async function removeUnusedMacPrivacyUsageDescriptions(context) {
+  if (context.electronPlatformName !== "darwin") {
+    return;
+  }
+
+  const infoPlistPath = path.join(
+    context.appOutDir,
+    `${context.packager.appInfo.productFilename}.app`,
+    "Contents",
+    "Info.plist",
+  );
+
+  for (const key of UNUSED_MAC_PRIVACY_USAGE_KEYS) {
+    try {
+      await execFileAsync("/usr/bin/plutil", ["-remove", key, infoPlistPath]);
+    } catch (error) {
+      const detail = `${error?.stdout ?? ""}\n${error?.stderr ?? ""}`;
+      if (!/no value at that key path|does not exist/i.test(detail)) {
+        throw error;
+      }
+    }
+  }
+}
+
 exports.default = async function prunePackagedApp(context) {
   const platform = context.electronPlatformName;
   const arch = getTargetArch(context);
   const resourcesDir = getResourcesDirectory(context);
 
   await ensureAppUpdateConfig(resourcesDir);
+  await removeUnusedMacPrivacyUsageDescriptions(context);
 
   if (platform === "darwin" && isUniversalTempBuild(context)) {
     console.log(
@@ -286,6 +323,11 @@ exports.default = async function prunePackagedApp(context) {
       platform,
       arch,
     ),
+    removeIfExists(path.join(unpackedNodeModules, "node-pty", "scripts")),
+    removeIfExists(path.join(unpackedNodeModules, "node-pty", "src")),
+    removeIfExists(
+      path.join(unpackedNodeModules, "node-pty", "deps", ".editorconfig"),
+    ),
   ]);
 
   if (platform !== "win32") {
@@ -300,3 +342,6 @@ exports.default = async function prunePackagedApp(context) {
 };
 
 exports.getScopedNativePackageKeepNames = getScopedNativePackageKeepNames;
+exports.UNUSED_MAC_PRIVACY_USAGE_KEYS = UNUSED_MAC_PRIVACY_USAGE_KEYS;
+exports.removeUnusedMacPrivacyUsageDescriptions =
+  removeUnusedMacPrivacyUsageDescriptions;

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { EventEmitter } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -36,7 +37,12 @@ import { streamCursorResponse } from "./cursor-stream.js";
 const messages = [
   {
     id: "user-1",
-    parts: [{ text: "Inspect the project", type: "text" }],
+    parts: [
+      {
+        text: "CLY_PRIVATE_PROMPT_39d8 ; $(open -a Calculator)",
+        type: "text",
+      },
+    ],
     role: "user",
   },
 ];
@@ -49,6 +55,18 @@ const createDeferred = <T>() => {
     reject = rejectPromise;
   });
   return { promise, reject, resolve };
+};
+
+const createChild = () => {
+  const child = new EventEmitter() as EventEmitter & {
+    stdin: { end: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn> };
+    stderr: EventEmitter;
+    stdout: EventEmitter;
+  };
+  child.stdin = { end: vi.fn(), write: vi.fn() };
+  child.stderr = new EventEmitter();
+  child.stdout = new EventEmitter();
+  return child;
 };
 
 const providers = [
@@ -202,6 +220,68 @@ describe("provider cancellation before spawn", () => {
       expect(cleanup).toHaveBeenCalledTimes(
         provider.attachmentsBeforeLaunch ? 1 : 0,
       );
+    });
+
+    it(`${provider.name} keeps prompts out of argv and ignores all post-abort process output`, async () => {
+      const child = createChild();
+      mocks.spawn.mockReturnValue(child);
+      const controller = new AbortController();
+      const responseText = provider.createResponse(controller.signal).text();
+
+      await vi.waitFor(() => expect(mocks.spawn).toHaveBeenCalledOnce());
+      const spawnArgs = mocks.spawn.mock.calls[0]?.[1];
+      expect(JSON.stringify(spawnArgs)).not.toContain(
+        "CLY_PRIVATE_PROMPT_39d8",
+      );
+      expect(mocks.spawn.mock.calls[0]?.[2]).toMatchObject({ shell: false });
+
+      if (provider.name === "Codex app-server") {
+        child.stdout.emit(
+          "data",
+          Buffer.from(`${JSON.stringify({ id: 1, result: {} })}\n`),
+        );
+        await vi.waitFor(() =>
+          expect(child.stdin.write.mock.calls.length).toBeGreaterThanOrEqual(2),
+        );
+        child.stdout.emit(
+          "data",
+          Buffer.from(
+            `${JSON.stringify({
+              id: 2,
+              result: { thread: { id: "thread-safe" } },
+            })}\n`,
+          ),
+        );
+      }
+
+      await vi.waitFor(() => {
+        const stdinPayload = JSON.stringify([
+          ...child.stdin.end.mock.calls,
+          ...child.stdin.write.mock.calls,
+        ]);
+        expect(stdinPayload).toContain("CLY_PRIVATE_PROMPT_39d8");
+      });
+
+      controller.abort();
+      child.stdout.emit(
+        "data",
+        Buffer.from(
+          `${JSON.stringify({
+            message: { text: "CLY_POST_ABORT_CANARY" },
+            text: "CLY_POST_ABORT_CANARY",
+            type: "assistant",
+          })}\n`,
+        ),
+      );
+      child.stderr.emit("data", Buffer.from("CLY_POST_ABORT_CANARY"));
+      child.emit("error", new Error("CLY_POST_ABORT_CANARY"));
+      child.emit("close", 1);
+
+      await expect(responseText).resolves.not.toContain(
+        "CLY_POST_ABORT_CANARY",
+      );
+      expect(child.stdout.listenerCount("data")).toBe(0);
+      expect(child.stderr.listenerCount("data")).toBe(0);
     });
   }
 });

@@ -61,4 +61,26 @@ describe("provider login launcher", () => {
 
     await expect(launcher("opencode")).resolves.toBe(false);
   });
+
+  it("uses the detected cursor-agent executable for Cursor login", async () => {
+    const child = { once: vi.fn(), unref: vi.fn() };
+    const spawnProcess = vi.fn(() => child);
+    const launcher = createProviderLoginLauncher({
+      isCommandAvailable: vi.fn(
+        async (command: string) => command === "osascript",
+      ),
+      platform: "darwin",
+      resolveCursorCommand: vi
+        .fn()
+        .mockResolvedValue("/opt/cursor/cursor-agent"),
+      spawnProcess,
+    });
+
+    await expect(launcher("cursor")).resolves.toBe(true);
+    expect(spawnProcess).toHaveBeenCalledWith(
+      "osascript",
+      ["-e", expect.stringContaining("/opt/cursor/cursor-agent' login")],
+      expect.objectContaining({ detached: true, stdio: "ignore" }),
+    );
+  });
 });

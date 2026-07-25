@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
+import { getClyMainWindow } from "./electron-main-window";
 
 const root = process.cwd();
 const viteCli = path.join(root, "node_modules", "vite", "bin", "vite.js");
@@ -11,6 +12,7 @@ const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
 test("completes and recovers the production evidence loop with demos disabled", async () => {
   test.setTimeout(90_000);
   const userDataPath = mkdtempSync(path.join(tmpdir(), "cly-production-e2e-"));
+  const projectPath = mkdtempSync(path.join(tmpdir(), "cly-beta-project-"));
   const suffix = Date.now().toString(36);
   const claimTitle = `Production evidence claim ${suffix}`;
   const experimentTitle = `Production evidence experiment ${suffix}`;
@@ -47,7 +49,13 @@ test("completes and recovers the production evidence loop with demos disabled", 
 
   let app = await launch();
   try {
-    let window = await app.firstWindow();
+    let window = await getClyMainWindow(app);
+    await app.evaluate(({ dialog }, selectedPath) => {
+      dialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [selectedPath],
+      });
+    }, projectPath);
     const captureAnalysisDialog = async (name: string) => {
       if (process.env.CLY_CAPTURE_LOCAL_ANALYSIS !== "1") return;
       const browserWindow = await app.browserWindow(window);
@@ -71,17 +79,16 @@ test("completes and recovers the production evidence loop with demos disabled", 
         nativeWindow.setSize(1440, 900),
       );
     };
-    await window.getByRole("heading", { level: 1 }).first().waitFor();
     await expect(window.getByTestId("fixture-selector")).toHaveCount(0);
     await expect(
       window.getByText(/Cly Open Beta · Local research data only/),
     ).toBeVisible();
 
-    await window.getByTestId("project-switcher").click();
+    await window.getByRole("button", { name: "Choose local folder" }).click();
     await window.getByTestId("new-local-project").click();
     await expect(
       window.getByRole("heading", {
-        name: "Untitled research project",
+        name: path.basename(projectPath),
         level: 1,
       }),
     ).toBeVisible();
@@ -103,16 +110,6 @@ test("completes and recovers the production evidence loop with demos disabled", 
       window.getByRole("heading", { name: projectTitle, level: 1 }),
     ).toBeVisible();
 
-    await window.getByTestId("nav-notebooks").click();
-    await expect(
-      window.getByText(
-        /Notebook scanning is a preview until imported scans can be persisted/,
-      ),
-    ).toBeVisible();
-    await expect(
-      window.getByRole("button", { name: "Import notebook" }).first(),
-    ).toBeDisabled();
-
     await window.getByTestId("nav-settings").click();
     await window.getByRole("button", { name: "Privacy" }).click();
     await expect(window.getByText("Free beta safety boundary")).toBeVisible();
@@ -127,7 +124,9 @@ test("completes and recovers the production evidence loop with demos disabled", 
     await expect(
       window.getByRole("heading", { name: "Agent Sessions", level: 1 }),
     ).toBeVisible();
-    await expect(window.getByText("No durable sessions yet")).toBeVisible();
+    await expect(
+      window.getByRole("heading", { name: "Choose or start a session" }),
+    ).toBeVisible();
 
     await window.getByTestId("nav-claims").click();
     await window.getByRole("button", { name: "New claim" }).click();
@@ -229,7 +228,7 @@ test("completes and recovers the production evidence loop with demos disabled", 
 
     await app.close();
     app = await launch();
-    window = await app.firstWindow();
+    window = await getClyMainWindow(app);
     await window.getByRole("heading", { level: 1 }).first().waitFor();
     await expect(
       window.getByRole("heading", { name: projectTitle, level: 1 }),
@@ -280,5 +279,6 @@ test("completes and recovers the production evidence loop with demos disabled", 
   } finally {
     await app.close().catch(() => undefined);
     rmSync(userDataPath, { recursive: true, force: true });
+    rmSync(projectPath, { recursive: true, force: true });
   }
 });

@@ -36,7 +36,7 @@ export const agentRoleConfigurationSchema = z
     maxParallel: z.number().int().min(1),
     provider: z.string().trim().min(1).max(200),
     model: z.string().trim().min(1).max(500),
-    reasoningLevel: z.enum(["low", "medium", "high"]),
+    reasoningLevel: z.enum(["low", "medium", "high", "xhigh", "max", "ultra"]),
     budget: agentResourceBudgetSchema,
     allowedTools: z.array(z.string().trim().min(1).max(500)).max(500),
     allowedContextSources: z

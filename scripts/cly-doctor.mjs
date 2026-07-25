@@ -55,6 +55,32 @@ const parseOpenCodeAuthentication = (value) => {
     : /\bcredentials?\b/i.test(text) && /[●•]\s+\S/.test(text);
 };
 
+const findCursorCommand = () => {
+  for (const command of ["agent", "cursor-agent"]) {
+    const help = run(command, ["--help"], 3_000);
+    if (
+      help.available &&
+      /cursor/i.test(help.output) &&
+      /agent/i.test(help.output)
+    ) {
+      return command;
+    }
+  }
+  return null;
+};
+
+const parseCursorAuthentication = (value) => {
+  const text = String(value ?? "").trim();
+  if (
+    /\b(?:not\s+logged\s+in|not\s+authenticated|unauthenticated|logged\s+out)\b/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  return /\b(?:logged\s+in|authenticated|login\s+successful)\b/i.test(text);
+};
+
 const nodeReady = isAtLeast(parseVersion(process.version), minimumNode);
 print(nodeReady ? "✓" : "✗", "Node.js", process.version);
 
@@ -68,6 +94,7 @@ print(
 const git = run("git", ["--version"]);
 print(git.ok ? "✓" : "✗", "Git", git.ok ? firstLine(git.output) : "not found");
 
+const cursorCommand = findCursorCommand();
 const providers = [
   {
     authArgs: ["login", "status"],
@@ -90,11 +117,22 @@ const providers = [
     parseAuthentication: (output) => parseOpenCodeAuthentication(output),
     versionArgs: ["--version"],
   },
+  {
+    authArgs: ["status"],
+    command: cursorCommand,
+    label: "Cursor",
+    parseAuthentication: (output) => parseCursorAuthentication(output),
+    versionArgs: ["--version"],
+  },
 ];
 
 console.log("\nAI harnesses (install and sign in to at least one):");
 let authenticatedProviders = 0;
 for (const provider of providers) {
+  if (!provider.command) {
+    print("○", provider.label, "not installed");
+    continue;
+  }
   const version = run(provider.command, provider.versionArgs);
   if (!version.available) {
     print("○", provider.label, "not installed");

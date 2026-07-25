@@ -1,28 +1,22 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
 
-const destinations = [
-  ["overview", "When LDL-C misleads"],
-  ["agents", "Agent Sessions"],
-  ["context", "Context Composer"],
-  ["graph", "Research Object Graph"],
-  ["experiments", "Experiment Manager"],
-  ["sources", "Source Manager"],
-  ["literature", "Literature Workspace"],
-  ["notebooks", "Notebook Scanner"],
-  ["code", "Code-to-Research Linker"],
-  ["claims", "Claim Audit Board"],
-  ["obligations", "Research Data Obligations"],
-  ["costs", "Cost ledger"],
-  ["provenance", "Figure & Table Provenance"],
-  ["reproducibility", "Reproducibility Auditor"],
-  ["decisions", "Research Decision Log"],
-  ["next-steps", "Next-Step Planner"],
-  ["integrations", "Integrations & Providers"],
-  ["models", "Models & Agents"],
-  ["settings", "Settings"],
-] as const;
+const routeManifest = JSON.parse(
+  readFileSync(
+    path.join(process.cwd(), "src/features/cly/route-manifest.json"),
+    "utf8",
+  ),
+) as { id: string; label: string; heading: string }[];
+
+import { installProviderModelsFixture } from "./provider-models-fixture";
+
+const destinations = routeManifest.map(
+  ({ id, heading }) => [id, heading] as const,
+);
 
 test.beforeEach(async ({ page }) => {
+  await installProviderModelsFixture(page);
   await page.route("**/projects/project-cly/obligations", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -52,6 +46,12 @@ test("launches Cly and navigates every major destination", async ({ page }) => {
   });
 
   for (const [id, heading] of destinations) {
+    if (id === "dev") {
+      await page.getByTestId("product-dev").click();
+      await expect(page.getByRole("region", { name: heading })).toBeVisible();
+      continue;
+    }
+    await page.getByTestId("product-research").click();
     await page.getByTestId(`nav-${id}`).click();
     await expect(
       page.getByRole("heading", { name: heading, level: 1 }),
@@ -155,6 +155,20 @@ test("completes the guided LDL question-to-result demo from blank inputs", async
       .first(),
   ).toBeVisible();
 
+  await page.getByRole("radio", { name: "Preregistration" }).click();
+  await page.getByRole("button", { name: "Create snapshot" }).click();
+  const snapshotDialog = page.getByRole("dialog", {
+    name: "Preregister analysis",
+  });
+  await snapshotDialog
+    .getByLabel("Primary metrics")
+    .fill("Weighted AUC, weighted Brier score");
+  await snapshotDialog
+    .getByLabel("Success criteria")
+    .fill("Weighted AUC exceeds the LDL-C-only baseline by at least 0.10.");
+  await snapshotDialog.getByRole("button", { name: "Lock snapshot" }).click();
+  await expect(page.getByRole("heading", { name: "Version 1" })).toBeVisible();
+
   await page.getByTestId("run-guided-analysis").click();
   const analysisDialog = page.getByRole("dialog", {
     name: "Run LDL-C discordance analysis",
@@ -187,6 +201,15 @@ test("completes the guided LDL question-to-result demo from blank inputs", async
       /Basic health data identify adults with discordantly high ApoB/,
     ),
   ).toBeVisible();
+  await page.getByTestId("nav-reproducibility").click();
+  await page.getByRole("button", { name: "Run audit" }).click();
+  await expect(page.getByText("Reproducibility audit complete")).toBeVisible();
+  await page.getByTestId("nav-overview").click();
+  await expect(page.getByText("6 of 7 complete")).toBeVisible();
+  await expect(page.getByTestId("research-loop-review")).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
 });
 
 test("completes the linked research workflow", async ({ page }) => {
@@ -207,26 +230,12 @@ test("completes the linked research workflow", async ({ page }) => {
     .click();
   await expect(page.getByText("Supporting evidence linked")).toBeVisible();
 
-  // Add a source to a NotebookLM bundle.
+  // Inspect the linked source in the source workspace.
   await page.getByTestId("nav-sources").click();
   await page
     .getByRole("row", { name: /NHANES 2005–2006 fasting lipids/ })
     .click();
-  await page.getByText("Source actions", { exact: true }).click();
-  await page.getByRole("button", { name: "Add to NotebookLM bundle" }).click();
-  await expect(page.getByText("Added to NotebookLM bundle")).toBeVisible();
-
-  // Import and inspect a mock notebook.
-  await page.getByTestId("nav-notebooks").click();
-  await page.getByRole("button", { name: "Import notebook" }).click();
-  await page.getByLabel("Notebook filename").fill("review-analysis.ipynb");
-  await page.getByRole("button", { name: "Import and scan" }).click();
-  await expect(
-    page.getByText("review-analysis.ipynb", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.locator("#main-workspace").getByText("Mock scan queued"),
-  ).toBeVisible();
+  await expect(page.getByText("Source actions", { exact: true })).toBeVisible();
 
   // Compare experiments and focus an evidence path.
   await page.getByTestId("nav-experiments").click();
@@ -274,7 +283,9 @@ test("completes the linked research workflow", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Research Decision Log" }),
   ).toBeVisible();
-  await expect(page.getByText("Untitled decision")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Untitled decision Active/ }),
+  ).toBeVisible();
 });
 
 test("previews a project-scoped reviewer capsule from the Claims workspace", async ({
@@ -495,16 +506,20 @@ test("filters and sorts data, configures providers, and persists preferences", a
   await expect(page.getByLabel("Sort sources")).toHaveValue("Newest");
 
   await page.getByTestId("nav-integrations").click();
-  const github = page.locator(".cly-integration-catalog .cly-panel", {
-    hasText: "GitHub",
-  });
-  await github.getByRole("button", { name: "Setup" }).click();
-  await expect(page.getByText("GitHub setup")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Local AI providers" }),
+  ).toBeVisible();
+  for (const provider of ["Codex", "Claude Code", "OpenCode", "Cursor"]) {
+    await expect(
+      page.getByText(provider, { exact: true }).first(),
+    ).toBeVisible();
+  }
+  await expect(page.getByRole("button", { name: "Setup" })).toHaveCount(0);
 
   await page.getByTestId("nav-models").click();
   const firstModel = page.locator(".cly-agent-model").first();
-  await firstModel.fill("Claude Sonnet");
-  await expect(firstModel).toHaveValue("Claude Sonnet");
+  await firstModel.selectOption("anthropic:sonnet");
+  await expect(firstModel).toHaveValue("anthropic:sonnet");
   await page.getByRole("button", { name: "Review estimate" }).click();
   await page.getByRole("button", { name: "Save configuration" }).click();
   await expect(page.getByText("Agent configuration saved")).toBeVisible();

@@ -3,10 +3,11 @@ import path from "node:path";
 import {
   execCliCommand,
   getCliVersion,
-  isCliCommandAvailable,
+  resolveCliCommandPath,
 } from "../shared/cli.js";
+import { resolveNpmWindowsNodeShim } from "../shared/windows-node-shim.js";
 
-const CURSOR_CLI_COMMANDS = ["agent", "cursor-agent"];
+const CURSOR_CLI_COMMANDS = ["cursor-agent", "agent"];
 const CURSOR_CLI_CACHE_TTL_MS = 30_000;
 
 let cachedCursorCli = null;
@@ -27,8 +28,8 @@ const getCursorCliPathCandidates = () => {
 
   const installDir = path.join(localAppData, "cursor-agent");
   return [
-    path.join(installDir, "agent.cmd"),
     path.join(installDir, "cursor-agent.cmd"),
+    path.join(installDir, "agent.cmd"),
   ];
 };
 
@@ -46,26 +47,27 @@ const getCursorCliCandidates = () => [
   ...getCursorCliPathCandidates(),
 ];
 
-const isCursorCommandCandidate = async (commandName) => {
-  if (
-    path.isAbsolute(commandName)
-      ? !(await fileExists(commandName))
-      : !(await isCliCommandAvailable(commandName))
-  ) {
-    return false;
-  }
+const resolveCursorCommandCandidate = async (commandName) => {
+  const commandPath = path.isAbsolute(commandName)
+    ? (await fileExists(commandName))
+      ? commandName
+      : null
+    : await resolveCliCommandPath(commandName);
+  if (!commandPath) return null;
 
   if (!/(^|[\\/])agent(?:\.(?:cmd|ps1))?$/i.test(commandName)) {
-    return true;
+    return commandPath;
   }
 
   try {
-    const result = await execCliCommand(commandName, ["--help"], {
+    const result = await execCliCommand(commandPath, ["--help"], {
       timeout: 3000,
     });
-    return isLikelyCursorAgentHelp(`${result.stdout}\n${result.stderr}`);
+    return isLikelyCursorAgentHelp(`${result.stdout}\n${result.stderr}`)
+      ? commandPath
+      : null;
   } catch {
-    return false;
+    return null;
   }
 };
 
@@ -80,10 +82,11 @@ export const getCursorCliCommand = async ({ force = false } = {}) => {
   }
 
   for (const commandName of getCursorCliCandidates()) {
-    if (await isCursorCommandCandidate(commandName)) {
-      cachedCursorCli = commandName;
+    const commandPath = await resolveCursorCommandCandidate(commandName);
+    if (commandPath) {
+      cachedCursorCli = commandPath;
       cachedCursorCliTimestamp = now;
-      return commandName;
+      return commandPath;
     }
   }
 
@@ -110,7 +113,7 @@ export const execCursorCliCommand = async (args = [], options = {}) => {
 };
 
 export const getCursorCliUnavailableMessage = () =>
-  "Cursor Agent CLI is not installed or not available. Install Cursor Agent CLI or add `agent` to PATH.";
+  "Cursor Agent CLI is not installed or not available. Install it and add `cursor-agent` (or the legacy `agent`) to PATH.";
 
 export const getCursorCliSpawnErrorMessage = (error) => {
   if (error?.code === "ENOENT") {
@@ -128,15 +131,37 @@ export const normalizeCursorCliModel = (model) => {
     : trimmed;
 };
 
-export const resolveCursorCliLaunch = async () => {
-  const commandName = await getCursorCliCommand();
+export const resolveCursorCliLaunch = async ({
+  platform = process.platform,
+  resolveCommand = getCursorCliCommand,
+  resolveWindowsShim = resolveNpmWindowsNodeShim,
+} = {}) => {
+  const commandName = await resolveCommand();
   if (!commandName) {
     throw new Error(getCursorCliUnavailableMessage());
+  }
+  if (
+    platform === "win32" &&
+    new Set([".bat", ".cmd", ".ps1"]).has(
+      path.extname(commandName).toLowerCase(),
+    )
+  ) {
+    if (path.extname(commandName).toLowerCase() === ".cmd") {
+      try {
+        const nodeLaunch = await resolveWindowsShim(commandName);
+        if (nodeLaunch) return nodeLaunch;
+      } catch {
+        // Unknown, unreadable, or escaping shims are rejected below.
+      }
+    }
+    throw new Error(
+      "Cly could not safely resolve this Cursor Windows command shim. Install Cursor Agent with npm so its adjacent Node entry point can be verified, use a native executable, or run Cursor Agent through WSL.",
+    );
   }
 
   return {
     argsPrefix: [],
     command: commandName,
-    shell: process.platform === "win32",
+    shell: false,
   };
 };

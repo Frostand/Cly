@@ -1,0 +1,28 @@
+export const CLY_MENU_COMMANDS = Object.freeze([
+  "settings",
+  "project-switcher",
+  "open-research-brief",
+  "open-claims",
+  "open-experiments",
+  "open-decisions",
+  "open-sources",
+  "open-reproducibility",
+  "open-next-steps",
+  "agent-sessions-overview",
+  "agent-sessions-chat",
+  "agent-approvals",
+  "context-composer",
+  "configure-agents",
+  "toggle-sidebar",
+  "toggle-inspector",
+  "toggle-activity",
+  "command-palette",
+  "focus-search",
+  "reset-layout",
+  "open-integrations",
+  "open-literature",
+  "shortcuts",
+  "diagnostics",
+]);
+
+export const isClyMenuCommand = (value) => CLY_MENU_COMMANDS.includes(value);

@@ -152,6 +152,7 @@ export function OverviewScreen() {
   const setSelected = useClyStore((s) => s.setSelected);
   const updateActiveProject = useClyStore((s) => s.updateActiveProject);
   const notify = useClyStore((s) => s.notify);
+  const setProjectSwitcherOpen = useClyStore((s) => s.setProjectSwitcherOpen);
   const preregistrations = useClyStore((s) => s.preregistrations);
   const [briefOpen, setBriefOpen] = useState(false);
   const [briefName, setBriefName] = useState("");
@@ -294,8 +295,15 @@ export function OverviewScreen() {
       <div className="cly-page">
         <EmptyState
           title="Create your first research project"
-          description="Cly will connect sources, code, experiments, outputs, claims, and decisions into one navigable evidence system."
-          action={<Button variant="primary">New Project</Button>}
+          description="Choose a local folder to connect sources, code, experiments, outputs, claims, and decisions without inventing a workspace on your computer."
+          action={
+            <Button
+              variant="primary"
+              onClick={() => setProjectSwitcherOpen(true)}
+            >
+              Choose local folder
+            </Button>
+          }
         />
       </div>
     );

@@ -40,7 +40,7 @@ pnpm test --run
 pnpm test:e2e
 pnpm package:dir
 codesign --verify --deep --strict --verbose=2 release/mac-arm64/Cly.app
-open -na /Users/manu/Documents/Cly/release/mac-arm64/Cly.app
+open -na release/mac-arm64/Cly.app
 ```
 
 Results:

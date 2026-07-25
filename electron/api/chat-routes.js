@@ -14,12 +14,10 @@ import {
 } from "./chat/schema.js";
 import { generateChatTitle } from "./chat/title.js";
 import { readCodexAccessToken } from "./providers/codex-auth.js";
-import {
-  getCursorCliUnavailableMessage,
-  isCursorCliAvailable,
-} from "./providers/cursor-cli.js";
+import { getCursorCliUnavailableMessage } from "./providers/cursor-cli.js";
 import {
   checkClaudeAuthentication,
+  checkCursorAuthentication,
   checkOpenCodeAuthentication,
 } from "./providers/provider-health.js";
 import { createContextRepository } from "./research/context-repository.js";
@@ -96,11 +94,18 @@ const validateOpenCodeReady = async () => {
 };
 
 const validateCursorReady = async () => {
-  const cursorInstalled = await isCursorCliAvailable();
-  if (!cursorInstalled) {
+  const authentication = await checkCursorAuthentication();
+  if (!authentication.installed) {
     return {
       message: getCursorCliUnavailableMessage(),
       status: 400,
+    };
+  }
+  if (!authentication.authenticated) {
+    return {
+      message:
+        "Cursor login not found. Run `cursor-agent login` and try again.",
+      status: 401,
     };
   }
 
@@ -464,6 +469,7 @@ export const registerChatRoutes = (
     }
 
     return providerStreams.anthropic({
+      abortSignal: c.req.raw.signal,
       agentMode,
       claudePermissionMode,
       messages,

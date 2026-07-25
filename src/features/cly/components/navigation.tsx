@@ -5,7 +5,6 @@ import {
   BookOpen,
   Bot,
   Boxes,
-  Braces,
   BrainCircuit,
   CheckCircle2,
   ChevronDown,
@@ -32,8 +31,9 @@ import {
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { useIdeStore } from "../../../components/ide/ide-store";
+import { getDesktopApi } from "../../../lib/electron";
 import type { DevSection, ScreenId } from "../domain/types";
-import { openBetaScreenNotice } from "../services/capabilities";
+import routeManifest from "../route-manifest.json";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { ClyLogo, ThemeSwitcher } from "./brand";
@@ -94,13 +94,18 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
         count: (s) => s.data.sources.length,
       },
       { id: "literature", label: "Literature", icon: BookOpen },
-      {
-        id: "notebooks",
-        label: "Notebooks",
-        icon: Braces,
-        count: (s) => s.data.notebooks.length,
-      },
-      { id: "code", label: "Code Linker", icon: Code2 },
+      ...(__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime
+        ? [
+            {
+              id: "notebooks" as const,
+              label: "Notebooks",
+              icon: Code2,
+              count: (s: ReturnType<typeof useClyStore.getState>) =>
+                s.data.notebooks.length,
+            },
+            { id: "code" as const, label: "Code Linker", icon: Code2 },
+          ]
+        : []),
       {
         id: "claims",
         label: "Claims",
@@ -179,12 +184,9 @@ const devGroups: { label: string; items: DevNavigationItem[] }[] = [
   },
 ];
 
-export const screenLabels = Object.fromEntries([
-  ...researchGroups.flatMap((group) =>
-    group.items.map((item) => [item.id, item.label]),
-  ),
-  ["dev", "Cly Dev"],
-]) as Record<ScreenId, string>;
+export const screenLabels = Object.fromEntries(
+  routeManifest.map((route) => [route.id, route.label]),
+) as Record<ScreenId, string>;
 
 export function Sidebar() {
   const activeScreen = useClyStore((s) => s.activeScreen);
@@ -215,15 +217,11 @@ export function Sidebar() {
       <div className="cly-sidebar-brand">
         <ClyLogo compact={sidebarCollapsed} />
       </div>
-      <div
-        className="cly-product-switcher"
-        role="tablist"
-        aria-label="Cly application"
-      >
+      <fieldset className="cly-product-switcher">
+        <legend className="cly-sr-only">Cly product area</legend>
         <button
           type="button"
-          role="tab"
-          aria-selected={activeProduct === "research"}
+          aria-pressed={activeProduct === "research"}
           aria-label="Cly Research"
           title={sidebarCollapsed ? "Cly Research" : undefined}
           onClick={() => {
@@ -237,8 +235,7 @@ export function Sidebar() {
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={activeProduct === "dev"}
+          aria-pressed={activeProduct === "dev"}
           aria-label="Cly Dev"
           title={sidebarCollapsed ? "Cly Dev" : undefined}
           onClick={() => setProductArea("dev")}
@@ -247,7 +244,7 @@ export function Sidebar() {
           <Code2 size={14} />
           <span>Dev</span>
         </button>
-      </div>
+      </fieldset>
       <div className="cly-sidebar-scroll">
         {activeProduct === "research"
           ? researchGroups.map((group) => (
@@ -262,8 +259,6 @@ export function Sidebar() {
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const count = item.count?.(state);
-                  const preview =
-                    !isClyDemoRuntime && Boolean(openBetaScreenNotice(item.id));
                   return (
                     <button
                       type="button"
@@ -272,13 +267,7 @@ export function Sidebar() {
                         activeScreen === item.id ? "page" : undefined
                       }
                       aria-label={item.ariaLabel ?? item.label}
-                      title={
-                        preview
-                          ? `${item.label} · Free beta preview`
-                          : sidebarCollapsed
-                            ? item.label
-                            : undefined
-                      }
+                      title={sidebarCollapsed ? item.label : undefined}
                       onClick={() => setScreen(item.id)}
                       key={item.id}
                       data-testid={`nav-${item.id}`}
@@ -287,11 +276,6 @@ export function Sidebar() {
                       <span className="cly-sidebar-item-label">
                         {item.label}
                       </span>
-                      {preview ? (
-                        <span className="cly-nav-preview" aria-hidden="true">
-                          Preview
-                        </span>
-                      ) : null}
                       {count ? (
                         <span className="cly-nav-count">
                           {count > 999 ? "999+" : count}
@@ -352,13 +336,15 @@ export function Sidebar() {
             onClick={() =>
               useClyStore
                 .getState()
-                .notify("Execution machine", "Local Mac · connected · private")
+                .notify(
+                  "Local workspace",
+                  "Folder access stays unavailable until you choose a local project directory.",
+                )
             }
-            aria-label="Local execution machine"
+            aria-label="Local workspace status"
           >
             <HardDrive size={15} />
-            <span className="cly-sidebar-item-label">Local machine</span>
-            {!sidebarCollapsed ? <span className="cly-device-dot" /> : null}
+            <span className="cly-sidebar-item-label">This device</span>
           </button>
         ) : null}
         <button
@@ -462,12 +448,28 @@ export function ProjectSwitcherPopover() {
           type="button"
           data-testid="new-local-project"
           onClick={() => {
-            void createProject()
-              .then(() => {
+            const desktopApi = getDesktopApi();
+            if (!desktopApi) {
+              useClyStore
+                .getState()
+                .notify(
+                  "Desktop app required",
+                  "Open Cly in the desktop app to select a local project folder.",
+                );
+              return;
+            }
+            void desktopApi
+              .pickProjectDirectory()
+              .then((selectedPath) => {
+                if (!selectedPath) return null;
+                return createProject(selectedPath);
+              })
+              .then((project) => {
+                if (!project) return;
                 useClyStore
                   .getState()
                   .notify(
-                    "Local project created",
+                    "Local project opened",
                     "Define the research question and hypothesis to begin.",
                   );
               })

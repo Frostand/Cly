@@ -145,8 +145,9 @@ that context.
   credential paths, or raw provider configuration.
 
 The provider-specific findings and migration constraints are recorded in
-`phase-0/provider-credential-audit.md`. Existing chat adapters that read Codex
-or Claude credential files must not be reused by research execution.
+`phase-0/provider-credential-audit.md`. The Codex model-discovery adapter that
+reads Codex's local authentication cache must not be reused by research
+execution. Claude authentication remains delegated to Claude Code.
 
 ## Cly Dev device-sync boundary
 

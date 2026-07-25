@@ -39,6 +39,8 @@
     "package:win": "pnpm vite:build && cross-env HOME=.electron-home electron-builder --win --publish never",
     "package:win:signed": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-win-signed.ps1",
     "package:linux": "pnpm vite:build && cross-env HOME=.electron-home electron-builder --linux --publish never",
+    "package:verify:contents": "node scripts/verify-packaged-contents.mjs",
+    "package:smoke": "node scripts/smoke-packaged-app.mjs",
     "dist": "pnpm package",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
@@ -50,6 +52,7 @@
     "storybook:build": "storybook build",
     "format": "biome format --write .",
     "licenses:check": "node scripts/check-production-licenses.mjs",
+    "privacy:check": "node scripts/check-repository-privacy.mjs",
     "capabilities:check": "node scripts/check-cly-capabilities.mjs"
   },
   "dependencies": {
@@ -170,7 +173,11 @@
       "electron/**/*",
       "dist/**/*",
       "public/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.map",
+      "!**/*.{test,spec}.{js,cjs,mjs,jsx,ts,tsx}",
+      "!**/{test,tests,__tests__,__mocks__,mocks}/**/*",
+      "!**/*.{ts,tsx}"
     ],
     "extraResources": [
       {
@@ -194,8 +201,9 @@
         "to": "licenses/DREAM_IDE-MIT.txt"
       }
     ],
-    "icon": "public/icon.png",
+    "icon": "build/icons/icon.png",
     "mac": {
+      "icon": "build/icons/icon.icns",
       "target": [
         "dmg",
         "zip"
@@ -218,7 +226,7 @@
       "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/**/*darwin*/**"
     },
     "win": {
-      "icon": "public/icon.ico",
+      "icon": "build/icons/icon.ico",
       "target": [
         "nsis"
       ]
@@ -227,6 +235,7 @@
       "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}"
     },
     "linux": {
+      "icon": "build/icons/png",
       "target": [
         "AppImage",
         "deb",

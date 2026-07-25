@@ -46,6 +46,7 @@ export interface SourcePayload {
   limitations?: string[];
   enrichmentMethod?: string;
   enrichedAt?: string;
+  archivedAt?: string;
 }
 
 export interface GroundedLiteratureSummary {

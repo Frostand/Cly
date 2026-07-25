@@ -8,55 +8,18 @@ test.beforeEach(async ({ page }) => {
   ).toBeVisible();
 });
 
-test("reviews auditable research impact and records explicit human approval", async ({
+test("requires a user-selected local repository before impact review", async ({
   page,
 }) => {
-  let approval: unknown;
-  await page.route("**/pr-impact-review/approvals", async (route) => {
-    approval = route.request().postDataJSON();
-    await route.fulfill({
-      status: 201,
-      contentType: "application/json",
-      body: JSON.stringify({ id: "provenance-review-1" }),
-    });
-  });
-
-  for (const discipline of [
-    "Software checks",
-    "Methodology review",
-    "Statistical review",
-    "Data-leakage review",
-    "Reproducibility review",
-    "Claim-impact review",
-  ]) {
-    await expect(page.getByRole("heading", { name: discipline })).toBeVisible();
-  }
-  await expect(page.getByText("Partial provenance")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Connect a local repository" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Analyze" })).toBeDisabled();
   await expect(
     page.getByText("No repository content transmitted"),
   ).toBeVisible();
-  await expect(
-    page.getByText("Inferred — review required").first(),
-  ).toBeVisible();
-
-  await page
-    .getByRole("button", { name: "Review scientific conflicts" })
-    .click();
-  await page
-    .getByLabel("Review note")
-    .fill(
-      "Reviewed methods, statistics, leakage, reproducibility, and claims.",
-    );
-  await page.getByRole("button", { name: "Record approval" }).click();
-  await expect(page.getByText("Human review recorded")).toBeVisible();
-  expect(approval).toMatchObject({
-    actorId: "local-reviewer",
-    decision: "approved",
-    reviewId: "a".repeat(64),
-  });
-  await expect(
-    page.getByText("Inferred — review required").first(),
-  ).toBeVisible();
+  await expect(page.getByText(/will not scan or transmit/i)).toBeVisible();
+  await expect(page.getByText(/Research\/cly|\/Users\//)).toHaveCount(0);
 });
 
 test("remains usable across the required desktop viewport matrix", async ({

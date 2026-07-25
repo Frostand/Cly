@@ -25,7 +25,7 @@ describe("generateReproducibilityAudit", () => {
       "2026-07-14T12:00:00.000Z",
     );
 
-    expect(result.audit.id).toBe("audit-20260714120000");
+    expect(result.audit.id).toBe("audit-20260714120000000");
     expect(result.audit.areas?.map((area) => area.area)).toEqual([
       "Code",
       "Data",

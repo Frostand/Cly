@@ -7,15 +7,15 @@ or its operating-system configuration.
 
 ## Result
 
-The current chat integrations are **not ready** to satisfy the research-agent
-credential boundary in ADR 0002. No Cly-owned secret store exists, and two
-adapters explicitly read provider credential files. Existing chat behaviour is
-unchanged by this audit; no credentials were inspected, copied, or modified.
+The chat integrations delegate provider authentication to their CLIs. Cly does
+not read Claude Code credentials. Codex model discovery still reads Codex's
+local authentication cache, so that adapter must not be reused as the
+research-agent credential boundary in ADR 0002.
 
 | Provider | Current credential path | OS credential store verified? | Finding / required migration |
 | --- | --- | --- | --- |
 | Codex | `~/.codex/auth.json` is read by `electron/api/providers/codex-auth.js` for access tokens and model cache. | No | Do not reuse this file for research execution. Invoke authenticated Codex CLI or migrate Cly-owned integration credentials to `CredentialStore`. |
-| Claude Code | macOS Keychain services `Claude Code-credentials` and `Claude Code` are tried first; `~/.claude/.credentials.json` and `~/.claude/credentials.json` are fallback paths in `electron/api/providers/usage-limits.js`. | Partial; fallback is not compliant | Remove file fallback from any research-agent path. Do not refresh or write provider credentials from Cly; the current usage-refresh behaviour must not be carried into the research service. |
+| Claude Code | Authentication and credentials remain entirely owned by the Claude Code CLI. Cly checks the CLI's supported authentication status and does not read Keychain entries or Claude credential files. | Delegated to provider CLI | Keep authentication delegated to Claude Code. Do not add credential extraction, refresh, migration, or persistence to Cly. |
 | OpenCode | No Cly credential file reads found. The adapter starts the OpenCode server/CLI, which owns authentication. | Not verified | Keep authentication delegated to OpenCode. Require an explicit provider capability/status check before enabling research execution. |
 | Cursor | No Cly credential file reads found. The adapter invokes the Cursor Agent CLI, which owns authentication. | Not verified | Keep authentication delegated to Cursor. Do not add credential extraction; research execution remains plan-only until action interception is available. |
 
@@ -23,9 +23,10 @@ unchanged by this audit; no credentials were inspected, copied, or modified.
 
 - `electron/api/providers/codex-auth.js` reads `~/.codex/auth.json` and returns
   its access token to local API code.
-- `electron/api/providers/usage-limits.js` reads and, after refresh, writes
-  Claude credentials. Its Keychain branch uses macOS `security`; its fallback
-  reads/writes files under `~/.claude`.
+- `electron/api/providers/usage-limits.js` records only local session usage
+  observed by Cly. Claude Code does not expose usage windows through a
+  supported local interface, so Cly does not inspect or refresh Claude-owned
+  credentials to synthesize those limits.
 - `electron/api/chat-routes.js` validates provider availability and dispatches
   directly to provider-specific streaming functions. It has no
   provider-neutral research-run or credential-store boundary.
@@ -47,4 +48,3 @@ unchanged by this audit; no credentials were inspected, copied, or modified.
 5. Require an authenticated provider capability check without extracting the
    provider's credentials. A failed check disables that provider for research
    execution.
-

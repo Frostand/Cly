@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { installProviderModelsFixture } from "./provider-models-fixture";
 
 test.beforeEach(async ({ page }) => {
+  await installProviderModelsFixture(page);
   await page.goto("/");
   await page.getByTestId("nav-agents").click();
   await expect(

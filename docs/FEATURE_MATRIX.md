@@ -1,8 +1,8 @@
 # Feature Matrix
 
-Legend: production = persisted through a project-scoped service; preview =
-read-only or deterministic demonstration state; unavailable = visibly disabled
-with an explanation. The machine-checked
+Legend: production = persisted through a project-scoped service; demo-only =
+available only in the explicitly launched deterministic demo. Unsupported
+actions are not rendered as production controls. The machine-checked
 [`cly-v1-capabilities.json`](cly-v1-capabilities.json) inventory is authoritative
 for individual mutations.
 
@@ -10,30 +10,27 @@ for individual mutations.
 |---|---:|---:|---:|---:|---:|---:|---|
 | Research Overview | yes | yes | yes | yes | yes | yes | production local reads + project brief |
 | Context Composer | yes | yes | yes | stale/large | yes | unit/component/E2E | production |
-| NotebookLM companion | Literature tab | yes | yes | manual/unavailable | yes | E2E bundle flow | export unavailable |
-| Agent sessions | yes | yes | yes | waiting/failed | yes | navigation/E2E | durable sessions production; execution unavailable |
-| Models & Agents | yes | yes | yes | preview-only | topology editor | component/E2E | configuration production; execution unavailable |
-| Subscription/API modes | Integrations | n/a | yes | unavailable/planned | yes | component | unavailable |
+| Agent sessions | yes | yes | yes | waiting/failed/cancelled | start, stream, approve, stop, resume, restart | unit/component/E2E | durable authenticated Codex/Claude execution |
+| Models & Agents | yes | yes | yes | signed-out/offline/last-good | detected model and reasoning selection | component/E2E | production provider discovery + configuration |
+| Local CLI providers | Integrations | checking/not installed | connected | signed out/detection error | refresh, secure sign-in launch, copy setup, docs | component | production provider discovery + desktop IPC |
 | Experiment Manager | yes | yes | yes | failed/partial | yes | unit/component/E2E | definitions plus local numeric CSV/TSV prediction production; remote execution unavailable |
 | Research Graph | yes | yes | yes | uncertain/stale/broken | yes | unit/E2E | relationships production |
-| Source Manager | yes | yes | yes | metadata/permission | yes | component/E2E | metadata production; folder/archive/deduplicate unavailable |
+| Source Manager | yes | yes | yes | metadata/permission/duplicate | folder, URL, BibTeX, archive, restore, enrich, deduplicate | component/E2E | production local ingestion and provenance |
 | Literature Matrix | yes | yes | yes | uncertain extraction | yes | component/visual | search import production |
-| Notebook Scanner | yes | yes | yes | stale/at risk | yes | component/E2E | preview |
-| Code Linker | yes | yes | yes | unlinked/risk | yes | component | preview |
 | Claim Audit | yes | yes | yes | unsupported/invalidated | yes | unit/component/E2E | core create/review/link production |
 | Figure/table provenance | yes | yes | yes | manual/stale/broken | yes | component/visual | read-only evidence view |
-| Reproducibility Auditor | yes | yes | yes | blocking/partial | yes | component/E2E | local audit production; finding dispositions are session-only |
-| External integrations | yes | n/a | yes | permission/sync/planned | yes | component | unavailable |
-| Next-Step Planner | yes | yes | yes | dismissed/deferred | yes | unit/component/E2E | preview |
-| Decision Log | yes | yes | yes | superseded/unresolved | yes | unit/component/E2E | preview |
+| Reproducibility Auditor | yes | yes | yes | blocking/partial | yes | component/E2E | durable local audit and finding dispositions |
+| Detected editors | Integrations | yes | yes | detection/open error | refresh/open active project | component | production desktop IPC |
+| Next-Step Planner | yes | yes | yes | dismissed/deferred | yes | unit/component/E2E | durable local planner state |
+| Decision Log | yes | yes | yes | superseded/unresolved | create/update/supersede/export | unit/component/E2E | durable local decision history |
 | Menus/command palette | yes | n/a | yes | explained disabled actions | yes | component/E2E | Electron bridge complete |
 | Fixture states | yes | yes | yes | loading/offline/errors/risks | yes | unit/E2E | development only |
 
 ## Intentionally deferred
 
-Remote model execution from Cly Research, CLI orchestration, OAuth, secret
-persistence, NotebookLM automation, GitHub/Hugging Face sync,
-notebook execution, categorical/survival/causal analysis, cloud research
-storage, billing, and hosted team collaboration are not included in the free
-beta. Local analysis is limited to numeric predictors and binary or numeric
-outcomes; it is exploratory and is not clinical advice.
+Hosted-provider execution, Cly-owned OAuth or secret persistence, NotebookLM
+automation, GitHub/Hugging Face sync, notebook execution, code scanning,
+categorical/survival/causal analysis, cloud research storage, billing, and
+hosted team collaboration are not included in the free beta and are not shown
+as production controls. Local analysis is limited to numeric predictors and
+binary or numeric outcomes; it is exploratory and is not clinical advice.

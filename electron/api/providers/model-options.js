@@ -4,6 +4,7 @@ const VALID_REASONING_EFFORTS = new Set([
   "high",
   "xhigh",
   "max",
+  "ultra",
 ]);
 const VALID_MODEL_SPEEDS = new Set(["standard", "fast"]);
 
@@ -13,6 +14,7 @@ export const CLAUDE_REASONING_EFFORT_MAP = {
   max: "max",
   medium: "medium",
   xhigh: "high",
+  ultra: "max",
 };
 
 export const OPENAI_LOW_COST_MODEL_CANDIDATES = [
@@ -379,18 +381,6 @@ export const selectLowCostAnthropicModel = (models) => {
   );
 };
 
-const CLAUDE_CODE_MODEL_LABELS = {
-  haiku: "Claude Haiku",
-  opus: "Claude Opus",
-  sonnet: "Claude Sonnet",
-};
-
-const CLAUDE_CODE_MODEL_OPTIONS = [
-  createModelOption("anthropic", "opus", CLAUDE_CODE_MODEL_LABELS.opus),
-  createModelOption("anthropic", "sonnet", CLAUDE_CODE_MODEL_LABELS.sonnet),
-  createModelOption("anthropic", "haiku", CLAUDE_CODE_MODEL_LABELS.haiku),
-];
-
 export const normalizeClaudeCodeModel = (modelId) => {
   const trimmed = modelId.trim().toLowerCase();
   if (!trimmed) return "sonnet";
@@ -578,35 +568,44 @@ const parseClaudeCodeModelOptionsFromModelsDev = (payload) => {
     );
 };
 
-export const fetchClaudeCodeModelOptionsFromModelsDev = async () => {
-  try {
-    const response = await fetch(MODELS_DEV_API_URL, {
-      method: "GET",
-    });
-    if (!response.ok) {
-      throw new Error(`Models.dev request failed (${response.status}).`);
-    }
+const createDeadlineSignal = (signal, timeoutMs) =>
+  signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+    : AbortSignal.timeout(timeoutMs);
 
-    const payload = await response.json();
-    const parsedModels = dedupeModelOptions(
-      parseClaudeCodeModelOptionsFromModelsDev(payload),
-    );
-    if (parsedModels.length < 3) {
-      throw new Error(
-        "Models.dev did not contain the expected Anthropic model families.",
-      );
-    }
-
-    return parsedModels;
-  } catch {
-    return CLAUDE_CODE_MODEL_OPTIONS;
+export const fetchClaudeCodeModelOptionsFromModelsDev = async ({
+  signal,
+  timeoutMs = 8000,
+} = {}) => {
+  const response = await fetch(MODELS_DEV_API_URL, {
+    method: "GET",
+    signal: createDeadlineSignal(signal, timeoutMs),
+  });
+  if (!response.ok) {
+    throw new Error(`Models.dev request failed (${response.status}).`);
   }
+
+  const payload = await response.json();
+  const parsedModels = dedupeModelOptions(
+    parseClaudeCodeModelOptionsFromModelsDev(payload),
+  );
+  if (parsedModels.length < 3) {
+    throw new Error(
+      "Models.dev did not contain the expected Anthropic model families.",
+    );
+  }
+
+  return parsedModels;
 };
 
-export const fetchOpenCodeContextWindowsFromModelsDev = async () => {
+export const fetchOpenCodeContextWindowsFromModelsDev = async ({
+  signal,
+  timeoutMs = 8000,
+} = {}) => {
   try {
     const response = await fetch(MODELS_DEV_API_URL, {
       method: "GET",
+      signal: createDeadlineSignal(signal, timeoutMs),
     });
     if (!response.ok) {
       throw new Error(`Models.dev request failed (${response.status}).`);

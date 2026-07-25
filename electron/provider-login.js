@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
+import { getCursorCliCommand } from "./api/providers/cursor-cli.js";
 import { isCliCommandAvailable } from "./api/shared/cli.js";
 
 const PROVIDER_LOGIN = Object.freeze({
   anthropic: { command: "claude", executable: "claude" },
-  cursor: { command: "agent login", executable: "agent" },
   openai: { command: "codex login", executable: "codex" },
   opencode: {
     command: "opencode auth login",
@@ -14,13 +14,27 @@ const PROVIDER_LOGIN = Object.freeze({
 export const createProviderLoginLauncher = ({
   isCommandAvailable = isCliCommandAvailable,
   platform = process.platform,
+  resolveCursorCommand = getCursorCliCommand,
   spawnProcess = spawn,
 } = {}) => {
   return async (provider) => {
     const login = PROVIDER_LOGIN[provider];
-    if (!login || !(await isCommandAvailable(login.executable))) {
+    const cursorExecutable =
+      provider === "cursor" ? await resolveCursorCommand() : null;
+    if (
+      (provider === "cursor" && !cursorExecutable) ||
+      (provider !== "cursor" &&
+        (!login || !(await isCommandAvailable(login.executable))))
+    ) {
       return false;
     }
+
+    const quotePosix = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
+    const quoteWindows = (value) => `"${String(value).replace(/"/g, '""')}"`;
+    const command =
+      provider === "cursor"
+        ? `${platform === "win32" ? quoteWindows(cursorExecutable) : quotePosix(cursorExecutable)} login`
+        : login.command;
 
     const terminalExecutable =
       platform === "darwin"
@@ -35,7 +49,7 @@ export const createProviderLoginLauncher = ({
     try {
       let child;
       if (platform === "darwin") {
-        const script = `tell application "Terminal" to do script ${JSON.stringify(login.command)}`;
+        const script = `tell application "Terminal" to do script ${JSON.stringify(command)}`;
         child = spawnProcess("osascript", ["-e", script], {
           detached: true,
           stdio: "ignore",
@@ -43,7 +57,7 @@ export const createProviderLoginLauncher = ({
       } else if (platform === "win32") {
         child = spawnProcess(
           "cmd.exe",
-          ["/c", "start", "", "cmd.exe", "/k", login.command],
+          ["/c", "start", "", "cmd.exe", "/k", command],
           {
             detached: true,
             stdio: "ignore",
@@ -53,7 +67,7 @@ export const createProviderLoginLauncher = ({
       } else {
         child = spawnProcess(
           "x-terminal-emulator",
-          ["-e", "sh", "-lc", login.command],
+          ["-e", "sh", "-lc", command],
           {
             detached: true,
             stdio: "ignore",

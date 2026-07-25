@@ -282,7 +282,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784224800000 });
+    ).toEqual({ createdAt: 1784894400000 });
     expect(
       upgraded
         .prepare(
@@ -370,7 +370,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784224800000 });
+    ).toEqual({ createdAt: 1784894400000 });
     expect(upgraded.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 
     closePersistedStateDatabase();
@@ -414,7 +414,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784224800000 });
+    ).toEqual({ createdAt: 1784894400000 });
     expect(
       upgradedFrom0018
         .prepare(
@@ -447,7 +447,7 @@ describe("persisted research storage", () => {
           "SELECT MAX(created_at) AS createdAt FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ createdAt: 1784224800000 });
+    ).toEqual({ createdAt: 1784894400000 });
   });
 
   it("configures a bounded wait for concurrent SQLite writers", () => {

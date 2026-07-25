@@ -2,17 +2,9 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
-  CircleDollarSign,
-  Cloud,
-  Code2,
   Copy,
-  Cpu,
   Download,
-  HardDrive,
-  KeyRound,
-  Laptop,
   LifeBuoy,
-  PanelRightOpen,
   Play,
   Plus,
   RotateCcw,
@@ -23,6 +15,14 @@ import {
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState } from "react";
 import { getDesktopApi } from "../../../lib/electron";
+import type { AgentModelChoice } from "../agent-sessions/model-catalog";
+import {
+  getAgentReasoningOptions,
+  parseAgentModelKey,
+  resolveAgentModelSelection,
+  resolveAgentReasoningEffort,
+  useAgentModelCatalog,
+} from "../agent-sessions/model-catalog";
 import type {
   AgentConfiguration,
   AgentConfigurationEstimate,
@@ -33,7 +33,6 @@ import { DisclosureRow } from "../components/design-system";
 import {
   Badge,
   Button,
-  EmptyState,
   Metric,
   PageHeader,
   Panel,
@@ -43,19 +42,9 @@ import {
   toneForStatus,
 } from "../components/primitives";
 import type { AgentPreset } from "../domain/types";
-import { capabilityUnavailableMessage } from "../services/capabilities";
 import { projectServices } from "../services/project-services";
 import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
-
-const providerIcon = (name: string) =>
-  name.includes("Git")
-    ? Code2
-    : name.includes("Docker") || name.includes("Conda")
-      ? Cpu
-      : name.includes("folder")
-        ? HardDrive
-        : Cloud;
 
 const resourceBudget = {
   maxInputTokens: 32_000,
@@ -78,32 +67,43 @@ const inferRole = (label: string): AgentRoleConfiguration["role"] => {
 
 const configurationFromPreset = (
   preset: AgentPreset | undefined,
+  modelChoices: AgentModelChoice[],
 ): AgentConfigurationInput => {
-  const roles = (preset?.nodes ?? []).map((node, index) => ({
-    id: `${inferRole(node.role)}-${index + 1}`,
-    role: inferRole(node.role),
-    instanceCount: 1,
-    maxParallel: 1,
-    provider: node.model.includes("Claude") ? "anthropic" : "openai",
-    model: node.model,
-    reasoningLevel: node.reasoning.toLowerCase() as "low" | "medium" | "high",
-    budget: { ...resourceBudget },
-    allowedTools: node.canModifyFiles
-      ? ["readFile", "writeFile", "runCommand"]
-      : ["readFile"],
-    allowedContextSources: [node.contextPack],
-    allowedFileGlobs: ["**/*"],
-    permissions: {
-      canReadFiles: true,
-      canWriteFiles: node.canModifyFiles,
-      canRunCommands: node.canModifyFiles,
-      canAccessNetwork: false,
-      requiresApprovalForWrite: node.approvalRequired,
-      requiresApprovalForNetwork: true,
-    },
-    approvalCheckpoints: node.approvalRequired ? ["write"] : [],
-    fallbackModel: "Claude Sonnet",
-  }));
+  const roles = (preset?.nodes ?? []).map((node, index) => {
+    const preferredProvider = node.model.toLowerCase().includes("claude")
+      ? "anthropic"
+      : "openai";
+    const choice = resolveAgentModelSelection(modelChoices, {
+      provider: preferredProvider,
+      model: node.model,
+    });
+    return {
+      id: `${inferRole(node.role)}-${index + 1}`,
+      role: inferRole(node.role),
+      instanceCount: 1,
+      maxParallel: 1,
+      provider: choice?.provider ?? "",
+      model: choice?.model ?? "",
+      reasoningLevel:
+        resolveAgentReasoningEffort(node.reasoning, choice) ?? "medium",
+      budget: { ...resourceBudget },
+      allowedTools: node.canModifyFiles
+        ? ["readFile", "writeFile", "runCommand"]
+        : ["readFile"],
+      allowedContextSources: [node.contextPack],
+      allowedFileGlobs: ["**/*"],
+      permissions: {
+        canReadFiles: true,
+        canWriteFiles: node.canModifyFiles,
+        canRunCommands: node.canModifyFiles,
+        canAccessNetwork: false,
+        requiresApprovalForWrite: node.approvalRequired,
+        requiresApprovalForNetwork: true,
+      },
+      approvalCheckpoints: node.approvalRequired ? ["write"] : [],
+    };
+  });
+  const defaultChoice = modelChoices[0] ?? null;
   const safeRoles = roles.length
     ? roles
     : [
@@ -112,9 +112,10 @@ const configurationFromPreset = (
           role: "implementation" as const,
           instanceCount: 1,
           maxParallel: 1,
-          provider: "openai",
-          model: "GPT-5",
-          reasoningLevel: "medium" as const,
+          provider: defaultChoice?.provider ?? "",
+          model: defaultChoice?.model ?? "",
+          reasoningLevel:
+            resolveAgentReasoningEffort("medium", defaultChoice) ?? "medium",
           budget: { ...resourceBudget },
           allowedTools: ["readFile"],
           allowedContextSources: ["project"],
@@ -128,7 +129,6 @@ const configurationFromPreset = (
             requiresApprovalForNetwork: true,
           },
           approvalCheckpoints: ["write"],
-          fallbackModel: "Claude Sonnet",
         },
       ];
   return {
@@ -163,289 +163,7 @@ const commaList = (value: string) =>
 
 const emptyAgentConfigurations: AgentConfiguration[] = [];
 
-export function IntegrationsScreen() {
-  const integrations = useClyStore((s) => s.data.integrations);
-  const setSelected = useClyStore((s) => s.setSelected);
-  const notify = useClyStore((s) => s.notify);
-  const [category, setCategory] = useState("All");
-  const visible = integrations.filter(
-    (item) => category === "All" || item.category === category,
-  );
-  return (
-    <div className="cly-page cly-page-wide cly-route-integrations">
-      <PageHeader
-        kicker="System"
-        title="Integrations & Providers"
-        description="Manage local and permissioned research tools."
-        actions={
-          <Segmented
-            value={category}
-            options={
-              [
-                "All",
-                "Research",
-                "Code",
-                "Data",
-                "Writing",
-                "Runtime",
-                "Local",
-              ] as const
-            }
-            onChange={setCategory}
-            label="Integration category"
-          />
-        }
-      />
-      <Section
-        title="Integration catalog"
-        subtitle={capabilityUnavailableMessage("integrations.configure")}
-      >
-        {visible.length === 0 ? (
-          <EmptyState
-            title="No integration providers are configured"
-            description={capabilityUnavailableMessage("integrations.configure")}
-          />
-        ) : (
-          <div className="cly-integration-catalog">
-            {visible.map((integration) => {
-              const Icon = providerIcon(integration.name);
-              return (
-                <Panel key={integration.id}>
-                  <div className="cly-panel-body">
-                    <div className="cly-row-between">
-                      <div className="cly-row">
-                        <span className="cly-project-mark">
-                          <Icon size={14} />
-                        </span>
-                        <div>
-                          <strong>{integration.name}</strong>
-                          <div className="cly-faint cly-small">
-                            {integration.category}
-                          </div>
-                        </div>
-                      </div>
-                      <Badge tone={toneForStatus(integration.status)}>
-                        {integration.status}
-                      </Badge>
-                    </div>
-                    <p
-                      className="cly-muted cly-small"
-                      style={{ minHeight: 32, lineHeight: 1.45 }}
-                    >
-                      {integration.purpose}
-                    </p>
-                    <div className="cly-row" style={{ flexWrap: "wrap" }}>
-                      {integration.capabilities.map((capability) => (
-                        <span
-                          className="cly-inline-capability"
-                          key={capability}
-                        >
-                          {capability}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="cly-divider" style={{ margin: "11px 0" }} />
-                    <div className="cly-row-between">
-                      <span className="cly-faint" style={{ fontSize: 9 }}>
-                        {integration.privacy}
-                      </span>
-                      <div className="cly-row">
-                        <Button
-                          variant="ghost"
-                          aria-label={`View ${integration.name} details`}
-                          onClick={() => setSelected(integration.id)}
-                        >
-                          <PanelRightOpen size={13} /> Details
-                        </Button>
-                        <Button
-                          disabled={!isClyDemoRuntime}
-                          title={
-                            isClyDemoRuntime
-                              ? undefined
-                              : capabilityUnavailableMessage(
-                                  "integrations.configure",
-                                )
-                          }
-                          onClick={() => {
-                            if (integration.status === "Connected")
-                              notify(
-                                `${integration.name} settings`,
-                                "Permissions and project scope are shown in the inspector.",
-                              );
-                            else
-                              void projectServices.integrations
-                                .updateStatus(integration.id, "Setup required")
-                                .then(() =>
-                                  notify(
-                                    `${integration.name} setup`,
-                                    "Real connection is unavailable in the UI prototype.",
-                                  ),
-                                );
-                          }}
-                        >
-                          {integration.status === "Connected"
-                            ? "Manage"
-                            : "Setup"}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </Panel>
-              );
-            })}
-          </div>
-        )}
-      </Section>
-      <DisclosureRow
-        title="Connection modes"
-        detail="Local subscriptions, provider keys, and managed credits"
-      >
-        <div className="cly-grid-3">
-          <Panel>
-            <div className="cly-panel-header">
-              <div className="cly-row">
-                <Laptop size={15} />
-                <strong>Local subscription mode</strong>
-              </div>
-              <Badge tone="success">Preferred</Badge>
-            </div>
-            <div className="cly-panel-body cly-stack">
-              {[
-                "Codex",
-                "Claude Code",
-                "codex-plugin-cc",
-                "Optional local tools",
-              ].map((name, index) => (
-                <div className="cly-row-between" key={name}>
-                  <span>{name}</span>
-                  <Badge
-                    tone={
-                      index < 2
-                        ? "success"
-                        : index === 2
-                          ? "warning"
-                          : "neutral"
-                    }
-                  >
-                    {index < 2
-                      ? "Installed"
-                      : index === 2
-                        ? "Manual setup"
-                        : "Optional"}
-                  </Badge>
-                </div>
-              ))}
-              <p className="cly-muted cly-small">
-                Uses signed-in local CLIs when available. No API key is required
-                by Cly.
-              </p>
-            </div>
-          </Panel>
-          <Panel>
-            <div className="cly-panel-header">
-              <div className="cly-row">
-                <KeyRound size={15} />
-                <strong>Bring your own key</strong>
-              </div>
-              <Badge>Optional</Badge>
-            </div>
-            <div className="cly-panel-body cly-stack">
-              {[
-                "OpenAI · sk-proj-••••••12",
-                "Anthropic · sk-ant-••••••71",
-                "Google Gemini · ••••••93",
-                "Compatible provider",
-              ].map((name) => (
-                <div className="cly-row-between" key={name}>
-                  <span>{name}</span>
-                  <Button
-                    disabled={!isClyDemoRuntime}
-                    title={capabilityUnavailableMessage(
-                      "integrations.configure",
-                    )}
-                    onClick={() =>
-                      notify(
-                        "Prototype credential",
-                        "Fake masked values are never persisted or sent over the network.",
-                      )
-                    }
-                  >
-                    Configure
-                  </Button>
-                </div>
-              ))}
-              <div className="cly-callout" data-tone="warning">
-                Real secrets are not accepted or stored in this phase.
-              </div>
-            </div>
-          </Panel>
-          <Panel>
-            <div className="cly-panel-header">
-              <div className="cly-row">
-                <CircleDollarSign size={15} />
-                <strong>Managed credits</strong>
-              </div>
-              <Badge>Planned</Badge>
-            </div>
-            <div className="cly-panel-body">
-              <div className="cly-metric-row">
-                <Metric label="Plan" value="—" />
-                <Metric label="Credits" value="—" />
-              </div>
-              <p className="cly-muted cly-small">
-                Billing, team plans, included credits, limits, and upgrades are
-                intentionally unavailable.
-              </p>
-              <Button
-                disabled
-                title="Managed credits are planned for a future phase"
-              >
-                Unavailable
-              </Button>
-            </div>
-          </Panel>
-        </div>
-      </DisclosureRow>
-      <DisclosureRow
-        title="Routing preferences"
-        detail="Defaults, fallbacks, privacy, and usage"
-      >
-        <Panel className="cly-panel-body">
-          <div className="cly-grid-3">
-            {[
-              ["Default research model", "Codex · GPT-5"],
-              ["Default code model", "Codex · GPT-5"],
-              ["Default review model", "Claude Sonnet"],
-              ["Fallback order", "Local → subscription → API"],
-              ["Privacy restriction", "No source text to cloud"],
-              ["Maximum usage", "High"],
-            ].map(([label, value]) => (
-              <div className="cly-field" key={label}>
-                <span className="cly-muted cly-small">{label}</span>
-                <button
-                  className="cly-input"
-                  type="button"
-                  disabled={!isClyDemoRuntime}
-                  title={capabilityUnavailableMessage("integrations.configure")}
-                  onClick={() =>
-                    notify("Routing preference", `${label}: ${value}`)
-                  }
-                  style={{ textAlign: "left" }}
-                >
-                  {value}
-                </button>
-              </div>
-            ))}
-          </div>
-          <label className="cly-row cly-small" style={{ marginTop: 13 }}>
-            <input type="checkbox" defaultChecked className="cly-checkbox" />{" "}
-            Prefer local subscription routes when available
-          </label>
-        </Panel>
-      </DisclosureRow>
-    </div>
-  );
-}
+export { IntegrationsScreen } from "./integrations";
 
 export function ModelsAgentsScreen() {
   const presets = useClyStore((s) => s.data.agentPresets);
@@ -453,6 +171,10 @@ export function ModelsAgentsScreen() {
   const configurations = storedConfigurations ?? emptyAgentConfigurations;
   const activeProjectId = useClyStore((s) => s.activeProjectId);
   const notify = useClyStore((s) => s.notify);
+  const setScreen = useClyStore((s) => s.setScreen);
+  const modelCatalog = useAgentModelCatalog();
+  const modelChoices = modelCatalog.choices;
+  const visibleModelChoices = modelChoices.slice(0, 12);
   const [selectedPresetId, setSelectedPresetId] = useState(
     presets[1]?.id ?? presets[0]?.id,
   );
@@ -462,7 +184,7 @@ export function ModelsAgentsScreen() {
   const [showAllPresets, setShowAllPresets] = useState(false);
   const [configuration, setConfiguration] = useState<
     AgentConfiguration | AgentConfigurationInput
-  >(() => configurations[0] ?? configurationFromPreset(original));
+  >(() => configurations[0] ?? configurationFromPreset(original, modelChoices));
   const [estimate, setEstimate] = useState<AgentConfigurationEstimate | null>(
     null,
   );
@@ -475,7 +197,7 @@ export function ModelsAgentsScreen() {
   useEffect(() => {
     if (previousProjectId.current !== activeProjectId) {
       previousProjectId.current = activeProjectId;
-      setConfiguration(configurationFromPreset(original));
+      setConfiguration(configurationFromPreset(original, modelChoices));
       setEstimate(null);
       setEstimateReviewed(false);
       setAdoptHydratedConfiguration(true);
@@ -485,7 +207,41 @@ export function ModelsAgentsScreen() {
       setConfiguration(configurations[0]);
       setAdoptHydratedConfiguration(false);
     }
-  }, [activeProjectId, adoptHydratedConfiguration, configurations, original]);
+  }, [
+    activeProjectId,
+    adoptHydratedConfiguration,
+    configurations,
+    modelChoices,
+    original,
+  ]);
+
+  useEffect(() => {
+    if (modelChoices.length === 0) return;
+    setConfiguration((current) => {
+      let changed = false;
+      const roles = current.roles.map((role) => {
+        const choice = resolveAgentModelSelection(modelChoices, role);
+        if (!choice) return role;
+        const reasoningLevel =
+          resolveAgentReasoningEffort(role.reasoningLevel, choice) ?? "medium";
+        if (
+          role.provider === choice.provider &&
+          role.model === choice.model &&
+          role.reasoningLevel === reasoningLevel
+        ) {
+          return role;
+        }
+        changed = true;
+        return {
+          ...role,
+          provider: choice.provider,
+          model: choice.model,
+          reasoningLevel,
+        };
+      });
+      return changed ? { ...current, roles } : current;
+    });
+  }, [modelChoices]);
 
   const updateConfiguration = (
     updater: (
@@ -509,10 +265,25 @@ export function ModelsAgentsScreen() {
       ),
     }));
 
+  const modelChoiceForRole = (role: AgentRoleConfiguration) =>
+    resolveAgentModelSelection(modelChoices, role);
+
+  const selectRoleModel = (role: AgentRoleConfiguration, key: string) => {
+    const choice = parseAgentModelKey(modelChoices, key);
+    if (!choice) return;
+    updateRoleConfiguration(role.id, (current) => ({
+      ...current,
+      provider: choice.provider,
+      model: choice.model,
+      reasoningLevel:
+        resolveAgentReasoningEffort(current.reasoningLevel, choice) ?? "medium",
+    }));
+  };
+
   const choosePreset = (preset: AgentPreset) => {
     setSelectedPresetId(preset.id);
     setAdoptHydratedConfiguration(false);
-    setConfiguration(configurationFromPreset(preset));
+    setConfiguration(configurationFromPreset(preset, modelChoices));
     setEstimate(null);
     setEstimateReviewed(false);
   };
@@ -525,6 +296,13 @@ export function ModelsAgentsScreen() {
       return { ...current, roles: next };
     });
   const save = async () => {
+    if (modelChoices.length === 0) {
+      notify(
+        "No model is ready",
+        "Install and sign in to a supported local AI provider, then refresh detected models.",
+      );
+      return;
+    }
     try {
       const input = configurationInput(configuration);
       if (!estimateReviewed) {
@@ -569,7 +347,7 @@ export function ModelsAgentsScreen() {
         configuration.id,
         configuration.revision,
       );
-      setConfiguration(configurationFromPreset(original));
+      setConfiguration(configurationFromPreset(original, modelChoices));
       setAdoptHydratedConfiguration(false);
       setEstimate(null);
       setEstimateReviewed(false);
@@ -599,7 +377,9 @@ export function ModelsAgentsScreen() {
             ) : null}
             <Button
               onClick={() => {
-                setConfiguration(configurationFromPreset(original));
+                setConfiguration(
+                  configurationFromPreset(original, modelChoices),
+                );
                 setAdoptHydratedConfiguration(false);
                 setEstimate(null);
                 setEstimateReviewed(false);
@@ -608,13 +388,57 @@ export function ModelsAgentsScreen() {
             >
               <RotateCcw size={13} /> Reset
             </Button>
-            <Button variant="primary" onClick={() => void save()}>
+            <Button
+              variant="primary"
+              disabled={modelChoices.length === 0}
+              onClick={() => void save()}
+            >
               <Save size={13} />
               {estimateReviewed ? "Save configuration" : "Review estimate"}
             </Button>
           </>
         }
       />
+      <Section
+        title="Detected models"
+        subtitle="Read live from your signed-in local Codex, Claude Code, OpenCode, and Cursor installations"
+        actions={
+          <Button
+            onClick={() => void modelCatalog.refresh()}
+            disabled={modelCatalog.loading}
+          >
+            <RotateCcw size={13} />
+            {modelCatalog.loading ? "Detecting…" : "Refresh"}
+          </Button>
+        }
+      >
+        {modelChoices.length ? (
+          <div className="cly-row" style={{ flexWrap: "wrap" }}>
+            {visibleModelChoices.map((choice) => (
+              <Badge key={choice.key} tone="success">
+                {choice.displayLabel}
+              </Badge>
+            ))}
+            {modelChoices.length > visibleModelChoices.length ? (
+              <Badge tone="neutral">
+                +{modelChoices.length - visibleModelChoices.length} more in the
+                selectors
+              </Badge>
+            ) : null}
+          </div>
+        ) : (
+          <div className="cly-callout" data-tone="warning">
+            {modelCatalog.loading
+              ? "Checking installed AI providers and their available models…"
+              : "No usable local models were detected. Install and sign in to Codex, Claude Code, OpenCode, or Cursor, then refresh."}
+          </div>
+        )}
+        {modelCatalog.errors.length > 0 ? (
+          <p className="cly-muted cly-small" style={{ marginTop: 10 }}>
+            Some providers are unavailable: {modelCatalog.errors.join(" · ")}
+          </p>
+        ) : null}
+      </Section>
       <Section
         title="Project configurations"
         subtitle="Durable, revisioned agent plans for the active project"
@@ -716,7 +540,8 @@ export function ModelsAgentsScreen() {
                 roles: [
                   ...current.roles,
                   {
-                    ...configurationFromPreset(undefined).roles[0],
+                    ...configurationFromPreset(undefined, modelChoices)
+                      .roles[0],
                     id: `implementation-${Date.now()}`,
                   },
                 ],
@@ -728,96 +553,110 @@ export function ModelsAgentsScreen() {
         }
       >
         <div className="cly-topology">
-          {configuration.roles.map((role, index) => (
-            <div className="cly-agent-node" key={role.id}>
-              <div className="cly-row-between">
-                <Badge tone={role.role === "review" ? "warning" : "info"}>
-                  {role.instanceCount} × {role.role}
-                </Badge>
-                <div className="cly-row">
+          {configuration.roles.map((role, index) => {
+            const modelChoice = modelChoiceForRole(role);
+            return (
+              <div className="cly-agent-node" key={role.id}>
+                <div className="cly-row-between">
+                  <Badge tone={role.role === "review" ? "warning" : "info"}>
+                    {role.instanceCount} × {role.role}
+                  </Badge>
+                  <div className="cly-row">
+                    <Button
+                      variant="ghost"
+                      iconOnly
+                      onClick={() => moveRole(index, -1)}
+                      aria-label={`Move ${role.id} earlier`}
+                    >
+                      <ArrowUp size={11} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      iconOnly
+                      onClick={() => moveRole(index, 1)}
+                      aria-label={`Move ${role.id} later`}
+                    >
+                      <ArrowDown size={11} />
+                    </Button>
+                  </div>
+                </div>
+                <input
+                  className="cly-input cly-agent-role"
+                  value={role.id}
+                  onChange={(event) =>
+                    updateRoleConfiguration(role.id, (current) => ({
+                      ...current,
+                      id: event.target.value,
+                    }))
+                  }
+                  aria-label={`Role id ${index + 1}`}
+                  style={{ marginTop: 8 }}
+                />
+                <select
+                  className="cly-select cly-agent-model"
+                  value={modelChoice?.key ?? ""}
+                  onChange={(event) =>
+                    selectRoleModel(role, event.target.value)
+                  }
+                  aria-label={`Model for ${role.id}`}
+                  disabled={modelChoices.length === 0}
+                >
+                  {modelChoices.length === 0 ? (
+                    <option value="">
+                      {modelCatalog.loading
+                        ? "Detecting models…"
+                        : "No detected models"}
+                    </option>
+                  ) : null}
+                  {modelChoices.map((choice) => (
+                    <option key={choice.key} value={choice.key}>
+                      {choice.displayLabel}
+                    </option>
+                  ))}
+                </select>
+                <div className="cly-row-between" style={{ marginTop: 8 }}>
                   <Button
                     variant="ghost"
                     iconOnly
-                    onClick={() => moveRole(index, -1)}
-                    aria-label={`Move ${role.id} earlier`}
+                    aria-label={`Duplicate ${role.id}`}
+                    onClick={() =>
+                      updateConfiguration((current) => ({
+                        ...current,
+                        maxParallel: current.maxParallel + role.maxParallel,
+                        roles: [
+                          ...current.roles.slice(0, index + 1),
+                          { ...role, id: `${role.role}-${Date.now()}` },
+                          ...current.roles.slice(index + 1),
+                        ],
+                      }))
+                    }
                   >
-                    <ArrowUp size={11} />
+                    <Copy size={11} />
                   </Button>
                   <Button
                     variant="ghost"
                     iconOnly
-                    onClick={() => moveRole(index, 1)}
-                    aria-label={`Move ${role.id} later`}
+                    aria-label={`Remove ${role.id}`}
+                    disabled={configuration.roles.length === 1}
+                    onClick={() =>
+                      updateConfiguration((current) => ({
+                        ...current,
+                        maxParallel: Math.max(
+                          1,
+                          current.maxParallel - role.maxParallel,
+                        ),
+                        roles: current.roles.filter(
+                          (item) => item.id !== role.id,
+                        ),
+                      }))
+                    }
                   >
-                    <ArrowDown size={11} />
+                    <Trash2 size={11} />
                   </Button>
                 </div>
               </div>
-              <input
-                className="cly-input cly-agent-role"
-                value={role.id}
-                onChange={(event) =>
-                  updateRoleConfiguration(role.id, (current) => ({
-                    ...current,
-                    id: event.target.value,
-                  }))
-                }
-                aria-label={`Role id ${index + 1}`}
-                style={{ marginTop: 8 }}
-              />
-              <input
-                className="cly-input cly-agent-model"
-                value={role.model}
-                onChange={(event) =>
-                  updateRoleConfiguration(role.id, (current) => ({
-                    ...current,
-                    model: event.target.value,
-                  }))
-                }
-                aria-label={`Model for ${role.id}`}
-              />
-              <div className="cly-row-between" style={{ marginTop: 8 }}>
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  aria-label={`Duplicate ${role.id}`}
-                  onClick={() =>
-                    updateConfiguration((current) => ({
-                      ...current,
-                      maxParallel: current.maxParallel + role.maxParallel,
-                      roles: [
-                        ...current.roles.slice(0, index + 1),
-                        { ...role, id: `${role.role}-${Date.now()}` },
-                        ...current.roles.slice(index + 1),
-                      ],
-                    }))
-                  }
-                >
-                  <Copy size={11} />
-                </Button>
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  aria-label={`Remove ${role.id}`}
-                  disabled={configuration.roles.length === 1}
-                  onClick={() =>
-                    updateConfiguration((current) => ({
-                      ...current,
-                      maxParallel: Math.max(
-                        1,
-                        current.maxParallel - role.maxParallel,
-                      ),
-                      roles: current.roles.filter(
-                        (item) => item.id !== role.id,
-                      ),
-                    }))
-                  }
-                >
-                  <Trash2 size={11} />
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Section>
       <Section
@@ -921,199 +760,219 @@ export function ModelsAgentsScreen() {
           </div>
           {advanced ? (
             <div style={{ marginTop: 14 }}>
-              {configuration.roles.map((role) => (
-                <DisclosureRow
-                  key={role.id}
-                  title={`${role.id} · ${role.role}`}
-                  detail={`${role.instanceCount} instances · ${role.maxParallel} parallel · ${role.provider}/${role.model}`}
-                >
-                  <div className="cly-grid-3">
-                    <div className="cly-field">
-                      <label htmlFor={`${role.id}-instances`}>
-                        Instance count
-                      </label>
-                      <input
-                        id={`${role.id}-instances`}
-                        type="number"
-                        min={1}
-                        className="cly-input"
-                        value={role.instanceCount}
-                        onChange={(event) =>
-                          updateRoleConfiguration(role.id, (current) => ({
-                            ...current,
-                            instanceCount: Number(event.target.value),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="cly-field">
-                      <label htmlFor={`${role.id}-parallel`}>
-                        Role parallel cap
-                      </label>
-                      <input
-                        id={`${role.id}-parallel`}
-                        type="number"
-                        min={1}
-                        className="cly-input"
-                        value={role.maxParallel}
-                        onChange={(event) =>
-                          updateRoleConfiguration(role.id, (current) => ({
-                            ...current,
-                            maxParallel: Number(event.target.value),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="cly-field">
-                      <label htmlFor={`${role.id}-reasoning`}>Reasoning</label>
-                      <select
-                        id={`${role.id}-reasoning`}
-                        className="cly-select"
-                        value={role.reasoningLevel}
-                        onChange={(event) =>
-                          updateRoleConfiguration(role.id, (current) => ({
-                            ...current,
-                            reasoningLevel: event.target
-                              .value as AgentRoleConfiguration["reasoningLevel"],
-                          }))
-                        }
-                      >
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                      </select>
-                    </div>
-                    <div className="cly-field">
-                      <label htmlFor={`${role.id}-provider`}>Provider</label>
-                      <input
-                        id={`${role.id}-provider`}
-                        className="cly-input"
-                        value={role.provider}
-                        onChange={(event) =>
-                          updateRoleConfiguration(role.id, (current) => ({
-                            ...current,
-                            provider: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="cly-field">
-                      <label htmlFor={`${role.id}-model`}>Model</label>
-                      <input
-                        id={`${role.id}-model`}
-                        className="cly-input"
-                        value={role.model}
-                        onChange={(event) =>
-                          updateRoleConfiguration(role.id, (current) => ({
-                            ...current,
-                            model: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="cly-field">
-                      <label htmlFor={`${role.id}-fallback`}>
-                        Fallback model
-                      </label>
-                      <input
-                        id={`${role.id}-fallback`}
-                        className="cly-input"
-                        value={role.fallbackModel ?? ""}
-                        onChange={(event) =>
-                          updateRoleConfiguration(role.id, (current) => ({
-                            ...current,
-                            fallbackModel: event.target.value || undefined,
-                          }))
-                        }
-                      />
-                    </div>
-                    {(
-                      [
-                        ["maxInputTokens", "Input tokens"],
-                        ["maxOutputTokens", "Output tokens"],
-                        ["maxCostMinorUnits", "Cost minor units"],
-                        ["maxRuntimeMs", "Runtime ms"],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <div className="cly-field" key={key}>
-                        <label htmlFor={`${role.id}-${key}`}>{label}</label>
-                        <input
-                          id={`${role.id}-${key}`}
-                          type="number"
-                          min={key === "maxRuntimeMs" ? 1 : 0}
-                          className="cly-input"
-                          value={role.budget[key]}
-                          onChange={(event) =>
-                            updateRoleConfiguration(role.id, (current) => ({
-                              ...current,
-                              budget: {
-                                ...current.budget,
-                                [key]: Number(event.target.value),
-                              },
-                            }))
-                          }
-                        />
-                      </div>
-                    ))}
-                    {(
-                      [
-                        ["allowedTools", "Allowed tools"],
-                        ["allowedContextSources", "Context sources"],
-                        ["allowedFileGlobs", "File globs"],
-                        ["approvalCheckpoints", "Approval checkpoints"],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <div className="cly-field" key={key}>
-                        <label htmlFor={`${role.id}-${key}`}>{label}</label>
-                        <input
-                          id={`${role.id}-${key}`}
-                          className="cly-input"
-                          value={role[key].join(", ")}
-                          onChange={(event) =>
-                            updateRoleConfiguration(role.id, (current) => ({
-                              ...current,
-                              [key]: commaList(event.target.value),
-                            }))
-                          }
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <div
-                    className="cly-row"
-                    style={{ marginTop: 12, flexWrap: "wrap" }}
+              {configuration.roles.map((role) => {
+                const modelChoice = modelChoiceForRole(role);
+                const reasoningOptions = getAgentReasoningOptions(modelChoice);
+                return (
+                  <DisclosureRow
+                    key={role.id}
+                    title={`${role.id} · ${role.role}`}
+                    detail={`${role.instanceCount} instances · ${role.maxParallel} parallel · ${role.provider}/${role.model}`}
                   >
-                    {(
-                      [
-                        ["canReadFiles", "Read files"],
-                        ["canWriteFiles", "Write files"],
-                        ["canRunCommands", "Run commands"],
-                        ["canAccessNetwork", "Network"],
-                        ["requiresApprovalForWrite", "Approve writes"],
-                        ["requiresApprovalForNetwork", "Approve network"],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <label className="cly-row cly-small" key={key}>
+                    <div className="cly-grid-3">
+                      <div className="cly-field">
+                        <label htmlFor={`${role.id}-instances`}>
+                          Instance count
+                        </label>
                         <input
-                          type="checkbox"
-                          className="cly-checkbox"
-                          checked={role.permissions[key]}
+                          id={`${role.id}-instances`}
+                          type="number"
+                          min={1}
+                          className="cly-input"
+                          value={role.instanceCount}
                           onChange={(event) =>
                             updateRoleConfiguration(role.id, (current) => ({
                               ...current,
-                              permissions: {
-                                ...current.permissions,
-                                [key]: event.target.checked,
-                              },
+                              instanceCount: Number(event.target.value),
                             }))
                           }
                         />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                </DisclosureRow>
-              ))}
+                      </div>
+                      <div className="cly-field">
+                        <label htmlFor={`${role.id}-parallel`}>
+                          Role parallel cap
+                        </label>
+                        <input
+                          id={`${role.id}-parallel`}
+                          type="number"
+                          min={1}
+                          className="cly-input"
+                          value={role.maxParallel}
+                          onChange={(event) =>
+                            updateRoleConfiguration(role.id, (current) => ({
+                              ...current,
+                              maxParallel: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="cly-field">
+                        <label htmlFor={`${role.id}-reasoning`}>
+                          Reasoning
+                        </label>
+                        <select
+                          id={`${role.id}-reasoning`}
+                          className="cly-select"
+                          value={role.reasoningLevel}
+                          disabled={reasoningOptions.length === 0}
+                          onChange={(event) =>
+                            updateRoleConfiguration(role.id, (current) => ({
+                              ...current,
+                              reasoningLevel: event.target
+                                .value as AgentRoleConfiguration["reasoningLevel"],
+                            }))
+                          }
+                        >
+                          {reasoningOptions.length === 0 ? (
+                            <option value={role.reasoningLevel}>
+                              Not supported by this model
+                            </option>
+                          ) : null}
+                          {reasoningOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="cly-field">
+                        <label htmlFor={`${role.id}-provider`}>Provider</label>
+                        <input
+                          id={`${role.id}-provider`}
+                          className="cly-input"
+                          value={modelChoice?.providerLabel ?? role.provider}
+                          readOnly
+                        />
+                      </div>
+                      <div className="cly-field">
+                        <label htmlFor={`${role.id}-model`}>Model</label>
+                        <select
+                          id={`${role.id}-model`}
+                          className="cly-select"
+                          value={modelChoice?.key ?? ""}
+                          onChange={(event) =>
+                            selectRoleModel(role, event.target.value)
+                          }
+                          disabled={modelChoices.length === 0}
+                        >
+                          {modelChoices.length === 0 ? (
+                            <option value="">
+                              {modelCatalog.loading
+                                ? "Detecting models…"
+                                : "No detected models"}
+                            </option>
+                          ) : null}
+                          {modelChoices.map((choice) => (
+                            <option key={choice.key} value={choice.key}>
+                              {choice.displayLabel}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="cly-field">
+                        <label htmlFor={`${role.id}-fallback`}>
+                          Fallback model
+                        </label>
+                        <input
+                          id={`${role.id}-fallback`}
+                          className="cly-input"
+                          value={role.fallbackModel ?? ""}
+                          onChange={(event) =>
+                            updateRoleConfiguration(role.id, (current) => ({
+                              ...current,
+                              fallbackModel: event.target.value || undefined,
+                            }))
+                          }
+                        />
+                      </div>
+                      {(
+                        [
+                          ["maxInputTokens", "Input tokens"],
+                          ["maxOutputTokens", "Output tokens"],
+                          ["maxCostMinorUnits", "Cost minor units"],
+                          ["maxRuntimeMs", "Runtime ms"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <div className="cly-field" key={key}>
+                          <label htmlFor={`${role.id}-${key}`}>{label}</label>
+                          <input
+                            id={`${role.id}-${key}`}
+                            type="number"
+                            min={key === "maxRuntimeMs" ? 1 : 0}
+                            className="cly-input"
+                            value={role.budget[key]}
+                            onChange={(event) =>
+                              updateRoleConfiguration(role.id, (current) => ({
+                                ...current,
+                                budget: {
+                                  ...current.budget,
+                                  [key]: Number(event.target.value),
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                      ))}
+                      {(
+                        [
+                          ["allowedTools", "Allowed tools"],
+                          ["allowedContextSources", "Context sources"],
+                          ["allowedFileGlobs", "File globs"],
+                          ["approvalCheckpoints", "Approval checkpoints"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <div className="cly-field" key={key}>
+                          <label htmlFor={`${role.id}-${key}`}>{label}</label>
+                          <input
+                            id={`${role.id}-${key}`}
+                            className="cly-input"
+                            value={role[key].join(", ")}
+                            onChange={(event) =>
+                              updateRoleConfiguration(role.id, (current) => ({
+                                ...current,
+                                [key]: commaList(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div
+                      className="cly-row"
+                      style={{ marginTop: 12, flexWrap: "wrap" }}
+                    >
+                      {(
+                        [
+                          ["canReadFiles", "Read files"],
+                          ["canWriteFiles", "Write files"],
+                          ["canRunCommands", "Run commands"],
+                          ["canAccessNetwork", "Network"],
+                          ["requiresApprovalForWrite", "Approve writes"],
+                          ["requiresApprovalForNetwork", "Approve network"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <label className="cly-row cly-small" key={key}>
+                          <input
+                            type="checkbox"
+                            className="cly-checkbox"
+                            checked={role.permissions[key]}
+                            onChange={(event) =>
+                              updateRoleConfiguration(role.id, (current) => ({
+                                ...current,
+                                permissions: {
+                                  ...current.permissions,
+                                  [key]: event.target.checked,
+                                },
+                              }))
+                            }
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </DisclosureRow>
+                );
+              })}
             </div>
           ) : null}
           {estimate ? (
@@ -1163,13 +1022,15 @@ export function ModelsAgentsScreen() {
             </div>
             <Button
               variant="primary"
-              disabled
-              title={capabilityUnavailableMessage("agents.execute")}
-              onClick={() =>
-                void projectServices.agents.startPreview(selectedPresetId)
+              disabled={!activeProjectId}
+              title={
+                activeProjectId
+                  ? "Run a configured model in Agent Sessions."
+                  : "Choose a research project before starting an agent session."
               }
+              onClick={() => setScreen("agents")}
             >
-              <Play size={13} /> Preview execution
+              <Play size={13} /> Open Agent Sessions
             </Button>
           </div>
         </Panel>
@@ -1327,13 +1188,7 @@ export function SettingsScreen() {
                     Use compact desktop-native row height
                   </span>
                 </span>
-                <Toggle
-                  pressed
-                  onChange={() => {}}
-                  label="Dense tables"
-                  disabled
-                  reason="Table density preferences are not yet persisted."
-                />
+                <Badge>Fixed for beta</Badge>
               </div>
             </Panel>
           ) : null}
@@ -1374,20 +1229,31 @@ export function SettingsScreen() {
               </div>
               <div className="cly-divider" />
               {[
-                "Never include secrets in context",
-                "Require approval before file modification",
-                "Restrict cloud models from source text",
-                "Record provenance for every future mutation",
-              ].map((item) => (
+                ["Secrets in context", "Not automatically detected or removed"],
+                [
+                  "File modifications",
+                  "Provider and tool approval rules apply",
+                ],
+                [
+                  "Cloud source transmission",
+                  "Requires the workflow’s explicit approval",
+                ],
+                [
+                  "Mutation provenance",
+                  "Recorded only by workflows marked available",
+                ],
+              ].map(([item, policy]) => (
                 <div className="cly-row-between" key={item}>
-                  <span>{item}</span>
-                  <Toggle
-                    pressed
-                    onChange={() => {}}
-                    label={item}
-                    disabled
-                    reason="This privacy preference is not yet persisted or enforced."
-                  />
+                  <span>
+                    <strong>{item}</strong>
+                    <span
+                      className="cly-muted cly-small"
+                      style={{ display: "block" }}
+                    >
+                      {policy}
+                    </span>
+                  </span>
+                  <Badge>Current boundary</Badge>
                 </div>
               ))}
             </Panel>
@@ -1403,18 +1269,7 @@ export function SettingsScreen() {
                 ].map(([label, value]) => (
                   <div className="cly-field" key={label}>
                     <span className="cly-muted cly-small">{label}</span>
-                    <button
-                      type="button"
-                      className="cly-input"
-                      disabled
-                      title="Research defaults are not yet persisted."
-                      style={{ textAlign: "left" }}
-                      onClick={() =>
-                        notify("Research default", `${label}: ${value}`)
-                      }
-                    >
-                      {value}
-                    </button>
+                    <div className="cly-input">{value}</div>
                   </div>
                 ))}
               </div>
@@ -1424,9 +1279,9 @@ export function SettingsScreen() {
             <Panel>
               {[
                 ["Command palette", "⌘K"],
-                ["Open project", "⌘O"],
+                ["Choose or open project", "⌘O"],
                 ["Project switcher", "⌘⇧O"],
-                ["Create contextual object", "⌘N"],
+                ["Open claims", "⌘N"],
                 ["Research Loop", "⌘1"],
                 ["Agent sessions", "⌘2"],
                 ["Context", "⌘3"],
@@ -1538,13 +1393,7 @@ function SettingsRows({ rows }: { rows: string[] }) {
       {rows.map((row) => (
         <div className="cly-row-between" key={row}>
           <span>{row}</span>
-          <Toggle
-            pressed
-            onChange={() => {}}
-            label={row}
-            disabled
-            reason="This behavior preference is not yet persisted."
-          />
+          <Badge>Not configurable</Badge>
         </div>
       ))}
     </Panel>

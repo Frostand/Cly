@@ -1,5 +1,40 @@
 import { writeFile } from "node:fs/promises";
-import { dialog, webContents } from "electron";
+import { dialog, shell, webContents } from "electron";
+
+const normalizedIdentifier = (value) =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
+export function isAllowedBrowserGuestNavigation(value) {
+  if (value === "about:blank") return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function configureBrowserGuestSecurity(
+  guest,
+  { openExternal = (url) => shell.openExternal(url) } = {},
+) {
+  guest.session.setPermissionCheckHandler?.(() => false);
+  guest.session.setPermissionRequestHandler?.(
+    (_requestingWebContents, _permission, callback) => callback(false),
+  );
+
+  const preventUnsafeNavigation = (event, url) => {
+    if (!isAllowedBrowserGuestNavigation(url)) event.preventDefault();
+  };
+  guest.on("will-navigate", preventUnsafeNavigation);
+  guest.on("will-redirect", preventUnsafeNavigation);
+  guest.setWindowOpenHandler?.(({ url }) => {
+    if (isAllowedBrowserGuestNavigation(url) && url !== "about:blank") {
+      void openExternal(url);
+    }
+    return { action: "deny" };
+  });
+}
 
 function getSafeScreenshotName(value) {
   const base =
@@ -15,7 +50,14 @@ function getSafeScreenshotName(value) {
   return `${sanitized || "browser-screenshot"}.png`;
 }
 
-export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
+export function createBrowserSessionManager({
+  getMainWindow,
+  sendToRenderer,
+  resolveWebContents = (id) => webContents.fromId(id),
+  secureGuest = configureBrowserGuestSecurity,
+}) {
+  const registeredGuests = new Map();
+
   function sendBrowserActionError(payload, code, description) {
     sendToRenderer("browser:error", {
       code,
@@ -25,7 +67,7 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     });
   }
 
-  function getGuestWebContents(payload, actionName) {
+  function getGuestWebContents(payload, actionName, ownerWebContentsId) {
     const webContentsId = Number(payload?.webContentsId);
     if (!Number.isInteger(webContentsId) || webContentsId <= 0) {
       sendBrowserActionError(
@@ -36,8 +78,15 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
       return null;
     }
 
-    const guest = webContents.fromId(webContentsId);
-    if (!guest || guest.isDestroyed()) {
+    const registration = registeredGuests.get(webContentsId);
+    const guest = resolveWebContents(webContentsId);
+    if (
+      !registration ||
+      registration.ownerWebContentsId !== ownerWebContentsId ||
+      registration.guest !== guest ||
+      !guest ||
+      guest.isDestroyed()
+    ) {
       sendBrowserActionError(
         payload,
         "BROWSER_ACTION_FAILED",
@@ -46,11 +95,36 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
       return null;
     }
 
+    const projectId = normalizedIdentifier(payload?.projectId);
+    const tabId = normalizedIdentifier(payload?.tabId);
+    if (!projectId || !tabId) {
+      sendBrowserActionError(
+        payload,
+        "BROWSER_ACTION_FAILED",
+        `Browser ownership is missing for ${actionName}.`,
+      );
+      return null;
+    }
+    if (registration.projectId === null && registration.tabId === null) {
+      registration.projectId = projectId;
+      registration.tabId = tabId;
+    } else if (
+      registration.projectId !== projectId ||
+      registration.tabId !== tabId
+    ) {
+      sendBrowserActionError(
+        payload,
+        "BROWSER_ACTION_FAILED",
+        `Browser ownership changed before ${actionName}.`,
+      );
+      return null;
+    }
+
     return guest;
   }
 
-  async function clearBrowserCookies(payload) {
-    const guest = getGuestWebContents(payload, "cookies");
+  async function clearBrowserCookies(payload, ownerWebContentsId) {
+    const guest = getGuestWebContents(payload, "cookies", ownerWebContentsId);
     if (!guest) {
       return;
     }
@@ -68,8 +142,8 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     }
   }
 
-  async function clearBrowserCache(payload) {
-    const guest = getGuestWebContents(payload, "cache");
+  async function clearBrowserCache(payload, ownerWebContentsId) {
+    const guest = getGuestWebContents(payload, "cache", ownerWebContentsId);
     if (!guest) {
       return;
     }
@@ -85,8 +159,12 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     }
   }
 
-  async function takeBrowserScreenshot(payload) {
-    const guest = getGuestWebContents(payload, "screenshot");
+  async function takeBrowserScreenshot(payload, ownerWebContentsId) {
+    const guest = getGuestWebContents(
+      payload,
+      "screenshot",
+      ownerWebContentsId,
+    );
     if (!guest) {
       return;
     }
@@ -123,8 +201,8 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     }
   }
 
-  function openBrowserDevTools(payload) {
-    const guest = getGuestWebContents(payload, "DevTools");
+  function openBrowserDevTools(payload, ownerWebContentsId) {
+    const guest = getGuestWebContents(payload, "DevTools", ownerWebContentsId);
     if (!guest) {
       return;
     }
@@ -140,35 +218,56 @@ export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
     }
   }
 
-  function update(payload) {
+  function update(ownerWebContentsId, payload) {
     if (!payload || typeof payload !== "object") {
       return;
     }
 
     if (payload.openDevTools === true) {
-      openBrowserDevTools(payload);
+      openBrowserDevTools(payload, ownerWebContentsId);
       return;
     }
 
     if (payload.takeScreenshot === true) {
-      void takeBrowserScreenshot(payload);
+      void takeBrowserScreenshot(payload, ownerWebContentsId);
       return;
     }
 
     if (payload.clearCookies === true) {
-      void clearBrowserCookies(payload);
+      void clearBrowserCookies(payload, ownerWebContentsId);
       return;
     }
 
     if (payload.clearCache === true) {
-      void clearBrowserCache(payload);
+      void clearBrowserCache(payload, ownerWebContentsId);
     }
+  }
+
+  function registerGuest(ownerWebContentsId, guest) {
+    if (
+      !Number.isInteger(ownerWebContentsId) ||
+      ownerWebContentsId <= 0 ||
+      !Number.isInteger(guest?.id) ||
+      guest.id <= 0
+    ) {
+      return false;
+    }
+    secureGuest(guest);
+    registeredGuests.set(guest.id, {
+      guest,
+      ownerWebContentsId,
+      projectId: null,
+      tabId: null,
+    });
+    guest.once?.("destroyed", () => registeredGuests.delete(guest.id));
+    return true;
   }
 
   return {
     applyState: () => {},
     hideForRendererNavigation: () => {},
-    reset: () => {},
+    registerGuest,
+    reset: () => registeredGuests.clear(),
     update,
   };
 }

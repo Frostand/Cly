@@ -1,4 +1,28 @@
+import path from "node:path";
 import { z } from "zod";
+
+const providerModelIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/+\-[\]]*$/);
+const providerPathSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .refine((value) => !/[\0\r\n]/.test(value), {
+    message: "Path contains unsupported control characters.",
+  });
+const providerProjectPathSchema = providerPathSchema.refine(path.isAbsolute, {
+  message: "Project path must be absolute.",
+});
+const providerSessionIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/);
 
 export const chatRequestBodySchema = z.object({
   claudePermissionMode: z
@@ -8,32 +32,34 @@ export const chatRequestBodySchema = z.object({
     .enum(["default", "auto-accept-edits"])
     .default("default"),
   messages: z.array(z.unknown()),
-  model: z.string().min(1),
+  model: providerModelIdSchema,
   modelLabel: z.string().min(1).optional(),
   projectReferences: z
     .array(
       z.object({
         kind: z.enum(["file", "folder"]),
         name: z.string().min(1).optional(),
-        parentPath: z.string().optional(),
-        path: z.string().min(1),
+        parentPath: providerPathSchema.optional(),
+        path: providerPathSchema,
       }),
     )
     .default([]),
-  projectPath: z.string().min(1),
+  projectPath: providerProjectPathSchema,
   provider: z.enum(["openai", "anthropic", "opencode", "cursor"]),
   agentMode: z.enum(["plan", "build"]).default("build"),
-  remoteConversationId: z.string().nullable().optional(),
-  remoteConversationModel: z.string().nullable().optional(),
+  remoteConversationId: providerSessionIdSchema.nullable().optional(),
+  remoteConversationModel: providerModelIdSchema.nullable().optional(),
   remoteConversationModelSpeed: z
     .enum(["standard", "fast"])
     .nullable()
     .optional(),
-  remoteConversationProjectPath: z.string().nullable().optional(),
+  remoteConversationProjectPath: providerProjectPathSchema
+    .nullable()
+    .optional(),
   modelSpeed: z.enum(["standard", "fast"]).default("standard"),
   modelSpeedLabel: z.string().min(1).optional(),
   reasoningEffort: z
-    .enum(["low", "medium", "high", "xhigh", "max"])
+    .enum(["low", "medium", "high", "xhigh", "max", "ultra"])
     .nullable()
     .optional(),
   reasoningLabel: z.string().min(1).optional(),
@@ -70,8 +96,8 @@ export const formatProjectReferencesForPrompt = (projectReferences) => {
 };
 
 export const chatTitleRequestBodySchema = z.object({
-  fallbackModel: z.string().min(1).optional(),
-  projectPath: z.string().min(1),
+  fallbackModel: providerModelIdSchema.optional(),
+  projectPath: providerProjectPathSchema,
   projectId: z.string().min(1).optional(),
   promptText: z.string(),
   provider: z.enum(["openai", "anthropic", "opencode", "cursor"]),

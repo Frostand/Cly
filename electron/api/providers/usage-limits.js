@@ -1,18 +1,12 @@
-import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { createOpencode } from "@opencode-ai/sdk";
 import { execCliCommand, isCliCommandAvailable } from "../shared/cli.js";
 import { readCodexChatGptAuthTokens } from "./codex-auth.js";
 
 const OPENAI_CODEX_CHATGPT_USAGE_URL =
   "https://chatgpt.com/backend-api/wham/usage";
-const CLAUDE_OAUTH_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
-const CLAUDE_OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
-const CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-const CLAUDE_KEYCHAIN_SERVICES = ["Claude Code-credentials", "Claude Code"];
 const OPENCODE_STATS_DAYS = 30;
 const OPENCODE_STATS_MODEL_LIMIT = 10;
 const OPENCODE_STATS_SERVER_TIMEOUT_MS = 10_000;
@@ -23,7 +17,6 @@ const ANSI_ESCAPE_PATTERN = new RegExp(
 );
 
 const providerUsageLimitSnapshots = new Map();
-const execFileAsync = promisify(execFile);
 
 const toFiniteNumber = (value) => {
   const number = Number(value);
@@ -735,291 +728,7 @@ export const fetchOpenAiUsageLimits = async () => {
   }
 };
 
-const getClaudeCredentialsPaths = () => [
-  path.join(os.homedir(), ".claude", ".credentials.json"),
-  path.join(os.homedir(), ".claude", "credentials.json"),
-];
-
-const parseClaudeCredentials = (raw, storage) => {
-  const parsed = JSON.parse(raw);
-  const oauth = parsed.claudeAiOauth;
-  const accessToken = oauth?.accessToken?.trim();
-  const refreshToken = oauth?.refreshToken?.trim();
-  if (!accessToken || !refreshToken) {
-    return null;
-  }
-
-  return {
-    accessToken,
-    parsed,
-    refreshToken,
-    storage,
-  };
-};
-
-const readClaudeCredentialsFromKeychain = async () => {
-  if (process.platform !== "darwin") {
-    return null;
-  }
-
-  for (const service of CLAUDE_KEYCHAIN_SERVICES) {
-    let stdout;
-    try {
-      ({ stdout } = await execFileAsync("security", [
-        "find-generic-password",
-        "-s",
-        service,
-        "-w",
-      ]));
-    } catch {
-      continue;
-    }
-
-    const raw = stdout.trim();
-    if (!raw) {
-      continue;
-    }
-
-    try {
-      const credentials = parseClaudeCredentials(raw, {
-        service,
-        type: "keychain",
-      });
-      if (credentials) {
-        return credentials;
-      }
-    } catch {
-      // Try the next known keychain service.
-    }
-  }
-
-  return null;
-};
-
-const readClaudeCredentials = async () => {
-  const keychainCredentials = await readClaudeCredentialsFromKeychain();
-  if (keychainCredentials) {
-    return keychainCredentials;
-  }
-
-  for (const credentialsPath of getClaudeCredentialsPaths()) {
-    let raw;
-    try {
-      raw = await fs.readFile(credentialsPath, "utf8");
-    } catch {
-      continue;
-    }
-
-    try {
-      const credentials = parseClaudeCredentials(raw, {
-        path: credentialsPath,
-        type: "file",
-      });
-      if (credentials) {
-        return credentials;
-      }
-    } catch {
-      // Try the next known credential location.
-    }
-  }
-
-  return null;
-};
-
-const writeClaudeCredentials = async (
-  credentials,
-  { accessToken, expiresIn, refreshToken },
-) => {
-  const expiresAt = Date.now() + expiresIn * 1000;
-  const nextCredentials = {
-    ...credentials.parsed,
-    claudeAiOauth: {
-      ...credentials.parsed.claudeAiOauth,
-      accessToken,
-      expiresAt,
-      refreshToken,
-    },
-  };
-
-  const serialized = JSON.stringify(nextCredentials);
-  if (credentials.storage?.type === "keychain") {
-    await execFileAsync("security", [
-      "add-generic-password",
-      "-U",
-      "-a",
-      process.env.USER || "claude",
-      "-s",
-      credentials.storage.service,
-      "-w",
-      serialized,
-    ]);
-    return;
-  }
-
-  if (credentials.storage?.path) {
-    await fs.writeFile(credentials.storage.path, serialized, "utf8");
-  }
-};
-
-const refreshClaudeCredentials = async (credentials) => {
-  const body = new URLSearchParams({
-    client_id: CLAUDE_OAUTH_CLIENT_ID,
-    grant_type: "refresh_token",
-    refresh_token: credentials.refreshToken,
-  });
-  const response = await fetch(CLAUDE_OAUTH_TOKEN_URL, {
-    body,
-    method: "POST",
-  });
-  if (!response.ok) {
-    throw new Error(`Claude token refresh failed (${response.status}).`);
-  }
-
-  const payload = await response.json();
-  const accessToken = payload.access_token?.trim();
-  const refreshToken = payload.refresh_token?.trim();
-  const expiresIn = toFiniteNumber(payload.expires_in);
-  if (!accessToken || !refreshToken || expiresIn === null) {
-    throw new Error("Claude token refresh returned incomplete credentials.");
-  }
-
-  await writeClaudeCredentials(credentials, {
-    accessToken,
-    expiresIn,
-    refreshToken,
-  });
-
-  return {
-    ...credentials,
-    accessToken,
-    refreshToken,
-  };
-};
-
-const fetchClaudeUsageWithToken = async (accessToken) => {
-  const response = await fetch(CLAUDE_OAUTH_USAGE_URL, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "anthropic-beta": "oauth-2025-04-20",
-    },
-    method: "GET",
-  });
-
-  if (!response.ok) {
-    const error = new Error(
-      `Claude usage request failed (${response.status}).`,
-    );
-    error.status = response.status;
-    throw error;
-  }
-
-  return response.json();
-};
-
-const normalizeUsageUtilizationPercent = (value) => {
-  const number = toFiniteNumber(value);
-  if (number === null) {
-    return null;
-  }
-
-  return number > 0 && number <= 1 ? number * 100 : number;
-};
-
-const normalizeClaudeUsageWindow = (entry, label) => {
-  if (!entry || typeof entry !== "object") {
-    return null;
-  }
-
-  const usedPercent = normalizeUsageUtilizationPercent(
-    entry.utilization ?? entry.used_percent ?? entry.used_percentage,
-  );
-  if (usedPercent === null) {
-    return null;
-  }
-
-  return {
-    label,
-    resetAfterSeconds:
-      toFiniteNumber(entry.reset_after_seconds) ??
-      toFiniteNumber(entry.resetAfterSeconds),
-    resetAt:
-      normalizeResetAt(entry.resets_at) ??
-      normalizeResetAt(entry.reset_at) ??
-      normalizeResetAt(entry.resetAt),
-    usedPercent,
-  };
-};
-
-const normalizeClaudeUsageLimits = (payload) =>
-  [
-    normalizeClaudeUsageWindow(payload?.five_hour, "5h limit"),
-    normalizeClaudeUsageWindow(payload?.seven_day, "Weekly limit"),
-  ].filter(Boolean);
-
 export const fetchAnthropicUsageLimits = async () => {
-  const credentials = await readClaudeCredentials();
-  if (credentials) {
-    try {
-      let payload;
-      try {
-        payload = await fetchClaudeUsageWithToken(credentials.accessToken);
-      } catch (error) {
-        if (error?.status !== 401 && error?.status !== 429) {
-          throw error;
-        }
-
-        const refreshedCredentials =
-          await refreshClaudeCredentials(credentials);
-        payload = await fetchClaudeUsageWithToken(
-          refreshedCredentials.accessToken,
-        );
-      }
-
-      const limits = normalizeClaudeUsageLimits(payload);
-      if (limits.length === 0) {
-        throw new Error("Claude returned no usage limit windows.");
-      }
-
-      const result = makeUsageLimitsResult({
-        limits,
-        provider: "anthropic",
-        source: "claude",
-      });
-      providerUsageLimitSnapshots.set("anthropic", result);
-      return result;
-    } catch (error) {
-      const cached = providerUsageLimitSnapshots.get("anthropic");
-      if (cached) {
-        return {
-          ...cached,
-          error:
-            error instanceof Error ? error.message : "Claude usage failed.",
-        };
-      }
-
-      const localSnapshot = await readLatestRateLimitsFromFiles([
-        path.join(os.homedir(), ".claude", "projects"),
-      ]);
-      if (localSnapshot) {
-        return makeUsageLimitsResult({
-          error:
-            error instanceof Error ? error.message : "Claude usage failed.",
-          limits: localSnapshot.limits,
-          provider: "anthropic",
-          source: "claude session",
-        });
-      }
-
-      return makeUsageLimitsResult({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to fetch Claude usage limits.",
-        provider: "anthropic",
-      });
-    }
-  }
-
   const localSnapshot = await readLatestRateLimitsFromFiles([
     path.join(os.homedir(), ".claude", "projects"),
   ]);
@@ -1033,7 +742,7 @@ export const fetchAnthropicUsageLimits = async () => {
 
   return makeUsageLimitsResult({
     error:
-      "Claude usage limit windows are unavailable. Claude Code can still be connected and working normally when it does not expose local rate-limit data.",
+      "Claude Code does not expose usage limit windows through a supported local interface. Cly leaves Claude credentials under Claude Code's ownership.",
     provider: "anthropic",
   });
 };

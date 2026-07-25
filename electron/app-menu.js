@@ -1,4 +1,5 @@
 import { BrowserWindow, Menu } from "electron";
+import { isClyMenuCommand } from "./menu-commands.js";
 
 export function toggleWebContentsDevToolsDetached(webContents) {
   if (!webContents || webContents.isDestroyed()) {
@@ -28,12 +29,16 @@ export function configureApplicationMenu(app, appName) {
     applicationVersion: app.getVersion(),
   });
 
-  const command = (id) => (_menuItem, browserWindow) => {
-    const targetWindow = browserWindow ?? BrowserWindow.getFocusedWindow();
-    if (!targetWindow || targetWindow.isDestroyed()) {
-      return;
-    }
-    targetWindow.webContents.send("cly:menu-command", id);
+  const command = (id) => {
+    if (!isClyMenuCommand(id))
+      throw new Error(`Unknown Cly menu command: ${id}`);
+    return (_menuItem, browserWindow) => {
+      const targetWindow = browserWindow ?? BrowserWindow.getFocusedWindow();
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        return;
+      }
+      targetWindow.webContents.send("cly:menu-command", id);
+    };
   };
 
   const template = [
@@ -64,11 +69,10 @@ export function configureApplicationMenu(app, appName) {
     {
       label: "File",
       submenu: [
-        { label: "New Project", click: command("new-project") },
         {
-          label: "Open Project…",
+          label: "Choose or Open Project…",
           accelerator: "CommandOrControl+O",
-          click: command("open-project"),
+          click: command("project-switcher"),
         },
         {
           label: "Switch Project…",
@@ -76,14 +80,7 @@ export function configureApplicationMenu(app, appName) {
           click: command("project-switcher"),
         },
         { type: "separator" },
-        { label: "Import Sources…", click: command("import-sources") },
-        { label: "Import Notebook…", click: command("import-notebook") },
-        {
-          label: "Import Experiment Folder…",
-          click: command("import-experiment"),
-        },
-        { type: "separator" },
-        { label: "Close Project", click: command("close-project") },
+        { label: "Open Sources", click: command("open-sources") },
         ...(process.platform !== "darwin"
           ? [{ type: "separator" }, { role: "quit" }]
           : []),
@@ -106,24 +103,25 @@ export function configureApplicationMenu(app, appName) {
     {
       label: "Research",
       submenu: [
-        { label: "New Question", click: command("new-question") },
-        { label: "New Hypothesis", click: command("new-hypothesis") },
+        { label: "Open Research Brief", click: command("open-research-brief") },
         {
-          label: "New Claim",
+          label: "Open Claims",
           accelerator: "CommandOrControl+N",
-          click: command("new-claim"),
+          click: command("open-claims"),
         },
-        { label: "New Experiment", click: command("new-experiment") },
-        { label: "New Decision", click: command("new-decision") },
+        { label: "Open Experiments", click: command("open-experiments") },
+        { label: "Open Decisions", click: command("open-decisions") },
         { type: "separator" },
-        { label: "Run Reproducibility Audit", click: command("run-audit") },
-        { label: "Generate Next Steps", click: command("generate-next-steps") },
+        {
+          label: "Open Reproducibility",
+          click: command("open-reproducibility"),
+        },
+        { label: "Open Next Steps", click: command("open-next-steps") },
       ],
     },
     {
       label: "Agents",
       submenu: [
-        { label: "New Agent Session", click: command("new-agent-session") },
         {
           label: "Show Agent Sessions Overview",
           click: command("agent-sessions-overview"),
@@ -137,40 +135,6 @@ export function configureApplicationMenu(app, appName) {
         { type: "separator" },
         { label: "Open Context Composer", click: command("context-composer") },
         { label: "Configure Agent Plan", click: command("configure-agents") },
-        { type: "separator" },
-        {
-          label: "Open Browser Tab",
-          accelerator: "CommandOrControl+Alt+B",
-          click: command("agent-tab-browser"),
-        },
-        {
-          label: "Open Terminal Tab",
-          accelerator: "CommandOrControl+Alt+T",
-          click: command("agent-tab-terminal"),
-        },
-        {
-          label: "Open Diff Tab",
-          accelerator: "CommandOrControl+Alt+D",
-          click: command("agent-tab-diff"),
-        },
-        {
-          label: "Open Agents Tab",
-          accelerator: "CommandOrControl+Alt+A",
-          click: command("agent-tab-agents"),
-        },
-        {
-          label: "Open Live Files Tab",
-          accelerator: "CommandOrControl+Alt+F",
-          click: command("agent-tab-live-files"),
-        },
-        {
-          label: "Toggle Workbench",
-          accelerator: "CommandOrControl+Alt+W",
-          click: command("agent-toggle-workbench"),
-        },
-        { type: "separator" },
-        { label: "Run Claim Audit", click: command("claim-audit") },
-        { label: "Run Code Review", click: command("code-review") },
       ],
     },
     {
@@ -224,15 +188,10 @@ export function configureApplicationMenu(app, appName) {
     {
       label: "Integrations",
       submenu: [
-        { label: "Manage Connections", click: command("manage-integrations") },
-        { label: "Import from GitHub", click: command("import-github") },
+        { label: "Open Integrations", click: command("open-integrations") },
         {
-          label: "Import from Hugging Face",
-          click: command("import-huggingface"),
-        },
-        {
-          label: "Create NotebookLM Bundle",
-          click: command("notebooklm-bundle"),
+          label: "Open Literature Workspace",
+          click: command("open-literature"),
         },
       ],
     },
@@ -249,11 +208,8 @@ export function configureApplicationMenu(app, appName) {
       label: "Help",
       role: "help",
       submenu: [
-        { label: "Documentation", click: command("documentation") },
         { label: "Keyboard Shortcuts", click: command("shortcuts") },
         { label: "Diagnostics", click: command("diagnostics") },
-        { type: "separator" },
-        { label: `About ${appName}`, click: command("about") },
       ],
     },
   ];

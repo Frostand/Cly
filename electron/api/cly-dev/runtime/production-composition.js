@@ -1,3 +1,4 @@
+import { normalizeReasoningEfforts } from "../../providers/model-options.js";
 import {
   hashApprovalAction,
   waitForToolApproval,
@@ -24,7 +25,16 @@ const loadProjectPolicy = (db, projectId) => {
     .prepare("SELECT metadata FROM projects WHERE id = ?")
     .get(projectId);
   if (!row) throw new Error("Project was not found.");
-  return parseJson(row.metadata, {})?.clyDevPolicy ?? null;
+  return (
+    parseJson(row.metadata, {})?.clyDevPolicy ?? {
+      categories: {
+        command: "approval",
+        file_write: "approval",
+        read_only: "allow",
+      },
+      default: "deny",
+    }
+  );
 };
 
 const loadApproval = (db, approvalId, scope) => {
@@ -133,6 +143,88 @@ export function createProductionClyDevRuntime({
     anthropic: createCore(productionClaudeProvider, true),
     openai: createCore(productionProvider, false),
   });
+  const providerDefinitions = Object.freeze([
+    {
+      family: "openai",
+      label: "Codex",
+      provider: productionProvider,
+      supportedModes: ["read_only"],
+    },
+    {
+      family: "anthropic",
+      label: "Claude Code",
+      provider: productionClaudeProvider,
+      supportedModes: ["read_only", "workspace_write"],
+    },
+  ]);
+
+  const inspectProvider = async (definition) => {
+    try {
+      const [authentication, capabilities] = await Promise.all([
+        definition.provider.getAuthentication(),
+        definition.provider.getCapabilities(),
+      ]);
+      const models =
+        authentication?.status === "authenticated"
+          ? await definition.provider.listModels()
+          : [];
+      return {
+        family: definition.family,
+        id: definition.provider.id,
+        label: definition.label,
+        authentication: authentication?.status ?? "unavailable",
+        capabilities,
+        supportedModes: definition.supportedModes.filter(
+          (mode) =>
+            mode === "read_only" ||
+            (capabilities.toolCalls && capabilities.interceptBeforeEffect),
+        ),
+        models: Array.isArray(models)
+          ? models
+              .filter(
+                (model) =>
+                  model &&
+                  typeof model.id === "string" &&
+                  /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,499}$/.test(model.id),
+              )
+              .map((model) => ({
+                id: model.id,
+                label:
+                  typeof model.label === "string" && model.label.trim()
+                    ? model.label
+                    : model.id,
+                reasoningEfforts: normalizeReasoningEfforts(
+                  model.reasoningEfforts,
+                ).filter(
+                  (effort) =>
+                    definition.family !== "anthropic" || effort !== "ultra",
+                ),
+              }))
+          : [],
+      };
+    } catch (error) {
+      const normalized = definition.provider.normalizeError(error);
+      return {
+        family: definition.family,
+        id: definition.provider.id,
+        label: definition.label,
+        authentication: "unavailable",
+        capabilities: {
+          streaming: false,
+          reasoning: false,
+          toolCalls: false,
+          interceptBeforeEffect: false,
+        },
+        supportedModes: [],
+        models: [],
+        error: {
+          code: normalized.code,
+          message: "Provider status could not be verified.",
+          retryable: Boolean(normalized.retryable),
+        },
+      };
+    }
+  };
 
   const prepare = (request) => {
     const session = repository.getSnapshot(
@@ -153,11 +245,18 @@ export function createProductionClyDevRuntime({
     }
     return {
       core: cores[providerFamily],
-      request: { ...request, model: session.provider.model },
+      request: {
+        ...request,
+        model: session.provider.model,
+        reasoningEffort: session.provider.reasoningEffort,
+      },
     };
   };
 
   return Object.freeze({
+    listProviders() {
+      return Promise.all(providerDefinitions.map(inspectProvider));
+    },
     execute(request) {
       const prepared = prepare(request);
       return prepared.core.execute(prepared.request);

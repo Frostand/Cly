@@ -153,6 +153,47 @@ export function ExperimentsScreen() {
   const compareRuns = compareIds
     .map((id) => data.runs.find((item) => item.id === id))
     .filter(Boolean);
+  const downloadComparisonReport = () => {
+    if (compareRuns.length < 2) return;
+    const rows = compareRuns.map((run) => ({
+      id: run?.id,
+      name: run?.name,
+      experiment: data.experiments.find(
+        (experiment) => experiment.id === run?.experimentId,
+      )?.name,
+      status: run?.status,
+      configuration: run?.config,
+      metrics: run?.metrics,
+      codeVersion: run?.codeVersion,
+      environment: run?.environment,
+      reproducibility: run?.reproducibility,
+      canonical: run?.canonical ?? false,
+    }));
+    const url = URL.createObjectURL(
+      new Blob(
+        [
+          `${JSON.stringify(
+            {
+              runCount: rows.length,
+              runs: rows,
+            },
+            null,
+            2,
+          )}\n`,
+        ],
+        { type: "application/json;charset=utf-8" },
+      ),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "cly-run-comparison.json";
+    link.click();
+    URL.revokeObjectURL(url);
+    notify(
+      "Comparison report downloaded",
+      `${rows.length} runs with configuration, metrics, code, environment, and reproducibility.`,
+    );
+  };
   const aucValues = data.runs
     .map((item) => item.metrics.auc)
     .filter((value): value is number => typeof value === "number");
@@ -494,12 +535,13 @@ export function ExperimentsScreen() {
           </select>
           {view === "Compare" ? (
             <Button
-              onClick={() =>
-                notify(
-                  "Comparison report generated",
-                  "Config, metrics, outputs, claims, reproducibility, and reviewer concerns are included.",
-                )
+              disabled={compareRuns.length < 2}
+              title={
+                compareRuns.length < 2
+                  ? "Select at least two runs to create a comparison report."
+                  : undefined
               }
+              onClick={downloadComparisonReport}
             >
               <Sparkles size={13} /> Generate comparison report
             </Button>
@@ -658,10 +700,12 @@ export function ExperimentsScreen() {
         {view === "Outputs" ? (
           <div className="cly-grid-3">
             {data.artifacts.slice(0, 100).map((artifact) => (
-              <Panel
+              <button
+                type="button"
+                className="cly-panel cly-interactive-panel"
                 key={artifact.id}
+                aria-label={`Open output ${artifact.name}`}
                 onClick={() => setSelected(artifact.id)}
-                style={{ cursor: "pointer" }}
               >
                 <div className="cly-preview" style={{ minHeight: 110 }}>
                   <FilePreview kind={artifact.kind} />
@@ -679,7 +723,7 @@ export function ExperimentsScreen() {
                       : artifact.preview}
                   </p>
                 </div>
-              </Panel>
+              </button>
             ))}
           </div>
         ) : null}

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { AppLoadingScreen } from "@/components/dream-loading-screen";
+import { AppLoadingScreen } from "@/components/cly-loading-screen";
 import { getDesktopApi, hasDesktopApi } from "@/lib/electron";
 import {
   getConnectedProviders,

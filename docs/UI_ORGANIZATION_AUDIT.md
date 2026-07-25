@@ -17,7 +17,7 @@
 | Reproducibility | Fix publication blockers | Score + finding report | Category enumeration removed from header |
 | Decisions | Understand chronology | Timeline/history | Header and empty-state copy shortened |
 | Next Steps | Prioritize recommended work | Ranked action rows | Rationale retained; explanatory shell copy shortened |
-| Integrations | Configure providers | Compact provider rows | Connection modes and routing preferences collapsed |
+| Integrations | Verify local providers and editors | Compact detected-provider rows | Live CLI status, secure sign-in, setup commands, and editor opening replace the fixture catalog |
 | Models & Agents | Configure a plan | Presets + selected topology + controls | Six presets shown by default; full list remains reachable |
 | Settings | Change preferences | Category navigation + native form rows | Description shortened; structure preserved |
 

@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "@playwright/test";
+import { getClyMainWindow } from "./electron-main-window.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
@@ -26,7 +27,7 @@ const app = await electron.launch({
   timeout: 60_000,
 });
 
-const window = await app.firstWindow();
+const window = await getClyMainWindow(app);
 const browserWindow = await app.browserWindow(window);
 await browserWindow.evaluate((nativeWindow) => {
   nativeWindow.setMinimumSize(800, 600);
@@ -53,25 +54,9 @@ window.on("console", (message) => {
 });
 window.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
 
-const routes = [
-  ["overview", "overview", "When LDL-C misleads"],
-  ["agents", "agent-sessions-overview", "Agent Sessions"],
-  ["context", "context", "Context Composer"],
-  ["graph", "research-graph", "Research Object Graph"],
-  ["experiments", "experiments", "Experiment Manager"],
-  ["sources", "sources", "Source Manager"],
-  ["literature", "literature", "Literature Workspace"],
-  ["notebooks", "notebooks", "Notebook Scanner"],
-  ["code", "code-linker", "Code-to-Research Linker"],
-  ["claims", "claims", "Claim Audit Board"],
-  ["provenance", "provenance", "Figure & Table Provenance"],
-  ["reproducibility", "reproducibility", "Reproducibility Auditor"],
-  ["decisions", "decisions", "Research Decision Log"],
-  ["next-steps", "next-steps", "Next-Step Planner"],
-  ["integrations", "integrations", "Integrations & Providers"],
-  ["models", "models-agents", "Models & Agents"],
-  ["settings", "settings", "Settings"],
-];
+const routes = JSON.parse(
+  readFileSync(path.join(root, "src/features/cly/route-manifest.json"), "utf8"),
+).map(({ id, heading }) => [id, id, heading]);
 
 const capture = async (name, animations = "disabled") => {
   await window.waitForTimeout(180);
@@ -96,9 +81,25 @@ const viewportMatrix = [
   [1440, 900],
   [1728, 1117],
 ];
-for (const [id, fileName] of routes) {
-  await window.getByTestId(`nav-${id}`).click();
-  await window.getByRole("heading", { level: 1 }).first().waitFor();
+for (const [id, fileName, heading] of routes) {
+  if (id === "dev") {
+    await window.getByTestId("product-dev").click();
+    await window.getByRole("region", { name: heading }).waitFor();
+  } else {
+    await window.getByTestId("product-research").click();
+    await window.getByTestId(`nav-${id}`).click();
+    await window.getByRole("heading", { level: 1, name: heading }).waitFor();
+  }
+  if (id === "models") {
+    await window.waitForFunction(
+      () =>
+        !document.body.innerText.includes(
+          "Checking installed AI providers and their available models",
+        ),
+      undefined,
+      { timeout: 45_000 },
+    );
+  }
   for (const [width, height] of viewportMatrix) {
     await resize(width, height);
     await capture(`${fileName}-${width}x${height}`);

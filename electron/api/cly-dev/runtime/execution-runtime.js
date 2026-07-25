@@ -440,6 +440,27 @@ export function createClyDevExecutionRuntime(options = {}) {
             `Model ${request.model} is not available from provider ${provider.id}.`,
           );
         }
+        const selectedModel = models.find(
+          (model) => model?.id === request.model,
+        );
+        if (
+          request.reasoningEffort &&
+          !Array.isArray(selectedModel?.reasoningEfforts)
+        ) {
+          throw new RuntimeError(
+            "UNSUPPORTED_REASONING_EFFORT",
+            `Model ${request.model} did not advertise configurable reasoning.`,
+          );
+        }
+        if (
+          request.reasoningEffort &&
+          !selectedModel.reasoningEfforts.includes(request.reasoningEffort)
+        ) {
+          throw new RuntimeError(
+            "UNSUPPORTED_REASONING_EFFORT",
+            `Model ${request.model} does not support ${request.reasoningEffort} reasoning.`,
+          );
+        }
         providerCapabilities = validateCapabilities(
           await provider.getCapabilities(),
         );

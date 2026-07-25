@@ -122,6 +122,24 @@ afterEach(() => {
 });
 
 describe("agent configuration repository", () => {
+  it.each([
+    "xhigh",
+    "max",
+  ] as const)("round-trips the %s reasoning level", (reasoningLevel) => {
+    const { repository } = setup();
+    const input = {
+      ...configurationInput,
+      name: `${reasoningLevel} reasoning team`,
+      roles: configurationInput.roles.map((role, index) =>
+        index === 0 ? { ...role, reasoningLevel } : role,
+      ),
+    };
+
+    const created = repository.create("project-1", input);
+
+    expect(created.roles[0]?.reasoningLevel).toBe(reasoningLevel);
+  });
+
   it("round-trips every field and isolates list/get by project", () => {
     const { repository } = setup();
     const created = repository.create("project-1", configurationInput);

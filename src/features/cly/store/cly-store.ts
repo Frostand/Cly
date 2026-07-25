@@ -55,6 +55,7 @@ import type {
   LineageReviewDecision,
   LineageScanMeasurement,
   LineageSuggestion,
+  NextStep,
   NotebookArtifact,
   PreregistrationContent,
   PreregistrationSnapshot,
@@ -155,7 +156,7 @@ interface ClyState {
   setSelected: (id: string | null) => void;
   setActiveProject: (id: string) => void;
   setFixtureMode: (mode: FixtureMode) => void;
-  createResearchProject: () => Promise<ResearchProject>;
+  createResearchProject: (projectPath: string) => Promise<ResearchProject>;
   startGuidedDemo: () => Promise<void>;
   updateActiveProject: (
     patch: Pick<
@@ -254,22 +255,13 @@ interface ClyState {
   addNotebook: (notebook: NotebookArtifact) => void;
   addGraphEdge: (edge: GraphEdge) => void;
   updateGraphEdge: (id: string, patch: Partial<GraphEdge>) => void;
-  updateFinding: (
-    id: string,
-    patch: {
-      status?: "Open" | "Assigned" | "Resolved" | "Ignored";
-      assignee?: string;
-    },
-  ) => void;
+  updateFinding: (id: string, patch: Partial<AuditFinding>) => void;
   replaceReproducibilityAudit: (
     audit: ReproducibilityAudit,
     findings: AuditFinding[],
   ) => void;
   updateIntegration: (id: string, patch: Partial<Integration>) => void;
-  updateNextStep: (
-    id: string,
-    status: "Accepted" | "Deferred" | "Dismissed" | "In progress",
-  ) => void;
+  updateNextStep: (id: string, status: NextStep["status"]) => void;
   addDecision: (decision: ResearchDecision) => void;
   updateDecision: (id: string, patch: Partial<ResearchDecision>) => void;
   addAgentPreset: (preset: AgentPreset) => void;
@@ -526,6 +518,7 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
     linkedClaimIds: [],
     linkedExperimentIds: [],
     inNotebookBundle: false,
+    archived: Boolean(payload.archivedAt),
     groundedSummary: payload.groundedSummary,
     path: `sources/${object.id}`,
     updatedAt: object.updatedAt,
@@ -860,11 +853,11 @@ const mapResearchData = (
     notebooks: [],
     code: [],
     artifacts,
-    findings: [],
-    audits: [],
+    findings: researchData.findings ?? [],
+    audits: researchData.audits ?? [],
     integrations: [],
-    nextSteps: [],
-    decisions: [],
+    nextSteps: researchData.nextSteps ?? [],
+    decisions: researchData.decisions ?? [],
     contextItems: baseData.contextItems,
     contextPacks: baseData.contextPacks,
     agentPresets: [],
@@ -984,14 +977,25 @@ const applyAgentContextSnapshot = (
   })),
 });
 
+export const selectCatalogProjectId = (
+  projects: ResearchProject[],
+  savedProjectId?: string | null,
+) => {
+  if (projects.length === 0) return null;
+  return savedProjectId &&
+    projects.some((project) => project.id === savedProjectId)
+    ? savedProjectId
+    : projects[0].id;
+};
+
 export const useClyStore = create<ClyState>((set, get) => ({
   data: initialData,
   fixtureMode: initialFixtureMode,
   activeProjectId: initialData.projects.some(
     (project) => project.id === saved.activeProjectId,
   )
-    ? (saved.activeProjectId ?? initialData.projects[0]?.id ?? "project-cly")
-    : (initialData.projects[0]?.id ?? "project-cly"),
+    ? (saved.activeProjectId ?? initialData.projects[0]?.id ?? "")
+    : (initialData.projects[0]?.id ?? ""),
   activeScreen:
     saved.activeProduct === "dev" ? "dev" : (saved.activeScreen ?? "overview"),
   activeProduct: saved.activeProduct ?? "research",
@@ -1141,8 +1145,15 @@ export const useClyStore = create<ClyState>((set, get) => ({
         get().agentSessionLayouts,
       );
       const costs = costModule.createCostLedgerFixture(fixtureMode, data);
+      const currentProjectId = get().activeProjectId;
+      const fixtureProjectId = data.projects.some(
+        (project) => project.id === currentProjectId,
+      )
+        ? currentProjectId
+        : (data.projects[0]?.id ?? "");
       set((state) => ({
         data,
+        activeProjectId: fixtureProjectId,
         fixtureMode,
         selectedId: null,
         agentSessionsMode:
@@ -1180,13 +1191,20 @@ export const useClyStore = create<ClyState>((set, get) => ({
           ? false
           : state.fixtureSwitcherOpen,
       }));
+      persistUi({ activeProjectId: fixtureProjectId });
     });
   },
-  createResearchProject: async () => {
+  createResearchProject: async (projectPath) => {
+    const canonicalPath = projectPath.trim();
+    if (!canonicalPath) {
+      throw new Error("Select a local project folder first.");
+    }
+    const pathParts = canonicalPath.split(/[\\/]/).filter(Boolean);
+    const folderName = pathParts.at(-1) ?? "Local research project";
     const project: ResearchProject = {
       id: `project-${crypto.randomUUID()}`,
-      name: "Untitled research project",
-      path: `~/Research/project-${new Date().toISOString().slice(0, 10)}`,
+      name: folderName,
+      path: canonicalPath,
       question: "",
       hypothesis: "",
       phase: "Exploration",
@@ -1344,19 +1362,31 @@ export const useClyStore = create<ClyState>((set, get) => ({
         const catalog = (await apiClient.fetchProjects())
           .map(researchProjectFromCatalog)
           .filter((project): project is ResearchProject => project !== null);
-        if (catalog.length > 0) {
-          const preferredId =
-            typeof saved.activeProjectId === "string" &&
-            catalog.some((project) => project.id === saved.activeProjectId)
-              ? saved.activeProjectId
-              : catalog[0].id;
-          projectId = preferredId;
-          set((state) => ({
-            activeProjectId: preferredId,
-            data: { ...state.data, projects: catalog },
-          }));
-          persistUi({ activeProjectId: preferredId, projects: catalog });
+        const preferredId = selectCatalogProjectId(
+          catalog,
+          typeof saved.activeProjectId === "string"
+            ? saved.activeProjectId
+            : null,
+        );
+        if (!preferredId) {
+          set({
+            activeProjectId: "",
+            agentContext: { items: [], packs: [], manifests: [] },
+            agentContextError: null,
+            agentContextLoading: false,
+            agentContextProjectId: null,
+            data: { ...createProductionRepository(), projects: [] },
+            fixtureMode: "empty",
+          });
+          persistUi({ activeProjectId: "", projects: [] });
+          return true;
         }
+        projectId = preferredId;
+        set((state) => ({
+          activeProjectId: preferredId,
+          data: { ...state.data, projects: catalog },
+        }));
+        persistUi({ activeProjectId: preferredId, projects: catalog });
       } catch {
         // Older local APIs do not expose the catalog; use the boot project.
       }
@@ -1506,6 +1536,14 @@ export const useClyStore = create<ClyState>((set, get) => ({
   },
   loadClyDevSessions: async (requestedProjectId) => {
     const projectId = requestedProjectId ?? get().activeProjectId;
+    if (!projectId.trim()) {
+      set({
+        clyDevSessions: [],
+        clyDevSessionsLoading: false,
+        clyDevSessionsError: null,
+      });
+      return false;
+    }
     set({ clyDevSessionsLoading: true, clyDevSessionsError: null });
     try {
       const sessions = await productionAgentSessionServices.hydrate(projectId);
@@ -1527,6 +1565,16 @@ export const useClyStore = create<ClyState>((set, get) => ({
   },
   loadObligations: async (requestedProjectId) => {
     const projectId = requestedProjectId ?? get().activeProjectId;
+    if (!projectId.trim()) {
+      set({
+        datasetObligations: [],
+        obligationAlerts: [],
+        inheritedRestrictions: {},
+        obligationsLoading: false,
+        obligationsError: null,
+      });
+      return false;
+    }
     set({ obligationsLoading: true, obligationsError: null });
     try {
       const summary = await apiClient.fetchObligations(projectId);
@@ -1629,6 +1677,50 @@ export const useClyStore = create<ClyState>((set, get) => ({
     const projectId = get().activeProjectId;
     set({ preregistrationsLoading: true, preregistrationsError: null });
     try {
+      if (
+        __CLY_INCLUDE_DEMOS__ &&
+        explicitDemoMode &&
+        get().fixtureMode === "guided"
+      ) {
+        const digest = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(JSON.stringify(content)),
+        );
+        const contentHash = Array.from(new Uint8Array(digest), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+        const version =
+          Math.max(
+            0,
+            ...get()
+              .preregistrations.filter(
+                (snapshot) => snapshot.experimentId === experimentId,
+              )
+              .map((snapshot) => snapshot.version),
+          ) + 1;
+        const snapshotId = `snapshot-${crypto.randomUUID().slice(0, 8)}`;
+        const snapshot: PreregistrationSnapshot = {
+          id: snapshotId,
+          projectId,
+          experimentId,
+          version,
+          amendsSnapshotId: amendsSnapshotId ?? null,
+          content,
+          contentHash,
+          actorType: "human",
+          actorId: "local-user",
+          origin: "human",
+          provenanceEventId: `event-${crypto.randomUUID().slice(0, 8)}`,
+          createdAt: new Date().toISOString(),
+          finalEvaluation: null,
+          deviations: [],
+        };
+        set((state) => ({
+          preregistrations: [snapshot, ...state.preregistrations],
+          preregistrationsLoading: false,
+        }));
+        return snapshot;
+      }
       const snapshot = await apiClient.createPreregistration(
         projectId,
         experimentId,
@@ -2405,6 +2497,10 @@ export const useClyStore = create<ClyState>((set, get) => ({
   updateDelegatedAgent: (sessionId, agentId, patch) =>
     get().updateAgentSession(sessionId, (session) => ({
       ...session,
+      orchestrator:
+        session.orchestrator.id === agentId
+          ? { ...session.orchestrator, ...patch }
+          : session.orchestrator,
       delegatedAgents: session.delegatedAgents.map((agent) =>
         agent.id === agentId ? { ...agent, ...patch } : agent,
       ),

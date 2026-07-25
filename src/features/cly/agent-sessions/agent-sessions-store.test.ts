@@ -6,9 +6,9 @@ import type { NewAgentSessionInput } from "./types";
 const newSession: NewAgentSessionInput = {
   title: "Trace the new result",
   objective: "Audit the result from claim through implementation and output.",
-  provider: "OpenAI",
-  model: "GPT-5",
-  reasoningLevel: "High",
+  provider: "openai",
+  model: "gpt-5.6-sol",
+  reasoningLevel: "Extra High",
   preset: "Claim Audit",
   contextPackName: "Claim Audit Pack",
   approvalPolicy: "Approve consequential actions",
@@ -63,8 +63,8 @@ describe("Agent Sessions store", () => {
 
     expect(state.agentSessionsMode).toBe("chat");
     expect(state.selectedAgentSessionId).toBe(id);
-    expect(session?.orchestrator.model).toBe("GPT-5");
-    expect(session?.orchestrator.reasoningLevel).toBe("High");
+    expect(session?.orchestrator.model).toBe("gpt-5.6-sol");
+    expect(session?.orchestrator.reasoningLevel).toBe("Extra High");
     expect(session?.branch).toBe("agent/new-audit");
   });
 
@@ -143,8 +143,9 @@ describe("Agent Sessions store", () => {
     useClyStore
       .getState()
       .updateDelegatedAgent("session-01", "agent-implementation", {
-        model: "Claude Opus 4.6",
-        reasoningLevel: "Medium",
+        provider: "anthropic",
+        model: "opus",
+        reasoningLevel: "Max",
         status: "paused",
       });
     const agent = useClyStore
@@ -153,8 +154,9 @@ describe("Agent Sessions store", () => {
         (item) => item.id === "agent-implementation",
       );
     expect(agent).toMatchObject({
-      model: "Claude Opus 4.6",
-      reasoningLevel: "Medium",
+      provider: "anthropic",
+      model: "opus",
+      reasoningLevel: "Max",
       status: "paused",
     });
   });

@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
+import { getClyMainWindow } from "./electron-main-window";
 
 const root = process.cwd();
 const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
@@ -33,7 +34,7 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
 
   let app = await launch();
   try {
-    let agent = await app.firstWindow();
+    let agent = await getClyMainWindow(app);
     await agent.getByRole("heading", { level: 1 }).first().waitFor();
     await agent.getByTestId("nav-agents").click();
     await agent
@@ -69,10 +70,21 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
 
     await app.close();
     app = await launch();
-    await expect.poll(() => app.windows().length, { timeout: 45_000 }).toBe(2);
+    await getClyMainWindow(app);
+    await expect
+      .poll(
+        () =>
+          app
+            .windows()
+            .some((page) => page.url().includes("clyWindowRole=workspace")),
+        { timeout: 45_000 },
+      )
+      .toBe(true);
     const restoredWindows = app.windows();
     const restoredAgent = restoredWindows.find(
-      (page) => !page.url().includes("clyWindowRole"),
+      (page) =>
+        !page.url().includes("startup-splash.html") &&
+        !page.url().includes("clyWindowRole"),
     );
     const restoredWorkspace = restoredWindows.find((page) =>
       page.url().includes("clyWindowRole"),

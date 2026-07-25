@@ -59,6 +59,7 @@ function toClySource(row: {
     linkedClaimIds: [],
     linkedExperimentIds: [],
     inNotebookBundle: false,
+    archived: Boolean(payload.archivedAt),
     groundedSummary: payload.groundedSummary,
     path: `sources/${row.id}`,
     updatedAt: row.updatedAt,
@@ -104,6 +105,18 @@ interface ResearchRepo {
       createdAt: string;
       updatedAt: string;
     }>;
+  };
+  setSourceArchived(
+    projectId: string,
+    sourceId: string,
+    archived: boolean,
+  ): {
+    id: string;
+    title: string;
+    description: string;
+    payload: Record<string, unknown>;
+    createdAt: string;
+    updatedAt: string;
   };
 }
 
@@ -168,6 +181,12 @@ export function createRealSourceService(
 
     async enrich(_sourceId: string) {
       throw new Error("Enrichment requires the project research API boundary.");
+    },
+
+    async setArchived(sourceId, archived) {
+      return toClySource(
+        repository.setSourceArchived(projectId, sourceId, archived),
+      );
     },
   };
 }

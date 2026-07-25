@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureRepository } from "../fixtures/repository";
+import { projectServices } from "../services/project-services";
 import { useClyStore } from "../store/cly-store";
 import { SourcesScreen } from "./research-workspaces";
 
@@ -108,5 +109,32 @@ describe("Source Manager literature import", () => {
     });
     expect(useClyStore.getState().toasts.at(-1)?.title).toBe("Paper imported");
     expect(useClyStore.getState().selectedId).toBe("source-imported");
+  });
+
+  it("enables real enrichment and durable source archival", async () => {
+    const sourceId = useClyStore.getState().data.sources[0]?.id;
+    expect(sourceId).toBeTruthy();
+    useClyStore.setState({ selectedId: sourceId });
+    const enrich = vi
+      .spyOn(projectServices.sources, "enrich")
+      .mockResolvedValue(useClyStore.getState().data.sources[0]);
+    const setArchived = vi
+      .spyOn(projectServices.sources, "setArchived")
+      .mockResolvedValue({
+        ...useClyStore.getState().data.sources[0],
+        archived: true,
+      });
+    const user = userEvent.setup();
+    render(<SourcesScreen />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Extract structured notes" }),
+    );
+    expect(enrich).toHaveBeenCalledWith(sourceId);
+    await user.click(screen.getByRole("button", { name: "Archive" }));
+    expect(setArchived).toHaveBeenCalledWith(sourceId, true);
+    expect(
+      screen.queryByRole("button", { name: "Merge duplicates" }),
+    ).not.toBeInTheDocument();
   });
 });

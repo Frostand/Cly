@@ -1,5 +1,4 @@
 import {
-  Archive,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -7,7 +6,6 @@ import {
   Download,
   FileCheck2,
   GitCompare,
-  Link2,
   ListChecks,
   Plus,
   RefreshCw,
@@ -39,16 +37,28 @@ import type {
   DecisionBrief,
   DecisionBriefFindingCategory,
   NextStep,
+  ResearchDecision,
 } from "../domain/types";
 import {
   apiClient,
   type ProvenanceEvent,
   type ProvenanceIntegrity,
 } from "../services/api-client";
-import { capabilityUnavailableMessage } from "../services/capabilities";
 import { projectServices } from "../services/project-services";
-import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
+
+function downloadJson(fileName: string, value: unknown) {
+  const url = URL.createObjectURL(
+    new Blob([`${JSON.stringify(value, null, 2)}\n`], {
+      type: "application/json;charset=utf-8",
+    }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 type ProvenanceView =
   | "Gallery"
@@ -73,7 +83,13 @@ export function ProvenanceScreen() {
   useEffect(() => {
     const explicitDemoRuntime =
       import.meta.env.DEV && import.meta.env.VITE_CLY_DEMO_MODE === "1";
-    if (fixtureMode !== "empty" || explicitDemoRuntime) return;
+    if (fixtureMode !== "empty" || explicitDemoRuntime || !activeProjectId) {
+      if (!activeProjectId) {
+        setEvents([]);
+        setIntegrity(null);
+      }
+      return;
+    }
     let current = true;
     Promise.all([
       apiClient.fetchProvenance(activeProjectId),
@@ -135,14 +151,19 @@ export function ProvenanceScreen() {
               label="Provenance view"
             />
             <Button
-              disabled={!isClyDemoRuntime}
-              title={capabilityUnavailableMessage("reproducibility.audit")}
-              onClick={() =>
+              disabled={!activeProjectId}
+              onClick={() => {
+                downloadJson(`cly-provenance-${activeProjectId}.json`, {
+                  projectId: activeProjectId,
+                  integrity,
+                  events,
+                  artifacts,
+                });
                 notify(
-                  "Provenance report generated",
-                  "The report includes hashes, lineage gaps, manual-edit risks, and regeneration status.",
-                )
-              }
+                  "Provenance report downloaded",
+                  `${events.length} ledger events and ${artifacts.length} artifacts.`,
+                );
+              }}
             >
               <Download size={13} /> Report
             </Button>
@@ -158,8 +179,20 @@ export function ProvenanceScreen() {
                 {events.length} immutable, ordered events from SQLite
               </div>
             </div>
-            <Badge tone={integrity?.valid ? "success" : "danger"}>
-              {integrity?.valid ? "Chain verified" : "Integrity warning"}
+            <Badge
+              tone={
+                !activeProjectId
+                  ? "info"
+                  : integrity?.valid
+                    ? "success"
+                    : "danger"
+              }
+            >
+              {!activeProjectId
+                ? "Choose a project"
+                : integrity?.valid
+                  ? "Chain verified"
+                  : "Integrity warning"}
             </Badge>
           </div>
           {integrity?.reason ? (
@@ -241,12 +274,38 @@ export function ProvenanceScreen() {
               placeholder="Search artifacts and generators…"
             />
             <Button
-              onClick={() =>
+              onClick={() => {
+                downloadJson(
+                  `cly-artifact-comparison-${activeProjectId}.json`,
+                  {
+                    artifacts: visible.map(
+                      ({
+                        id,
+                        name,
+                        hash,
+                        sourceData,
+                        generator,
+                        runId,
+                        commit,
+                        regeneration,
+                      }) => ({
+                        id,
+                        name,
+                        hash,
+                        sourceData,
+                        generator,
+                        runId,
+                        commit,
+                        regeneration,
+                      }),
+                    ),
+                  },
+                );
                 notify(
-                  "Version comparison",
-                  "Select two artifact versions to compare hashes, source data, code, and visual changes.",
-                )
-              }
+                  "Artifact comparison downloaded",
+                  `${visible.length} visible artifact versions included.`,
+                );
+              }}
             >
               <GitCompare size={13} /> Compare versions
             </Button>
@@ -257,10 +316,12 @@ export function ProvenanceScreen() {
           view === "Unlinked" ? (
             <div className="cly-grid-3">
               {visible.slice(0, 120).map((artifact) => (
-                <Panel
+                <button
+                  type="button"
+                  className="cly-panel cly-interactive-panel"
                   key={artifact.id}
+                  aria-label={`Open provenance for ${artifact.name}`}
                   onClick={() => setSelected(artifact.id)}
-                  style={{ cursor: "pointer" }}
                 >
                   <div className="cly-preview">
                     <div>
@@ -287,7 +348,7 @@ export function ProvenanceScreen() {
                       </span>
                     </div>
                   </div>
-                </Panel>
+                </button>
               ))}
             </div>
           ) : null}
@@ -393,12 +454,17 @@ const auditAreas = [
 ] as const;
 
 export function ReproducibilityScreen() {
-  const audit = useClyStore((s) => s.data.audits[0]);
+  const audits = useClyStore((s) => s.data.audits);
+  const audit = audits[0];
   const findings = useClyStore((s) => s.data.findings);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
   const [filter, setFilter] = useState("All");
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [updatingFindingId, setUpdatingFindingId] = useState<string | null>(
+    null,
+  );
   const visible = findings.filter(
     (item) =>
       filter === "All" ||
@@ -408,10 +474,46 @@ export function ReproducibilityScreen() {
   );
   const runAudit = async () => {
     setRunning(true);
+    setError(null);
     try {
       await projectServices.reproducibility.runAudit();
+    } catch (nextError) {
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "The audit could not be saved.",
+      );
     } finally {
       setRunning(false);
+    }
+  };
+  const setDisposition = async (
+    findingId: string,
+    input: {
+      status: "Open" | "Assigned" | "Resolved" | "Deferred";
+      assignee?: string;
+      reason?: string;
+    },
+  ) => {
+    setUpdatingFindingId(findingId);
+    setError(null);
+    try {
+      await projectServices.reproducibility.setFindingDisposition(
+        findingId,
+        input,
+      );
+      notify(
+        "Finding updated",
+        `Disposition changed to ${input.status.toLowerCase()}.`,
+      );
+    } catch (nextError) {
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "The finding could not be updated.",
+      );
+    } finally {
+      setUpdatingFindingId(null);
     }
   };
   return (
@@ -423,12 +525,26 @@ export function ReproducibilityScreen() {
         actions={
           <>
             <Button
-              onClick={() =>
-                notify(
-                  "Audit comparison",
-                  "The current audit improved 8 points; one new figure-regeneration blocker was introduced.",
-                )
+              disabled={audits.length < 2}
+              title={
+                audits.length < 2
+                  ? "Run at least two audits to compare them."
+                  : undefined
               }
+              onClick={() => {
+                downloadJson("cly-reproducibility-audit-comparison.json", {
+                  audits: audits.map((item, index) => ({
+                    ...item,
+                    scoreChangeFromPrevious: audits[index + 1]
+                      ? item.score - audits[index + 1].score
+                      : null,
+                  })),
+                });
+                notify(
+                  "Audit comparison downloaded",
+                  `${audits.length} durable audits included.`,
+                );
+              }}
             >
               <GitCompare size={13} /> Compare audits
             </Button>
@@ -443,6 +559,11 @@ export function ReproducibilityScreen() {
           </>
         }
       />
+      {error ? (
+        <div className="cly-callout" data-tone="danger" role="alert">
+          {error}
+        </div>
+      ) : null}
       {!audit ? (
         <EmptyState
           title="No reproducibility audit"
@@ -563,24 +684,18 @@ export function ReproducibilityScreen() {
               </div>
               <div className="cly-row" style={{ marginTop: 12 }}>
                 <Button
-                  onClick={() =>
+                  onClick={() => {
+                    downloadJson(`cly-reproducibility-${audit.id}.json`, {
+                      audit,
+                      findings,
+                    });
                     notify(
-                      "Checklist exported",
-                      "The publication checklist contains all 16 categories and finding dispositions.",
-                    )
-                  }
+                      "Checklist downloaded",
+                      `${findings.length} findings and their durable dispositions.`,
+                    );
+                  }}
                 >
                   <Download size={13} /> Export checklist
-                </Button>
-                <Button
-                  onClick={() =>
-                    notify(
-                      "Publication package preview",
-                      "Blocked by Figure 4 manual edit and the unpinned solver environment.",
-                    )
-                  }
-                >
-                  <Archive size={13} /> Publication package
                 </Button>
               </div>
             </Panel>
@@ -603,6 +718,8 @@ export function ReproducibilityScreen() {
                 <option>Passed</option>
                 <option>Open</option>
                 <option>Resolved</option>
+                <option>Assigned</option>
+                <option>Deferred</option>
                 {auditAreas.map((area) => (
                   <option key={area}>{area}</option>
                 ))}
@@ -648,19 +765,52 @@ export function ReproducibilityScreen() {
                     </Badge>
                     {finding.status !== "Resolved" ? (
                       <Button
-                        disabled={!isClyDemoRuntime}
-                        title={capabilityUnavailableMessage(
-                          "reproducibility.audit",
-                        )}
+                        disabled={updatingFindingId === finding.id}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void projectServices.reproducibility.resolveFinding(
-                            finding.id,
-                          );
-                          notify("Finding resolved", finding.title);
+                          void setDisposition(finding.id, {
+                            status: "Resolved",
+                          });
                         }}
                       >
                         <Check size={12} /> Resolve
+                      </Button>
+                    ) : (
+                      <Button
+                        disabled={updatingFindingId === finding.id}
+                        onClick={() =>
+                          void setDisposition(finding.id, { status: "Open" })
+                        }
+                      >
+                        Reopen
+                      </Button>
+                    )}
+                    {finding.status !== "Assigned" &&
+                    finding.status !== "Resolved" ? (
+                      <Button
+                        disabled={updatingFindingId === finding.id}
+                        onClick={() =>
+                          void setDisposition(finding.id, {
+                            status: "Assigned",
+                            assignee: "local-user",
+                          })
+                        }
+                      >
+                        Assign to me
+                      </Button>
+                    ) : null}
+                    {finding.status !== "Deferred" &&
+                    finding.status !== "Resolved" ? (
+                      <Button
+                        disabled={updatingFindingId === finding.id}
+                        onClick={() =>
+                          void setDisposition(finding.id, {
+                            status: "Deferred",
+                            reason: "Deferred for a later research review.",
+                          })
+                        }
+                      >
+                        Defer
                       </Button>
                     ) : null}
                   </div>
@@ -736,7 +886,7 @@ function NextStepRow({
   onSelect,
   onAccept,
   onDefer,
-  onCreateSession,
+  onStart,
   onDismiss,
 }: {
   step: NextStep;
@@ -744,7 +894,7 @@ function NextStepRow({
   onSelect: () => void;
   onAccept: () => void;
   onDefer: () => void;
-  onCreateSession: () => void;
+  onStart: () => void;
   onDismiss: () => void;
 }) {
   return (
@@ -777,19 +927,13 @@ function NextStepRow({
         <small>{step.contextPack}</small>
       </div>
       <div className="cly-next-step-actions">
-        <Button
-          onClick={onAccept}
-          disabled={!isClyDemoRuntime}
-          title={capabilityUnavailableMessage("planner.update")}
-        >
+        <Button onClick={onAccept}>
           <Check size={12} /> Accept
         </Button>
         <Button
           variant="ghost"
           iconOnly
           aria-label={`Defer ${step.title}`}
-          disabled={!isClyDemoRuntime}
-          title={capabilityUnavailableMessage("planner.update")}
           onClick={onDefer}
         >
           <Clock size={12} />
@@ -797,10 +941,8 @@ function NextStepRow({
         <Button
           variant="ghost"
           iconOnly
-          aria-label={`Create agent session for ${step.title}`}
-          disabled={!isClyDemoRuntime}
-          title={capabilityUnavailableMessage("agents.execute")}
-          onClick={onCreateSession}
+          aria-label={`Start ${step.title}`}
+          onClick={onStart}
         >
           <Sparkles size={12} />
         </Button>
@@ -808,8 +950,6 @@ function NextStepRow({
           variant="ghost"
           iconOnly
           aria-label={`Dismiss ${step.title}`}
-          disabled={!isClyDemoRuntime}
-          title={capabilityUnavailableMessage("planner.update")}
           onClick={onDismiss}
         >
           <X size={12} />
@@ -820,13 +960,114 @@ function NextStepRow({
 }
 
 export function NextStepsScreen() {
+  const data = useClyStore((s) => s.data);
   const rawSteps = useClyStore((s) => s.data.nextSteps);
   const steps = prioritizeNextSteps(rawSteps);
   const setSelected = useClyStore((s) => s.setSelected);
-  const setScreen = useClyStore((s) => s.setScreen);
   const notify = useClyStore((s) => s.notify);
   const [view, setView] = useState<PlannerView>("Prioritized");
   const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const updateStatus = async (step: NextStep, status: NextStep["status"]) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await projectServices.planner.setStatus(step.id, status);
+      notify(
+        `Recommendation ${status.toLowerCase()}`,
+        `${step.title} is ${status.toLowerCase()}.`,
+      );
+    } catch (nextError) {
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "The recommendation could not be updated.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const generate = async () => {
+    setBusy(true);
+    setError(null);
+    const generated: NextStep[] = [
+      ...data.findings
+        .filter(
+          (finding) =>
+            finding.status !== "Resolved" && finding.severity !== "Passed",
+        )
+        .map(
+          (finding): NextStep => ({
+            id: `finding-${finding.id}`,
+            title: finding.recommendedFix || `Resolve ${finding.title}`,
+            category: "Integrity",
+            rationale: finding.detail,
+            impact:
+              finding.severity === "Blocking" || finding.severity === "High"
+                ? "High"
+                : "Medium",
+            effort: "Medium",
+            urgency: finding.severity === "Blocking" ? "Now" : "Soon",
+            evidenceIds: finding.objectIds,
+            agentPreset: "Research integrity reviewer",
+            contextPack: "Audit findings",
+            status: "Recommended",
+          }),
+        ),
+      ...data.claims
+        .filter((claim) => claim.supportingSourceIds.length === 0)
+        .map(
+          (claim): NextStep => ({
+            id: `claim-${claim.id}`,
+            title: `Add evidence for ${claim.text}`,
+            category: "Claim",
+            rationale: "This claim has no linked supporting source.",
+            impact: "High",
+            effort: "Medium",
+            urgency: "Soon",
+            evidenceIds: [claim.id],
+            claimId: claim.id,
+            agentPreset: "Evidence reviewer",
+            contextPack: "Claims and sources",
+            status: "Recommended",
+          }),
+        ),
+      ...data.experiments
+        .filter((experiment) => experiment.runIds.length === 0)
+        .map(
+          (experiment): NextStep => ({
+            id: `experiment-${experiment.id}`,
+            title: `Run ${experiment.name}`,
+            category: "Experiment",
+            rationale: "The experiment has no recorded run.",
+            impact: "Medium",
+            effort: "Large",
+            urgency: "Soon",
+            evidenceIds: [experiment.id],
+            experimentId: experiment.id,
+            agentPreset: "Experiment runner",
+            contextPack: "Experiment definition",
+            status: "Recommended",
+          }),
+        ),
+    ];
+    try {
+      const saved = await projectServices.planner.generate(generated);
+      notify(
+        "Recommendations generated",
+        `${saved.length} durable next steps.`,
+      );
+    } catch (nextError) {
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Recommendations could not be generated.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
   const visible = steps.filter(
     (step) =>
       !query ||
@@ -839,23 +1080,10 @@ export function NextStepsScreen() {
       step={step}
       index={index}
       onSelect={() => setSelected(step.id)}
-      onAccept={() => {
-        void projectServices.planner.setStatus(step.id, "Accepted");
-        notify("Recommendation accepted", step.title);
-      }}
-      onDefer={() =>
-        void projectServices.planner.setStatus(step.id, "Deferred")
-      }
-      onCreateSession={() => {
-        setScreen("agents");
-        notify(
-          "Converted to agent session",
-          `${step.agentPreset} with ${step.contextPack}.`,
-        );
-      }}
-      onDismiss={() =>
-        void projectServices.planner.setStatus(step.id, "Dismissed")
-      }
+      onAccept={() => void updateStatus(step, "Accepted")}
+      onDefer={() => void updateStatus(step, "Deferred")}
+      onStart={() => void updateStatus(step, "In progress")}
+      onDismiss={() => void updateStatus(step, "Dismissed")}
     />
   );
   return (
@@ -881,19 +1109,17 @@ export function NextStepsScreen() {
               onChange={setView}
               label="Planner view"
             />
-            <Button
-              onClick={() =>
-                notify(
-                  "Recommendations refreshed",
-                  "Five fixture recommendations were re-ranked using impact, urgency, effort, and dependency evidence.",
-                )
-              }
-            >
+            <Button disabled={busy} onClick={() => void generate()}>
               <Sparkles size={13} /> Generate next steps
             </Button>
           </>
         }
       />
+      {error ? (
+        <div className="cly-callout" data-tone="danger" role="alert">
+          {error}
+        </div>
+      ) : null}
       {view === "Prioritized" && steps.length ? (
         <section
           className="cly-next-step-visual"
@@ -903,7 +1129,7 @@ export function NextStepsScreen() {
             <span className="cly-page-kicker">Priority field</span>
             <strong>High-impact work is concentrated at medium effort</strong>
             <small>
-              Position reflects the current fixture ranking; the list remains
+              Position reflects the current durable ranking; the list remains
               the actionable source of truth.
             </small>
           </div>
@@ -1221,10 +1447,17 @@ export function DecisionsScreen() {
   const [mode, setMode] = useState<DecisionsMode>("Decisions");
   const [view, setView] = useState<DecisionView>("Timeline");
   const [createOpen, setCreateOpen] = useState(false);
+  const [operation, setOperation] = useState<{
+    type: "create" | "edit" | "supersede";
+    id?: string;
+  }>({ type: "create" });
+  const [actionDecisionId, setActionDecisionId] = useState("");
   const [title, setTitle] = useState("");
   const [decision, setDecision] = useState("");
   const [reason, setReason] = useState("");
   const [noChanges, setNoChanges] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (mode === "Briefs") void loadDecisionBriefs();
   }, [loadDecisionBriefs, mode]);
@@ -1235,19 +1468,59 @@ export function DecisionsScreen() {
       view === "By experiment" ||
       item.status === view,
   );
-  const create = async () => {
+  const openDecisionDialog = (
+    type: "create" | "edit" | "supersede",
+    item?: ResearchDecision,
+  ) => {
+    setOperation({ type, id: item?.id });
+    setTitle(
+      type === "supersede"
+        ? `Replace: ${item?.title ?? ""}`
+        : (item?.title ?? ""),
+    );
+    setDecision(type === "supersede" ? "" : (item?.decision ?? ""));
+    setReason(type === "supersede" ? "" : (item?.reason ?? ""));
+    setError(null);
+    setCreateOpen(true);
+  };
+  const submitDecision = async () => {
     if (!title.trim() || !decision.trim()) return;
-    const item = await projectServices.decisions.create({
-      title,
-      decision,
-      reason: reason || "Reason not yet recorded",
-    });
-    setCreateOpen(false);
-    setSelected(item.id);
-    setTitle("");
-    setDecision("");
-    setReason("");
-    notify("Research decision recorded");
+    setBusy(true);
+    setError(null);
+    try {
+      const input = {
+        title: title.trim(),
+        decision: decision.trim(),
+        reason: reason.trim() || "Reason not yet recorded",
+      };
+      const item =
+        operation.type === "edit" && operation.id
+          ? await projectServices.decisions.update(operation.id, input)
+          : operation.type === "supersede" && operation.id
+            ? await projectServices.decisions.supersede(operation.id, input)
+            : await projectServices.decisions.create(input);
+      setCreateOpen(false);
+      setSelected(item.id);
+      setActionDecisionId(item.id);
+      setTitle("");
+      setDecision("");
+      setReason("");
+      notify(
+        operation.type === "edit"
+          ? "Research decision updated"
+          : operation.type === "supersede"
+            ? "Research decision superseded"
+            : "Research decision recorded",
+      );
+    } catch (nextError) {
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "The research decision could not be saved.",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div className="cly-page cly-route-decisions">
@@ -1304,9 +1577,7 @@ export function DecisionsScreen() {
             {mode === "Decisions" ? (
               <Button
                 variant="primary"
-                disabled={!isClyDemoRuntime}
-                title={capabilityUnavailableMessage("decisions.create")}
-                onClick={() => setCreateOpen(true)}
+                onClick={() => openDecisionDialog("create")}
               >
                 <Plus size={13} /> New decision
               </Button>
@@ -1314,6 +1585,11 @@ export function DecisionsScreen() {
           </>
         }
       />
+      {error && !createOpen ? (
+        <div className="cly-callout" data-tone="danger" role="alert">
+          {error}
+        </div>
+      ) : null}
       {mode === "Briefs" ? (
         <div className="cly-stack">
           {decisionBriefsLoading ? (
@@ -1362,7 +1638,10 @@ export function DecisionsScreen() {
               title="No research decisions recorded"
               description="Record the choice and its rationale."
               action={
-                <Button variant="primary" onClick={() => setCreateOpen(true)}>
+                <Button
+                  variant="primary"
+                  onClick={() => openDecisionDialog("create")}
+                >
                   Record first decision
                 </Button>
               }
@@ -1433,43 +1712,54 @@ export function DecisionsScreen() {
           )}
           <Section title="Decision actions">
             <div className="cly-row">
-              <Button
-                onClick={() =>
-                  notify(
-                    "Evidence linker opened",
-                    "Link a source, claim, experiment, code file, or agent session.",
-                  )
-                }
+              <select
+                className="cly-select"
+                aria-label="Decision to update"
+                value={actionDecisionId}
+                onChange={(event) => setActionDecisionId(event.target.value)}
               >
-                <Link2 size={13} /> Link evidence
+                <option value="">Select an active decision</option>
+                {decisions
+                  .filter((item) => item.status !== "Superseded")
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
+              </select>
+              <Button
+                disabled={!actionDecisionId}
+                onClick={() => {
+                  const item = decisions.find(
+                    (candidate) => candidate.id === actionDecisionId,
+                  );
+                  if (item) openDecisionDialog("edit", item);
+                }}
+              >
+                Edit decision
               </Button>
               <Button
-                onClick={() =>
-                  notify(
-                    "Alternative comparison opened",
-                    "The comparison includes evidence, risks, cost, and affected project objects.",
-                  )
-                }
+                disabled={!actionDecisionId}
+                onClick={() => {
+                  const item = decisions.find(
+                    (candidate) => candidate.id === actionDecisionId,
+                  );
+                  if (item) openDecisionDialog("supersede", item);
+                }}
               >
-                <GitCompare size={13} /> Compare alternatives
+                <ListChecks size={13} /> Supersede
               </Button>
               <Button
-                onClick={() =>
+                disabled={decisions.length === 0}
+                onClick={() => {
+                  downloadJson("cly-research-decision-log.json", {
+                    decisions,
+                  });
                   notify(
-                    "Decision branch created",
-                    "A fixture alternative branch was recorded without replacing the active decision.",
-                  )
-                }
-              >
-                <ListChecks size={13} /> Branch decision
-              </Button>
-              <Button
-                onClick={() =>
-                  notify(
-                    "Decision log exported",
-                    `${decisions.length} decisions with evidence and supersession chains.`,
-                  )
-                }
+                    "Decision log downloaded",
+                    `${decisions.length} decisions with supersession links.`,
+                  );
+                }}
               >
                 <Download size={13} /> Export log
               </Button>
@@ -1478,22 +1768,43 @@ export function DecisionsScreen() {
           <Dialog
             open={createOpen}
             onClose={() => setCreateOpen(false)}
-            title="Record research decision"
-            description="Capture the selected direction and why it was chosen."
+            title={
+              operation.type === "edit"
+                ? "Edit research decision"
+                : operation.type === "supersede"
+                  ? "Supersede research decision"
+                  : "Record research decision"
+            }
+            description={
+              operation.type === "supersede"
+                ? "Record the replacement direction. The earlier decision remains in immutable history."
+                : "Capture the selected direction and why it was chosen."
+            }
             footer={
               <>
                 <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
                 <Button
                   variant="primary"
-                  disabled={!title.trim() || !decision.trim()}
-                  onClick={() => void create()}
+                  disabled={busy || !title.trim() || !decision.trim()}
+                  onClick={() => void submitDecision()}
                 >
-                  Record decision
+                  {busy
+                    ? "Saving…"
+                    : operation.type === "edit"
+                      ? "Save changes"
+                      : operation.type === "supersede"
+                        ? "Supersede decision"
+                        : "Record decision"}
                 </Button>
               </>
             }
           >
             <div className="cly-stack">
+              {error ? (
+                <div className="cly-callout" data-tone="danger" role="alert">
+                  {error}
+                </div>
+              ) : null}
               <div className="cly-field">
                 <label htmlFor="decision-title">Title</label>
                 <input

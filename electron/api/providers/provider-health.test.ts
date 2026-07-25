@@ -2,8 +2,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   checkClaudeAuthentication,
+  checkCursorAuthentication,
   checkOpenCodeAuthentication,
   parseClaudeAuthentication,
+  parseCursorAuthentication,
   parseOpenCodeAuthentication,
 } from "./provider-health.js";
 
@@ -46,11 +48,39 @@ describe("provider health", () => {
         resolveCommand: vi.fn().mockResolvedValue("/usr/local/bin/claude"),
       }),
     ).resolves.toEqual({ authenticated: true, installed: true });
-    expect(execCommand).toHaveBeenCalledWith("claude", [
-      "auth",
-      "status",
-      "--json",
-    ]);
+    expect(execCommand).toHaveBeenCalledWith(
+      "claude",
+      ["auth", "status", "--json"],
+      { signal: undefined, timeout: 5000 },
+    );
+  });
+});
+
+describe("Cursor provider health", () => {
+  it("parses explicit Cursor login state without treating installation as authentication", () => {
+    expect(
+      parseCursorAuthentication("Logged in as researcher@example.com"),
+    ).toBe(true);
+    expect(parseCursorAuthentication("Not logged in")).toBe(false);
+    expect(parseCursorAuthentication("Cursor Agent CLI 2026.07")).toBe(false);
+  });
+
+  it("reports an installed but logged-out Cursor CLI", async () => {
+    const execCommand = vi.fn().mockResolvedValue({
+      stderr: "",
+      stdout: "Not logged in",
+    });
+
+    await expect(
+      checkCursorAuthentication({
+        execCommand,
+        resolveCommand: vi.fn().mockResolvedValue("cursor-agent"),
+      }),
+    ).resolves.toEqual({ authenticated: false, installed: true });
+    expect(execCommand).toHaveBeenCalledWith(["status"], {
+      signal: undefined,
+      timeout: 5000,
+    });
   });
 });
 
@@ -64,14 +94,19 @@ describe("OpenCode provider health", () => {
   });
 
   it("requires both the CLI and a configured credential", async () => {
+    const execCommand = vi.fn().mockResolvedValue({
+      stderr: "",
+      stdout: "0 credentials",
+    });
     await expect(
       checkOpenCodeAuthentication({
-        execCommand: vi.fn().mockResolvedValue({
-          stderr: "",
-          stdout: "0 credentials",
-        }),
+        execCommand,
         resolveCommand: vi.fn().mockResolvedValue("/usr/local/bin/opencode"),
       }),
     ).resolves.toEqual({ authenticated: false, installed: true });
+    expect(execCommand).toHaveBeenCalledWith("opencode", ["auth", "list"], {
+      signal: undefined,
+      timeout: 5000,
+    });
   });
 });

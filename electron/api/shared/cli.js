@@ -232,6 +232,7 @@ export const resolveCliCommandPath = async (commandName) => {
         {
           encoding: "utf8",
           env,
+          timeout: 5000,
           windowsHide: true,
         },
       );
@@ -260,6 +261,7 @@ const readCliVersion = async (commandName) => {
         {
           encoding: "utf8",
           env,
+          timeout: 5000,
           windowsHide: true,
         },
       );
@@ -275,6 +277,7 @@ const readCliVersion = async (commandName) => {
     const result = await execFileAsync(commandPath, ["--version"], {
       encoding: "utf8",
       env,
+      timeout: 5000,
       windowsHide: true,
     });
 

@@ -212,6 +212,7 @@ export function createSignedInCodexRunner({
             },
           ],
           model: request.model,
+          reasoningEffort: request.reasoningEffort,
           projectReferencesPrompt: request.contextBytes,
           projectId: request.projectId,
           projectPath,
