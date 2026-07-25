@@ -5,7 +5,7 @@ import { AgentSessionsChat } from "./chat";
 import { AgentSessionsOverview } from "./overview";
 import { AgentConfigurationSheet, NewSessionFlow } from "./shared";
 
-export function DemoAgentSessionsScreen() {
+export function TestFixtureAgentSessionsScreen() {
   const routeInitialized = useRef(false);
   const mode = useClyStore((state) => state.agentSessionsMode);
   const selectedSessionId = useClyStore(

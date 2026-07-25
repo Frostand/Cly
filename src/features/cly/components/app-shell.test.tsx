@@ -435,7 +435,7 @@ describe("Cly application shell", () => {
     await user.click(screen.getByTestId("product-research"));
     expect(
       screen.getByRole("heading", {
-        name: "When LDL-C misleads",
+        name: "Neural surrogate reliability",
         level: 1,
       }),
     ).toBeVisible();
@@ -484,26 +484,26 @@ describe("Cly application shell", () => {
     render(<ClyAppShell />);
 
     const toggle = screen.getByRole("switch", {
-      name: "Include Superseded clinical-risk wording",
+      name: "Include Legacy discussion: baseline choice",
     });
     expect(toggle).not.toBeChecked();
     await user.click(toggle);
 
     expect(toggle).toBeChecked();
-    expect(screen.getByText("32,100 tokens")).toBeVisible();
+    expect(screen.getByText("24,740 tokens")).toBeVisible();
   });
 
   it("renders source, notebook, claim, experiment, provenance, finding, integration, and decision components", () => {
     const { rerender } = render(<ClyAppShell />);
     const expectations: [ScreenId, string][] = [
-      ["sources", "NHANES 2005–2006 fasting lipids"],
-      ["notebooks", "Cohort and discordance definition"],
-      ["claims", "Basic health data identify adults"],
-      ["experiments", "NHANES cohort assembly"],
-      ["provenance", "Model comparison table"],
-      ["reproducibility", "Cardiovascular outcomes are not observed"],
+      ["sources", "Reliable neural surrogates"],
+      ["notebooks", "Ensemble size and calibration"],
+      ["claims", "Calibration-aware ensembles"],
+      ["experiments", "Calibrated ensemble sweep"],
+      ["provenance", "Figure 2 · Cost vs calibration"],
+      ["reproducibility", "Figure 4 includes an undocumented"],
       ["integrations", "Local AI providers"],
-      ["decisions", "Use ApoB–LDL-C percentile discordance as the demo target"],
+      ["decisions", "Use ensemble ×5 as the canonical configuration"],
     ];
 
     for (const [activeScreen, text] of expectations) {
@@ -550,9 +550,7 @@ describe("Cly application shell", () => {
     );
 
     await user.click(
-      screen
-        .getAllByText(/Basic health data identify adults/)
-        .at(0) as HTMLElement,
+      screen.getAllByText(/Calibration-aware ensembles/).at(0) as HTMLElement,
     );
     expect(document.querySelector(".cly-inspector")).toBeInTheDocument();
     expect(document.querySelector(".cly-shell")).toHaveAttribute(

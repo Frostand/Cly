@@ -3,9 +3,8 @@ import { expect, test } from "@playwright/test";
 
 const inheritedRestriction = {
   obligationId: "obligation-e2e",
-  datasetObjectId: "src-01",
-  datasetTitle:
-    "NHANES 2005–2006 fasting lipids, demographics, body measures, and blood pressure",
+  datasetObjectId: "src-03",
+  datasetTitle: "Cylinder-flow reference trajectories v2",
   consentProtocolScope: "Protocol permits benchmark validation only.",
   approvedPurposes: ["peer-review", "research-assistance"],
   externalProcessing: "review",
@@ -20,9 +19,8 @@ const inheritedRestriction = {
 const obligation = {
   id: "obligation-e2e",
   projectId: "project-cly",
-  datasetObjectId: "src-01",
-  datasetTitle:
-    "NHANES 2005–2006 fasting lipids, demographics, body measures, and blood pressure",
+  datasetObjectId: "src-03",
+  datasetTitle: "Cylinder-flow reference trajectories v2",
   consentProtocolScope: inheritedRestriction.consentProtocolScope,
   approvedPurposes: inheritedRestriction.approvedPurposes,
   permittedCollaborators: ["reviewer@example.org"],
@@ -143,11 +141,7 @@ test("shows transitive restrictions and records provider approval", async ({
   ).toBeVisible();
   await expect(page.getByText(/does not provide legal advice/i)).toBeVisible();
   await expect(
-    page
-      .getByText(
-        "NHANES 2005–2006 fasting lipids, demographics, body measures, and blood pressure",
-      )
-      .first(),
+    page.getByText("Cylinder-flow reference trajectories v2").first(),
   ).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(

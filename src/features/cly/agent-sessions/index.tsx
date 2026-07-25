@@ -17,7 +17,7 @@ import {
   EmptyState,
   PageHeader,
 } from "../components/primitives";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { DeviceSyncPanel } from "./device-sync-panel";
 import {
@@ -35,9 +35,9 @@ import type {
   ReasoningLevel,
 } from "./types";
 
-const DemoAgentSessionsScreen =
-  __CLY_INCLUDE_DEMOS__ && isClyDemoRuntime
-    ? (await import("./demo-screen")).DemoAgentSessionsScreen
+const TestFixtureAgentSessionsScreen =
+  __CLY_INCLUDE_TEST_FIXTURES__ && isClyTestFixtureRuntime
+    ? (await import("./test-fixture-screen")).TestFixtureAgentSessionsScreen
     : null;
 
 type ProductionAgentSessionServices = typeof productionAgentSessionServices;
@@ -108,8 +108,8 @@ const modelKey = (providerId: string, modelId: string) =>
   `${providerId}\u0000${modelId}`;
 
 export function AgentSessionsScreen() {
-  if (isClyDemoRuntime && DemoAgentSessionsScreen) {
-    return <DemoAgentSessionsScreen />;
+  if (isClyTestFixtureRuntime && TestFixtureAgentSessionsScreen) {
+    return <TestFixtureAgentSessionsScreen />;
   }
 
   return <ProductionAgentSessionsScreen />;

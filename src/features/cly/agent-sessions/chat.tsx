@@ -36,9 +36,9 @@ import { getDesktopApi } from "../../../lib/electron";
 import { Badge, Button, Dialog } from "../components/primitives";
 import { ClySplitPane } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
-import { demoAgentSessionServices } from "./demo-services";
 import { formatAgentModelName } from "./model-catalog";
 import { AgentSessionsModeSwitcher, ClyDevTaskIdentitySurface } from "./shared";
+import { testFixtureAgentSessionServices } from "./test-fixture-services";
 import type {
   AgentMessage as AgentMessageType,
   AgentSession,
@@ -1131,7 +1131,7 @@ export function ChatComposer({ session }: { session: AgentSession }) {
     });
     setDraft(session.id, "");
     setStreaming(true);
-    for await (const message of demoAgentSessionServices.transcript.send(
+    for await (const message of testFixtureAgentSessionServices.transcript.send(
       session.id,
       body,
     )) {

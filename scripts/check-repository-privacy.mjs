@@ -37,7 +37,6 @@ const binaryExtensionPattern =
   /\.(?:7z|avi|db|dmg|docx|gif|gz|icns|ico|jpe?g|mkv|mov|mp3|mp4|pdf|png|p12|pfx|sqlite|tar|webm|webp|xpt|zip)$/i;
 const approvedTrackedBinaryPatterns = [
   /^build\/icons\/(?:icon\.(?:icns|ico|png))$/,
-  /^demo-data\/nhanes-2005-2006\/raw\/[A-Z0-9_]+\.XPT$/,
   /^public\/icon\.(?:ico|png)$/,
   /^src\/assets\/pattern\.gif$/,
 ];

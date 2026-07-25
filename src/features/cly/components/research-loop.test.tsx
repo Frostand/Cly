@@ -83,7 +83,7 @@ describe("research loop", () => {
     ).toBe(false);
     expect(
       hasSubstantiveResearchText(
-        "Can basic health data identify LDL-C discordance?",
+        "Can calibrated ensembles preserve decisions under distribution shift?",
       ),
     ).toBe(true);
   });

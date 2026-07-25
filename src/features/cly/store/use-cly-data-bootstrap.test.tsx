@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../services/runtime", () => ({
-  isClyExplicitDemoRuntime: false,
+  isClyExplicitTestFixtureRuntime: false,
 }));
 vi.mock("./cly-store", () => ({
   useClyStore: {

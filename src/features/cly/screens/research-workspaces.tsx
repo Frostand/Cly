@@ -83,8 +83,8 @@ import { capabilityUnavailableMessage } from "../services/capabilities";
 import { desktopLiteratureService } from "../services/literature-service";
 import { projectServices } from "../services/project-services";
 import {
-  isClyDemoRuntime,
-  isClyExplicitDemoRuntime,
+  isClyExplicitTestFixtureRuntime,
+  isClyTestFixtureRuntime,
 } from "../services/runtime";
 import { claimStatusTone, useClyStore } from "../store/cly-store";
 
@@ -199,7 +199,7 @@ export function SourcesScreen() {
     setImportFormat(format);
     setImportType("Paper");
     setImportOpen(true);
-    if (activeProject && !isClyExplicitDemoRuntime) {
+    if (activeProject && !isClyExplicitTestFixtureRuntime) {
       void apiClient
         .fetchReadingLists(activeProject.id)
         .then(setReadingLists)
@@ -271,8 +271,6 @@ export function SourcesScreen() {
       const source = await projectServices.sources.create({
         title: title.trim() || "Imported source",
         type: importType,
-        url: sourceUrl.trim() || undefined,
-        summary: sourceAbstract.trim() || undefined,
       });
       setImportOpen(false);
       resetImport();
@@ -807,7 +805,8 @@ export function LiteratureScreen() {
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
   const fixtureMode = useClyStore((s) => s.fixtureMode);
-  const showDemoLiterature = isClyDemoRuntime && fixtureMode !== "empty";
+  const showTestFixtureLiterature =
+    isClyTestFixtureRuntime && fixtureMode !== "empty";
   const [view, setView] = useState<LiteratureView>("Matrix");
   const [matrixMode, setMatrixMode] =
     useState<LiteratureMatrixMode>("Discover");
@@ -863,19 +862,19 @@ export function LiteratureScreen() {
     filteredResults[0] ??
     null;
   const themes = useMemo(() => {
-    if (showDemoLiterature) {
+    if (showTestFixtureLiterature) {
       return [
-        "ApoB discordance",
-        "Metabolic signals",
-        "Lipid measurement",
-        "Clinical validation",
+        "Calibration & uncertainty",
+        "Distribution shift",
+        "Cost-normalized baselines",
+        "Reproducibility",
       ].map((title, index) => ({
         title,
         count: index + 2,
         summary:
           index === 2
-            ? "Laboratory methods and LDL-C calculation differ across survey cycles and need explicit harmonization."
-            : "Sources converge on wide person-level ApoB variation at a given LDL-C level and the need for external outcome validation.",
+            ? "A clear literature gap remains: few comparisons include tuning cost and coverage simultaneously."
+            : "Sources converge on the need for regime-specific evaluation and explicit failure reporting.",
       }));
     }
     return previewLiteratureThemes(sources).map(({ label, sourceCount }) => ({
@@ -883,7 +882,7 @@ export function LiteratureScreen() {
       count: sourceCount,
       summary: `${sourceCount} saved source${sourceCount === 1 ? "" : "s"} use this tag or method.`,
     }));
-  }, [showDemoLiterature, sources]);
+  }, [showTestFixtureLiterature, sources]);
   const resultColumns = useMemo<ColumnDef<LiteratureSearchResult, unknown>[]>(
     () => [
       {
@@ -1584,14 +1583,14 @@ function NotebookLmWorkspace({
   setAnswer,
   importedAnswers,
   setImportedAnswers,
-  showDemoContent,
+  showTestFixtureContent,
 }: {
   sources: Source[];
   answer: string;
   setAnswer: (value: string) => void;
   importedAnswers: string[];
   setImportedAnswers: (value: string[]) => void;
-  showDemoContent: boolean;
+  showTestFixtureContent: boolean;
 }) {
   const notify = useClyStore((s) => s.notify);
   const bundle = sources.filter((source) => source.inNotebookBundle);
@@ -1604,7 +1603,7 @@ function NotebookLmWorkspace({
               <div className="cly-row">
                 <Notebook size={16} />
                 <strong>
-                  {showDemoContent
+                  {showTestFixtureContent
                     ? "Surrogate reliability · NotebookLM companion"
                     : "NotebookLM companion"}
                 </strong>
@@ -1615,7 +1614,9 @@ function NotebookLmWorkspace({
               </div>
             </div>
             <Badge tone={bundle.length ? "info" : "neutral"}>
-              {showDemoContent ? "Bundle ready" : `${bundle.length} selected`}
+              {showTestFixtureContent
+                ? "Bundle ready"
+                : `${bundle.length} selected`}
             </Badge>
           </div>
           <div className="cly-panel-body">
@@ -1623,11 +1624,11 @@ function NotebookLmWorkspace({
               <Metric label="Bundle sources" value={bundle.length} />
               <Metric
                 label="Manifest"
-                value={showDemoContent ? "Ready" : "Not generated"}
+                value={showTestFixtureContent ? "Ready" : "Not generated"}
               />
               <Metric
                 label="Last export"
-                value={showDemoContent ? "Yesterday" : "Never"}
+                value={showTestFixtureContent ? "Yesterday" : "Never"}
               />
               <Metric label="Imported answers" value={importedAnswers.length} />
             </div>
@@ -1644,7 +1645,7 @@ function NotebookLmWorkspace({
             </Section>
             <div className="cly-row" style={{ marginTop: 12 }}>
               <Button
-                disabled={!isClyDemoRuntime}
+                disabled={!isClyTestFixtureRuntime}
                 title={capabilityUnavailableMessage("exports.notebook-bundle")}
                 onClick={() =>
                   notify(
@@ -1656,7 +1657,7 @@ function NotebookLmWorkspace({
                 <FileText size={13} /> Preview bundle
               </Button>
               <Button
-                disabled={!isClyDemoRuntime}
+                disabled={!isClyTestFixtureRuntime}
                 title={capabilityUnavailableMessage("exports.notebook-bundle")}
                 onClick={() =>
                   notify(
@@ -1669,7 +1670,7 @@ function NotebookLmWorkspace({
               </Button>
               <Button
                 variant="primary"
-                disabled={!isClyDemoRuntime}
+                disabled={!isClyTestFixtureRuntime}
                 title={capabilityUnavailableMessage("exports.notebook-bundle")}
                 onClick={() =>
                   notify(
@@ -1724,7 +1725,7 @@ function NotebookLmWorkspace({
           <Button
             variant="primary"
             style={{ marginTop: 9 }}
-            disabled={!answer.trim() || !isClyDemoRuntime}
+            disabled={!answer.trim() || !isClyTestFixtureRuntime}
             title={capabilityUnavailableMessage("exports.notebook-bundle")}
             onClick={() => {
               setImportedAnswers([answer.trim(), ...importedAnswers]);
@@ -3081,14 +3082,16 @@ function ClaimDetail({
           <div className="cly-inspector-label">Claim actions</div>
           <div className="cly-stack">
             <Button
-              disabled={!isClyDemoRuntime && data.experiments.length === 0}
+              disabled={
+                !isClyTestFixtureRuntime && data.experiments.length === 0
+              }
               title={
-                !isClyDemoRuntime && data.experiments.length === 0
+                !isClyTestFixtureRuntime && data.experiments.length === 0
                   ? "Create an experiment before linking evidence."
                   : undefined
               }
               onClick={(event) => {
-                if (isClyDemoRuntime) {
+                if (isClyTestFixtureRuntime) {
                   openEvidence("supports", event.currentTarget);
                   return;
                 }

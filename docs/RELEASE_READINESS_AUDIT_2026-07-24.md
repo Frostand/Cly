@@ -11,7 +11,7 @@ Not ready. The core research loop, persistence, local analysis, evidence linking
 Ready for the scoped local beta distribution flow. Every confirmed item in the ledger below is fixed or the unsupported production surface was removed. Final verification completed on 2026-07-24:
 
 - 755 Vitest tests passed across 131 files.
-- 33 Playwright end-to-end tests passed, including the blank-to-reviewed LDL workflow, provider/model discovery, session recovery, Electron restart, keyboard navigation, obligations, preregistration, provenance, and every production route.
+- 33 Playwright end-to-end tests passed, including the blank-to-reviewed research workflow, provider/model discovery, session recovery, Electron restart, keyboard navigation, obligations, preregistration, provenance, and every production route.
 - A disposable first-install Electron profile crawled 20 production routes with zero console problems, failed responses, serious/critical Axe violations, or unfinished/Preview UI matches.
 - The final packaged `Cly.app` passed the content gate (7,329 ASAR entries, 26 unpacked files; no tests, mocks, source maps, or private artifacts) and runtime smoke (native startup, renderer, database hydration, preload isolation, provider detection).
 - Lint, typecheck, capability manifest, production-license inventory, and diff-integrity checks passed.
@@ -35,7 +35,7 @@ The live npm advisory service remains the one unverified external check, as docu
 | BRAND-001 | P1 | Branding | The development Electron bundle is renamed but keeps Electron's bundle icon; macOS has no explicit checked-in `.icns` source. | Dev and packaged builds show the Cly icon in Dock, switcher, window identity, installer, and app metadata. | Fixed |
 | BRAND-002 | P2 | Branding | Startup and shared UI retain Dream-named loading identifiers and a Dream-logo component. | All visible loading/identity surfaces use Cly assets and names, include reduced-motion behavior, and contain no Dream product identity. | Fixed |
 | FIRST-001 | P0 | First run | A clean install seeds `~/Research/cly`; New local project invents same-day paths instead of selecting/creating a real folder. Impact Review then returns 400 and exposes the expanded absolute path. | Fresh install presents onboarding, cancellation creates nothing, a selected canonical folder persists, and Impact Review gives a safe empty state until a repository is linked. | Fixed |
-| TRUTH-001 | P0 | Production UI | Objectives, Literature themes/NotebookLM, Research Platform, and machine/repository/test panels render LDL/NHANES and invented live values in unrelated production projects. | A blank unrelated project contains no demo terms or positive readiness claims; demo-only content remains available only in explicit demo runtime. | Fixed |
+| TRUTH-001 | P0 | Production UI | Objectives, literature themes, and machine/repository/test panels render invented live values in unrelated production projects. | A blank unrelated project contains no fixture terms or positive readiness claims; automated fixtures never enter production bundles. | Fixed |
 | CAP-001 | P0 | Agents | Research Agent Sessions advertise start/control/workbench while execution and browser/terminal/diff/live-file surfaces are unavailable or fixture-backed. | A production session can start, stream, stop, resume, approve, and recover through a selected detected provider; workbench data is real and restart-safe. | Fixed |
 | CAP-002 | P1 | Local ingestion | Folder, URL, BibTeX, archive, deduplication, notebook import, code scan, and NotebookLM bundle actions are unavailable or fake. | Each shipped action uses explicit approval, records provenance, persists/reloads, handles duplicates/failures, and has production E2E coverage. | Fixed — supported ingestion is durable; fake/unsupported imports were removed. |
 | CAP-003 | P1 | Research decisions | Decision creation/supersession, planner mutations, and reproducibility dispositions are unavailable; an empty-state button bypasses the capability gate. | CRUD/history/dispositions persist and reload, planner changes are durable, and all failure paths are handled. | Fixed |
@@ -66,7 +66,7 @@ The live npm advisory service remains the one unverified external check, as docu
 - Every declared renderer route resolves to a component.
 - The isolated 22-route Electron baseline produced no serious or critical axe violations.
 - Core research state, context revisions/approvals, numeric CSV/TSV analysis, claims, experiments, sources, evidence links, audit creation, and backups have production implementations.
-- Demo analysis execution is gated to explicit demo runtime plus guided fixture mode.
+- Automated fixture execution is isolated to the test runtime and excluded from production bundles.
 - External literature transmission requires an explicit project-scoped approval.
 - The packaged macOS app already has Cly bundle name, identifier, and a generated Cly icon; the remaining icon defect is deterministic asset/dev-bundle handling.
 

@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 const root = new URL("..", import.meta.url).pathname;
 const inventoryPath = join(root, "docs/cly-v1-capabilities.json");
 const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
-const states = new Set(["production", "unavailable", "demo-only"]);
+const states = new Set(["production", "unavailable"]);
 const ids = new Set();
 const failures = [];
 

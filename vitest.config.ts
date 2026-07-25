@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   define: {
-    __CLY_INCLUDE_DEMOS__: "true",
+    __CLY_INCLUDE_TEST_FIXTURES__: "true",
   },
   resolve: {
     alias: {

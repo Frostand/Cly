@@ -1,7 +1,7 @@
 /**
- * Demo/test compatibility adapter.
+ * Automated-test compatibility adapter.
  *
  * Production renderer modules import `projectServices` directly. This alias
- * remains for deterministic tests and explicit demo mode.
+ * remains only for deterministic automated tests.
  */
 export { projectServices as mockServices } from "./project-services";

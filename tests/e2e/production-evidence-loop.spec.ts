@@ -29,7 +29,7 @@ test("completes and recovers the production evidence loop with demos disabled", 
 
   execFileSync(process.execPath, [viteCli, "build"], {
     cwd: root,
-    env: { ...process.env, VITE_CLY_DEMO_MODE: "0" },
+    env: { ...process.env, VITE_CLY_TEST_FIXTURES: "0" },
     stdio: "ignore",
   });
 
@@ -43,7 +43,7 @@ test("completes and recovers the production evidence loop with demos disabled", 
         CLY_E2E: "1",
         CLY_E2E_USER_DATA_PATH: userDataPath,
         ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
-        VITE_CLY_DEMO_MODE: "0",
+        VITE_CLY_TEST_FIXTURES: "0",
       },
     });
 
@@ -100,7 +100,7 @@ test("completes and recovers the production evidence loop with demos disabled", 
     await window
       .getByLabel("Working hypothesis")
       .fill(
-        "BMI and HDL will improve prediction beyond the majority baseline.",
+        "Calibration features will improve prediction beyond the majority baseline.",
       );
     await window
       .getByLabel("Scope note")

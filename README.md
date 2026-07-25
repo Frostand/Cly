@@ -80,7 +80,7 @@ pnpm dev
 7. Open **Reproducibility**, run the audit, and resolve the evidence gaps before sharing.
 8. Export a project backup from **Settings → Privacy**.
 
-The supported local analysis boundary and an independent tester checklist are in [Beta testing](./docs/BETA_TESTING.md). The included LDL-C walkthrough demonstrates the full blank-to-result path: [Can basic health data predict when LDL cholesterol gives a misleading picture of heart-disease risk?](./docs/LDL_DISCORDANCE_DEMO.md)
+The supported local analysis boundary and an independent tester checklist are in [Beta testing](./docs/BETA_TESTING.md).
 
 ### Use the coding workspace
 
@@ -147,8 +147,6 @@ Tagged release jobs run the privacy, license, capability, unit, end-to-end, pack
 Useful commands:
 
 ```bash
-pnpm demo          # launch the deterministic professor demo
-pnpm demo:video    # record the captioned LDL-C walkthrough
 pnpm package:mac   # platform installer targets also exist for win and linux
 ```
 

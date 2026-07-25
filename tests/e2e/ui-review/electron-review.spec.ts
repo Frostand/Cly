@@ -21,7 +21,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
       ELECTRON_INTERNAL_PORT: "43740",
       ELECTRON_API_PORT: "43742",
-      VITE_CLY_DEMO_MODE: "1",
+      VITE_CLY_TEST_FIXTURES: "1",
     },
   });
 
@@ -39,7 +39,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
     await window.getByRole("heading", { level: 1 }).first().waitFor();
 
     for (const [id, heading] of [
-      ["overview", "When LDL-C misleads"],
+      ["overview", "Neural surrogate reliability"],
       ["agents", "Agent Sessions"],
       ["context", "Context Composer"],
       ["graph", "Research Object Graph"],
@@ -79,7 +79,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
 
     await window.getByTestId("nav-agents").click();
     await window
-      .getByRole("article", { name: /Audit LDL-C discordance evidence/ })
+      .getByRole("article", { name: /Audit primary claim evidence/ })
       .getByRole("button", { name: /Open chat/ })
       .click();
     const identity = window.getByRole("region", { name: "Task identity" });
@@ -180,7 +180,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
       identity
         .getByRole("group", { name: "Project" })
         .locator(".cly-dev-identity-detail"),
-    ).toContainText("When LDL-C misleads");
+    ).toContainText("Neural Surrogate Reliability");
     await window.screenshot({
       path: "output/playwright/electron-cly-dev-chat-1024x700-200pct-identity.png",
       animations: "disabled",
@@ -246,7 +246,7 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
     CLY_E2E: "1",
     CLY_E2E_USER_DATA_PATH: userDataPath,
     CLY_E2E_SESSION_DATA_PATH: path.join(userDataPath, "session-data"),
-    VITE_CLY_DEMO_MODE: "1",
+    VITE_CLY_TEST_FIXTURES: "1",
   };
 
   execFileSync(process.execPath, ["scripts/prepare-electron-dev-app.mjs"], {
@@ -313,9 +313,9 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
     await runScenario("4. Approve an action", async () => {
       await window
         .getByLabel("Switch agent session")
-        .selectOption({ label: "Plan external validation" });
+        .selectOption({ label: "Plan compute-matched baseline" });
       await expect(
-        window.getByText("Approval required · download later cycles"),
+        window.getByText("Approval required · high-cost experiment"),
       ).toBeVisible();
       await window.getByRole("button", { name: "Approve" }).click();
       await expect(
@@ -341,15 +341,15 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
     await runScenario("6. Switch session", async () => {
       await window
         .getByLabel("Switch agent session")
-        .selectOption({ label: "Audit LDL-C discordance evidence" });
+        .selectOption({ label: "Audit primary claim evidence" });
       await expect(
         window
           .getByRole("region", { name: "Task identity" })
           .getByRole("group", { name: "Objective" }),
-      ).toContainText("Audit LDL-C discordance evidence");
+      ).toContainText("Audit primary claim evidence");
     });
 
-    await runScenario("7. Detach and reattach prototype", async () => {
+    await runScenario("7. Detach and reattach workspace", async () => {
       await window.getByRole("radio", { name: "Inline workspace" }).click();
       await window.getByRole("button", { name: "Detach workspace" }).click();
       await expect(
@@ -363,7 +363,7 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
     await runScenario("8. Restart and resume", async () => {
       await window
         .getByLabel("Switch agent session")
-        .selectOption({ label: "Review prediction notebook" });
+        .selectOption({ label: "Review OOD notebook" });
       await expect(
         window.getByRole("button", { name: "Resume task" }),
       ).toBeVisible();
@@ -452,7 +452,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
     CLY_E2E: "1",
     CLY_E2E_USER_DATA_PATH: userDataPath,
     CLY_E2E_SESSION_DATA_PATH: path.join(userDataPath, "session-data"),
-    VITE_CLY_DEMO_MODE: "1",
+    VITE_CLY_TEST_FIXTURES: "1",
   };
   let app = await electron.launch({
     args: [...electronArgs, path.join(root, "electron/main.js")],
@@ -524,11 +524,11 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
     ).toBeFocused();
 
     await runCommand(window, "Use Inline Workspace");
-    await runCommand(window, "Detach Workspace (Prototype Intent)");
+    await runCommand(window, "Detach Workspace");
     await expect(
       window.getByRole("button", { name: "Reattach workspace" }),
     ).toBeVisible();
-    await runCommand(window, "Reattach Workspace (Prototype Intent)");
+    await runCommand(window, "Reattach Workspace");
     await expect(window.getByLabel("Session workbench")).toBeVisible();
 
     await runCommand(window, "Open Interrupted Task to Resume");

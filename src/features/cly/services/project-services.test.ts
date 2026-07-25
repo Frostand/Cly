@@ -297,7 +297,7 @@ describe("project context approval services", () => {
   });
 });
 
-describe("demo planner services", () => {
+describe("test-fixture planner services", () => {
   beforeEach(() => {
     const data = createFixtureRepository("active");
     useClyStore.setState({
@@ -330,13 +330,13 @@ describe("demo planner services", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const created = await projectServices.decisions.create({
-      title: "LDL discordance threshold",
-      decision: "Use non-HDL cholesterol as a discordance comparator.",
+      title: "Calibration threshold",
+      decision: "Use conformal residuals as a calibration comparator.",
       reason: "The measure is available in the imported dataset.",
     });
     const replacement = await projectServices.decisions.supersede(created.id, {
-      title: "LDL discordance measures",
-      decision: "Compare LDL with non-HDL cholesterol and triglycerides.",
+      title: "Calibration measures",
+      decision: "Compare ensemble coverage with conformal residuals.",
       reason: "The additional marker tests whether the result is robust.",
     });
 
@@ -347,7 +347,7 @@ describe("demo planner services", () => {
     });
     expect(decisions.find((item) => item.id === replacement.id)).toMatchObject({
       status: "Active",
-      title: "LDL discordance measures",
+      title: "Calibration measures",
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });

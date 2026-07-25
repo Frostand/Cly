@@ -429,26 +429,26 @@ export function BrowserTab({
         </div>
         <h1>{browser.pageTitle}</h1>
         <p className="agent-browser-byline">
-          A. Sayed, E. Peterson, S. Virani, A. Sniderman, A. Navar · JAMA
-          Cardiology · 2024
+          M. Raman, A. Okafor, L. Diaz · Journal of Reliable Simulation · 2025
         </p>
         <div className="agent-browser-rule" />
         <h2>Abstract</h2>
         <p>
-          ApoB varies substantially among people with the same LDL-C. The study
-          evaluates whether discordance is limited to identifiable metabolic
-          subgroups using NHANES 2005–2016.
+          Calibration-aware ensembles can preserve downstream decision quality
+          under constrained simulation budgets. Reliability depends on matching
+          interval semantics, distribution shift, and the registered evaluation
+          protocol.
         </p>
         <div className="agent-browser-highlight">
           <span>Linked evidence</span>
-          Higher triglycerides and BMI are associated with more positive ApoB
-          discordance, but important within-group variability remains.
+          The reported 95% coverage interval is two-sided and uses the 2.5th and
+          97.5th percentiles.
         </div>
         <h2>Evaluation protocol</h2>
         <p>
-          Discordance is defined relative to the expected ApoB at a given LDL-C
-          level. This biomarker comparison does not itself observe
-          cardiovascular events.
+          All baselines use compute-matched evaluation and seeded bootstrap
+          confidence estimates. Full provenance is required for figures used in
+          the primary reliability claim.
         </p>
       </article>
     </section>
@@ -1069,19 +1069,18 @@ export function LiveFilesTab({
               aria-label={`Live view of ${selected.filePath}`}
             >
               {[
-                "def discordantly_high_apob(frame):",
-                "    ldl = weighted_percentile(frame.ldl_c)",
-                "    apob = weighted_percentile(frame.apob)",
+                "def coverage_interval(samples):",
+                "    sorted_samples = np.sort(samples)",
                 "",
-                "    # Keep the preregistered 20-point gap explicit.",
-                "    gap = apob - ldl",
-                "    outcome = gap >= 0.20",
+                "    # Match the preregistered two-sided 95% interval.",
+                "    lower = np.quantile(sorted_samples, 0.025)",
+                "    upper = np.quantile(sorted_samples, 0.975)",
                 "",
-                "    assert outcome.notna().all()",
-                "    return outcome",
+                "    assert lower <= upper",
+                "    return lower, upper",
                 "",
-                "def report_guardrail():",
-                "    return 'Biomarker discordance, not cardiovascular events'",
+                "def coverage_score(observed, interval):",
+                "    return np.mean((observed >= interval[0]) & (observed <= interval[1]))",
               ].map((line, index) => {
                 const number = index + 139;
                 const active =

@@ -10,22 +10,24 @@ const parsePort = (value: string | undefined, fallback: number) => {
 const devServerPort = parsePort(process.env.ELECTRON_INTERNAL_PORT, 3210);
 const apiServerPort = parsePort(process.env.ELECTRON_API_PORT, 3211);
 
-const omitProductionDemoChunks = (): Plugin => ({
-  name: "omit-production-demo-chunks",
+const omitProductionTestFixtureChunks = (): Plugin => ({
+  name: "omit-production-test-fixture-chunks",
   generateBundle(_options, bundle) {
-    const demoFacades = [
+    const testFixtureFacades = [
       "/src/features/cly/fixtures/",
-      "/src/features/cly/agent-sessions/demo-screen.tsx",
-      "/src/features/cly/agent-sessions/demo-services.ts",
+      "/src/features/cly/agent-sessions/test-fixture-screen.tsx",
+      "/src/features/cly/agent-sessions/test-fixture-services.ts",
       "/src/features/cly/agent-sessions/fixtures.ts",
       "/src/features/cly/components/pr-impact-review/fixtures.ts",
     ];
     for (const [fileName, output] of Object.entries(bundle)) {
       if (
         output.type === "chunk" &&
-        (demoFacades.some((path) => output.facadeModuleId?.includes(path)) ||
+        (testFixtureFacades.some((path) =>
+          output.facadeModuleId?.includes(path),
+        ) ||
           output.moduleIds.some((id) =>
-            demoFacades.some((path) => id.includes(path)),
+            testFixtureFacades.some((path) => id.includes(path)),
           ))
       ) {
         delete bundle[fileName];
@@ -39,7 +41,7 @@ const omitProductionDemoChunks = (): Plugin => ({
         )
       ) {
         throw new Error(
-          `Production bundle still contains demo fixture code in ${output.fileName}.`,
+          `Production bundle still contains test fixture code in ${output.fileName}.`,
         );
       }
     }
@@ -48,14 +50,14 @@ const omitProductionDemoChunks = (): Plugin => ({
 
 export default defineConfig(({ command, mode }) => ({
   define: {
-    __CLY_INCLUDE_DEMOS__: JSON.stringify(
+    __CLY_INCLUDE_TEST_FIXTURES__: JSON.stringify(
       command !== "build" || mode !== "production",
     ),
   },
   plugins: [
     react(),
     ...(command === "build" && mode === "production"
-      ? [omitProductionDemoChunks()]
+      ? [omitProductionTestFixtureChunks()]
       : []),
   ],
   resolve: {

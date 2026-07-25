@@ -11,20 +11,15 @@ describe("Cly research UI logic", () => {
     const items = createFixtureRepository("active").contextItems;
     const result = calculateContextBudget(items, 128_000);
 
-    expect(result.tokens).toBe(31_180);
-    expect(result.byCategory.Claims).toBe(3_260);
-    expect(result.ratio).toBeCloseTo(0.244, 2);
+    expect(result.tokens).toBe(16_900);
+    expect(result.byCategory.Claims).toBe(3_840);
+    expect(result.ratio).toBeCloseTo(0.132, 2);
     expect(result.staleCount).toBe(0);
   });
 
   it("filters and sorts claims by confidence", () => {
     const claims = createFixtureRepository("active").claims;
-    const result = filterAndSortClaims(
-      claims,
-      "triglyceride",
-      "All",
-      "confidence",
-    );
+    const result = filterAndSortClaims(claims, "coverage", "All", "confidence");
 
     expect(result.map((claim) => claim.id)).toEqual(["claim-02"]);
   });
@@ -35,7 +30,7 @@ describe("Cly research UI logic", () => {
 
     expect(result[0].impact).toBe("High");
     expect(result[0].urgency).toBe("Now");
-    expect(result.at(-1)?.impact).toBe("Medium");
+    expect(result.at(-1)?.impact).toBe("Low");
   });
 
   it("generates bounded performance fixtures at the acceptance sizes", () => {

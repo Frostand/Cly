@@ -30,7 +30,7 @@ import {
   ModelsAgentsScreen,
   SettingsScreen,
 } from "../screens/system";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
 import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
@@ -244,7 +244,7 @@ export function ClyAppShell() {
     <ClyMotionProvider>
       <main className="cly-app">
         <Titlebar />
-        {isClyDemoRuntime &&
+        {isClyTestFixtureRuntime &&
         fixtureMode !== "empty" &&
         fixtureMode !== "loading" ? (
           <div
@@ -259,11 +259,10 @@ export function ClyAppShell() {
               textAlign: "center",
             }}
           >
-            {fixtureMode === "guided"
-              ? "Guided demo · No results are loaded; enter the research inputs to begin."
-              : "Demo project · Results reproduce official CDC data; workflow records are fixtures."}
+            Test fixture state · Synthetic records are loaded for automated UI
+            verification.
           </div>
-        ) : !isClyDemoRuntime ? (
+        ) : !isClyTestFixtureRuntime ? (
           <div className="cly-beta-banner" role="status">
             Cly Open Beta · Local research data only · Do not use sensitive or
             regulated data

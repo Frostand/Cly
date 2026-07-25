@@ -43,7 +43,7 @@ import {
 } from "../components/primitives";
 import type { AgentPreset } from "../domain/types";
 import { projectServices } from "../services/project-services";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 
 const resourceBudget = {
@@ -1056,7 +1056,7 @@ export function SettingsScreen() {
     "Desktop: Electron 41",
     "Storage: project-scoped local SQLite research repository",
     "Network: local authenticated research API",
-    `Runtime: ${isClyDemoRuntime ? `demo fixture (${fixtureMode})` : "production"}`,
+    `Runtime: ${isClyTestFixtureRuntime ? `automated test fixture (${fixtureMode})` : "production"}`,
     `Project: ${project?.id ?? "none"}`,
   ].join("\n");
 
@@ -1150,7 +1150,7 @@ export function SettingsScreen() {
             "Privacy",
             "Research defaults",
             "Keyboard shortcuts",
-            ...(__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime
+            ...(__CLY_INCLUDE_TEST_FIXTURES__ && isClyTestFixtureRuntime
               ? ["Fixture mode"]
               : []),
             "Diagnostics",
@@ -1301,8 +1301,8 @@ export function SettingsScreen() {
               ))}
             </Panel>
           ) : null}
-          {__CLY_INCLUDE_DEMOS__ &&
-          isClyDemoRuntime &&
+          {__CLY_INCLUDE_TEST_FIXTURES__ &&
+          isClyTestFixtureRuntime &&
           section === "Fixture mode" ? (
             <Panel className="cly-panel-body">
               <div className="cly-callout" data-tone="warning">
@@ -1313,7 +1313,6 @@ export function SettingsScreen() {
                 {(
                   [
                     "empty",
-                    "guided",
                     "new",
                     "active",
                     "large",
@@ -1360,7 +1359,7 @@ export function SettingsScreen() {
                 <dd>Project-scoped SQLite research repository</dd>
                 <dt>Network</dt>
                 <dd>Local authenticated research API</dd>
-                {isClyDemoRuntime ? (
+                {isClyTestFixtureRuntime ? (
                   <>
                     <dt>Fixture</dt>
                     <dd>{fixtureMode}</dd>

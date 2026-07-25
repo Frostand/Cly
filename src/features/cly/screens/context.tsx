@@ -219,7 +219,7 @@ export function ContextScreen() {
       setError(null);
       notify(
         "Exact context pack saved",
-        `${legacyItems.filter((item) => item.included).length} demo context items are ready for the agent preview.`,
+        `${legacyItems.filter((item) => item.included).length} test context items are ready for verification.`,
       );
       return;
     }
@@ -473,7 +473,7 @@ export function ContextScreen() {
         </Panel>
       ) : snapshot.items.length === 0 && fixtureMode !== "empty" ? (
         <Panel>
-          <h2 className="cly-section-heading">Demo context selection</h2>
+          <h2 className="cly-section-heading">Test context selection</h2>
           <p className="cly-muted">
             Fixture selections are local previews. Production projects use the
             durable revision controls shown in this workspace.

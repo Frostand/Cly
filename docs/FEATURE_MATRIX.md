@@ -1,8 +1,8 @@
 # Feature Matrix
 
-Legend: production = persisted through a project-scoped service; demo-only =
-available only in the explicitly launched deterministic demo. Unsupported
-actions are not rendered as production controls. The machine-checked
+Legend: production = persisted through a project-scoped service. Unsupported
+actions are not rendered as production controls. Automated fixtures are test
+infrastructure and are never included in production bundles. The machine-checked
 [`cly-v1-capabilities.json`](cly-v1-capabilities.json) inventory is authoritative
 for individual mutations.
 

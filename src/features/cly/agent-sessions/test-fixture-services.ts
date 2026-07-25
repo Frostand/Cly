@@ -79,7 +79,7 @@ const fixtureTab = (type: WorkbenchTabType): WorkbenchTab => {
   return { ...match, id: `${match.id}-${Date.now()}`, pinned: false };
 };
 
-export const demoAgentSessionServices = {
+export const testFixtureAgentSessionServices = {
   runtime: {
     pause: async () => wait(),
     stop: async () => wait(),

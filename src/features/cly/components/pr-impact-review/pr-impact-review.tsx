@@ -405,7 +405,7 @@ export function PrImpactReviewScreen({
       setStatus("ready");
       return;
     }
-    if (!__CLY_INCLUDE_DEMOS__) {
+    if (!__CLY_INCLUDE_TEST_FIXTURES__) {
       void analyze();
       return;
     }

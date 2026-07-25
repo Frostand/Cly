@@ -157,14 +157,12 @@ interface ClyState {
   setActiveProject: (id: string) => void;
   setFixtureMode: (mode: FixtureMode) => void;
   createResearchProject: (projectPath: string) => Promise<ResearchProject>;
-  startGuidedDemo: () => Promise<void>;
   updateActiveProject: (
     patch: Pick<
       ResearchProject,
       "name" | "question" | "hypothesis" | "description"
     >,
   ) => Promise<ResearchProject>;
-  finishGuidedLdlAnalysis: () => Promise<void>;
   toggleSidebar: () => void;
   toggleInspector: () => void;
   toggleActivity: () => void;
@@ -320,32 +318,32 @@ interface ClyState {
 
 let toastSequence = 0;
 export const resolveInitialFixtureMode = ({
-  demoFlag,
+  fixtureFlag,
   development,
 }: {
-  demoFlag?: string;
+  fixtureFlag?: string;
   development: boolean;
-}): FixtureMode => (development && demoFlag === "1" ? "active" : "empty");
-const explicitDemoMode =
+}): FixtureMode => (development && fixtureFlag === "1" ? "active" : "empty");
+const explicitTestFixtureMode =
   resolveInitialFixtureMode({
-    demoFlag: import.meta.env.VITE_CLY_DEMO_MODE,
+    fixtureFlag: import.meta.env.VITE_CLY_TEST_FIXTURES,
     development: import.meta.env.DEV,
   }) === "active";
 const testRuntime = import.meta.env.MODE === "test";
-const demoFixtureRuntime = explicitDemoMode || testRuntime;
-const uiStorageKey = explicitDemoMode ? "cly-demo-ui" : "cly-prototype-ui";
+const testFixtureRuntime = explicitTestFixtureMode || testRuntime;
+const uiStorageKey = explicitTestFixtureMode ? "cly-test-fixture-ui" : "cly-ui";
 const initialFixtureMode = resolveInitialFixtureMode({
-  demoFlag: import.meta.env.VITE_CLY_DEMO_MODE,
+  fixtureFlag: import.meta.env.VITE_CLY_TEST_FIXTURES,
   development: import.meta.env.DEV,
 });
-let createDemoAgentSession:
+let createTestAgentSession:
   | ((input: NewAgentSessionInput) => AgentSession)
   | null = null;
-let createDemoWorkbenchTabs: (() => WorkbenchTab[]) | null = null;
-if (__CLY_INCLUDE_DEMOS__ && testRuntime) {
+let createTestWorkbenchTabs: (() => WorkbenchTab[]) | null = null;
+if (__CLY_INCLUDE_TEST_FIXTURES__ && testRuntime) {
   const agentFixtureModule = await import("../agent-sessions/fixtures");
-  createDemoAgentSession = agentFixtureModule.createNewAgentSession;
-  createDemoWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
+  createTestAgentSession = agentFixtureModule.createNewAgentSession;
+  createTestWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
 }
 
 const persistUi = (partial: Record<string, unknown>) => {
@@ -1111,7 +1109,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
     void get().loadFromApi(activeProjectId);
   },
   setFixtureMode: (fixtureMode) => {
-    if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
+    if (!__CLY_INCLUDE_TEST_FIXTURES__ || !testFixtureRuntime) return;
     const beforeHydration = get();
     const restoreSavedSession =
       beforeHydration.fixtureMode === fixtureMode &&
@@ -1138,8 +1136,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
       import("../fixtures/cost-ledger"),
       import("../agent-sessions/fixtures"),
     ]).then(([repositoryModule, costModule, agentFixtureModule]) => {
-      createDemoAgentSession = agentFixtureModule.createNewAgentSession;
-      createDemoWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
+      createTestAgentSession = agentFixtureModule.createNewAgentSession;
+      createTestWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
       const data = hydrateAgentSessionLayouts(
         repositoryModule.createFixtureRepository(fixtureMode),
         get().agentSessionLayouts,
@@ -1212,7 +1210,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
       localOnly: true,
       updatedAt: new Date().toISOString(),
     };
-    if (!demoFixtureRuntime) await apiClient.ensureProject(project);
+    if (!testFixtureRuntime) await apiClient.ensureProject(project);
     set((state) => {
       const cleared = clearPersistedResearchData(state.data);
       return {
@@ -1243,24 +1241,6 @@ export const useClyStore = create<ClyState>((set, get) => ({
     });
     return project;
   },
-  startGuidedDemo: async () => {
-    if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
-    const { createFixtureRepository } = await import("../fixtures/repository");
-    const data = createFixtureRepository("guided");
-    const project = data.projects[0];
-    if (!project) throw new Error("The guided demo project is unavailable.");
-    set({
-      data,
-      activeProjectId: project.id,
-      activeProduct: "research",
-      activeScreen: "overview",
-      fixtureMode: "guided",
-      selectedId: null,
-      costLedger: emptyCostLedger(),
-      claimCosts: {},
-      selectedCostEntryId: null,
-    });
-  },
   updateActiveProject: async (patch) => {
     const state = get();
     const project = state.data.projects.find(
@@ -1272,7 +1252,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
       ...patch,
       updatedAt: new Date().toISOString(),
     };
-    if (!demoFixtureRuntime) await apiClient.ensureProject(updated);
+    if (!testFixtureRuntime) await apiClient.ensureProject(updated);
     set((current) => ({
       data: {
         ...current.data,
@@ -1287,37 +1267,6 @@ export const useClyStore = create<ClyState>((set, get) => ({
       ),
     });
     return updated;
-  },
-  finishGuidedLdlAnalysis: async () => {
-    if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
-    const currentProject = get().data.projects.find(
-      (item) => item.id === get().activeProjectId,
-    );
-    const [{ createFixtureRepository }, { createCostLedgerFixture }] =
-      await Promise.all([
-        import("../fixtures/repository"),
-        import("../fixtures/cost-ledger"),
-      ]);
-    const data = createFixtureRepository("active");
-    if (currentProject && data.projects[0]) {
-      data.projects[0] = {
-        ...data.projects[0],
-        ...currentProject,
-        phase: "Evidence review",
-        description:
-          "Predicting ApoB–LDL-C discordance from basic health data.",
-        updatedAt: new Date().toISOString(),
-      };
-    }
-    const costs = createCostLedgerFixture("active", data);
-    set({
-      data,
-      fixtureMode: "active",
-      selectedId: null,
-      costLedger: costs.ledger,
-      claimCosts: costs.claimCosts,
-      selectedCostEntryId: costs.ledger.entries[0]?.id ?? null,
-    });
   },
   toggleSidebar: () =>
     set((state) => {
@@ -1357,7 +1306,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
   },
   loadFromApi: async (requestedProjectId) => {
     let projectId = requestedProjectId ?? get().activeProjectId;
-    if (!requestedProjectId && !demoFixtureRuntime) {
+    if (!requestedProjectId && !testFixtureRuntime) {
       try {
         const catalog = (await apiClient.fetchProjects())
           .map(researchProjectFromCatalog)
@@ -1677,50 +1626,6 @@ export const useClyStore = create<ClyState>((set, get) => ({
     const projectId = get().activeProjectId;
     set({ preregistrationsLoading: true, preregistrationsError: null });
     try {
-      if (
-        __CLY_INCLUDE_DEMOS__ &&
-        explicitDemoMode &&
-        get().fixtureMode === "guided"
-      ) {
-        const digest = await crypto.subtle.digest(
-          "SHA-256",
-          new TextEncoder().encode(JSON.stringify(content)),
-        );
-        const contentHash = Array.from(new Uint8Array(digest), (byte) =>
-          byte.toString(16).padStart(2, "0"),
-        ).join("");
-        const version =
-          Math.max(
-            0,
-            ...get()
-              .preregistrations.filter(
-                (snapshot) => snapshot.experimentId === experimentId,
-              )
-              .map((snapshot) => snapshot.version),
-          ) + 1;
-        const snapshotId = `snapshot-${crypto.randomUUID().slice(0, 8)}`;
-        const snapshot: PreregistrationSnapshot = {
-          id: snapshotId,
-          projectId,
-          experimentId,
-          version,
-          amendsSnapshotId: amendsSnapshotId ?? null,
-          content,
-          contentHash,
-          actorType: "human",
-          actorId: "local-user",
-          origin: "human",
-          provenanceEventId: `event-${crypto.randomUUID().slice(0, 8)}`,
-          createdAt: new Date().toISOString(),
-          finalEvaluation: null,
-          deviations: [],
-        };
-        set((state) => ({
-          preregistrations: [snapshot, ...state.preregistrations],
-          preregistrationsLoading: false,
-        }));
-        return snapshot;
-      }
       const snapshot = await apiClient.createPreregistration(
         projectId,
         experimentId,
@@ -2337,9 +2242,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
   setAgentDestructiveConfirmation: (agentDestructiveConfirmation) =>
     set({ agentDestructiveConfirmation }),
   createAgentSession: (input, open) => {
-    if (!demoFixtureRuntime || !createDemoAgentSession)
+    if (!testFixtureRuntime || !createTestAgentSession)
       throw new CapabilityUnavailableError("agents.execute");
-    const session = createDemoAgentSession(input);
+    const session = createTestAgentSession(input);
     set((state) => ({
       data: {
         ...state.data,
@@ -2384,9 +2289,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
       updatedAt: "Just now",
     })),
   openWorkbenchTab: (sessionId, type) => {
-    if (!demoFixtureRuntime || !createDemoWorkbenchTabs)
+    if (!testFixtureRuntime || !createTestWorkbenchTabs)
       throw new CapabilityUnavailableError("agents.workbench");
-    const template = createDemoWorkbenchTabs().find((tab) => tab.type === type);
+    const template = createTestWorkbenchTabs().find((tab) => tab.type === type);
     if (!template) return;
     get().updateAgentSession(sessionId, (session) => {
       const existing = session.workbenchTabs.find((tab) => tab.type === type);

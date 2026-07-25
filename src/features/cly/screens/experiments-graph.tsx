@@ -53,7 +53,6 @@ import type {
   ExperimentType,
 } from "../domain/types";
 import { projectServices } from "../services/project-services";
-import { isClyDemoRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { PreregistrationWorkspace } from "./preregistration-workspace";
 
@@ -105,8 +104,6 @@ export function ExperimentsScreen() {
   const selectedId = useClyStore((s) => s.selectedId);
   const setSelected = useClyStore((s) => s.setSelected);
   const notify = useClyStore((s) => s.notify);
-  const fixtureMode = useClyStore((s) => s.fixtureMode);
-  const finishGuidedLdlAnalysis = useClyStore((s) => s.finishGuidedLdlAnalysis);
   const [view, setView] = useState<ExperimentView>("Experiments");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
@@ -119,11 +116,6 @@ export function ExperimentsScreen() {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [analysisStage, setAnalysisStage] = useState("");
-  const [analysisDataset, setAnalysisDataset] = useState("");
-  const [analysisOutcome, setAnalysisOutcome] = useState("");
-  const [analysisSeed, setAnalysisSeed] = useState("");
-  const [analysisFolds, setAnalysisFolds] = useState("");
-  const [analysisFeatures, setAnalysisFeatures] = useState("");
   const [localDataset, setLocalDataset] = useState<ParsedDataset | null>(null);
   const [localDatasetText, setLocalDatasetText] = useState("");
   const [localDatasetHash, setLocalDatasetHash] = useState("");
@@ -137,7 +129,6 @@ export function ExperimentsScreen() {
     null,
   );
   const [localRunId, setLocalRunId] = useState<string | null>(null);
-  const guidedAnalysis = isClyDemoRuntime && fixtureMode === "guided";
   const experiments = data.experiments.filter(
     (item) =>
       (!query ||
@@ -292,37 +283,6 @@ export function ExperimentsScreen() {
     }
   };
 
-  const runGuidedAnalysis = async () => {
-    if (
-      !analysisDataset.trim() ||
-      !analysisOutcome.trim() ||
-      !analysisSeed.trim() ||
-      !analysisFolds.trim() ||
-      !analysisFeatures.trim()
-    )
-      return;
-    setAnalysisRunning(true);
-    try {
-      setAnalysisStage("Building the fasting adult cohort…");
-      await new Promise((resolve) => window.setTimeout(resolve, 900));
-      setAnalysisStage("Running five-fold cross-validation…");
-      await new Promise((resolve) => window.setTimeout(resolve, 1_100));
-      setAnalysisStage("Verifying metrics and provenance…");
-      await new Promise((resolve) => window.setTimeout(resolve, 900));
-      await finishGuidedLdlAnalysis();
-      setCompareIds(["run-03", "run-04"]);
-      setView("Compare");
-      setAnalysisOpen(false);
-      notify(
-        "Analysis complete",
-        "The verified NHANES run, metrics, artifacts, claims, and provenance are now linked.",
-      );
-    } finally {
-      setAnalysisRunning(false);
-      setAnalysisStage("");
-    }
-  };
-
   const openAnalysis = () => {
     setLocalAnalysisError("");
     setLocalResult(null);
@@ -445,13 +405,7 @@ export function ExperimentsScreen() {
               <Plus size={13} /> New experiment
             </Button>
             {data.experiments.length ? (
-              <Button
-                data-testid={
-                  guidedAnalysis ? "run-guided-analysis" : "run-local-analysis"
-                }
-                disabled={guidedAnalysis && !data.sources.length}
-                onClick={openAnalysis}
-              >
+              <Button data-testid="run-local-analysis" onClick={openAnalysis}>
                 <Play size={13} /> Run analysis
               </Button>
             ) : null}
@@ -811,122 +765,7 @@ export function ExperimentsScreen() {
         </div>
       </Dialog>
       <Dialog
-        open={analysisOpen && guidedAnalysis}
-        onClose={() => {
-          if (!analysisRunning) setAnalysisOpen(false);
-        }}
-        title="Run LDL-C discordance analysis"
-        description="Replay the checked-in NHANES pipeline with an explicit dataset, target definition, seed, folds, and feature set."
-        footer={
-          <>
-            <Button
-              disabled={analysisRunning}
-              onClick={() => setAnalysisOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={
-                analysisRunning ||
-                !analysisDataset.trim() ||
-                !analysisOutcome.trim() ||
-                !analysisSeed.trim() ||
-                !analysisFolds.trim() ||
-                !analysisFeatures.trim()
-              }
-              onClick={() => void runGuidedAnalysis()}
-            >
-              {analysisRunning ? (
-                <>
-                  <LoaderCircle className="animate-spin" size={13} /> Running…
-                </>
-              ) : (
-                <>
-                  <Play size={13} /> Run verified analysis
-                </>
-              )}
-            </Button>
-          </>
-        }
-      >
-        <div className="cly-stack">
-          <div className="cly-field">
-            <label htmlFor="guided-analysis-dataset">Dataset</label>
-            <input
-              autoFocus
-              className="cly-input"
-              id="guided-analysis-dataset"
-              value={analysisDataset}
-              onChange={(event) => setAnalysisDataset(event.target.value)}
-              placeholder="NHANES 2005–2006 fasting sample"
-            />
-          </div>
-          <div className="cly-field">
-            <label htmlFor="guided-analysis-outcome">Outcome definition</label>
-            <textarea
-              className="cly-textarea"
-              id="guided-analysis-outcome"
-              rows={2}
-              value={analysisOutcome}
-              onChange={(event) => setAnalysisOutcome(event.target.value)}
-              placeholder="ApoB percentile ≥ LDL-C percentile + 20"
-            />
-          </div>
-          <div className="cly-grid-2">
-            <div className="cly-field">
-              <label htmlFor="guided-analysis-seed">Random seed</label>
-              <input
-                className="cly-input"
-                id="guided-analysis-seed"
-                inputMode="numeric"
-                value={analysisSeed}
-                onChange={(event) => setAnalysisSeed(event.target.value)}
-                placeholder="20260722"
-              />
-            </div>
-            <div className="cly-field">
-              <label htmlFor="guided-analysis-folds">
-                Cross-validation folds
-              </label>
-              <input
-                className="cly-input"
-                id="guided-analysis-folds"
-                inputMode="numeric"
-                value={analysisFolds}
-                onChange={(event) => setAnalysisFolds(event.target.value)}
-                placeholder="5"
-              />
-            </div>
-          </div>
-          <div className="cly-field">
-            <label htmlFor="guided-analysis-features">
-              Basic health features
-            </label>
-            <textarea
-              className="cly-textarea"
-              id="guided-analysis-features"
-              rows={2}
-              value={analysisFeatures}
-              onChange={(event) => setAnalysisFeatures(event.target.value)}
-              placeholder="Age, sex, race/ethnicity, BMI, blood pressure, HDL-C, triglycerides"
-            />
-          </div>
-          {analysisStage ? (
-            <div className="cly-callout" role="status">
-              <LoaderCircle className="animate-spin" size={13} />
-              {analysisStage}
-            </div>
-          ) : (
-            <div className="cly-callout">
-              Demo execution uses the reproducible checked-in analysis output;
-              no model provider or external network request is made.
-            </div>
-          )}
-        </div>
-      </Dialog>
-      <Dialog
-        open={analysisOpen && !guidedAnalysis}
+        open={analysisOpen}
         onClose={() => {
           if (!analysisRunning) setAnalysisOpen(false);
         }}

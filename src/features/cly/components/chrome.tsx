@@ -27,7 +27,7 @@ import { clyFadeSlide, clyMotion } from "../design-system/motion";
 import type { FixtureMode, ScreenId } from "../domain/types";
 import { capabilityUnavailableMessage } from "../services/capabilities";
 import { projectServices } from "../services/project-services";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import {
   ProjectSwitcherButton,
@@ -40,11 +40,6 @@ import { ClyTooltip } from "./toolkit";
 const fixtureModes: { id: FixtureMode; label: string; description: string }[] =
   [
     { id: "empty", label: "Empty", description: "No research objects yet" },
-    {
-      id: "guided",
-      label: "Guided Research Demo",
-      description: "Blank project for a question-to-result walkthrough",
-    },
     {
       id: "new",
       label: "New Project",
@@ -127,7 +122,6 @@ export function Titlebar() {
   const setFixtureOpen = useClyStore((s) => s.setFixtureSwitcherOpen);
   const setScreen = useClyStore((s) => s.setScreen);
   const setDevSection = useClyStore((s) => s.setDevSection);
-  const startGuidedDemo = useClyStore((s) => s.startGuidedDemo);
   const toggleInspector = useClyStore((s) => s.toggleInspector);
   const selectedId = useClyStore((s) => s.selectedId);
   const notify = useClyStore((s) => s.notify);
@@ -291,22 +285,7 @@ export function Titlebar() {
             <Bell size={14} />
           </Button>
         </ClyTooltip>
-        {__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime ? (
-          <Button
-            data-testid="guided-demo-start"
-            onClick={() =>
-              void startGuidedDemo().then(() =>
-                notify(
-                  "Guided demo reset",
-                  "Start by defining the research question.",
-                ),
-              )
-            }
-          >
-            <Sparkles size={14} /> Start demo
-          </Button>
-        ) : null}
-        {__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime ? (
+        {__CLY_INCLUDE_TEST_FIXTURES__ && isClyTestFixtureRuntime ? (
           <Button
             variant="ghost"
             iconOnly
@@ -383,7 +362,8 @@ function FixtureSwitcherPopover() {
   const setMode = useClyStore((s) => s.setFixtureMode);
   const setOpen = useClyStore((s) => s.setFixtureSwitcherOpen);
   const notify = useClyStore((s) => s.notify);
-  if (!__CLY_INCLUDE_DEMOS__ || !isClyDemoRuntime || !open) return null;
+  if (!__CLY_INCLUDE_TEST_FIXTURES__ || !isClyTestFixtureRuntime || !open)
+    return null;
   return (
     <>
       <button
@@ -561,14 +541,14 @@ export function CommandPalette() {
       },
       {
         id: "detach-workspace-intent",
-        label: "Detach Workspace (Prototype Intent)",
+        label: "Detach Workspace",
         group: "View",
         icon: CommandIcon,
         run: () => void setSelectedWorkspaceMode("detached-workspace"),
       },
       {
         id: "reattach-workspace-intent",
-        label: "Reattach Workspace (Prototype Intent)",
+        label: "Reattach Workspace",
         group: "View",
         icon: CommandIcon,
         run: () => void setSelectedWorkspaceMode("inline-workspace"),
@@ -597,7 +577,7 @@ export function CommandPalette() {
         group: "Create",
         icon: FilePlus2,
         shortcut: "⌘N",
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           const state = useClyStore.getState();
@@ -611,7 +591,7 @@ export function CommandPalette() {
         label: "Configure Agent Team",
         group: "Research",
         icon: Sparkles,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.configure"),
         run: () => {
           const state = useClyStore.getState();
@@ -639,7 +619,7 @@ export function CommandPalette() {
         label,
         group: "View" as const,
         icon: CommandIcon,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.workbench"),
         run: () => {
           const state = useClyStore.getState();
@@ -670,7 +650,7 @@ export function CommandPalette() {
         label: "Pause Current Agent Session",
         group: "Research",
         icon: CommandIcon,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           const state = useClyStore.getState();
@@ -683,7 +663,7 @@ export function CommandPalette() {
         label: "Review Stop Current Agent Session",
         group: "Research",
         icon: CommandIcon,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           const state = useClyStore.getState();

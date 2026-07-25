@@ -20,7 +20,10 @@ import { useClyStore } from "../store/cly-store";
 import { apiClient } from "./api-client";
 import { CapabilityUnavailableError } from "./capabilities";
 import type { ClyServices } from "./interfaces";
-import { isClyDemoRuntime, isClyExplicitDemoRuntime } from "./runtime";
+import {
+  isClyExplicitTestFixtureRuntime,
+  isClyTestFixtureRuntime,
+} from "./runtime";
 
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const isoNow = () => new Date().toISOString();
@@ -73,7 +76,7 @@ export const projectServices: ClyServices = {
   },
   context: {
     async setIncluded(itemId, included) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().updateContextItem(itemId, { included });
         return;
       }
@@ -130,7 +133,7 @@ export const projectServices: ClyServices = {
       await refreshAgentContext(projectId);
     },
     async setPinned(itemId, pinned) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().updateContextItem(itemId, { pinned });
         return;
       }
@@ -149,7 +152,7 @@ export const projectServices: ClyServices = {
       await refreshAgentContext(projectId);
     },
     async setRepresentation(itemId, representation) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().updateContextItem(itemId, {
           representation,
           tokens: representation === "Summary" ? 1400 : 7200,
@@ -253,27 +256,27 @@ export const projectServices: ClyServices = {
   },
   agents: {
     async savePreset(preset) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().addAgentPreset(preset);
         return;
       }
       throw new CapabilityUnavailableError("agents.configure");
     },
     async listConfigurations(projectId) {
-      if (isClyExplicitDemoRuntime) {
+      if (isClyExplicitTestFixtureRuntime) {
         return stateForProject(projectId)?.data.agentConfigurations ?? [];
       }
       return apiClient.fetchAgentConfigurations(projectId);
     },
     async saveConfiguration(projectId, configuration) {
-      if (isClyExplicitDemoRuntime) {
+      if (isClyExplicitTestFixtureRuntime) {
         const timestamp = isoNow();
         const persisted: AgentConfiguration = {
           ...configuration,
           id:
             "id" in configuration
               ? configuration.id
-              : `configuration-demo-${projectId}`,
+              : `configuration-fixture-${projectId}`,
           projectId,
           revision:
             "revision" in configuration ? configuration.revision + 1 : 1,
@@ -315,7 +318,7 @@ export const projectServices: ClyServices = {
       return persisted;
     },
     async removeConfiguration(projectId, configurationId, expectedRevision) {
-      if (isClyExplicitDemoRuntime) {
+      if (isClyExplicitTestFixtureRuntime) {
         const state = stateForProject(projectId);
         state?.setAgentConfigurations(
           (state.data.agentConfigurations ?? []).filter(
@@ -337,10 +340,10 @@ export const projectServices: ClyServices = {
       );
     },
     async estimateConfiguration(projectId, configurationId, configuration) {
-      if (isClyExplicitDemoRuntime) {
+      if (isClyExplicitTestFixtureRuntime) {
         if (!configuration) {
           throw new Error(
-            "Agent configuration input is required in demo mode.",
+            "Agent configuration input is required in test-fixture mode.",
           );
         }
         return {
@@ -363,7 +366,7 @@ export const projectServices: ClyServices = {
           inaccessibleContext: [],
           inaccessibleTools: [],
           reasons: [
-            "Deterministic demo estimate; no provider request was made.",
+            "Deterministic test estimate; no provider request was made.",
           ],
         };
       }
@@ -376,7 +379,7 @@ export const projectServices: ClyServices = {
   },
   experiments: {
     async create(input) {
-      if (isClyExplicitDemoRuntime) {
+      if (isClyExplicitTestFixtureRuntime) {
         const experiment: Experiment = {
           id: id("exp"),
           name: input.name,
@@ -473,9 +476,9 @@ export const projectServices: ClyServices = {
       return persistedDuplicate;
     },
     async recordLocalAnalysis(input) {
-      if (isClyExplicitDemoRuntime) {
+      if (isClyExplicitTestFixtureRuntime) {
         throw new Error(
-          "Use the guided verified workflow in demo mode. Local dataset execution is available in the open beta workspace.",
+          "Dataset execution is unavailable in the automated fixture service. Use the production local-analysis workflow.",
         );
       }
       const projectId = await ensureActiveProject();
@@ -632,7 +635,7 @@ export const projectServices: ClyServices = {
         path: "sources/imported",
         updatedAt: isoNow(),
       };
-      if (isClyExplicitDemoRuntime) {
+      if (isClyExplicitTestFixtureRuntime) {
         useClyStore.setState((state) => ({
           data: {
             ...state.data,
@@ -675,7 +678,7 @@ export const projectServices: ClyServices = {
       return persisted;
     },
     async addToNotebookBundle(sourceId) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore
           .getState()
           .updateSource(sourceId, { inNotebookBundle: true });
@@ -770,7 +773,7 @@ export const projectServices: ClyServices = {
   },
   notebooks: {
     async importMock(name) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         const notebook: NotebookArtifact = {
           id: id("nb"),
           name,
@@ -796,8 +799,8 @@ export const projectServices: ClyServices = {
   },
   claims: {
     async create(text) {
-      const demoState = useClyStore.getState();
-      if (isClyExplicitDemoRuntime) {
+      const fixtureState = useClyStore.getState();
+      if (isClyExplicitTestFixtureRuntime) {
         const claim: Claim = {
           id: id("claim"),
           text,
@@ -815,7 +818,7 @@ export const projectServices: ClyServices = {
           nextExperiment: "Link evidence or design a test.",
           updatedAt: isoNow(),
         };
-        demoState.addClaim(claim);
+        fixtureState.addClaim(claim);
         return claim;
       }
       const projectId = await ensureActiveProject();
@@ -867,7 +870,7 @@ export const projectServices: ClyServices = {
         (item) => item.id === experimentId,
       );
       if (!experiment) return;
-      if (isClyExplicitDemoRuntime) {
+      if (isClyExplicitTestFixtureRuntime) {
         state.updateClaim(claimId, {
           experimentIds: Array.from(
             new Set([...claim.experimentIds, experimentId]),
@@ -924,7 +927,7 @@ export const projectServices: ClyServices = {
       const claim = state.data.claims.find((item) => item.id === claimId);
       const source = state.data.sources.find((item) => item.id === sourceId);
       if (!claim || !source) throw new Error("Claim or source not found.");
-      const relationship = isClyExplicitDemoRuntime
+      const relationship = isClyExplicitTestFixtureRuntime
         ? {
             id: id("edge"),
             confidence: null,
@@ -1012,7 +1015,7 @@ export const projectServices: ClyServices = {
     async runAudit() {
       const state = useClyStore.getState();
       const generated = generateReproducibilityAudit(state.data);
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         state.replaceReproducibilityAudit(generated.audit, generated.findings);
         state.notify(
           "Reproducibility audit complete",
@@ -1052,7 +1055,7 @@ export const projectServices: ClyServices = {
   },
   planner: {
     async setStatus(stepId, status) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().updateNextStep(stepId, status);
         return;
       }
@@ -1064,7 +1067,7 @@ export const projectServices: ClyServices = {
       useClyStore.getState().updateNextStep(stepId, step.status);
     },
     async generate(steps) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.setState((state) => ({
           data: { ...state.data, nextSteps: steps },
         }));
@@ -1079,7 +1082,7 @@ export const projectServices: ClyServices = {
   },
   decisions: {
     async create(input) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         const decision = {
           ...input,
           id: id("decision"),
@@ -1105,7 +1108,7 @@ export const projectServices: ClyServices = {
       return decision;
     },
     async update(decisionId, input) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         const current = useClyStore
           .getState()
           .data.decisions.find((item) => item.id === decisionId);
@@ -1123,7 +1126,7 @@ export const projectServices: ClyServices = {
       return decision;
     },
     async supersede(decisionId, replacement) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         const current = useClyStore
           .getState()
           .data.decisions.find((item) => item.id === decisionId);

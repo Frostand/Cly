@@ -26,7 +26,7 @@ const app = await electron.launch({
     ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
     ELECTRON_INTERNAL_PORT: "43810",
     NODE_ENV: "development",
-    VITE_CLY_DEMO_MODE: "0",
+    VITE_CLY_TEST_FIXTURES: "0",
   },
   timeout: 60_000,
 });

@@ -16,7 +16,7 @@ const environment = {
   CLY_E2E: "1",
   CLY_E2E_USER_DATA_PATH: userDataPath,
   CLY_E2E_SESSION_DATA_PATH: path.join(userDataPath, "session-data"),
-  VITE_CLY_DEMO_MODE: "1",
+  VITE_CLY_TEST_FIXTURES: "1",
 };
 
 test("detaches, synchronizes, restores, and safely closes the developer workspace", async () => {
@@ -38,7 +38,7 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
     await agent.getByRole("heading", { level: 1 }).first().waitFor();
     await agent.getByTestId("nav-agents").click();
     await agent
-      .getByRole("article", { name: /Audit LDL-C discordance evidence/ })
+      .getByRole("article", { name: /Audit primary claim evidence/ })
       .getByRole("button", { name: /Open chat/ })
       .click();
 
@@ -62,10 +62,10 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
 
     await workspace.getByRole("tab", { name: "Code Diff" }).click();
     await workspace
-      .getByRole("button", { name: /test_discordance\.py/ })
+      .getByRole("button", { name: /calibration\.test\.ts/ })
       .click();
     await expect(
-      workspace.getByLabel("Diff for tests/analysis/test_discordance.py"),
+      workspace.getByLabel("Diff for src/evaluation/calibration.test.ts"),
     ).toBeVisible();
 
     await app.close();
@@ -130,7 +130,7 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
     await expect.poll(() => app.windows().length).toBe(1);
     await expect(agent.getByLabel("Session workbench")).toBeVisible();
     await expect(
-      agent.getByLabel("Diff for tests/analysis/test_discordance.py"),
+      agent.getByLabel("Diff for src/evaluation/calibration.test.ts"),
     ).toBeVisible();
     await expect(
       agent.getByRole("button", { name: "Detach workspace" }),

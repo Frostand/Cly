@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { isClyExplicitDemoRuntime } from "../services/runtime";
+import { isClyExplicitTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "./cly-store";
 
 type BootstrapState = "loading" | "ready" | "failed";
@@ -14,7 +14,7 @@ const dispatchBootstrapState = (state: BootstrapState) => {
 const bootstrap = () => {
   if (activeBootstrap) return activeBootstrap;
   activeBootstrap = (async () => {
-    if (isClyExplicitDemoRuntime) {
+    if (isClyExplicitTestFixtureRuntime) {
       useClyStore.getState().setFixtureMode("active");
       return true;
     }

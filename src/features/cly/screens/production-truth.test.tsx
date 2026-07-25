@@ -27,7 +27,7 @@ describe("production research truthfulness", () => {
     });
   });
 
-  it("does not fabricate demo objectives for an unrelated project", () => {
+  it("does not fabricate fixture objectives for an unrelated project", () => {
     render(<ObjectivesScreen />);
     expect(
       screen.getByRole("heading", {
@@ -36,10 +36,12 @@ describe("production research truthfulness", () => {
     ).toBeVisible();
     expect(screen.getByText("0 of 4 gates complete")).toBeVisible();
     expect(screen.getByText(/not scientific completion/i)).toBeVisible();
-    expect(document.body).not.toHaveTextContent(/LDL|ApoB|NHANES/i);
+    expect(document.body).not.toHaveTextContent(
+      /fixture project|bundle ready/i,
+    );
   });
 
-  it("derives literature empty states without demo claims", async () => {
+  it("derives literature empty states without fixture claims", async () => {
     const user = userEvent.setup();
     render(<LiteratureScreen />);
 
@@ -49,7 +51,7 @@ describe("production research truthfulness", () => {
       screen.queryByRole("radio", { name: "NotebookLM" }),
     ).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(
-      /LDL|ApoB|NHANES|Surrogate reliability|Bundle ready/i,
+      /fixture project|Surrogate reliability|Bundle ready/i,
     );
   });
 });

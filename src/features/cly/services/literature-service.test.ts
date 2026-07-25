@@ -61,7 +61,7 @@ describe("desktop literature service", () => {
       "/api/projects/project-cly/research",
       expect.objectContaining({
         method: "PUT",
-        body: expect.stringContaining('"name":"When LDL-C misleads"'),
+        body: expect.stringContaining('"name":"Neural surrogate reliability"'),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(

@@ -47,7 +47,7 @@ describe("Agent Sessions store", () => {
     store.setAgentSessionFilter("approvals");
     store.setAgentSessionSort("progress");
 
-    const saved = JSON.parse(localStorage.getItem("cly-prototype-ui") ?? "{}");
+    const saved = JSON.parse(localStorage.getItem("cly-ui") ?? "{}");
     expect(saved).toMatchObject({
       agentSessionsMode: "chat",
       selectedAgentSessionId: "session-01",
@@ -85,7 +85,7 @@ describe("Agent Sessions store", () => {
     expect(session?.draft).toBe("Keep the claim scope narrow");
     expect(session?.messages.at(-1)?.id).toBe("message-test");
     expect(
-      JSON.parse(localStorage.getItem("cly-prototype-ui") ?? "{}")
+      JSON.parse(localStorage.getItem("cly-ui") ?? "{}")
         .agentSessionLayouts["session-01"].draft,
     ).toBe("Keep the claim scope narrow");
   });

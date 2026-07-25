@@ -38,7 +38,7 @@ import { ClySplitPane } from "../components/toolkit";
 import type { DevSection, ResearchProject } from "../domain/types";
 import { capabilityUnavailableMessage } from "../services/capabilities";
 import { projectServices } from "../services/project-services";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { ReviewerCapsuleDialog } from "./research-workspaces";
 
@@ -627,7 +627,7 @@ function useDevRecords(section: DevSection): DevRecord[] {
         impact: `${item.linkedIds.length} linked research objects`,
       }));
     }
-    if (!isClyDemoRuntime) return [];
+    if (!isClyTestFixtureRuntime) return [];
     const staticRecords: Record<
       Exclude<DevSection, "projects" | "sessions" | "agents" | "context">,
       DevRecord[]
@@ -644,23 +644,23 @@ function useDevRecords(section: DevSection): DevRecord[] {
         },
         {
           id: "repo-eval",
-          title: "ldl-apob-discordance",
-          detail: "NHANES source files, analysis code, notebooks, and reports",
+          title: "surrogate-reliability",
+          detail: "Evaluation code, notebooks, and experiment configurations",
           status: "3 changes",
-          meta: "research/O-02-external-validation",
-          owner: "Methods team",
-          impact: "Claims C-01 through C-04 may require reruns",
+          meta: "research/O-02-compound-shift",
+          owner: "Evaluation team",
+          impact: "Claims C-01 and C-03 may require reruns",
         },
       ],
       features: [
         {
           id: "feature-01",
-          title: "Discordance sensitivity audit",
-          detail: "Compare thresholds, residual definitions, and non–HDL-C",
+          title: "Compound-shift reliability audit",
+          detail: "Add complete OOD coverage and a compute-matched baseline",
           status: "Active",
-          meta: "CLY-244 · research/O-01-sensitivity",
-          owner: "Codex + methods team",
-          impact: "Objective O-01 · Claims C-01 and C-04",
+          meta: "CLY-244 · research/O-02-compound-shift",
+          owner: "Codex + evaluation team",
+          impact: "Objective O-02 · Claims C-01 and C-03",
         },
         {
           id: "feature-02",
@@ -675,9 +675,9 @@ function useDevRecords(section: DevSection): DevRecord[] {
       issues: [
         {
           id: "CLY-244",
-          title: "Validate discordance across later NHANES cycles",
+          title: "Validate calibration under compound shift",
           detail:
-            "Missing temporal validation for the primary discordance claim",
+            "Missing empirical boundary for the primary reliability claim",
           status: "In progress",
           meta: "High priority · linked objective O-02",
           owner: "Evaluation team",
@@ -685,13 +685,12 @@ function useDevRecords(section: DevSection): DevRecord[] {
         },
         {
           id: "CLY-247",
-          title: "Add survey-design confidence intervals",
-          detail:
-            "Account for fasting weights, strata, and primary sampling units",
+          title: "Regenerate Figure 4 without manual annotation",
+          detail: "Replace the untracked edit with a plotting-code change",
           status: "Ready",
           meta: "Integrity finding · 1 dependency",
           owner: "Implementation agent",
-          impact: "Tables T-01 and T-02 · Claims C-02 and C-03",
+          impact: "Figure F-04 · Claim C-01",
         },
       ],
       machines: [
@@ -706,8 +705,8 @@ function useDevRecords(section: DevSection): DevRecord[] {
         },
         {
           id: "machine-gpu",
-          title: "Lab analysis runner",
-          detail: "Approved public data and analysis artifacts only",
+          title: "Lab GPU runner",
+          detail: "4 × A100 · approved project artifacts only",
           status: "Idle",
           meta: "Remote · encrypted transport",
           owner: "Lab infrastructure",
@@ -717,14 +716,14 @@ function useDevRecords(section: DevSection): DevRecord[] {
       "pull-requests": [
         {
           id: "pr-84",
-          title: "PR #84 · Add threshold sensitivity and survey checks",
+          title: "PR #84 · Update preprocessing and calibration checks",
           detail:
             "12 files changed · software review passed · research review open",
           status: "Needs research review",
           meta: "3 checks passed · 2 reruns required",
           owner: "Implementation agent",
           impact:
-            "Runs R-03–R-06 · Tables T-01 and T-02 · Claims C-01 and C-04",
+            "Runs R-18–R-24 · Figures F-03 and F-05 · Claims C-01 and C-03",
         },
       ],
       tests: [
@@ -742,9 +741,9 @@ function useDevRecords(section: DevSection): DevRecord[] {
           id: "tests-research",
           title: "Research validation",
           detail:
-            "Cohort eligibility, data leakage, deterministic output, and claim impact",
+            "Calibration, data leakage, deterministic output, and claim impact",
           status: "2 required",
-          meta: "Waiting for threshold sensitivity rerun",
+          meta: "Waiting for compound-shift rerun",
           owner: "Lab GPU runner",
           impact: "Objective O-02 · reviewer capsule blocked",
         },
@@ -833,7 +832,7 @@ export function DevWorkspaceScreen() {
     : "No development record is selected.";
 
   const openNewSession = () => {
-    if (!isClyDemoRuntime) return;
+    if (!isClyTestFixtureRuntime) return;
     const store = useClyStore.getState();
     store.setDevSection("sessions");
     store.setAgentSessionsMode("overview");
@@ -890,13 +889,15 @@ export function DevWorkspaceScreen() {
           <>
             <StatusIndicator tone="success">
               <Laptop />{" "}
-              {isClyDemoRuntime ? "Local Mac connected" : "Local workspace"}
+              {isClyTestFixtureRuntime
+                ? "Local Mac connected"
+                : "Local workspace"}
             </StatusIndicator>
             <Button
               variant="primary"
-              disabled={!isClyDemoRuntime}
+              disabled={!isClyTestFixtureRuntime}
               title={
-                isClyDemoRuntime
+                isClyTestFixtureRuntime
                   ? "Create a new agent session"
                   : capabilityUnavailableMessage("agents.execute")
               }
@@ -907,7 +908,7 @@ export function DevWorkspaceScreen() {
           </>
         }
       />
-      {isClyDemoRuntime ? (
+      {isClyTestFixtureRuntime ? (
         <div className="cly-dev-statebar">
           <span>
             <CircleDot /> {activeSessions} active sessions

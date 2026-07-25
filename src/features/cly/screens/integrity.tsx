@@ -81,9 +81,9 @@ export function ProvenanceScreen() {
   const [integrity, setIntegrity] = useState<ProvenanceIntegrity | null>(null);
 
   useEffect(() => {
-    const explicitDemoRuntime =
-      import.meta.env.DEV && import.meta.env.VITE_CLY_DEMO_MODE === "1";
-    if (fixtureMode !== "empty" || explicitDemoRuntime || !activeProjectId) {
+    const explicitTestRuntime =
+      import.meta.env.DEV && import.meta.env.VITE_CLY_TEST_FIXTURES === "1";
+    if (fixtureMode !== "empty" || explicitTestRuntime || !activeProjectId) {
       if (!activeProjectId) {
         setEvents([]);
         setIntegrity(null);

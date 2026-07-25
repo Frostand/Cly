@@ -34,7 +34,7 @@ import { useIdeStore } from "../../../components/ide/ide-store";
 import { getDesktopApi } from "../../../lib/electron";
 import type { DevSection, ScreenId } from "../domain/types";
 import routeManifest from "../route-manifest.json";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { ClyLogo, ThemeSwitcher } from "./brand";
 
@@ -94,7 +94,7 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
         count: (s) => s.data.sources.length,
       },
       { id: "literature", label: "Literature", icon: BookOpen },
-      ...(__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime
+      ...(__CLY_INCLUDE_TEST_FIXTURES__ && isClyTestFixtureRuntime
         ? [
             {
               id: "notebooks" as const,
