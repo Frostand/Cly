@@ -360,7 +360,7 @@ export function BrowserTab({
       ),
     }));
   return (
-    <section className="agent-browser" aria-label="Research browser fixture">
+    <section className="agent-browser" aria-label="Research browser preview">
       <div className="agent-browser-toolbar">
         <Button iconOnly variant="ghost" aria-label="Back">
           <ArrowLeft size={13} />
@@ -377,7 +377,7 @@ export function BrowserTab({
             event.preventDefault();
             patchState({
               url: address,
-              pageTitle: "Fixture research page",
+              pageTitle: "Research preview page",
               pageType: "article",
             });
           }}
@@ -416,7 +416,7 @@ export function BrowserTab({
           onClick={() =>
             notify(
               "Citation captured",
-              "Fixture citation copied to the active context.",
+              "Citation copied to the active context.",
             )
           }
         >
@@ -472,7 +472,7 @@ export function TerminalTab({
       ),
     }));
   return (
-    <section className="agent-terminal" aria-label="Fixture terminal output">
+    <section className="agent-terminal" aria-label="Terminal output preview">
       <div className="agent-terminal-header">
         <div>
           <TerminalSquare size={14} />
@@ -503,7 +503,7 @@ export function TerminalTab({
             patch({
               ...terminal,
               status: "running",
-              lines: ["$ pnpm test --run", "collecting fixture tests…"],
+              lines: ["$ pnpm test --run", "collecting tests…"],
             })
           }
         >
@@ -833,10 +833,7 @@ function AgentPane({
               lastAction: `Steered: ${steering}`,
               status: "working",
             });
-            notify(
-              "Steer message sent",
-              `${agent.name} received the fixture prompt.`,
-            );
+            notify("Steer message sent", `${agent.name} received the prompt.`);
             setSteering("");
           }}
         >
@@ -1024,7 +1021,7 @@ export function LiveFilesTab({
         <div className="agent-live-toolbar">
           <div>
             <strong>{selected?.filePath}</strong>
-            <span>Read-only observation · fixture stream</span>
+            <span>Read-only observation · test fixture stream</span>
           </div>
           <span className="agent-live-toggle">
             <Toggle

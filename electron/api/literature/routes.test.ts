@@ -77,10 +77,14 @@ describe("literature routes", () => {
     expect(listProject).toHaveBeenCalledWith("project-1");
     expect(search).toHaveBeenCalledWith("robust calibration", {
       limit: 10,
-      provider: "both",
+      provider: "all",
     });
     expect(rerank).toHaveBeenCalledWith("robust calibration", [
-      { id: "semantic-scholar:paper-1" },
+      expect.objectContaining({
+        id: "semantic-scholar:paper-1",
+        fullTextStatus: "not_available",
+        extraction: expect.objectContaining({ hasFullText: false }),
+      }),
     ]);
   });
 
@@ -101,6 +105,11 @@ describe("literature routes", () => {
       },
     );
     expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toMatchObject({
+      kind: "rate_limited",
+      retryable: true,
+      action: expect.stringContaining("retry"),
+    });
   });
 
   it("parses BibTeX imports and returns duplicate accounting", async () => {
@@ -134,7 +143,7 @@ describe("literature routes", () => {
     expect(response.status).toBe(201);
     expect(importRecords).toHaveBeenCalledWith(
       "project-1",
-      [expect.objectContaining({ title: "Grounded synthesis", year: "2026" })],
+      [expect.objectContaining({ title: "Grounded synthesis", year: 2026 })],
       { importMethod: "bibtex", readingListIds: ["list-1"] },
     );
     await expect(response.json()).resolves.toMatchObject({ importedCount: 1 });

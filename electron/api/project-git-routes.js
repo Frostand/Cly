@@ -1,5 +1,11 @@
 import { promises as fs } from "node:fs";
 import { TextDecoder } from "node:util";
+import { projectAuthorityRegistry } from "../project-authority-registry.js";
+import {
+  createProjectAuthorityResolver,
+  ProjectAuthorityError,
+} from "./project-git/authority.js";
+import { resolveRegisteredProjectWorktree } from "./project-git/worktree-authority.js";
 import {
   checkoutProjectGitBranch,
   commitProjectGitChanges,
@@ -35,7 +41,7 @@ import {
   projectIconRequestSchema,
   pushProjectGitChanges,
   removeProjectGitWorktree,
-  resolveProjectPath,
+  resolveProjectPath as resolveProjectFilePath,
   revertProjectGitFile,
 } from "./project-git-service.js";
 
@@ -93,7 +99,34 @@ const isLikelyBinaryFile = async (absolutePath, size) => {
   }
 };
 
-export const registerProjectGitRoutes = (app) => {
+const projectRouteError = (c, error, fallbackMessage) => {
+  if (error instanceof ProjectAuthorityError) {
+    return c.text(error.message, error.status);
+  }
+
+  const message = error instanceof Error ? error.message : fallbackMessage;
+  return c.text(message, 400);
+};
+
+export const registerProjectGitRoutes = (
+  app,
+  {
+    authorizeProjectPath = (projectPath) =>
+      projectAuthorityRegistry.authorizePathForRegistration(projectPath),
+    resolveAlternateProjectPath = resolveRegisteredProjectWorktree,
+    resolveProjectPathById,
+  } = {},
+) => {
+  const resolveAuthorizedProjectPath = createProjectAuthorityResolver({
+    resolveAlternateProjectPath,
+    resolveProjectPathById,
+  });
+  const resolveProjectDirectory = async (authority) => {
+    const projectPath = await resolveAuthorizedProjectPath(authority);
+    await ensureProjectDirectory(projectPath);
+    return projectPath;
+  };
+
   app.post("/api/project-files", async (c) => {
     let rawBody;
     try {
@@ -107,16 +140,14 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { directory, maxResults, projectPath } = parsed.data;
+    const { directory, maxResults } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
       const files = await listProjectFiles(projectPath, directory, maxResults);
       return c.json({ count: files.length, files });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to list files.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to list files.");
     }
   });
 
@@ -133,11 +164,11 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { endLine, filePath, projectPath, startLine } = parsed.data;
+    const { endLine, filePath, startLine } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
-      const absolutePath = resolveProjectPath(projectPath, filePath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
+      const absolutePath = resolveProjectFilePath(projectPath, filePath);
       const stats = await fs.stat(absolutePath);
       if (!stats.isFile()) {
         return c.text(`Not a file: ${filePath}`, 400);
@@ -174,9 +205,7 @@ export const registerProjectGitRoutes = (app) => {
         startLine: safeStart,
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to read file.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to read file.");
     }
   });
 
@@ -194,14 +223,12 @@ export const registerProjectGitRoutes = (app) => {
     }
 
     try {
-      await ensureProjectDirectory(parsed.data.projectPath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
       return c.json({
-        icon: await detectProjectIcon(parsed.data.projectPath),
+        icon: await detectProjectIcon(projectPath),
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to detect icon.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to detect icon.");
     }
   });
 
@@ -218,15 +245,11 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath } = parsed.data;
-
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
       return c.json(await listProjectGitChanges(projectPath));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to read Git status.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to read Git status.");
     }
   });
 
@@ -243,15 +266,11 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath } = parsed.data;
-
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
       return c.json(await listProjectGitBranches(projectPath));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to read Git branches.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to read Git branches.");
     }
   });
 
@@ -268,19 +287,15 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { branchName, create, projectPath } = parsed.data;
+    const { branchName, create } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
       return c.json(
         await checkoutProjectGitBranch(projectPath, branchName, create),
       );
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to switch Git branches.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to switch Git branches.");
     }
   });
 
@@ -297,15 +312,11 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath } = parsed.data;
-
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
       return c.json(await listProjectGitWorktrees(projectPath));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to read worktrees.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to read worktrees.");
     }
   });
 
@@ -322,15 +333,22 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath, ...options } = parsed.data;
+    const {
+      projectId,
+      projectPath: submittedProjectPath,
+      ...options
+    } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
-      return c.json(await createProjectGitWorktree(projectPath, options));
+      const projectPath = await resolveProjectDirectory({
+        projectId,
+        projectPath: submittedProjectPath,
+      });
+      const worktree = await createProjectGitWorktree(projectPath, options);
+      await authorizeProjectPath(worktree.path);
+      return c.json(worktree);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to create worktree.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to create worktree.");
     }
   });
 
@@ -347,15 +365,20 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath, ...options } = parsed.data;
+    const {
+      projectId,
+      projectPath: submittedProjectPath,
+      ...options
+    } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory({
+        projectId,
+        projectPath: submittedProjectPath,
+      });
       return c.json(await removeProjectGitWorktree(projectPath, options));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to remove worktree.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to remove worktree.");
     }
   });
 
@@ -372,15 +395,20 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath, ...options } = parsed.data;
+    const {
+      projectId,
+      projectPath: submittedProjectPath,
+      ...options
+    } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory({
+        projectId,
+        projectPath: submittedProjectPath,
+      });
       return c.json(await commitProjectGitChanges(projectPath, options));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to commit changes.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to commit changes.");
     }
   });
 
@@ -397,10 +425,17 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath, ...options } = parsed.data;
+    const {
+      projectId,
+      projectPath: submittedProjectPath,
+      ...options
+    } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory({
+        projectId,
+        projectPath: submittedProjectPath,
+      });
       return c.json({
         commitMessage: await generateProjectGitCommitMessage(projectPath, {
           ...options,
@@ -408,11 +443,7 @@ export const registerProjectGitRoutes = (app) => {
         }),
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to generate commit message.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to generate commit message.");
     }
   });
 
@@ -429,15 +460,20 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath, ...options } = parsed.data;
+    const {
+      projectId,
+      projectPath: submittedProjectPath,
+      ...options
+    } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory({
+        projectId,
+        projectPath: submittedProjectPath,
+      });
       return c.json(await pushProjectGitChanges(projectPath, options));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to push changes.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to push changes.");
     }
   });
 
@@ -454,15 +490,11 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath } = parsed.data;
-
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
       return c.json(await getProjectGitPushPreview(projectPath));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to preview push.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to preview push.");
     }
   });
 
@@ -479,17 +511,20 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath, ...options } = parsed.data;
+    const {
+      projectId,
+      projectPath: submittedProjectPath,
+      ...options
+    } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory({
+        projectId,
+        projectPath: submittedProjectPath,
+      });
       return c.json(await createProjectPullRequest(projectPath, options));
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to create a pull request.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to create a pull request.");
     }
   });
 
@@ -506,19 +541,26 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { projectPath, ...options } = parsed.data;
+    const {
+      projectId,
+      projectPath: submittedProjectPath,
+      ...options
+    } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory({
+        projectId,
+        projectPath: submittedProjectPath,
+      });
       return c.json(
         await generateProjectPullRequestDetails(projectPath, options),
       );
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to generate pull request details.";
-      return c.text(message, 400);
+      return projectRouteError(
+        c,
+        error,
+        "Unable to generate pull request details.",
+      );
     }
   });
 
@@ -535,10 +577,10 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { filePath, previousPath, projectPath, status } = parsed.data;
+    const { filePath, previousPath, status } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
       return c.json(
         await getProjectGitDiff(projectPath, filePath, {
           previousPath,
@@ -546,9 +588,7 @@ export const registerProjectGitRoutes = (app) => {
         }),
       );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to read Git diff.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to read Git diff.");
     }
   });
 
@@ -565,10 +605,10 @@ export const registerProjectGitRoutes = (app) => {
       return c.text(parsed.error.message, 400);
     }
 
-    const { filePath, previousPath, projectPath, status } = parsed.data;
+    const { filePath, previousPath, status } = parsed.data;
 
     try {
-      await ensureProjectDirectory(projectPath);
+      const projectPath = await resolveProjectDirectory(parsed.data);
       return c.json(
         await revertProjectGitFile(projectPath, filePath, {
           previousPath,
@@ -576,23 +616,28 @@ export const registerProjectGitRoutes = (app) => {
         }),
       );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to revert file.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to revert file.");
     }
   });
 
   app.get("/api/project-file-raw", async (c) => {
+    const projectId = c.req.query("projectId");
     const projectPath = c.req.query("projectPath");
     const filePath = c.req.query("filePath");
 
-    if (!projectPath || !filePath) {
-      return c.text("Missing projectPath or filePath query parameter.", 400);
+    if (!projectId || !filePath) {
+      return c.text("Missing projectId or filePath query parameter.", 400);
     }
 
     try {
-      await ensureProjectDirectory(projectPath);
-      const absolutePath = resolveProjectPath(projectPath, filePath);
+      const authorizedProjectPath = await resolveProjectDirectory({
+        projectId,
+        projectPath,
+      });
+      const absolutePath = resolveProjectFilePath(
+        authorizedProjectPath,
+        filePath,
+      );
       const stats = await fs.stat(absolutePath);
       if (!stats.isFile()) {
         return c.text(`Not a file: ${filePath}`, 400);
@@ -606,9 +651,7 @@ export const registerProjectGitRoutes = (app) => {
         headers: { "Content-Type": contentType },
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to read file.";
-      return c.text(message, 400);
+      return projectRouteError(c, error, "Unable to read file.");
     }
   });
 };

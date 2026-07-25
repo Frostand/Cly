@@ -673,7 +673,13 @@ export function createClyDevSessionRepository({
               payload: event.payload,
             },
             event.type === "context.manifest.recorded"
-              ? { outboundContext: envelope.context }
+              ? {
+                  outboundContext: buildOutboundContext(
+                    db,
+                    projectId,
+                    envelope.sessionId,
+                  ).envelope,
+                }
               : undefined,
           );
         }
@@ -781,7 +787,7 @@ export function createClyDevSessionRepository({
               });
             } else {
               throw new Error(
-                "A normalized outbound context is required for transferable context events.",
+                "A normalized outbound context is required for a context manifest event.",
               );
             }
           } else {
@@ -901,6 +907,16 @@ export function createClyDevSessionRepository({
         )
         .all(projectId, sessionId, afterSequence, boundedLimit)
         .map(eventFromRow);
+    },
+    findEventByIdempotencyKey(projectId, sessionId, idempotencyKey) {
+      findSession(db, projectId, sessionId);
+      const row = db
+        .prepare(
+          `SELECT * FROM cly_dev_session_events
+           WHERE project_id = ? AND session_id = ? AND idempotency_key = ?`,
+        )
+        .get(projectId, sessionId, idempotencyKey);
+      return row ? eventFromRow(row) : null;
     },
     getSnapshot(projectId, sessionId) {
       const session = sessionFromRow(findSession(db, projectId, sessionId));

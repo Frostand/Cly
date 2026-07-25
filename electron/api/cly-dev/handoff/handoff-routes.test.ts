@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Hono } from "hono";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { API_SESSION_TOKEN_HEADER, createApiApp } from "../../app.js";
 import { createClyDevSessionRepository } from "../session-repository.js";
 import { hashHandoffPayload } from "./canonical-json.js";
@@ -190,6 +190,11 @@ function setup({
     },
     capabilities: ["tool_calls", "structured_output"],
   };
+  const getProviderCapabilities = vi.fn(() => inspection.capabilities);
+  const resolveTargetProvider = vi.fn(() => ({
+    id: "target-provider",
+    model: "target-model",
+  }));
   const routeOptions = {
     getDatabase: () => db,
     getSessionRepository: () => sessions,
@@ -197,7 +202,7 @@ function setup({
       db.prepare("SELECT id FROM projects WHERE id = ?").get(projectId),
     inspectRepository: () => inspection.repository,
     inspectResearch: () => inspection.research,
-    getProviderCapabilities: () => inspection.capabilities,
+    getProviderCapabilities,
     inspectPermissions: () => ({
       compatible: true,
       current: {
@@ -221,10 +226,7 @@ function setup({
             sourceResearchInspector ?? (() => inspection.research),
         }),
     resolveTargetWorkspace: () => targetWorkspace,
-    resolveTargetProvider: () => ({
-      id: "target-provider",
-      model: "target-model",
-    }),
+    resolveTargetProvider,
     now,
   };
   const app = new Hono();
@@ -234,6 +236,8 @@ function setup({
     databasePath,
     db,
     inspection,
+    getProviderCapabilities,
+    resolveTargetProvider,
     routeOptions,
     sessions,
     source,
@@ -247,7 +251,15 @@ afterEach(() => {
 
 describe("Cly Dev handoff routes", () => {
   it("exports a durable aggregate and imports linked actionable state without chat", async () => {
-    const { app, db, sessions, source, targetWorkspace } = setup();
+    const {
+      app,
+      db,
+      getProviderCapabilities,
+      resolveTargetProvider,
+      sessions,
+      source,
+      targetWorkspace,
+    } = setup();
     const exportedResponse = await app.request(
       "/api/projects/source-project/cly-dev/handoffs/export",
       {
@@ -286,19 +298,30 @@ describe("Cly Dev handoff routes", () => {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ envelope }),
+        body: JSON.stringify({
+          envelope,
+          targetProvider: { id: "anthropic-claude" },
+        }),
       },
     );
     expect(inspectedResponse.status).toBe(200);
     expect(await inspectedResponse.json()).toEqual(
       expect.objectContaining({ compatible: true, stale: [], conflicts: [] }),
     );
+    expect(getProviderCapabilities).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetProvider: { id: "anthropic-claude" },
+      }),
+    );
 
     const importRequest = () =>
       app.request("/api/projects/target-project/cly-dev/handoffs/import", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ envelope }),
+        body: JSON.stringify({
+          envelope,
+          targetProvider: { id: "anthropic-claude" },
+        }),
       });
     const firstResponse = await importRequest();
     expect(firstResponse.status).toBe(201);
@@ -313,6 +336,15 @@ describe("Cly Dev handoff routes", () => {
         state: "resumable",
         provider: { id: "target-provider", model: "target-model" },
         commit: { sha: "a".repeat(40) },
+      }),
+    );
+    expect(resolveTargetProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inspection: expect.objectContaining({
+          authority: expect.objectContaining({
+            targetProvider: { id: "anthropic-claude" },
+          }),
+        }),
       }),
     );
     expect(first.materialized.task.objective).toBe(

@@ -1,4 +1,5 @@
 import path from "node:path";
+import tailwindcss from "@tailwindcss/postcss";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
@@ -48,7 +49,60 @@ const omitProductionTestFixtureChunks = (): Plugin => ({
   },
 });
 
+const rawTailwindDirectivePattern =
+  /@(apply|custom-variant|plugin|source|tailwind|theme|utility|variant)\b/;
+
+const requiredCompiledUtilities = [
+  ["flex", /\.flex\s*\{[^}]*display\s*:\s*flex(?:[;}])/],
+  ["grid", /\.grid\s*\{[^}]*display\s*:\s*grid(?:[;}])/],
+  ["hidden", /\.hidden\s*\{[^}]*display\s*:\s*none(?:[;}])/],
+  ["text-sm", /\.text-sm\s*\{[^}]*font-size\s*:/],
+] as const;
+
+const validateCompiledProductionCss = (): Plugin => ({
+  name: "validate-compiled-production-css",
+  enforce: "post",
+  generateBundle(_options, bundle) {
+    const cssSources: string[] = [];
+    for (const output of Object.values(bundle)) {
+      if (output.type === "asset" && output.fileName.endsWith(".css")) {
+        cssSources.push(
+          typeof output.source === "string"
+            ? output.source
+            : Buffer.from(output.source).toString("utf8"),
+        );
+      }
+    }
+    const css = cssSources.join("\n");
+
+    if (!css) {
+      throw new Error("Production bundle did not emit a CSS asset.");
+    }
+
+    const rawDirective = css.match(rawTailwindDirectivePattern)?.[0];
+    if (rawDirective) {
+      throw new Error(
+        `Production CSS contains uncompiled Tailwind directive ${rawDirective}.`,
+      );
+    }
+
+    const missingUtilities = requiredCompiledUtilities
+      .filter(([, pattern]) => !pattern.test(css))
+      .map(([utility]) => utility);
+    if (missingUtilities.length > 0) {
+      throw new Error(
+        `Production CSS is missing compiled Tailwind utilities: ${missingUtilities.join(", ")}.`,
+      );
+    }
+  },
+});
+
 export default defineConfig(({ command, mode }) => ({
+  css: {
+    postcss: {
+      plugins: [tailwindcss()],
+    },
+  },
   define: {
     __CLY_INCLUDE_TEST_FIXTURES__: JSON.stringify(
       command !== "build" || mode !== "production",
@@ -57,7 +111,7 @@ export default defineConfig(({ command, mode }) => ({
   plugins: [
     react(),
     ...(command === "build" && mode === "production"
-      ? [omitProductionTestFixtureChunks()]
+      ? [omitProductionTestFixtureChunks(), validateCompiledProductionCss()]
       : []),
   ],
   resolve: {

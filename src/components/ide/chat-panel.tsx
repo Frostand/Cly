@@ -398,11 +398,9 @@ export const ChatPanel = ({
     (s) => s.projectGitRefreshKeys[project.id] ?? 0,
   );
   const { status: projectGitStatus, statusRefreshToken } = useProjectGitStatus(
-    project.path,
+    project.id,
     gitRefreshKey,
   );
-  const permissionModes = getPermissionModesForAgentMode(chat.agentMode);
-  const { claudePermissionMode, codexPermissionMode } = permissionModes;
   const connectedProviders = getConnectedProviders(settings);
   const gitGenerationModelSelection = useMemo(
     () => getDefaultGitGenerationModelSelection(settings),
@@ -430,6 +428,10 @@ export const ChatPanel = ({
       (option) => option.provider === chat.provider && option.id === chat.model,
     ) ?? allModelOptions[0];
   const selectedProvider = selectedModelOption?.provider ?? chat.provider;
+  const effectiveAgentMode =
+    selectedProvider === "cursor" ? "plan" : chat.agentMode;
+  const permissionModes = getPermissionModesForAgentMode(effectiveAgentMode);
+  const { claudePermissionMode, codexPermissionMode } = permissionModes;
   const isProviderInstalled =
     providerModels[selectedProvider]?.installed ?? false;
   const [localError, setLocalError] = useState<string | null>(null);
@@ -581,6 +583,7 @@ export const ChatPanel = ({
           approved: response.approved,
           id: response.id,
           reason: response.reason ?? null,
+          signature: response.signature,
           scope: response.scope ?? "once",
         }),
         headers: { "Content-Type": "application/json" },
@@ -672,6 +675,7 @@ export const ChatPanel = ({
         staged: change.staged,
         unstaged: change.unstaged,
       })),
+      projectId: project.id,
       projectPath: project.path,
       model: gitGenerationModelSelection.model,
       provider: gitGenerationModelSelection.provider,
@@ -684,6 +688,7 @@ export const ChatPanel = ({
     warmedCommitMessageKeysRef.current.add(warmKey);
     void warmProjectCommitMessageForStatus({
       model: gitGenerationModelSelection.model,
+      projectId: project.id,
       projectPath: project.path,
       provider: gitGenerationModelSelection.provider,
       refreshToken: statusRefreshToken,
@@ -692,6 +697,7 @@ export const ChatPanel = ({
   }, [
     gitGenerationModelSelection.model,
     gitGenerationModelSelection.provider,
+    project.id,
     project.path,
     projectGitStatus,
     statusRefreshToken,
@@ -719,6 +725,11 @@ export const ChatPanel = ({
           addToolApprovalResponse({
             id: part.approval.id as string,
             approved: true,
+            signature:
+              "signature" in part.approval &&
+              typeof part.approval.signature === "string"
+                ? part.approval.signature
+                : undefined,
           });
         }
       }
@@ -1005,6 +1016,7 @@ export const ChatPanel = ({
         void fetch("/api/chat-title", {
           body: JSON.stringify({
             fallbackModel: activeModel,
+            projectId: submittedProject.id,
             projectPath: submittedProjectPath,
             promptText:
               prompt.text ||
@@ -1082,7 +1094,8 @@ export const ChatPanel = ({
               projectId: submittedProject.id,
               projectPath: submittedProjectPath,
               provider: activeProvider,
-              agentMode: chat.agentMode,
+              agentMode:
+                activeProvider === "cursor" ? "plan" : effectiveAgentMode,
               modelSpeed: selectedModelSpeed,
               ...(selectedModelSpeedLabelForMetadata
                 ? { modelSpeedLabel: selectedModelSpeedLabelForMetadata }
@@ -1120,6 +1133,7 @@ export const ChatPanel = ({
       chatMessages,
       contextUsedTokens,
       contextWindow,
+      effectiveAgentMode,
       isProcessing,
       handleActivateChat,
       providerModels,
@@ -1266,7 +1280,7 @@ export const ChatPanel = ({
         ) : null}
 
         <ChatComposer
-          agentMode={chat.agentMode}
+          agentMode={effectiveAgentMode}
           allModelOptions={allModelOptions}
           chatProvider={chat.provider}
           contextWindow={contextWindow}
@@ -1279,12 +1293,14 @@ export const ChatPanel = ({
           onAgentModeChange={(agentMode) => {
             updateChat(chat.id, (current) => ({
               ...current,
-              agentMode,
+              agentMode: selectedProvider === "cursor" ? "plan" : agentMode,
             }));
           }}
           onModelChange={(nextOption) => {
             updateChat(chat.id, (current) => ({
               ...current,
+              agentMode:
+                nextOption.provider === "cursor" ? "plan" : current.agentMode,
               model: nextOption.id,
               modelSpeed: "standard",
               provider: nextOption.provider,
@@ -1325,7 +1341,7 @@ export const ChatPanel = ({
           promptDomId={promptDomId}
           promptInputDomId={promptInputDomId}
           promptText={promptText}
-          projectPath={project.path}
+          projectId={project.id}
           reasoningEffortOptions={reasoningEffortOptions}
           speedOptions={speedOptions}
           selectedModel={selectedModel}

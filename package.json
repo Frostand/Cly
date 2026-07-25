@@ -1,7 +1,7 @@
 {
   "name": "cly",
   "productName": "Cly",
-  "description": "Cly is an open-source, local-first research operating system.",
+  "description": "Cly is an AI-native research operating system.",
   "version": "0.5.0",
   "private": true,
   "packageManager": "pnpm@11.12.0",
@@ -51,7 +51,8 @@
     "format": "biome format --write .",
     "licenses:check": "node scripts/check-production-licenses.mjs",
     "privacy:check": "node scripts/check-repository-privacy.mjs",
-    "capabilities:check": "node scripts/check-cly-capabilities.mjs"
+    "capabilities:check": "node scripts/check-cly-capabilities.mjs",
+    "companion-contract:check": "node scripts/check-companion-mode-contract.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
@@ -167,15 +168,12 @@
       }
     ],
     "afterPack": "scripts/prune-packaged-app.cjs",
+    "afterSign": "scripts/notarize-after-sign.cjs",
     "files": [
       "electron/**/*",
       "dist/**/*",
       "public/**/*",
-      "package.json",
-      "!**/*.map",
-      "!**/*.{test,spec}.{js,cjs,mjs,jsx,ts,tsx}",
-      "!**/{test,tests,__tests__,__mocks__,mocks}/**/*",
-      "!**/*.{ts,tsx}"
+      "package.json"
     ],
     "extraResources": [
       {
@@ -185,23 +183,10 @@
       {
         "from": "public/icon.png",
         "to": "icon.png"
-      },
-      {
-        "from": "NOTICE.md",
-        "to": "THIRD_PARTY_NOTICES.md"
-      },
-      {
-        "from": "LICENSE",
-        "to": "LICENSE.txt"
-      },
-      {
-        "from": "licenses/DREAM_IDE-MIT.txt",
-        "to": "licenses/DREAM_IDE-MIT.txt"
       }
     ],
-    "icon": "build/icons/icon.png",
+    "icon": "public/icon.png",
     "mac": {
-      "icon": "build/icons/icon.icns",
       "target": [
         "dmg",
         "zip"
@@ -224,7 +209,7 @@
       "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/**/*darwin*/**"
     },
     "win": {
-      "icon": "build/icons/icon.ico",
+      "icon": "public/icon.ico",
       "target": [
         "nsis"
       ]
@@ -233,7 +218,6 @@
       "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}"
     },
     "linux": {
-      "icon": "build/icons/png",
       "target": [
         "AppImage",
         "deb",

@@ -29,9 +29,14 @@ function toClySource(row: {
   const typeBySourceType = {
     dataset: "Dataset",
     documentation: "Documentation",
-    note: "Lab note",
+    note: "Note",
     paper: "Paper",
+    pdf: "PDF",
     webpage: "Webpage",
+    book: "Book",
+    repository: "Repository",
+    "hugging-face": "Hugging Face",
+    import: "Import",
   } as const;
   return {
     id: row.id,
@@ -56,10 +61,17 @@ function toClySource(row: {
     findings: payload.findings ?? [],
     limitations: payload.limitations ?? [],
     tags: payload.tags ?? [],
+    fullTextStatus: payload.fullTextStatus,
+    pdfFailure: payload.pdfFailure,
+    pdfAcquisition: payload.pdfAcquisition,
+    folder: payload.folder,
+    extractedFields: payload.extractedFields,
+    extractedValues: payload.extractedValues,
+    contradictoryEvidence: payload.contradictoryEvidence,
+    customReviewFields: payload.customReviewFields,
     linkedClaimIds: [],
     linkedExperimentIds: [],
     inNotebookBundle: false,
-    archived: Boolean(payload.archivedAt),
     groundedSummary: payload.groundedSummary,
     path: `sources/${row.id}`,
     updatedAt: row.updatedAt,
@@ -74,6 +86,7 @@ function toClySource(row: {
             components: payload.rankingComponents,
             explanation: payload.rankingExplanation,
             retrievedAt: payload.retrievedAt ?? row.createdAt,
+            providerCalls: payload.providerCalls,
           }
         : undefined,
   };
@@ -106,18 +119,6 @@ interface ResearchRepo {
       updatedAt: string;
     }>;
   };
-  setSourceArchived(
-    projectId: string,
-    sourceId: string,
-    archived: boolean,
-  ): {
-    id: string;
-    title: string;
-    description: string;
-    payload: Record<string, unknown>;
-    createdAt: string;
-    updatedAt: string;
-  };
 }
 
 export function createRealSourceService(
@@ -126,12 +127,30 @@ export function createRealSourceService(
 ): SourceService {
   return {
     async create(input) {
+      const sourceTypeByKind = {
+        Paper: "paper",
+        PDF: "pdf",
+        Webpage: "webpage",
+        Book: "book",
+        Dataset: "dataset",
+        Documentation: "documentation",
+        Repository: "repository",
+        "Hugging Face": "hugging-face",
+        Note: "note",
+        Import: "import",
+        "Lab note": "note",
+        "NotebookLM result": "import",
+      } as const satisfies Record<
+        Source["type"],
+        NonNullable<SourcePayload["sourceType"]>
+      >;
       const obj = repository.createObject({
         projectId,
         type: "source",
         title: input.title,
         payload: {
           kind: "source",
+          sourceType: sourceTypeByKind[input.type],
           status: "placeholder",
         } satisfies SourcePayload,
       });
@@ -154,8 +173,19 @@ export function createRealSourceService(
           year: result.source.year,
           url: result.source.url,
           doi: result.source.doi,
+          abstract: result.source.summary,
+          tags: result.source.tags,
           providerId: result.source.providerId,
           provider: result.source.provider ?? "local-fixture",
+          fullTextStatus: result.source.fullTextStatus,
+          pdfFailure: result.source.pdfFailure,
+          pdfAcquisition: result.source.pdfAcquisition,
+          extractedFields: result.source.extractedFields,
+          extractedValues: result.source.extractedValues,
+          contradictoryEvidence: result.source.contradictoryEvidence,
+          methods: result.source.methods,
+          findings: result.source.findings,
+          limitations: result.source.limitations,
           query: result.query,
           rankingScore: result.score,
           rankingMethod: result.method,
@@ -163,6 +193,7 @@ export function createRealSourceService(
           rankingComponents: result.components,
           rankingExplanation: result.explanation,
           retrievedAt: result.retrievedAt,
+          providerCalls: result.providerCalls,
         } satisfies SourcePayload,
       });
       return toClySource(obj);
@@ -183,9 +214,13 @@ export function createRealSourceService(
       throw new Error("Enrichment requires the project research API boundary.");
     },
 
-    async setArchived(sourceId, archived) {
-      return toClySource(
-        repository.setSourceArchived(projectId, sourceId, archived),
+    async setArchived(_sourceId: string, _archived: boolean) {
+      throw new Error("Archiving requires the project research API boundary.");
+    },
+
+    async reviewField(_sourceId, _fieldId, _verificationState) {
+      throw new Error(
+        "Source review requires the project research API boundary.",
       );
     },
   };

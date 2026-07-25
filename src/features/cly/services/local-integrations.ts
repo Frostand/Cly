@@ -174,9 +174,16 @@ export const localIntegrationService = {
     );
   },
 
-  async openProjectInEditor(editorId: string, projectPath: string) {
+  async openProjectInEditor(
+    projectId: string,
+    editorId: string,
+    projectPath: string,
+  ) {
     const desktop = getDesktopApi();
-    if (!desktop || !(await desktop.openInEditor({ editorId, projectPath }))) {
+    if (
+      !desktop ||
+      !(await desktop.openInEditor({ projectId, editorId, projectPath }))
+    ) {
       throw new Error(
         "Cly could not open this project in the selected editor.",
       );

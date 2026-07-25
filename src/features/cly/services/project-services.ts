@@ -14,10 +14,11 @@ import type {
   Claim,
   Experiment,
   NotebookArtifact,
+  ResearchDecision,
   Source,
 } from "../domain/types";
 import { useClyStore } from "../store/cly-store";
-import { apiClient } from "./api-client";
+import { apiClient, nextStepFromPlannerRecommendation } from "./api-client";
 import { CapabilityUnavailableError } from "./capabilities";
 import type { ClyServices } from "./interfaces";
 import {
@@ -262,37 +263,27 @@ export const projectServices: ClyServices = {
       }
       throw new CapabilityUnavailableError("agents.configure");
     },
-    async listConfigurations(projectId) {
-      if (isClyExplicitTestFixtureRuntime) {
-        return stateForProject(projectId)?.data.agentConfigurations ?? [];
+    async startPreview(presetId) {
+      if (isClyTestFixtureRuntime) {
+        const preset = useClyStore
+          .getState()
+          .data.agentPresets.find((item) => item.id === presetId);
+        useClyStore
+          .getState()
+          .notify(
+            "Execution preview ready",
+            preset
+              ? `${preset.name} would run ${preset.nodes.length} agents with approval gates.`
+              : "Preset not found.",
+          );
+        return;
       }
+      throw new CapabilityUnavailableError("agents.execute");
+    },
+    async listConfigurations(projectId) {
       return apiClient.fetchAgentConfigurations(projectId);
     },
     async saveConfiguration(projectId, configuration) {
-      if (isClyExplicitTestFixtureRuntime) {
-        const timestamp = isoNow();
-        const persisted: AgentConfiguration = {
-          ...configuration,
-          id:
-            "id" in configuration
-              ? configuration.id
-              : `configuration-fixture-${projectId}`,
-          projectId,
-          revision:
-            "revision" in configuration ? configuration.revision + 1 : 1,
-          createdAt:
-            "createdAt" in configuration ? configuration.createdAt : timestamp,
-          updatedAt: timestamp,
-        };
-        const state = stateForProject(projectId);
-        state?.setAgentConfigurations([
-          ...(state.data.agentConfigurations ?? []).filter(
-            (item) => item.id !== persisted.id,
-          ),
-          persisted,
-        ]);
-        return persisted;
-      }
       const input: AgentConfigurationInput = {
         name: configuration.name,
         maxParallel: configuration.maxParallel,
@@ -318,15 +309,6 @@ export const projectServices: ClyServices = {
       return persisted;
     },
     async removeConfiguration(projectId, configurationId, expectedRevision) {
-      if (isClyExplicitTestFixtureRuntime) {
-        const state = stateForProject(projectId);
-        state?.setAgentConfigurations(
-          (state.data.agentConfigurations ?? []).filter(
-            (item) => item.id !== configurationId,
-          ),
-        );
-        return;
-      }
       await apiClient.removeAgentConfiguration(
         projectId,
         configurationId,
@@ -340,36 +322,6 @@ export const projectServices: ClyServices = {
       );
     },
     async estimateConfiguration(projectId, configurationId, configuration) {
-      if (isClyExplicitTestFixtureRuntime) {
-        if (!configuration) {
-          throw new Error(
-            "Agent configuration input is required in test-fixture mode.",
-          );
-        }
-        return {
-          inputTokens: Math.min(
-            configuration.maxTotalBudget.maxInputTokens,
-            24_000,
-          ),
-          outputTokens: Math.min(
-            configuration.maxTotalBudget.maxOutputTokens,
-            6_000,
-          ),
-          costMinorUnits: Math.min(
-            configuration.maxTotalBudget.maxCostMinorUnits,
-            180,
-          ),
-          runtimeMs: Math.min(
-            configuration.maxTotalBudget.maxRuntimeMs,
-            900_000,
-          ),
-          inaccessibleContext: [],
-          inaccessibleTools: [],
-          reasons: [
-            "Deterministic test estimate; no provider request was made.",
-          ],
-        };
-      }
       return apiClient.estimateAgentConfiguration(
         projectId,
         configurationId,
@@ -379,42 +331,6 @@ export const projectServices: ClyServices = {
   },
   experiments: {
     async create(input) {
-      if (isClyExplicitTestFixtureRuntime) {
-        const experiment: Experiment = {
-          id: id("exp"),
-          name: input.name,
-          goal: input.goal,
-          hypothesis: input.hypothesis?.trim() || "To be specified",
-          type: input.type,
-          status: "Planned",
-          command: "Not configured",
-          environment: "Not captured",
-          claimIds: [],
-          dataset: "Not linked",
-          limitations: [],
-          nextStep: "Complete configuration",
-          runIds: [],
-          updatedAt: isoNow(),
-        };
-        useClyStore.setState((state) => ({
-          data: {
-            ...state.data,
-            experiments: [experiment, ...state.data.experiments],
-            graphNodes: [
-              {
-                id: experiment.id,
-                type: "experiment",
-                label: experiment.name,
-                status: "Suggested",
-                x: 390,
-                y: 235,
-              },
-              ...state.data.graphNodes,
-            ],
-          },
-        }));
-        return experiment;
-      }
       const projectId = await ensureActiveProject();
       const object = await apiClient.createExperiment(projectId, {
         title: input.name,
@@ -495,11 +411,10 @@ export const projectServices: ClyServices = {
 
       const result: LocalAnalysisResult = input.result;
       const engineHash = await sha256Hex(result.engineVersion);
-      const datasetVersion = input.datasetHash.slice(0, 12);
       const datasets = [
         {
           id: input.datasetSourceId,
-          version: datasetVersion,
+          version: input.datasetHash.slice(0, 12),
           contentHash: input.datasetHash,
           uri: input.datasetFileName,
         },
@@ -533,7 +448,6 @@ export const projectServices: ClyServices = {
           declaredMetrics: Object.keys(result.metrics),
         },
       );
-      const startedAt = isoNow();
       const run = await apiClient.createExperimentRun(
         projectId,
         input.experimentId,
@@ -550,7 +464,7 @@ export const projectServices: ClyServices = {
               contentHash: engineHash,
             },
           ],
-          startedAt,
+          startedAt: isoNow(),
         },
       );
       await apiClient.logExperimentRunMetrics(
@@ -561,14 +475,13 @@ export const projectServices: ClyServices = {
           .map(([name, value]) => ({ name, value })),
       );
       const resultJson = JSON.stringify(result, null, 2);
-      const resultHash = await sha256Hex(resultJson);
       await apiClient.registerExperimentRunArtifact(projectId, run.id, {
         title: "Local analysis summary",
         description: `${result.conclusion} Limitations: ${result.warnings.join(" ")}`,
         kind: "file",
         path: `cly://analysis/${run.id}/summary.json`,
         mediaType: "application/json",
-        contentHash: resultHash,
+        contentHash: await sha256Hex(resultJson),
         generatorPath: `builtin://${result.engineVersion}`,
         generatorHash: engineHash,
       });
@@ -586,6 +499,7 @@ export const projectServices: ClyServices = {
         claim.id,
         input.datasetSourceId,
         "supports",
+        { quote: result.conclusion, origin: "system" },
       );
       const exceedsBaseline =
         result.task === "classification"
@@ -635,26 +549,6 @@ export const projectServices: ClyServices = {
         path: "sources/imported",
         updatedAt: isoNow(),
       };
-      if (isClyExplicitTestFixtureRuntime) {
-        useClyStore.setState((state) => ({
-          data: {
-            ...state.data,
-            sources: [source, ...state.data.sources],
-            graphNodes: [
-              {
-                id: source.id,
-                type: source.type === "Dataset" ? "dataset" : "source",
-                label: source.title,
-                status: "Suggested",
-                x: 80,
-                y: 80 + state.data.sources.length * 90,
-              },
-              ...state.data.graphNodes,
-            ],
-          },
-        }));
-        return source;
-      }
       const persistedSource = await useClyStore.getState().addSource(source);
       if (!persistedSource) throw new Error("Source was not saved.");
       return persistedSource;
@@ -671,6 +565,7 @@ export const projectServices: ClyServices = {
           components: result.components,
           explanation: result.explanation,
           retrievedAt: result.retrievedAt,
+          providerCalls: result.providerCalls,
         },
       };
       const persisted = await useClyStore.getState().addSource(candidate);
@@ -767,6 +662,35 @@ export const projectServices: ClyServices = {
       );
       if (!source) throw new Error("Source not found.");
       const updated = { ...source, archived, updatedAt: object.updatedAt };
+      stateForProject(projectId)?.updateSource(sourceId, updated);
+      return updated;
+    },
+    async reviewField(sourceId, fieldId, verificationState) {
+      const projectId = activeProjectId();
+      const state = stateForProject(projectId);
+      if (!state) throw new Error("Active research project changed.");
+      const source = state.data.sources.find((item) => item.id === sourceId);
+      const field = source?.extractedFields?.[fieldId];
+      if (!source || !field) {
+        throw new Error("The extracted field or its evidence is unavailable.");
+      }
+      const updated: Source = {
+        ...source,
+        extractedFields: {
+          ...source.extractedFields,
+          [fieldId]: {
+            ...field,
+            verificationState,
+            verifiedBy: "local-user",
+            verifiedAt: isoNow(),
+          },
+        },
+        updatedAt: isoNow(),
+      };
+      await apiClient.updateSource(projectId, sourceId, {
+        description: source.summary,
+        payload: { extractedFields: updated.extractedFields },
+      });
       stateForProject(projectId)?.updateSource(sourceId, updated);
       return updated;
     },
@@ -920,23 +844,71 @@ export const projectServices: ClyServices = {
         approved: relationship.reviewState === "approved",
       });
     },
-    async linkEvidence(claimId, sourceId, type) {
+    async linkEvidence(claimId, sourceId, type, passage) {
       const projectId = activeProjectId();
       const state = stateForProject(projectId);
       if (!state) return;
       const claim = state.data.claims.find((item) => item.id === claimId);
       const source = state.data.sources.find((item) => item.id === sourceId);
       if (!claim || !source) throw new Error("Claim or source not found.");
-      const relationship = isClyExplicitTestFixtureRuntime
+      const fixtureEvidenceId = isClyExplicitTestFixtureRuntime
+        ? id("evidence")
+        : null;
+      const result = isClyExplicitTestFixtureRuntime
         ? {
-            id: id("edge"),
-            confidence: null,
-            reviewState: "unreviewed" as const,
+            duplicate: false,
+            evidence: {
+              id: fixtureEvidenceId ?? "",
+              payload: {
+                kind: "evidence" as const,
+                sourceId,
+                quote: passage.quote,
+                locator: passage.locator,
+                contentHash: "test-fixture",
+                verificationState: "unverified" as const,
+              },
+              origin: passage.origin ?? ("human" as const),
+              reviewedBy: null,
+              reviewedAt: null,
+              version: 1,
+              createdAt: isoNow(),
+              updatedAt: isoNow(),
+            },
+            containsRelationship: {
+              id: id("edge"),
+              fromObjectId: sourceId,
+              toObjectId: fixtureEvidenceId ?? "",
+              type: "contains" as const,
+              confidence: null,
+              origin: passage.origin ?? ("human" as const),
+              reviewState: "unreviewed" as const,
+              reviewedBy: null,
+              reviewedAt: null,
+              version: 1,
+              createdAt: isoNow(),
+            },
+            claimRelationship: {
+              id: id("edge"),
+              fromObjectId: fixtureEvidenceId ?? "",
+              toObjectId: claimId,
+              type,
+              confidence: passage.confidence ?? null,
+              origin: passage.origin ?? ("human" as const),
+              reviewState: "unreviewed" as const,
+              reviewedBy: null,
+              reviewedAt: null,
+              version: 1,
+              createdAt: isoNow(),
+            },
           }
-        : await apiClient.createRelationship(projectId, {
-            fromObjectId: sourceId,
-            toObjectId: claimId,
+        : await apiClient.createEvidenceLink(projectId, {
+            sourceId,
+            claimId,
+            quote: passage.quote,
+            locator: passage.locator,
             type,
+            origin: passage.origin,
+            confidence: passage.confidence,
           });
       const currentState = stateForProject(projectId);
       if (!currentState) return;
@@ -967,13 +939,78 @@ export const projectServices: ClyServices = {
             : currentClaim.contradictingSourceIds,
         updatedAt: isoNow(),
       });
+      currentState.addEvidencePassage({
+        id: result.evidence.id,
+        sourceId: result.evidence.payload.sourceId,
+        quote: result.evidence.payload.quote,
+        locator: result.evidence.payload.locator,
+        contentHash: result.evidence.payload.contentHash,
+        verificationState: result.evidence.payload.verificationState,
+        origin: result.evidence.origin,
+        reviewedBy: result.evidence.reviewedBy,
+        reviewedAt: result.evidence.reviewedAt,
+        version: result.evidence.version,
+        createdAt: result.evidence.createdAt,
+        updatedAt: result.evidence.updatedAt,
+      });
       currentState.addGraphEdge({
-        id: relationship.id,
+        id: result.containsRelationship.id,
         source: sourceId,
+        target: result.evidence.id,
+        relation: "contains",
+        confidence: null,
+        approved: false,
+        origin: result.containsRelationship.origin,
+        reviewState: result.containsRelationship.reviewState,
+        reviewedBy: result.containsRelationship.reviewedBy,
+        reviewedAt: result.containsRelationship.reviewedAt,
+        version: result.containsRelationship.version,
+        createdAt: result.containsRelationship.createdAt,
+      });
+      currentState.addGraphEdge({
+        id: result.claimRelationship.id,
+        source: result.evidence.id,
         target: claimId,
         relation: type,
-        confidence: relationship.confidence,
+        confidence: result.claimRelationship.confidence,
+        approved: result.claimRelationship.reviewState === "approved",
+        origin: result.claimRelationship.origin,
+        reviewState: result.claimRelationship.reviewState,
+        reviewedBy: result.claimRelationship.reviewedBy,
+        reviewedAt: result.claimRelationship.reviewedAt,
+        version: result.claimRelationship.version,
+        createdAt: result.claimRelationship.createdAt,
+      });
+    },
+    async reviewEvidenceRelationship(relationshipId, reviewState, confidence) {
+      const projectId = activeProjectId();
+      const relationship = await apiClient.reviewRelationship(
+        projectId,
+        relationshipId,
+        { reviewState, confidence },
+      );
+      stateForProject(projectId)?.updateGraphEdge(relationshipId, {
         approved: relationship.reviewState === "approved",
+        reviewState: relationship.reviewState,
+        confidence: relationship.confidence,
+        reviewedBy: relationship.reviewedBy,
+        reviewedAt: relationship.reviewedAt,
+        version: relationship.version,
+      });
+    },
+    async verifyEvidencePassage(evidenceId, verificationState) {
+      const projectId = activeProjectId();
+      const evidence = await apiClient.reviewEvidence(
+        projectId,
+        evidenceId,
+        verificationState,
+      );
+      stateForProject(projectId)?.updateEvidencePassage(evidenceId, {
+        verificationState: evidence.payload.verificationState,
+        reviewedBy: evidence.reviewedBy,
+        reviewedAt: evidence.reviewedAt,
+        version: evidence.version,
+        updatedAt: evidence.updatedAt,
       });
     },
   },
@@ -1013,9 +1050,9 @@ export const projectServices: ClyServices = {
   },
   reproducibility: {
     async runAudit() {
-      const state = useClyStore.getState();
-      const generated = generateReproducibilityAudit(state.data);
       if (isClyTestFixtureRuntime) {
+        const state = useClyStore.getState();
+        const generated = generateReproducibilityAudit(state.data);
         state.replaceReproducibilityAudit(generated.audit, generated.findings);
         state.notify(
           "Reproducibility audit complete",
@@ -1023,145 +1060,209 @@ export const projectServices: ClyServices = {
         );
         return generated.audit;
       }
-      const saved = await apiClient.saveReproducibilityAudit(
-        activeProjectId(),
-        generated.audit,
-        generated.findings,
+      const projectId = await ensureActiveProject();
+      const report = await apiClient.runReproducibilityAudit(projectId);
+      stateForProject(projectId)?.replaceReproducibilityAudit(
+        report.audit,
+        report.findings,
       );
-      state.replaceReproducibilityAudit(saved.audit, saved.findings);
-      state.notify(
+      stateForProject(projectId)?.notify(
         "Reproducibility audit complete",
-        `${generated.findings.filter((finding) => finding.severity !== "Passed").length} findings across code, data, environment, experiments, outputs, and claims.`,
+        `${report.audit.summary?.blockingIssueIds.length ?? 0} blockers, ${report.audit.summary?.missingRequirementCount ?? 0} missing requirements, and ${report.audit.summary?.failedCheckCount ?? 0} failed checks.`,
       );
-      return generated.audit;
+      return report.audit;
     },
     async resolveFinding(findingId) {
-      const finding = await apiClient.updateReproducibilityFinding(
-        activeProjectId(),
+      if (isClyTestFixtureRuntime) {
+        useClyStore.getState().updateFinding(findingId, { status: "Resolved" });
+        return;
+      }
+      const projectId = await ensureActiveProject();
+      const state = stateForProject(projectId);
+      const audit = state?.data.audits[0];
+      if (!audit) throw new Error("Run a reproducibility audit first.");
+      const finding = await apiClient.resolveReproducibilityFinding(
+        projectId,
+        audit.id,
         findingId,
-        { status: "Resolved" },
       );
-      useClyStore.getState().updateFinding(findingId, finding);
+      state?.updateFinding(findingId, { status: finding.status });
     },
     async setFindingDisposition(findingId, input) {
-      const finding = await apiClient.updateReproducibilityFinding(
-        activeProjectId(),
-        findingId,
-        input,
-      );
-      useClyStore.getState().updateFinding(findingId, finding);
-      return finding;
+      if (isClyTestFixtureRuntime) {
+        useClyStore.getState().updateFinding(findingId, input);
+        return;
+      }
+      if (input.status === "Resolved") {
+        await this.resolveFinding(findingId);
+        return;
+      }
+      throw new CapabilityUnavailableError("reproducibility.audit");
+    },
+  },
+  integrations: {
+    async updateStatus(integrationId, status) {
+      if (isClyTestFixtureRuntime) {
+        useClyStore.getState().updateIntegration(integrationId, { status });
+        return;
+      }
+      throw new CapabilityUnavailableError("integrations.configure");
     },
   },
   planner: {
-    async setStatus(stepId, status) {
+    async generate(seed) {
       if (isClyTestFixtureRuntime) {
+        if (seed) useClyStore.getState().replaceNextSteps(seed);
+        return seed ?? useClyStore.getState().data.nextSteps;
+      }
+      const projectId = await ensureActiveProject();
+      const result = await apiClient.generateNextSteps(projectId);
+      const steps = result.recommendations.map(
+        nextStepFromPlannerRecommendation,
+      );
+      useClyStore.getState().replaceNextSteps(steps);
+      return steps;
+    },
+    async setStatus(stepId, status, reason) {
+      if (isClyTestFixtureRuntime) {
+        if (status === "Recommended") {
+          useClyStore
+            .getState()
+            .replaceNextSteps(
+              useClyStore
+                .getState()
+                .data.nextSteps.map((step) =>
+                  step.id === stepId ? { ...step, status } : step,
+                ),
+            );
+          return;
+        }
         useClyStore.getState().updateNextStep(stepId, status);
         return;
       }
-      const step = await apiClient.updatePlannerStep(
-        activeProjectId(),
-        stepId,
-        status,
-      );
-      useClyStore.getState().updateNextStep(stepId, step.status);
-    },
-    async generate(steps) {
-      if (isClyTestFixtureRuntime) {
-        useClyStore.setState((state) => ({
-          data: { ...state.data, nextSteps: steps },
-        }));
-        return steps;
+      if (status === "Recommended") {
+        throw new Error(
+          "A reviewed recommendation cannot return to draft state.",
+        );
       }
-      const saved = await apiClient.savePlannerSteps(activeProjectId(), steps);
-      useClyStore.setState((state) => ({
-        data: { ...state.data, nextSteps: saved },
-      }));
-      return saved;
+      if (status === "In progress") {
+        throw new Error(
+          "Starting work requires a separate, explicit execution approval.",
+        );
+      }
+      const projectId = activeProjectId();
+      const action = {
+        Accepted: "accept",
+        Deferred: "defer",
+        Dismissed: "dismiss",
+      }[status] as "accept" | "defer" | "dismiss";
+      if (action !== "accept" && !reason?.trim()) {
+        throw new Error(
+          `${action === "defer" ? "Deferring" : "Dismissing"} a recommendation requires a reason.`,
+        );
+      }
+      const result = await apiClient.reviewNextStep(
+        projectId,
+        stepId,
+        action === "accept"
+          ? { action }
+          : {
+              action,
+              reason: reason?.trim() ?? "",
+            },
+      );
+      useClyStore
+        .getState()
+        .updateNextStep(
+          stepId,
+          nextStepFromPlannerRecommendation(result.recommendation).status as
+            | "Accepted"
+            | "Deferred"
+            | "Dismissed",
+        );
+    },
+    async edit(stepId, edit, reason) {
+      if (isClyTestFixtureRuntime) {
+        const current = useClyStore
+          .getState()
+          .data.nextSteps.find((step) => step.id === stepId);
+        if (!current) throw new Error("Recommendation was not found.");
+        useClyStore
+          .getState()
+          .replaceNextSteps(
+            useClyStore
+              .getState()
+              .data.nextSteps.map((step) =>
+                step.id === stepId ? { ...step, ...edit } : step,
+              ),
+          );
+        return { ...current, ...edit };
+      }
+      const projectId = activeProjectId();
+      const result = await apiClient.reviewNextStep(projectId, stepId, {
+        action: "edit",
+        edit,
+        reason,
+      });
+      const step = nextStepFromPlannerRecommendation(result.recommendation);
+      useClyStore
+        .getState()
+        .replaceNextSteps(
+          useClyStore
+            .getState()
+            .data.nextSteps.map((item) => (item.id === stepId ? step : item)),
+        );
+      return step;
     },
   },
   decisions: {
     async create(input) {
       if (isClyTestFixtureRuntime) {
-        const decision = {
-          ...input,
+        const decision: ResearchDecision = {
           id: id("decision"),
-          date: isoNow(),
+          title: input.title,
+          date: new Date().toISOString().slice(0, 10),
+          decision: input.decision,
+          reason: input.reason,
           alternatives: [],
           evidenceIds: [],
           affectedIds: [],
-          status: "Active" as const,
-          origin: "Researcher" as const,
+          status: "Active",
+          origin: "Researcher",
         };
         useClyStore.getState().addDecision(decision);
         return decision;
       }
-      const decision = await apiClient.createDecision(activeProjectId(), {
-        ...input,
-        alternatives: [],
-        evidenceIds: [],
-        affectedIds: [],
-        status: "Active",
-        origin: "Researcher",
-      });
-      useClyStore.getState().addDecision(decision);
-      return decision;
+      throw new CapabilityUnavailableError("decisions.create");
     },
     async update(decisionId, input) {
       if (isClyTestFixtureRuntime) {
-        const current = useClyStore
+        useClyStore.getState().updateDecision(decisionId, input);
+        const updated = useClyStore
           .getState()
           .data.decisions.find((item) => item.id === decisionId);
-        if (!current) throw new Error("Research decision not found.");
-        const decision = { ...current, ...input };
-        useClyStore.getState().updateDecision(decisionId, decision);
-        return decision;
+        if (!updated) throw new Error("Decision was not found.");
+        return updated;
       }
-      const decision = await apiClient.updateDecision(
-        activeProjectId(),
-        decisionId,
-        input,
-      );
-      useClyStore.getState().updateDecision(decisionId, decision);
-      return decision;
+      throw new CapabilityUnavailableError("decisions.create");
     },
     async supersede(decisionId, replacement) {
       if (isClyTestFixtureRuntime) {
-        const current = useClyStore
-          .getState()
-          .data.decisions.find((item) => item.id === decisionId);
-        if (!current) throw new Error("Research decision not found.");
-        const nextDecision = {
-          ...replacement,
-          id: id("decision"),
-          date: isoNow(),
-          alternatives: replacement.alternatives ?? [],
-          evidenceIds: replacement.evidenceIds ?? [],
-          affectedIds: replacement.affectedIds ?? [],
-          status: "Active" as const,
-          origin: replacement.origin ?? ("Researcher" as const),
-        };
+        const replacementId =
+          typeof replacement === "string"
+            ? replacement
+            : (await this.create(replacement)).id;
         useClyStore.getState().updateDecision(decisionId, {
           status: "Superseded",
-          supersededBy: nextDecision.id,
+          supersededBy: replacementId,
         });
-        useClyStore.getState().addDecision(nextDecision);
-        return nextDecision;
+        const item = useClyStore
+          .getState()
+          .data.decisions.find((decision) => decision.id === replacementId);
+        if (!item) throw new Error("Replacement decision was not found.");
+        return item;
       }
-      const result = await apiClient.supersedeDecision(
-        activeProjectId(),
-        decisionId,
-        {
-          ...replacement,
-          alternatives: replacement.alternatives ?? [],
-          evidenceIds: replacement.evidenceIds ?? [],
-          affectedIds: replacement.affectedIds ?? [],
-          origin: replacement.origin ?? "Researcher",
-        },
-      );
-      useClyStore.getState().updateDecision(decisionId, result.decision);
-      useClyStore.getState().addDecision(result.replacement);
-      return result.replacement;
+      throw new CapabilityUnavailableError("decisions.create");
     },
   },
 };

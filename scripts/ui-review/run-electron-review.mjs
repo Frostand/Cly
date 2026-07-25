@@ -1,9 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "@playwright/test";
-import { getClyMainWindow } from "./electron-main-window.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
@@ -27,7 +26,7 @@ const app = await electron.launch({
   timeout: 60_000,
 });
 
-const window = await getClyMainWindow(app);
+const window = await app.firstWindow();
 const browserWindow = await app.browserWindow(window);
 await browserWindow.evaluate((nativeWindow) => {
   nativeWindow.setMinimumSize(800, 600);
@@ -54,9 +53,34 @@ window.on("console", (message) => {
 });
 window.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
 
-const routes = JSON.parse(
-  readFileSync(path.join(root, "src/features/cly/route-manifest.json"), "utf8"),
-).map(({ id, heading }) => [id, id, heading]);
+const routes = [
+  ["overview", "overview", "Neural surrogate reliability"],
+  ["agents", "agent-sessions-overview", "Agent Sessions"],
+  ["context", "context", "Context Composer"],
+  ["graph", "research-graph", "Research Object Graph"],
+  ["experiments", "experiments", "Experiment Manager"],
+  ["sources", "sources", "Source Manager"],
+  ["literature", "literature", "Literature Workspace"],
+  ["notebooks", "notebooks", "Notebook Scanner"],
+  ["code", "code-linker", "Code-to-Research Linker"],
+  ["claims", "claims", "Claim Audit Board"],
+  ["provenance", "provenance", "Figure & Table Provenance"],
+  ["reproducibility", "reproducibility", "Reproducibility Auditor"],
+  ["decisions", "decisions", "Research Decision Log"],
+  ["next-steps", "next-steps", "Next-Step Planner"],
+  ["integrations", "integrations", "Integrations & Providers"],
+  ["models", "models-agents", "Models & Agents"],
+  ["help", "setup-help", "Setup & Help"],
+  ["settings", "settings", "Settings"],
+];
+
+const navigateToResearch = async (id) => {
+  const destination = window.getByTestId(`nav-${id}`);
+  if (!(await destination.isVisible())) {
+    await window.locator("details.cly-sidebar-advanced > summary").click();
+  }
+  await destination.click();
+};
 
 const capture = async (name, animations = "disabled") => {
   await window.waitForTimeout(180);
@@ -81,25 +105,9 @@ const viewportMatrix = [
   [1440, 900],
   [1728, 1117],
 ];
-for (const [id, fileName, heading] of routes) {
-  if (id === "dev") {
-    await window.getByTestId("product-dev").click();
-    await window.getByRole("region", { name: heading }).waitFor();
-  } else {
-    await window.getByTestId("product-research").click();
-    await window.getByTestId(`nav-${id}`).click();
-    await window.getByRole("heading", { level: 1, name: heading }).waitFor();
-  }
-  if (id === "models") {
-    await window.waitForFunction(
-      () =>
-        !document.body.innerText.includes(
-          "Checking installed AI providers and their available models",
-        ),
-      undefined,
-      { timeout: 45_000 },
-    );
-  }
+for (const [id, fileName] of routes) {
+  await navigateToResearch(id);
+  await window.getByRole("heading", { level: 1 }).first().waitFor();
   for (const [width, height] of viewportMatrix) {
     await resize(width, height);
     await capture(`${fileName}-${width}x${height}`);
@@ -211,7 +219,7 @@ await window
   .getByLabel("Switch agent session")
   .selectOption({ label: "Audit primary claim evidence" });
 
-await window.getByTestId("nav-context").click();
+await navigateToResearch("context");
 const include = window.getByRole("switch", {
   name: "Include Raman et al. 2025",
 });
@@ -247,7 +255,7 @@ await window
   .click();
 await window.getByTestId("nav-experiments").click();
 await window.getByText("Calibrated ensemble sweep", { exact: true }).click();
-await window.getByTestId("nav-provenance").click();
+await navigateToResearch("provenance");
 await window
   .getByText("Figure 2 · Cost vs calibration", { exact: true })
   .first()
@@ -260,7 +268,7 @@ await window
   .click();
 await window.getByTestId("nav-next-steps").click();
 await window.getByRole("button", { name: "Accept" }).first().click();
-await window.getByTestId("nav-decisions").click();
+await navigateToResearch("decisions");
 await window.getByRole("button", { name: "New decision" }).click();
 const decisionDialog = window.getByRole("dialog", {
   name: "Record research decision",
@@ -272,14 +280,14 @@ await decisionDialog
   .getByRole("textbox", { name: "Decision", exact: true })
   .fill("Use ensemble ×5 as the canonical comparison.");
 await decisionDialog.getByRole("button", { name: "Record decision" }).click();
-await window.getByTestId("nav-graph").click();
+await navigateToResearch("graph");
 await window.getByText(/20× speedup with decision accuracy/).click();
 await capture("research-evidence-flow-complete");
 
-await window.getByTestId("nav-models").click();
+await navigateToResearch("models");
 await window.locator(".cly-agent-model").first().selectOption("Claude Sonnet");
 await window.getByRole("button", { name: "Save preset" }).click();
-await window.getByTestId("nav-integrations").click();
+await navigateToResearch("integrations");
 await window
   .locator(".cly-integration-catalog .cly-panel", { hasText: "GitHub" })
   .getByRole("button", { name: "Setup" })

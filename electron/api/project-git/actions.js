@@ -8,15 +8,10 @@ import {
   resolveCodexCliLaunch,
 } from "../chat/codex-cli-launch.js";
 import { getCodexErrorDetail } from "../chat/codex-prompt.js";
-import {
-  getCursorCliSpawnErrorMessage,
-  normalizeCursorCliModel,
-  resolveCursorCliLaunch,
-} from "../providers/cursor-cli.js";
+import { getOpenCodeServerConfig } from "../chat/opencode-permissions.js";
 import { normalizeClaudeCodeModel } from "../providers/model-options.js";
 import {
   fetchAnthropicLowCostModel,
-  fetchCursorLowCostModel,
   fetchOpenAiLowCostModel,
   fetchOpenCodeLowCostModel,
 } from "../providers/provider-models.js";
@@ -195,6 +190,7 @@ const generateClaudeCommitMessage = async ({
       ...(claudeExecutablePath
         ? { pathToClaudeCodeExecutable: claudeExecutablePath }
         : {}),
+      allowedTools: [],
       continue: false,
       cwd: projectPath,
       persistSession: false,
@@ -386,6 +382,7 @@ const generateOpenCodeCommitMessage = async ({
 
   try {
     opencode = await createOpencode({
+      config: getOpenCodeServerConfig("plan", "default"),
       hostname: "127.0.0.1",
       port: 0,
       signal: requestAbortController.signal,
@@ -445,156 +442,23 @@ const generateOpenCodeCommitMessage = async ({
   }
 };
 
-const getCursorEventText = (event) => {
-  if (!event || typeof event !== "object") {
-    return "";
+const generateCursorCommitMessage = async ({ changes }) => {
+  if (changes.length > 1) {
+    return `Update ${changes.length} project files`;
   }
 
-  if (event.type === "result" && typeof event.result === "string") {
-    return event.result;
-  }
-
-  if (event.type !== "assistant" || !event.message) {
-    return "";
-  }
-
-  const content = event.message.content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) =>
-        part?.type === "text" && typeof part.text === "string" ? part.text : "",
-      )
-      .join("");
-  }
-
-  return typeof event.message.text === "string" ? event.message.text : "";
+  const change = changes[0];
+  const status = String(change?.status ?? "").toLowerCase();
+  const verb = status.startsWith("a")
+    ? "Add"
+    : status.startsWith("d")
+      ? "Remove"
+      : status.startsWith("r")
+        ? "Rename"
+        : "Update";
+  const fileName = path.basename(String(change?.path ?? "project files"));
+  return sanitizeGeneratedCommitMessage(`${verb} ${fileName}`);
 };
-
-const generateCursorCommitMessage = async ({
-  customInstructions,
-  diffText,
-  changes,
-  model: requestedModel,
-  projectPath,
-}) =>
-  new Promise((resolve, reject) => {
-    let stdoutBuffer = "";
-    let stderrBuffer = "";
-    let latestText = "";
-    const prompt = [
-      "You write concise, accurate git commit subjects. Return only the subject line.",
-      buildCommitMessagePrompt({ changes, customInstructions, diffText }),
-    ].join("\n\n");
-
-    const handleEvent = (event) => {
-      const text = getCursorEventText(event);
-      if (text) {
-        latestText += text;
-        if (event.type === "result") {
-          latestText = text;
-        }
-      }
-
-      if (event?.type === "error") {
-        const detail =
-          typeof event.message === "string"
-            ? event.message
-            : typeof event.error === "string"
-              ? event.error
-              : "";
-        if (detail) {
-          stderrBuffer += `${detail}\n`;
-        }
-      }
-    };
-
-    const handleStdoutChunk = (chunk) => {
-      stdoutBuffer += chunk.toString();
-      const lines = stdoutBuffer.split(/\r?\n/);
-      stdoutBuffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) {
-          continue;
-        }
-
-        try {
-          handleEvent(JSON.parse(trimmed));
-        } catch {
-          stderrBuffer += `${trimmed}\n`;
-        }
-      }
-    };
-
-    void Promise.all([
-      resolveCursorCliLaunch(),
-      requestedModel
-        ? Promise.resolve(requestedModel)
-        : fetchCursorLowCostModel(),
-    ])
-      .then(([launch, model]) => {
-        const child = spawn(
-          launch.command,
-          [
-            ...launch.argsPrefix,
-            "-p",
-            "--trust",
-            "--output-format",
-            "stream-json",
-            "--mode",
-            "ask",
-            "--model",
-            normalizeCursorCliModel(model),
-            prompt,
-          ],
-          {
-            cwd: projectPath,
-            env: process.env,
-            shell: launch.shell ?? false,
-            stdio: ["ignore", "pipe", "pipe"],
-            windowsHide: true,
-          },
-        );
-
-        child.stdout.on("data", handleStdoutChunk);
-        child.stderr.on("data", (chunk) => {
-          stderrBuffer += chunk.toString();
-        });
-        child.on("error", (error) => {
-          reject(new Error(getCursorCliSpawnErrorMessage(error)));
-        });
-        child.on("close", (code) => {
-          if (stdoutBuffer.trim()) {
-            try {
-              handleEvent(JSON.parse(stdoutBuffer.trim()));
-            } catch {
-              stderrBuffer += `${stdoutBuffer.trim()}\n`;
-            }
-          }
-
-          if (code === 0) {
-            resolve(sanitizeGeneratedCommitMessage(latestText));
-            return;
-          }
-
-          reject(
-            new Error(
-              stderrBuffer.trim() || `Cursor CLI exited with code ${code}.`,
-            ),
-          );
-        });
-      })
-      .catch((error) => {
-        reject(
-          new Error(
-            error instanceof Error
-              ? error.message
-              : "Cursor CLI request failed.",
-          ),
-        );
-      });
-  });
 
 const generateAiCommitMessage = async ({
   provider,

@@ -112,6 +112,7 @@ export function IntegrationsScreen() {
     if (!activeProject?.path) return;
     try {
       await localIntegrationService.openProjectInEditor(
+        activeProject.id,
         editor.id,
         activeProject.path,
       );

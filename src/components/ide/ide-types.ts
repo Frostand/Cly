@@ -18,7 +18,7 @@ export type ClaudePermissionMode = "ask-permissions" | "accept-edits";
 
 export const PROJECT_TERMINAL_SESSION_PREFIX = "__project_terminal__:";
 export const createProjectTerminalSessionId = (projectId: string): string =>
-  `${PROJECT_TERMINAL_SESSION_PREFIX}${projectId}:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  `${PROJECT_TERMINAL_SESSION_PREFIX}${projectId}:${crypto.randomUUID()}`;
 export const getBrowserTerminalSessionId = (projectId: string): string =>
   `__browser_terminal__:${projectId}`;
 export const TERMINAL_MIN_HEIGHT_PX = 48;

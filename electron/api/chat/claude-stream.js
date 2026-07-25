@@ -1,3 +1,5 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -12,7 +14,10 @@ import {
   normalizeClaudeCodeModel,
 } from "../providers/model-options.js";
 import { resolveCliCommandPath } from "../shared/cli.js";
-import { waitForToolApproval } from "../tool-approvals.js";
+import {
+  createToolApprovalChallenge,
+  waitForToolApproval,
+} from "../tool-approvals.js";
 import {
   buildCodexMessageFilePartsSummary,
   getLatestUserMessage,
@@ -143,6 +148,107 @@ const CLAUDE_ACCEPT_EDITS_ALLOWED_MCP_TOOLS = new Set(
 );
 
 const CLAUDE_DIRECT_WEB_TOOLS = new Set(["webfetch", "websearch"]);
+const CLAUDE_PLAN_ALLOWED_TOOLS = new Set([
+  "enterplanmode",
+  "glob",
+  "grep",
+  "ls",
+  "read",
+  "todowrite",
+]);
+
+const CLAUDE_PROJECT_PATH_TOOLS = new Set([
+  "edit",
+  "glob",
+  "grep",
+  "ls",
+  "multiedit",
+  "notebookedit",
+  "read",
+  "write",
+]);
+const CLAUDE_REQUIRED_PATH_TOOLS = new Set([
+  "edit",
+  "multiedit",
+  "notebookedit",
+  "read",
+  "write",
+]);
+
+const isContainedPath = (root, target) => {
+  const relative = path.relative(root, target);
+  return (
+    relative === "" ||
+    (relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative))
+  );
+};
+
+const canonicalProspectivePath = async (target) => {
+  const absoluteTarget = path.resolve(target);
+  let ancestor = absoluteTarget;
+  while (true) {
+    try {
+      const canonicalAncestor = await fs.realpath(ancestor);
+      return path.resolve(
+        canonicalAncestor,
+        path.relative(ancestor, absoluteTarget),
+      );
+    } catch (error) {
+      if (error?.code !== "ENOENT") return null;
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) return null;
+      ancestor = parent;
+    }
+  }
+};
+
+const hasEscapingGlobPattern = (value) => {
+  if (typeof value !== "string" || !value.trim()) return false;
+  const normalized = value.replaceAll("\\", "/");
+  return (
+    path.isAbsolute(value) ||
+    normalized.split("/").some((segment) => segment === "..")
+  );
+};
+
+export async function isClaudeProjectPathAuthorized({
+  input,
+  projectPath,
+  toolName,
+}) {
+  const normalizedToolName = normalizeClaudeToolName(toolName);
+  if (!CLAUDE_PROJECT_PATH_TOOLS.has(normalizedToolName)) return true;
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return !CLAUDE_REQUIRED_PATH_TOOLS.has(normalizedToolName);
+  }
+  if (normalizedToolName === "glob" && hasEscapingGlobPattern(input.pattern)) {
+    return false;
+  }
+  if (normalizedToolName === "grep" && hasEscapingGlobPattern(input.glob)) {
+    return false;
+  }
+
+  const submittedPath =
+    input.file_path ?? input.notebook_path ?? input.path ?? null;
+  if (typeof submittedPath !== "string" || !submittedPath.trim()) {
+    return !CLAUDE_REQUIRED_PATH_TOOLS.has(normalizedToolName);
+  }
+
+  try {
+    const canonicalRoot = await fs.realpath(projectPath);
+    const candidate = path.isAbsolute(submittedPath)
+      ? submittedPath
+      : path.resolve(canonicalRoot, submittedPath);
+    const canonicalTarget = await canonicalProspectivePath(candidate);
+    return Boolean(
+      canonicalTarget && isContainedPath(canonicalRoot, canonicalTarget),
+    );
+  } catch {
+    return false;
+  }
+}
 
 const getClaudeToolSearchQuery = (input) => {
   if (typeof input === "string") {
@@ -163,7 +269,7 @@ const getClaudeToolSearchQuery = (input) => {
   return typeof value === "string" ? value.trim() : "";
 };
 
-const createClaudePermissionHandler = (
+export const createClaudePermissionHandler = (
   writer,
   { mode, projectId, projectPath, runId },
 ) => {
@@ -183,6 +289,43 @@ const createClaudePermissionHandler = (
         interrupt: false,
         message:
           "WebFetch and WebSearch are already available. Use the matching web tool directly instead of ToolSearch.",
+        ...(toolUseID ? { toolUseID } : {}),
+      };
+    }
+
+    if (
+      CLAUDE_PROJECT_PATH_TOOLS.has(normalizedToolName) &&
+      !(await isClaudeProjectPathAuthorized({
+        input,
+        projectPath,
+        toolName: normalizedToolName,
+      }))
+    ) {
+      return {
+        behavior: "deny",
+        interrupt: false,
+        message:
+          "File tools are restricted to the registered Cly project root.",
+        ...(toolUseID ? { toolUseID } : {}),
+      };
+    }
+
+    if (mode === "plan" && normalizedToolName !== "askuserquestion") {
+      if (
+        CLAUDE_PLAN_ALLOWED_TOOLS.has(normalizedToolName) ||
+        CLAUDE_ACCEPT_EDITS_ALLOWED_MCP_TOOLS.has(normalizedToolName)
+      ) {
+        return {
+          behavior: "allow",
+          ...(toolUseID ? { toolUseID } : {}),
+          updatedInput: input,
+        };
+      }
+      return {
+        behavior: "deny",
+        interrupt: false,
+        message:
+          "Plan mode permits project reads and planning only. Switch to Build mode for edits; host commands remain separately protected.",
         ...(toolUseID ? { toolUseID } : {}),
       };
     }
@@ -239,6 +382,27 @@ const createClaudePermissionHandler = (
         : {}),
     };
 
+    const approvalRequest = {
+      input,
+      options: {
+        blockedPath: options?.blockedPath ?? null,
+        decisionReason: options?.decisionReason ?? null,
+        description: options?.description ?? null,
+        displayName: options?.displayName ?? null,
+        title: options?.title ?? null,
+        toolUseID: toolCallId,
+      },
+      toolName,
+    };
+    const approvalProjectId = projectId ?? projectPath;
+    const approvalRunId = runId ?? toolCallId;
+    const challenge = createToolApprovalChallenge({
+      id: approvalId,
+      projectId: approvalProjectId,
+      request: approvalRequest,
+      runId: approvalRunId,
+    });
+
     writer.write({
       dynamic: true,
       providerExecuted: true,
@@ -258,28 +422,19 @@ const createClaudePermissionHandler = (
     });
     writer.write({
       approvalId,
+      signature: challenge.signature,
       toolCallId,
       type: "tool-approval-request",
     });
 
     const response = await waitForToolApproval({
       id: approvalId,
-      projectId: projectId ?? projectPath,
+      projectId: approvalProjectId,
       provider: "anthropic",
-      request: {
-        input,
-        options: {
-          blockedPath: options?.blockedPath ?? null,
-          decisionReason: options?.decisionReason ?? null,
-          description: options?.description ?? null,
-          displayName: options?.displayName ?? null,
-          title: options?.title ?? null,
-          toolUseID: toolCallId,
-        },
-        toolName,
-      },
-      runId: runId ?? toolCallId,
+      request: approvalRequest,
+      runId: approvalRunId,
       signal: options?.signal,
+      challenge,
     });
 
     if (response.approved) {
@@ -376,7 +531,7 @@ export const streamClaudeResponse = async ({
   let usesClaudeImageInput = false;
   const claudePermissionHandlerMode =
     agentMode === "plan"
-      ? "ask"
+      ? "plan"
       : claudePermissionMode === "accept-edits"
         ? "accept-edits"
         : "ask";

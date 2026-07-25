@@ -544,7 +544,7 @@ export interface ChatComposerProps {
   promptDomId: string;
   promptInputDomId: string;
   promptText: string;
-  projectPath: string;
+  projectId: string;
   reasoningEffortOptions: ChatPanelReasoningOption[];
   speedOptions: ChatPanelSpeedOption[];
   selectedModel: string;
@@ -583,7 +583,7 @@ export const ChatComposer = ({
   promptDomId,
   promptInputDomId,
   promptText,
-  projectPath,
+  projectId,
   reasoningEffortOptions,
   speedOptions,
   selectedModel,
@@ -632,7 +632,7 @@ export const ChatComposer = ({
           body: JSON.stringify({
             directory: ".",
             maxResults: PROJECT_REFERENCE_FILE_LIMIT,
-            projectPath,
+            projectId,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -657,7 +657,7 @@ export const ChatComposer = ({
     void loadProjectReferences();
 
     return () => abortController.abort();
-  }, [projectPath]);
+  }, [projectId]);
 
   useEffect(() => {
     if (promptText !== "") {
@@ -1020,6 +1020,10 @@ export const ChatComposer = ({
                         return (
                           <SelectItem
                             className="text-xs"
+                            disabled={
+                              selectedProvider === "cursor" &&
+                              option.value === "build"
+                            }
                             key={option.value}
                             value={option.value}
                           >

@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/.pnpm-store/
 /.pnp
 .pnp.*
 .yarn/*
@@ -14,7 +15,7 @@
 /coverage
 /playwright-report/
 /test-results/
-/output/
+/output/playwright/
 
 # vite
 /dist/
@@ -27,13 +28,9 @@
 /release
 /storybook-static/
 /.electron-home
-/.pnpm-store/
 
 # misc
 .DS_Store
-._*
-Thumbs.db
-desktop.ini
 *.pem
 
 # debug

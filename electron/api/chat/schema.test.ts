@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 
-import { chatRequestBodySchema, chatTitleRequestBodySchema } from "./schema.js";
+import { chatRequestBodySchema } from "./schema.js";
 
 const request = {
   messages: [],
   model: "test-model",
+  projectId: "project-1",
   projectPath: "/tmp/project",
   provider: "openai",
 };
@@ -26,41 +27,71 @@ describe("chat authority schema", () => {
     ).toBe(false);
   });
 
-  it("rejects injected provider model ids and control characters in paths", () => {
+  it("derives provider permissions from the authoritative agent mode", () => {
     expect(
-      chatRequestBodySchema.safeParse({
-        ...request,
-        model: "gpt-5.6-sol; touch /tmp/cly-canary",
-      }).success,
-    ).toBe(false);
+      chatRequestBodySchema.parse({ ...request, agentMode: "plan" }),
+    ).toMatchObject({
+      agentMode: "plan",
+      claudePermissionMode: "ask-permissions",
+      codexPermissionMode: "default",
+    });
     expect(
-      chatRequestBodySchema.safeParse({
-        ...request,
-        projectPath: "/tmp/project\n--dangerously-skip-permissions",
-      }).success,
-    ).toBe(false);
-    expect(
-      chatRequestBodySchema.safeParse({
-        ...request,
-        projectPath: "relative/project",
-      }).success,
-    ).toBe(false);
-    expect(
-      chatRequestBodySchema.safeParse({
-        ...request,
-        projectPath: "/tmp/a project; still a valid directory",
-      }).success,
-    ).toBe(true);
+      chatRequestBodySchema.parse({ ...request, agentMode: "build" }),
+    ).toMatchObject({
+      agentMode: "build",
+      claudePermissionMode: "accept-edits",
+      codexPermissionMode: "auto-accept-edits",
+    });
   });
 
-  it("applies the same launch-safe validation to title requests", () => {
+  it("rejects permission modes that contradict plan mode", () => {
     expect(
-      chatTitleRequestBodySchema.safeParse({
-        fallbackModel: "$(open -a Calculator)",
-        projectPath: "/tmp/project",
-        promptText: "A harmless title prompt",
-        provider: "openai",
+      chatRequestBodySchema.safeParse({
+        ...request,
+        agentMode: "plan",
+        claudePermissionMode: "accept-edits",
       }).success,
     ).toBe(false);
+    expect(
+      chatRequestBodySchema.safeParse({
+        ...request,
+        agentMode: "plan",
+        codexPermissionMode: "auto-accept-edits",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects permission modes that contradict build mode", () => {
+    expect(
+      chatRequestBodySchema.safeParse({
+        ...request,
+        agentMode: "build",
+        claudePermissionMode: "ask-permissions",
+      }).success,
+    ).toBe(false);
+    expect(
+      chatRequestBodySchema.safeParse({
+        ...request,
+        agentMode: "build",
+        codexPermissionMode: "default",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps Cursor plan-only until its actions can be intercepted", () => {
+    expect(
+      chatRequestBodySchema.safeParse({
+        ...request,
+        provider: "cursor",
+        agentMode: "build",
+      }).success,
+    ).toBe(false);
+    expect(
+      chatRequestBodySchema.safeParse({
+        ...request,
+        provider: "cursor",
+        agentMode: "plan",
+      }).success,
+    ).toBe(true);
   });
 });

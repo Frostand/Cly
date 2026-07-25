@@ -1,15 +1,26 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { navigateToResearch } from "./navigation-helpers";
 
-const routeManifest = JSON.parse(
-  readFileSync(
-    path.join(process.cwd(), "src/features/cly/route-manifest.json"),
-    "utf8",
-  ),
-) as { id: string; label: string; heading: string }[];
-
-const routes = routeManifest.map(({ id, heading }) => [id, heading] as const);
+const routes = [
+  ["overview", "Neural surrogate reliability"],
+  ["agents", "Agent Sessions"],
+  ["context", "Context Composer"],
+  ["graph", "Research Object Graph"],
+  ["experiments", "Experiment Manager"],
+  ["sources", "Source Manager"],
+  ["literature", "Literature Workspace"],
+  ["notebooks", "Notebook Scanner"],
+  ["code", "Code-to-Research Linker"],
+  ["claims", "Claim Audit Board"],
+  ["provenance", "Figure & Table Provenance"],
+  ["reproducibility", "Reproducibility Auditor"],
+  ["decisions", "Research Decision Log"],
+  ["next-steps", "Next-Step Planner"],
+  ["integrations", "Integrations & Providers"],
+  ["models", "Models & Agents"],
+  ["help", "Setup & Help"],
+  ["settings", "Settings"],
+] as const;
 
 const dataRoutes = routes.filter(
   ([id]) => id !== "agents" && id !== "settings",
@@ -21,13 +32,7 @@ async function chooseFixture(page: Page, label: RegExp) {
 }
 
 async function openRoute(page: Page, id: string, heading: string) {
-  if (id === "dev") {
-    await page.getByTestId("product-dev").click();
-    await expect(page.getByRole("region", { name: heading })).toBeVisible();
-    return;
-  }
-  await page.getByTestId("product-research").click();
-  await page.getByTestId(`nav-${id}`).click();
+  await navigateToResearch(page, id);
   await expect(
     page.getByRole("heading", { name: heading, level: 1 }),
   ).toBeVisible();
@@ -135,7 +140,7 @@ test("uses opacity-only route feedback when reduced motion is requested", async 
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openRoute(page, "overview", "Neural surrogate reliability");
-  await page.getByTestId("nav-context").click();
+  await navigateToResearch(page, "context");
   await expect(
     page.getByRole("heading", { name: "Context Composer", level: 1 }),
   ).toBeVisible();

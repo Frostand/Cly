@@ -10,6 +10,7 @@ const updaterSemver = updaterRequire("semver");
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const INITIAL_UPDATE_CHECK_DELAY_MS = 5000;
 const ANONYMOUS_STAGING_USER_ID = "00000000-0000-4000-8000-000000000000";
+const LOOPBACK_UPDATE_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
 
 function nowIsoString() {
   return new Date().toISOString();
@@ -39,10 +40,54 @@ function getErrorMessage(error) {
   return "Update check failed.";
 }
 
-function getUpdateFeedUrl() {
+function normalizeUpdateFeedUrl(
+  value,
+  { allowInsecureLoopback = false, source },
+) {
+  if (!value) {
+    return null;
+  }
+
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    console.warn(`[updater] Ignoring invalid update feed URL from ${source}.`);
+    return null;
+  }
+
+  if (url.username || url.password || url.search || url.hash) {
+    console.warn(
+      `[updater] Ignoring update feed URL from ${source} because credentials, query parameters, and fragments are not permitted in the public feed base URL.`,
+    );
+    return null;
+  }
+
+  const isHttps = url.protocol === "https:";
+  const isAllowedDevLoopback =
+    allowInsecureLoopback &&
+    url.protocol === "http:" &&
+    LOOPBACK_UPDATE_HOSTS.has(url.hostname.toLowerCase());
+  if (!isHttps && !isAllowedDevLoopback) {
+    console.warn(
+      `[updater] Ignoring insecure update feed URL from ${source}. Production feeds require HTTPS; development permits HTTP only on localhost loopback addresses.`,
+    );
+    return null;
+  }
+
+  const normalizedPath = url.pathname.replace(/\/+$/, "");
+  url.pathname = normalizedPath || "/";
+  const normalized = url.toString();
+  return normalizedPath ? normalized : normalized.replace(/\/(?=[?#]|$)/, "");
+}
+
+function getUpdateFeedUrl(options) {
   const url = process.env.CLY_UPDATE_FEED_URL?.trim();
 
-  return url ? url.replace(/\/+$/, "") : null;
+  return normalizeUpdateFeedUrl(url, {
+    ...options,
+    source: "CLY_UPDATE_FEED_URL",
+  });
 }
 
 function parseScalar(value) {
@@ -56,7 +101,7 @@ function parseScalar(value) {
   return trimmed;
 }
 
-function getPackagedUpdateFeedUrl() {
+function getPackagedUpdateFeedUrl(options) {
   if (!process.resourcesPath) {
     return null;
   }
@@ -69,30 +114,17 @@ function getPackagedUpdateFeedUrl() {
     const match = config.match(/^\s*url:\s*(.+?)\s*$/m);
     const url = match ? parseScalar(match[1]).trim() : null;
 
-    return url ? url.replace(/\/+$/, "") : null;
+    return normalizeUpdateFeedUrl(url, {
+      ...options,
+      source: "app-update.yml",
+    });
   } catch {
     return null;
   }
 }
 
-function hasPackagedUpdateConfig() {
-  if (!process.resourcesPath) {
-    return false;
-  }
-
-  try {
-    const config = readFileSync(
-      path.join(process.resourcesPath, "app-update.yml"),
-      "utf8",
-    );
-    return /^\s*provider:\s*(?:github|generic)\s*$/m.test(config);
-  } catch {
-    return false;
-  }
-}
-
-function getBaseUpdateFeedUrl() {
-  return getUpdateFeedUrl() ?? getPackagedUpdateFeedUrl();
+function getBaseUpdateFeedUrl(options) {
+  return getUpdateFeedUrl(options) ?? getPackagedUpdateFeedUrl(options);
 }
 
 function getDevUpdateCurrentVersion() {
@@ -158,17 +190,6 @@ function getUpdateTelemetryPayload({ currentVersion, manual }) {
   };
 }
 
-function addInstallIdToPayload(payload, installId) {
-  if (typeof installId !== "string" || !installId.trim()) {
-    return payload;
-  }
-
-  return {
-    ...payload,
-    installId: installId.trim(),
-  };
-}
-
 function sanitizeHeaderValue(value) {
   return String(value)
     .replace(/[\r\n]/g, "")
@@ -183,10 +204,6 @@ function getUpdateTelemetryHeaders(payload) {
     "X-Cly-Update-Check": sanitizeHeaderValue(payload.check),
     "X-Cly-Version": sanitizeHeaderValue(payload.version),
   };
-
-  if (payload.installId) {
-    headers["X-Cly-Install-Id"] = sanitizeHeaderValue(payload.installId);
-  }
 
   return headers;
 }
@@ -258,20 +275,21 @@ function disableUpdateStagingIdentifier(autoUpdater) {
 export function initializeAutoUpdater({
   app,
   getMainWindow,
-  installId,
   ipcMain,
   isDevelopment,
 }) {
   const devUpdatesEnabled =
-    isDevelopment && process.env.CLY_ENABLE_DEV_UPDATES === "1";
+    !app.isPackaged &&
+    isDevelopment &&
+    process.env.CLY_ENABLE_DEV_UPDATES === "1";
   const devCurrentVersion = devUpdatesEnabled
     ? getDevUpdateCurrentVersion()
     : null;
-  const updateFeedUrl = getBaseUpdateFeedUrl();
+  const updateFeedUrl = getBaseUpdateFeedUrl({
+    allowInsecureLoopback: devUpdatesEnabled,
+  });
   const updatesEnabled =
-    (app.isPackaged &&
-      !isDevelopment &&
-      (Boolean(updateFeedUrl) || hasPackagedUpdateConfig())) ||
+    (app.isPackaged && !isDevelopment && Boolean(updateFeedUrl)) ||
     (devUpdatesEnabled && Boolean(updateFeedUrl));
   let checkInFlight = null;
   let initialUpdateCheckTimer = null;
@@ -324,13 +342,10 @@ export function initializeAutoUpdater({
     configureUpdateTelemetry(
       autoUpdater,
       updateFeedUrl,
-      addInstallIdToPayload(
-        getUpdateTelemetryPayload({
-          currentVersion: status.currentVersion,
-          manual,
-        }),
-        installId,
-      ),
+      getUpdateTelemetryPayload({
+        currentVersion: status.currentVersion,
+        manual,
+      }),
     );
 
     checkInFlight = autoUpdater

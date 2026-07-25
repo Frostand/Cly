@@ -1,70 +1,53 @@
-import path from "node:path";
 import { z } from "zod";
 
-const providerModelIdSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/+\-[\]]*$/);
-const providerPathSchema = z
-  .string()
-  .min(1)
-  .max(4096)
-  .refine((value) => !/[\0\r\n]/.test(value), {
-    message: "Path contains unsupported control characters.",
-  });
-const providerProjectPathSchema = providerPathSchema.refine(path.isAbsolute, {
-  message: "Project path must be absolute.",
-});
-const providerSessionIdSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(500)
-  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/);
+export const getProviderPermissionModes = (agentMode) =>
+  agentMode === "plan"
+    ? {
+        claudePermissionMode: "ask-permissions",
+        codexPermissionMode: "default",
+      }
+    : {
+        claudePermissionMode: "accept-edits",
+        codexPermissionMode: "auto-accept-edits",
+      };
 
-export const chatRequestBodySchema = z.object({
-  claudePermissionMode: z
-    .enum(["ask-permissions", "accept-edits"])
-    .default("ask-permissions"),
-  codexPermissionMode: z
-    .enum(["default", "auto-accept-edits"])
-    .default("default"),
+const chatRequestSchema = z.object({
+  // These compatibility fields are accepted only when they agree with the
+  // authoritative agent mode. Provider policy is always derived below.
+  claudePermissionMode: z.enum(["ask-permissions", "accept-edits"]).optional(),
+  codexPermissionMode: z.enum(["default", "auto-accept-edits"]).optional(),
   messages: z.array(z.unknown()),
-  model: providerModelIdSchema,
+  model: z.string().min(1),
   modelLabel: z.string().min(1).optional(),
   projectReferences: z
     .array(
       z.object({
         kind: z.enum(["file", "folder"]),
         name: z.string().min(1).optional(),
-        parentPath: providerPathSchema.optional(),
-        path: providerPathSchema,
+        parentPath: z.string().optional(),
+        path: z.string().min(1),
       }),
     )
     .default([]),
-  projectPath: providerProjectPathSchema,
+  projectPath: z.string().min(1).optional(),
   provider: z.enum(["openai", "anthropic", "opencode", "cursor"]),
   agentMode: z.enum(["plan", "build"]).default("build"),
-  remoteConversationId: providerSessionIdSchema.nullable().optional(),
-  remoteConversationModel: providerModelIdSchema.nullable().optional(),
+  remoteConversationId: z.string().nullable().optional(),
+  remoteConversationModel: z.string().nullable().optional(),
   remoteConversationModelSpeed: z
     .enum(["standard", "fast"])
     .nullable()
     .optional(),
-  remoteConversationProjectPath: providerProjectPathSchema
-    .nullable()
-    .optional(),
+  remoteConversationProjectPath: z.string().nullable().optional(),
   modelSpeed: z.enum(["standard", "fast"]).default("standard"),
   modelSpeedLabel: z.string().min(1).optional(),
   reasoningEffort: z
-    .enum(["low", "medium", "high", "xhigh", "max", "ultra"])
+    .enum(["low", "medium", "high", "xhigh", "max"])
     .nullable()
     .optional(),
   reasoningLabel: z.string().min(1).optional(),
   chatId: z.string().min(1).optional(),
-  projectId: z.string().min(1).optional(),
+  projectId: z.string().min(1),
   threadId: z.string().min(1).optional(),
   managedContext: z
     .object({
@@ -77,6 +60,43 @@ export const chatRequestBodySchema = z.object({
     .optional(),
 });
 
+export const chatRequestBodySchema = chatRequestSchema
+  .superRefine((value, context) => {
+    const expected = getProviderPermissionModes(value.agentMode);
+    if (
+      value.claudePermissionMode !== undefined &&
+      value.claudePermissionMode !== expected.claudePermissionMode
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "claudePermissionMode must match agentMode.",
+        path: ["claudePermissionMode"],
+      });
+    }
+    if (
+      value.codexPermissionMode !== undefined &&
+      value.codexPermissionMode !== expected.codexPermissionMode
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "codexPermissionMode must match agentMode.",
+        path: ["codexPermissionMode"],
+      });
+    }
+    if (value.provider === "cursor" && value.agentMode !== "plan") {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Cursor is plan-only until Cly can intercept and authorize each Cursor action.",
+        path: ["agentMode"],
+      });
+    }
+  })
+  .transform((value) => ({
+    ...value,
+    ...getProviderPermissionModes(value.agentMode),
+  }));
+
 export const formatProjectReferencesForPrompt = (projectReferences) => {
   if (!Array.isArray(projectReferences) || projectReferences.length === 0) {
     return null;
@@ -84,8 +104,7 @@ export const formatProjectReferencesForPrompt = (projectReferences) => {
 
   const lines = projectReferences.map((reference) => {
     const kind = reference.kind === "folder" ? "folder" : "file";
-    const name = reference.name ? ` (${reference.name})` : "";
-    return `- ${kind}${name}: ${reference.path}`;
+    return `- ${kind}: ${reference.path}`;
   });
 
   return [
@@ -96,9 +115,9 @@ export const formatProjectReferencesForPrompt = (projectReferences) => {
 };
 
 export const chatTitleRequestBodySchema = z.object({
-  fallbackModel: providerModelIdSchema.optional(),
-  projectPath: providerProjectPathSchema,
-  projectId: z.string().min(1).optional(),
+  fallbackModel: z.string().min(1).optional(),
+  projectPath: z.string().min(1).optional(),
+  projectId: z.string().min(1),
   promptText: z.string(),
   provider: z.enum(["openai", "anthropic", "opencode", "cursor"]),
 });

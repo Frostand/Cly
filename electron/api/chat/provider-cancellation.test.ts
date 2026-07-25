@@ -118,10 +118,11 @@ const providers = [
     createResponse: (signal: AbortSignal) =>
       streamCursorResponse({
         abortSignal: signal,
-        codexPermissionMode: "default",
+        authorizeHostAction: vi.fn(async () => true),
         messages,
         model: "cursor/test",
         modelSpeed: "standard",
+        projectId: "project-1",
         projectPath: "/tmp",
         projectReferencesPrompt: null,
         remoteConversationId: null,

@@ -1,17 +1,5 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { execFile } = require("node:child_process");
-const { promisify } = require("node:util");
-
-const execFileAsync = promisify(execFile);
-
-const UNUSED_MAC_PRIVACY_USAGE_KEYS = [
-  "NSAudioCaptureUsageDescription",
-  "NSBluetoothAlwaysUsageDescription",
-  "NSBluetoothPeripheralUsageDescription",
-  "NSCameraUsageDescription",
-  "NSMicrophoneUsageDescription",
-];
 
 const ARCH_BY_NUMBER = {
   1: "x64",
@@ -52,25 +40,48 @@ const PLATFORM_VENDOR_DIRS = {
   },
 };
 
-const SCOPED_NATIVE_PACKAGE_PREFIXES = {
-  "@anthropic-ai": "claude-agent-sdk-",
-  "@parcel": "watcher-",
-  "@swc": "core-",
-};
-
 function getUpdateFeedUrl() {
   const rawUrl = process.env.CLY_UPDATE_FEED_URL?.trim();
-  return rawUrl ? rawUrl.replace(/\/+$/, "") : null;
+
+  if (rawUrl) {
+    let url;
+    try {
+      url = new URL(rawUrl);
+    } catch {
+      throw new Error("CLY_UPDATE_FEED_URL must be a valid HTTPS URL.");
+    }
+
+    if (url.username || url.password || url.search || url.hash) {
+      throw new Error(
+        "CLY_UPDATE_FEED_URL must not contain credentials, query parameters, or fragments.",
+      );
+    }
+
+    if (url.protocol !== "https:") {
+      throw new Error(
+        "CLY_UPDATE_FEED_URL must use HTTPS for packaged applications.",
+      );
+    }
+
+    const normalizedPath = url.pathname.replace(/\/+$/, "");
+    url.pathname = normalizedPath || "/";
+    const normalized = url.toString();
+    return normalizedPath ? normalized : normalized.replace(/\/(?=[?#]|$)/, "");
+  }
+
+  if (process.env.CI === "true") {
+    throw new Error(
+      "Missing CLY_UPDATE_FEED_URL. Set it to the public R2 releases URL, for example https://downloads.example.com/releases.",
+    );
+  }
+
+  return null;
 }
 
 function getAppUpdateYml() {
   const updateFeedUrl = getUpdateFeedUrl();
   if (!updateFeedUrl) {
-    return `provider: github
-owner: Frostand
-repo: Cly
-updaterCacheDirName: cly-updater
-`;
+    return null;
   }
 
   return `provider: generic
@@ -133,49 +144,6 @@ function getPlatformVendorKeepNames(platform, arch) {
   );
 }
 
-function getScopedNativePackageKeepNames(platform, arch) {
-  const architectures = arch === "universal" ? ["arm64", "x64"] : [arch];
-  const result = {
-    "@anthropic-ai": new Set(),
-    "@parcel": new Set(),
-    "@swc": new Set(),
-  };
-
-  for (const targetArch of architectures) {
-    if (platform === "darwin") {
-      result["@anthropic-ai"].add(`claude-agent-sdk-darwin-${targetArch}`);
-      result["@parcel"].add(`watcher-darwin-${targetArch}`);
-      result["@swc"].add(`core-darwin-${targetArch}`);
-    } else if (platform === "linux") {
-      result["@anthropic-ai"].add(`claude-agent-sdk-linux-${targetArch}`);
-      result["@parcel"].add(`watcher-linux-${targetArch}-glibc`);
-      result["@swc"].add(`core-linux-${targetArch}-gnu`);
-    } else if (platform === "win32") {
-      result["@anthropic-ai"].add(`claude-agent-sdk-win32-${targetArch}`);
-      result["@parcel"].add(`watcher-win32-${targetArch}`);
-      result["@swc"].add(`core-win32-${targetArch}-msvc`);
-    }
-  }
-
-  return result;
-}
-
-async function pruneScopedNativePackages(nodeModulesPath, platform, arch) {
-  const keepByScope = getScopedNativePackageKeepNames(platform, arch);
-  for (const [scope, prefix] of Object.entries(
-    SCOPED_NATIVE_PACKAGE_PREFIXES,
-  )) {
-    const scopePath = path.join(nodeModulesPath, scope);
-    const names = await readDirectoryNames(scopePath);
-    for (const name of names) {
-      if (!name.startsWith(prefix) || keepByScope[scope].has(name)) {
-        continue;
-      }
-      await removeIfExists(path.join(scopePath, name));
-    }
-  }
-}
-
 async function prunePlatformVendorDirectory(parentPath, platform, arch) {
   const keepNames = getPlatformVendorKeepNames(platform, arch);
   const names = await readDirectoryNames(parentPath);
@@ -217,6 +185,14 @@ async function pruneSharpOptionalDependencies(parentPath, platform, arch) {
 async function ensureAppUpdateConfig(resourcesDir) {
   const updateConfigPath = path.join(resourcesDir, "app-update.yml");
   const appUpdateYml = getAppUpdateYml();
+  if (!appUpdateYml) {
+    await removeIfExists(updateConfigPath);
+    console.log(
+      "Skipped app-update.yml for a local development package without CLY_UPDATE_FEED_URL.",
+    );
+    return;
+  }
+
   await fs.writeFile(updateConfigPath, appUpdateYml, "utf8");
 }
 
@@ -233,37 +209,12 @@ function getResourcesDirectory(context) {
   return path.join(context.appOutDir, "resources");
 }
 
-async function removeUnusedMacPrivacyUsageDescriptions(context) {
-  if (context.electronPlatformName !== "darwin") {
-    return;
-  }
-
-  const infoPlistPath = path.join(
-    context.appOutDir,
-    `${context.packager.appInfo.productFilename}.app`,
-    "Contents",
-    "Info.plist",
-  );
-
-  for (const key of UNUSED_MAC_PRIVACY_USAGE_KEYS) {
-    try {
-      await execFileAsync("/usr/bin/plutil", ["-remove", key, infoPlistPath]);
-    } catch (error) {
-      const detail = `${error?.stdout ?? ""}\n${error?.stderr ?? ""}`;
-      if (!/no value at that key path|does not exist/i.test(detail)) {
-        throw error;
-      }
-    }
-  }
-}
-
 exports.default = async function prunePackagedApp(context) {
   const platform = context.electronPlatformName;
   const arch = getTargetArch(context);
   const resourcesDir = getResourcesDirectory(context);
 
   await ensureAppUpdateConfig(resourcesDir);
-  await removeUnusedMacPrivacyUsageDescriptions(context);
 
   if (platform === "darwin" && isUniversalTempBuild(context)) {
     console.log(
@@ -279,7 +230,6 @@ exports.default = async function prunePackagedApp(context) {
   );
 
   await Promise.all([
-    pruneScopedNativePackages(unpackedNodeModules, platform, arch),
     prunePlatformVendorDirectory(
       path.join(
         unpackedNodeModules,
@@ -323,11 +273,6 @@ exports.default = async function prunePackagedApp(context) {
       platform,
       arch,
     ),
-    removeIfExists(path.join(unpackedNodeModules, "node-pty", "scripts")),
-    removeIfExists(path.join(unpackedNodeModules, "node-pty", "src")),
-    removeIfExists(
-      path.join(unpackedNodeModules, "node-pty", "deps", ".editorconfig"),
-    ),
   ]);
 
   if (platform !== "win32") {
@@ -340,8 +285,3 @@ exports.default = async function prunePackagedApp(context) {
     `Pruned packaged native vendor files for ${platform}/${arch} at ${normalizePath(resourcesDir)}`,
   );
 };
-
-exports.getScopedNativePackageKeepNames = getScopedNativePackageKeepNames;
-exports.UNUSED_MAC_PRIVACY_USAGE_KEYS = UNUSED_MAC_PRIVACY_USAGE_KEYS;
-exports.removeUnusedMacPrivacyUsageDescriptions =
-  removeUnusedMacPrivacyUsageDescriptions;

@@ -63,5 +63,6 @@
     "heading": "Integrations & Providers"
   },
   { "id": "models", "label": "Models & Agents", "heading": "Models & Agents" },
+  { "id": "help", "label": "Setup & Help", "heading": "Setup & Help" },
   { "id": "settings", "label": "Settings", "heading": "Settings" }
 ]

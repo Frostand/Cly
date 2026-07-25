@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import { CLY_MENU_COMMANDS } from "../../../../electron/menu-commands.js";
+import { useEffect, useRef, useState } from "react";
 import { AgentSessionsScreen } from "../agent-sessions";
 import type { ScreenId } from "../domain/types";
 import { ContextScreen } from "../screens/context";
@@ -13,11 +12,10 @@ import {
   ReproducibilityScreen,
 } from "../screens/integrity";
 import { LiveDevWorkspaceScreen } from "../screens/live-dev-workspace";
+import { ObjectivesScreen } from "../screens/objectives";
+import { ClyOnboardingScreen } from "../screens/onboarding-route";
 import { OverviewScreen } from "../screens/overview";
-import {
-  ObjectivesScreen,
-  ReviewerCapsulesScreen,
-} from "../screens/platform-workspaces";
+import { ReviewerCapsulesScreen } from "../screens/platform-workspaces";
 import {
   ClaimsScreen,
   CodeLinkerScreen,
@@ -25,17 +23,19 @@ import {
   NotebooksScreen,
   SourcesScreen,
 } from "../screens/research-workspaces";
+import { SetupHelpScreen } from "../screens/setup-help";
 import {
   IntegrationsScreen,
   ModelsAgentsScreen,
   SettingsScreen,
 } from "../screens/system";
+import { loadOnboardingDraft } from "../services/onboarding-storage";
 import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
 import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
 import { Inspector } from "./inspector";
-import { Sidebar } from "./navigation";
+import { Sidebar, WorkspaceNavigationBar } from "./navigation";
 import { PrImpactReviewScreen } from "./pr-impact-review/pr-impact-review";
 import { LoadingState } from "./primitives";
 import { ClyMotionProvider, RouteTransition } from "./visuals";
@@ -63,6 +63,7 @@ export const screens: Record<ScreenId, () => React.JSX.Element> = {
   dev: LiveDevWorkspaceScreen,
   integrations: IntegrationsScreen,
   models: ModelsAgentsScreen,
+  help: SetupHelpScreen,
   settings: SettingsScreen,
 };
 
@@ -75,24 +76,28 @@ const shortcutScreens: Record<string, ScreenId> = {
   "6": "claims",
 };
 
-export function runMenuCommand(command: string) {
-  if (!CLY_MENU_COMMANDS.includes(command)) return false;
+function runMenuCommand(command: string) {
   const store = useClyStore.getState();
   const screenCommands: Record<string, ScreenId> = {
-    "open-research-brief": "overview",
-    "open-claims": "claims",
-    "open-experiments": "experiments",
-    "open-decisions": "decisions",
-    "open-sources": "sources",
+    "new-claim": "claims",
+    "new-experiment": "experiments",
+    "new-decision": "decisions",
+    "import-sources": "sources",
+    "import-notebook": "notebooks",
     "context-composer": "context",
     "configure-agents": "models",
-    "open-reproducibility": "reproducibility",
-    "open-next-steps": "next-steps",
-    "open-integrations": "integrations",
-    "open-literature": "literature",
+    "claim-audit": "claims",
+    "data-obligations": "obligations",
+    "code-review": "code",
+    "run-audit": "reproducibility",
+    "generate-next-steps": "next-steps",
+    "manage-integrations": "integrations",
+    "notebooklm-bundle": "literature",
+    "new-agent-session": "agents",
     settings: "settings",
   };
   if (screenCommands[command]) store.setScreen(screenCommands[command]);
+  if (command === "new-agent-session") store.setNewAgentSessionOpen(true);
   if (command === "agent-sessions-overview")
     store.setAgentSessionsMode("overview");
   if (command === "agent-sessions-chat") store.setAgentSessionsMode("chat");
@@ -117,23 +122,24 @@ export function runMenuCommand(command: string) {
   if (command === "toggle-activity") store.toggleActivity();
   if (command === "command-palette") store.setCommandPaletteOpen(true);
   if (command === "project-switcher") store.setProjectSwitcherOpen(true);
-  if (command === "focus-search") {
-    document.querySelector<HTMLElement>("[data-search-input]")?.focus();
-  }
   if (command === "reset-layout")
     useClyStore.setState({
       sidebarCollapsed: false,
       inspectorOpen: true,
       activityOpen: false,
     });
-  if (["shortcuts", "diagnostics"].includes(command)) {
-    store.setScreen("settings");
+  if (
+    ["documentation", "shortcuts", "diagnostics", "about"].includes(command)
+  ) {
+    if (command === "documentation") store.setScreen("help");
+    if (command === "shortcuts" || command === "diagnostics")
+      store.setScreen("settings");
+    if (command === "about") store.notify("Cly 0.5.0");
   }
-  return true;
 }
 
 export function ClyAppShell() {
-  useClyDataBootstrap();
+  const bootstrapStatus = useClyDataBootstrap();
   const activeScreen = useClyStore((s) => s.activeScreen);
   const activeProduct = useClyStore((s) => s.activeProduct);
   const sidebarCollapsed = useClyStore((s) => s.sidebarCollapsed);
@@ -141,8 +147,127 @@ export function ClyAppShell() {
   const selectedId = useClyStore((s) => s.selectedId);
   const agentSessionsMode = useClyStore((s) => s.agentSessionsMode);
   const fixtureMode = useClyStore((s) => s.fixtureMode);
+  const projects = useClyStore((s) => s.data.projects);
+  const onboardingRequested = useClyStore((s) => s.onboardingRequested);
+  const activeProjectId = useClyStore((s) => s.activeProjectId);
+  const activeDevSection = useClyStore((s) => s.activeDevSection);
+  const selectedAgentSessionId = useClyStore((s) => s.selectedAgentSessionId);
   const setScreen = useClyStore((s) => s.setScreen);
   const ActiveScreen = screens[activeScreen];
+  const applyingDeepLink = useRef(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<
+    boolean | null
+  >(null);
+  const activeProject = projects.find(
+    (project) => project.id === activeProjectId,
+  );
+  const onboardingRequired =
+    !isClyTestFixtureRuntime &&
+    bootstrapStatus === "ready" &&
+    (onboardingRequested !== null ||
+      !activeProject ||
+      onboardingCompleted !== true);
+
+  useEffect(() => {
+    if (
+      isClyTestFixtureRuntime ||
+      bootstrapStatus !== "ready" ||
+      onboardingRequested !== null ||
+      !activeProject
+    ) {
+      setOnboardingCompleted(null);
+      return;
+    }
+
+    let cancelled = false;
+    setOnboardingCompleted(null);
+    void loadOnboardingDraft(activeProjectId || null)
+      .then((draft) => {
+        if (!cancelled) setOnboardingCompleted(draft.completed);
+      })
+      .catch(() => {
+        // The onboarding screen owns the actionable retry UI. Treat a failed
+        // gate read as incomplete so a durable-load failure cannot unlock Cly.
+        if (!cancelled) setOnboardingCompleted(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject, activeProjectId, bootstrapStatus, onboardingRequested]);
+
+  useEffect(() => {
+    if (navigator.userAgent.includes("jsdom")) return;
+    const applyDeepLink = () => {
+      if (!window.location.hash.startsWith("#/cly/")) return;
+      const [path, query = ""] = window.location.hash.slice(2).split("?");
+      const [, product, destination] = path.split("/");
+      const params = new URLSearchParams(query);
+      const state = useClyStore.getState();
+      applyingDeepLink.current = true;
+      const projectId = params.get("project");
+      if (
+        projectId &&
+        projectId !== state.activeProjectId &&
+        state.data.projects.some((project) => project.id === projectId)
+      ) {
+        state.setActiveProject(projectId);
+      }
+      if (product === "dev") {
+        const devSections = [
+          "board",
+          "projects",
+          "repositories",
+          "features",
+          "issues",
+          "sessions",
+          "agents",
+          "machines",
+          "pull-requests",
+          "tests",
+          "context",
+          "settings",
+        ] as const;
+        if (devSections.includes(destination as (typeof devSections)[number]))
+          state.setDevSection(destination as (typeof devSections)[number]);
+      } else if (product === "research" && destination in screens) {
+        state.setScreen(destination as ScreenId);
+        const selected = params.get("selected");
+        if (selected) state.setSelected(selected);
+      }
+      const session = params.get("session");
+      if (
+        session &&
+        state.data.agentSessions.some((item) => item.id === session)
+      )
+        state.openAgentSession(session);
+      requestAnimationFrame(() => {
+        applyingDeepLink.current = false;
+      });
+    };
+    applyDeepLink();
+    window.addEventListener("hashchange", applyDeepLink);
+    return () => window.removeEventListener("hashchange", applyDeepLink);
+  }, []);
+
+  useEffect(() => {
+    if (applyingDeepLink.current) return;
+    const destination =
+      activeProduct === "dev" ? activeDevSection : activeScreen;
+    const params = new URLSearchParams({ project: activeProjectId });
+    if (activeProduct === "research" && selectedId)
+      params.set("selected", selectedId);
+    if (selectedAgentSessionId) params.set("session", selectedAgentSessionId);
+    const nextHash = `#/cly/${activeProduct}/${destination}?${params.toString()}`;
+    if (window.location.hash !== nextHash)
+      window.history.replaceState(null, "", nextHash);
+  }, [
+    activeDevSection,
+    activeProduct,
+    activeProjectId,
+    activeScreen,
+    selectedAgentSessionId,
+    selectedId,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -240,13 +365,57 @@ export function ClyAppShell() {
     return desktop?.onClyCommand?.(runMenuCommand);
   }, []);
 
+  if (!isClyTestFixtureRuntime && bootstrapStatus === "loading") {
+    return (
+      <ClyMotionProvider>
+        <main className="cly-app">
+          <Titlebar />
+          <div className="cly-onboarding-boot">
+            <LoadingState label="Loading local projects" />
+          </div>
+        </main>
+      </ClyMotionProvider>
+    );
+  }
+
+  if (
+    !isClyTestFixtureRuntime &&
+    bootstrapStatus === "ready" &&
+    onboardingRequested === null &&
+    activeProject &&
+    onboardingCompleted === null
+  ) {
+    return (
+      <ClyMotionProvider>
+        <main className="cly-app">
+          <Titlebar />
+          <div className="cly-onboarding-boot">
+            <LoadingState label="Loading saved setup" />
+          </div>
+        </main>
+      </ClyMotionProvider>
+    );
+  }
+
+  if (onboardingRequired) {
+    return (
+      <ClyMotionProvider>
+        <main className="cly-app">
+          <Titlebar />
+          <ClyOnboardingScreen
+            onCompleted={() => setOnboardingCompleted(true)}
+          />
+          <Toasts />
+        </main>
+      </ClyMotionProvider>
+    );
+  }
+
   return (
     <ClyMotionProvider>
       <main className="cly-app">
         <Titlebar />
-        {isClyTestFixtureRuntime &&
-        fixtureMode !== "empty" &&
-        fixtureMode !== "loading" ? (
+        {fixtureMode !== "empty" && fixtureMode !== "loading" ? (
           <div
             role="status"
             style={{
@@ -259,13 +428,8 @@ export function ClyAppShell() {
               textAlign: "center",
             }}
           >
-            Test fixture state · Synthetic records are loaded for automated UI
-            verification.
-          </div>
-        ) : !isClyTestFixtureRuntime ? (
-          <div className="cly-beta-banner" role="status">
-            Cly Open Beta · Local research data only · Do not use sensitive or
-            regulated data
+            Test fixture data · These are simulated records, not project
+            research.
           </div>
         ) : null}
         <div
@@ -283,6 +447,7 @@ export function ClyAppShell() {
         >
           <Sidebar />
           <section className="cly-workspace">
+            <WorkspaceNavigationBar />
             <div className="cly-screen" id="main-workspace" tabIndex={-1}>
               {fixtureMode === "loading" ? (
                 <div className="cly-page">

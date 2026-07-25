@@ -52,52 +52,52 @@
   {
     "id": "sources.folder-import",
     "route": "sources",
-    "action": "Import selected BibTeX and JSON metadata files from a folder",
-    "state": "production",
-    "service": "readSelectedSourceFiles + apiClient.importLiteratureMetadata",
-    "api": "POST /api/projects/:projectId/literature/imports",
-    "test": "src/features/cly/domain/local-source-import.test.ts",
-    "reason": null
+    "action": "Import a folder of source files",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Folder import is unavailable until file discovery, extraction, and provenance are persisted."
   },
   {
     "id": "sources.archive",
     "route": "sources",
     "action": "Archive a source",
-    "state": "production",
-    "service": "projectServices.sources.setArchived",
-    "api": "PATCH /api/projects/:projectId/research/sources/:sourceId/archive",
-    "test": "electron/api/research/repository.test.ts",
-    "reason": null
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Source archival is unavailable until deletion policy and provenance behavior are implemented."
   },
   {
     "id": "sources.bibtex-import",
     "route": "sources",
-    "action": "Import BibTeX records with duplicate detection",
-    "state": "production",
-    "service": "apiClient.importLiteratureMetadata",
-    "api": "POST /api/projects/:projectId/literature/imports",
-    "test": "electron/api/literature/routes.test.ts",
-    "reason": null
+    "action": "Import a BibTeX file",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "BibTeX import is unavailable until file parsing, duplicate review, and provenance are persisted."
   },
   {
     "id": "sources.url-import",
     "route": "sources",
-    "action": "Save user-provided source metadata and URL",
-    "state": "production",
-    "service": "apiClient.importLiteratureMetadata",
-    "api": "POST /api/projects/:projectId/literature/imports",
-    "test": "src/features/cly/screens/sources-screen.test.tsx",
-    "reason": null
+    "action": "Import source metadata from a URL",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "URL metadata import is unavailable until network approval, extraction, and provenance are implemented."
   },
   {
     "id": "sources.deduplicate",
     "route": "sources",
-    "action": "Detect duplicate sources during import",
-    "state": "production",
-    "service": "apiClient.importLiteratureMetadata",
-    "api": "POST /api/projects/:projectId/literature/imports",
-    "test": "electron/api/literature/repository.test.ts",
-    "reason": null
+    "action": "Merge duplicate sources",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Source merging is unavailable until duplicate review and reversible provenance are implemented."
   },
   {
     "id": "sources.search-import",
@@ -163,71 +163,61 @@
     "id": "code.scan",
     "route": "code",
     "action": "Scan project code artifacts",
-    "state": "unavailable",
-    "service": null,
-    "api": null,
-    "test": null,
-    "reason": "Code scanning is unavailable until filesystem approval, indexed results, and provenance are persisted."
+    "state": "production",
+    "service": "codeResearchLinker",
+    "api": "POST /api/projects/:projectId/code-context/scan; GET /api/projects/:projectId/code-context/entities; GET /api/projects/:projectId/code-context",
+    "test": "electron/api/research/code-linker.test.ts",
+    "reason": null
   },
   {
     "id": "claims.secondary-actions",
     "route": "claims",
-    "action": "Plan linked experiments, record contradictory evidence, and export claim reports",
-    "state": "production",
-    "service": "projectServices.experiments.create + projectServices.claims.linkExperiment/linkEvidence + DesktopApi.saveTextFile",
-    "api": "POST /api/projects/:projectId/experiments; POST /api/projects/:projectId/research/relationships; GET /api/projects/:projectId/provenance",
-    "test": "src/features/cly/screens/claim-audit.test.tsx",
-    "reason": null
+    "action": "Generate experiments, add contradictions, or export claim reports",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "This claim action is unavailable until its result and provenance are persisted."
   },
   {
     "id": "reproducibility.audit",
     "route": "reproducibility",
-    "action": "Persist reproducibility finding dispositions",
+    "action": "Run or resolve a reproducibility audit",
     "state": "production",
     "service": "projectServices.reproducibility",
-    "api": "POST /api/projects/:projectId/reproducibility/audits; PATCH /api/projects/:projectId/reproducibility/findings/:findingId",
-    "test": "electron/api/research/workflow-repository.test.ts",
+    "api": "/api/projects/:projectId/reproducibility-audits",
+    "test": "electron/api/research/reproducibility-audit.test.ts",
     "reason": null
   },
   {
     "id": "planner.update",
     "route": "next-steps",
     "action": "Accept, defer, dismiss, or start a next step",
-    "state": "production",
-    "service": "projectServices.planner",
-    "api": "POST /api/projects/:projectId/planner/generate; PATCH /api/projects/:projectId/planner/:stepId",
-    "test": "electron/api/research/workflow-repository.test.ts",
-    "reason": null
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Next-step updates are unavailable until the project planner is persisted."
   },
   {
     "id": "decisions.create",
     "route": "decisions",
     "action": "Create or supersede a research decision",
-    "state": "production",
-    "service": "projectServices.decisions",
-    "api": "POST/PATCH /api/projects/:projectId/decisions; POST /api/projects/:projectId/decisions/:decisionId/supersede",
-    "test": "electron/api/research/workflow-repository.test.ts",
-    "reason": null
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Research decisions are unavailable until their history and provenance are persisted."
   },
   {
     "id": "integrations.configure",
     "route": "integrations",
-    "action": "Detect local AI harnesses and editors, refresh provider models, and open provider sign-in",
-    "state": "production",
-    "service": "localIntegrationService",
-    "api": "POST /api/provider-models; IPC providers:launch-login; IPC editors:detect; IPC editors:open",
-    "test": "src/features/cly/screens/integrations.test.tsx",
-    "reason": null
-  },
-  {
-    "id": "dev.ai-workspace",
-    "route": "dev",
-    "action": "Open a project and run coding chats through Codex, Claude Code, OpenCode, or Cursor",
-    "state": "production",
-    "service": "IdeShell provider chat runtime",
-    "api": "POST /api/chat; POST /api/provider-models",
-    "test": "electron/api/chat-routes.test.ts",
-    "reason": null
+    "action": "Connect or disconnect an integration",
+    "state": "unavailable",
+    "service": null,
+    "api": null,
+    "test": null,
+    "reason": "Integration setup is unavailable until provider credentials and approval flows are implemented."
   },
   {
     "id": "agents.configure",

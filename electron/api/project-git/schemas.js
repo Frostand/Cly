@@ -1,56 +1,61 @@
 import { z } from "zod";
 
+const projectAuthoritySchema = {
+  projectId: z.string().trim().min(1),
+  projectPath: z.string().trim().min(1).optional(),
+};
+
 export const projectFilesRequestSchema = z.object({
   directory: z.string().min(1).default("."),
   maxResults: z.number().int().min(1).max(5000).default(2000),
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectFileRequestSchema = z.object({
   endLine: z.number().int().min(1).optional(),
   filePath: z.string().min(1),
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
   startLine: z.number().int().min(1).optional(),
 });
 
 export const projectIconRequestSchema = z.object({
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectGitStatusRequestSchema = z.object({
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectGitBranchesRequestSchema = z.object({
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectGitCheckoutRequestSchema = z.object({
   branchName: z.string().min(1),
   create: z.boolean().default(false),
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectGitWorktreesRequestSchema = z.object({
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectGitCreateWorktreeRequestSchema = z.object({
   baseRef: z.string().trim().optional().nullable(),
   branchName: z.string().min(1),
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectGitRemoveWorktreeRequestSchema = z.object({
   force: z.boolean().default(false),
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
   worktreePath: z.string().min(1),
 });
 
 export const projectGitDiffRequestSchema = z.object({
   filePath: z.string().min(1),
   previousPath: z.string().min(1).nullable(),
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
   status: z.enum([
     "modified",
     "added",
@@ -73,13 +78,13 @@ export const projectGitCommitRequestSchema = z.object({
   customInstructions: nullableTrimmedStringSchema,
   includeUnstaged: z.boolean().default(true),
   message: nullableTrimmedStringSchema,
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectGitCommitMessageRequestSchema = z.object({
   includeUnstaged: z.boolean().default(true),
   model: nullableTrimmedStringSchema,
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
   provider: z
     .enum(["openai", "anthropic", "opencode", "cursor"])
     .default("openai"),
@@ -90,11 +95,11 @@ export const projectGitPushRequestSchema = z.object({
   customInstructions: nullableTrimmedStringSchema,
   includeUnstaged: z.boolean().default(true),
   nextStep: z.enum(["push", "commit-push"]).default("push"),
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectGitPushPreviewRequestSchema = z.object({
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
 });
 
 export const projectGitCreatePullRequestSchema = z.object({
@@ -108,7 +113,7 @@ export const projectGitCreatePullRequestSchema = z.object({
     .enum(["create", "push-create", "commit-push-create"])
     .default("create"),
   openPrPage: z.boolean().default(false),
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
   title: nullableTrimmedStringSchema,
 });
 
@@ -120,7 +125,7 @@ export const projectGitPullRequestDetailsRequestSchema = z.object({
   nextStep: z
     .enum(["create", "push-create", "commit-push-create"])
     .default("create"),
-  projectPath: z.string().min(1),
+  ...projectAuthoritySchema,
   provider: z
     .enum(["openai", "anthropic", "opencode", "cursor"])
     .default("openai"),

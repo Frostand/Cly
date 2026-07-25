@@ -35,6 +35,7 @@ export const CommitDialog = ({
   onOpenChange,
   open,
   model,
+  projectId,
   projectPath,
   provider,
   refreshToken,
@@ -45,6 +46,7 @@ export const CommitDialog = ({
   onOpenChange: (open: boolean) => void;
   open: boolean;
   model: string;
+  projectId: string;
   projectPath: string;
   provider: AiProvider;
   refreshToken: number;
@@ -97,6 +99,7 @@ export const CommitDialog = ({
       changes: commitChanges,
       includeUnstaged,
       model,
+      projectId,
       projectPath,
       provider,
       refreshToken,
@@ -115,6 +118,7 @@ export const CommitDialog = ({
       changes: commitChanges,
       includeUnstaged,
       model,
+      projectId,
       projectPath,
       provider,
       refreshToken,
@@ -151,6 +155,7 @@ export const CommitDialog = ({
     includeUnstaged,
     model,
     open,
+    projectId,
     projectPath,
     provider,
     refreshToken,
@@ -185,13 +190,13 @@ export const CommitDialog = ({
             commitMessage,
             includeUnstaged,
             nextStep: "commit-push",
-            projectPath,
+            projectId,
           });
         } else {
           await postJson<ProjectGitCommitResponse>("/api/project-git-commit", {
             includeUnstaged,
             message: commitMessage,
-            projectPath,
+            projectId,
           });
         }
         onCompleted();
@@ -215,7 +220,7 @@ export const CommitDialog = ({
       includeUnstaged,
       onCompleted,
       onOpenChange,
-      projectPath,
+      projectId,
       submittingAction,
     ],
   );

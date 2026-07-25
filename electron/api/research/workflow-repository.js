@@ -107,20 +107,20 @@ export function createResearchWorkflowRepository(
       .map(mapStep);
     const audits = database
       .prepare(
-        "SELECT * FROM reproducibility_audits WHERE project_id = ? ORDER BY created_at DESC, id DESC",
+        "SELECT * FROM research_workflow_audits WHERE project_id = ? ORDER BY created_at DESC, id DESC",
       )
       .all(projectId)
       .map(mapAudit);
     const findings = database
       .prepare(
-        "SELECT * FROM reproducibility_findings WHERE project_id = ? AND audit_id = ? ORDER BY updated_at DESC, id",
+        "SELECT * FROM research_workflow_findings WHERE project_id = ? AND audit_id = ? ORDER BY updated_at DESC, id",
       )
       .all(projectId, audits[0]?.id ?? "")
       .map(mapFinding);
     for (const audit of audits) {
       audit.findingIds = database
         .prepare(
-          "SELECT id FROM reproducibility_findings WHERE project_id = ? AND audit_id = ? ORDER BY id",
+          "SELECT id FROM research_workflow_findings WHERE project_id = ? AND audit_id = ? ORDER BY id",
         )
         .all(projectId, audit.id)
         .map((row) => row.id);
@@ -443,7 +443,7 @@ export function createResearchWorkflowRepository(
       try {
         database
           .prepare(
-            "INSERT INTO reproducibility_audits (id, project_id, score, status, areas_json, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING",
+            "INSERT INTO research_workflow_audits (id, project_id, score, status, areas_json, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING",
           )
           .run(
             auditId,
@@ -460,7 +460,7 @@ export function createResearchWorkflowRepository(
         for (const finding of storedFindings)
           database
             .prepare(
-              "INSERT INTO reproducibility_findings (id, project_id, audit_id, category, title, detail, severity, status, object_ids_json, area, affected_claim_ids_json, recommended_fix, assignee, deferred_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING",
+              "INSERT INTO research_workflow_findings (id, project_id, audit_id, category, title, detail, severity, status, object_ids_json, area, affected_claim_ids_json, recommended_fix, assignee, deferred_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING",
             )
             .run(
               finding.id,
@@ -509,7 +509,7 @@ export function createResearchWorkflowRepository(
       ensureProject(projectId);
       const row = database
         .prepare(
-          "SELECT * FROM reproducibility_findings WHERE id = ? AND project_id = ?",
+          "SELECT * FROM research_workflow_findings WHERE id = ? AND project_id = ?",
         )
         .get(findingId, projectId);
       if (!row)
@@ -521,7 +521,7 @@ export function createResearchWorkflowRepository(
       try {
         database
           .prepare(
-            "UPDATE reproducibility_findings SET status = ?, assignee = ?, deferred_reason = ?, updated_at = ? WHERE id = ? AND project_id = ?",
+            "UPDATE research_workflow_findings SET status = ?, assignee = ?, deferred_reason = ?, updated_at = ? WHERE id = ? AND project_id = ?",
           )
           .run(
             input.status,
@@ -533,7 +533,7 @@ export function createResearchWorkflowRepository(
           );
         database
           .prepare(
-            "INSERT INTO reproducibility_finding_transitions (id, project_id, finding_id, from_status, to_status, actor, assignee, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO research_workflow_finding_transitions (id, project_id, finding_id, from_status, to_status, actor, assignee, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
           )
           .run(
             createId(),
@@ -562,7 +562,7 @@ export function createResearchWorkflowRepository(
         database.exec("COMMIT");
         return mapFinding(
           database
-            .prepare("SELECT * FROM reproducibility_findings WHERE id = ?")
+            .prepare("SELECT * FROM research_workflow_findings WHERE id = ?")
             .get(findingId),
         );
       } catch (error) {

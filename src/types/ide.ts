@@ -450,20 +450,19 @@ export interface ProjectGitPullRequestDetailsResponse {
 
 export interface StartTerminalPayload {
   projectId: string;
-  cwd: string;
-  command?: string;
-  shellPath?: string;
+  purpose: "interactive" | "run-project";
+  sessionId: string;
 }
 
 export interface TerminalInputPayload {
-  projectId: string;
   data: string;
+  sessionId: string;
 }
 
 export interface TerminalResizePayload {
-  projectId: string;
   cols: number;
   rows: number;
+  sessionId: string;
 }
 
 export interface BrowserUpdatePayload {
@@ -559,6 +558,10 @@ export interface DesktopApi {
 
   loadState: () => Promise<Partial<PersistedIdeState>>;
   saveState: (state: PersistedIdeState) => Promise<boolean>;
+  loadOnboardingDraft: (projectId: string | null) => Promise<unknown | null>;
+  saveOnboardingDraft: (
+    draft: import("@/features/cly/domain/onboarding").OnboardingDraft,
+  ) => Promise<boolean>;
   getThemePreferences: () => Promise<{
     accentColor?: string;
     baseColor?: string;
@@ -594,6 +597,7 @@ export interface DesktopApi {
 
   detectEditors: () => Promise<DetectedEditor[]>;
   openInEditor: (payload: {
+    projectId: string;
     projectPath: string;
     editorId: string;
     filePath?: string;

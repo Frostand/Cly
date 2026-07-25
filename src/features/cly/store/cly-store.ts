@@ -48,6 +48,7 @@ import type {
   DecisionBriefFindingStatus,
   DevSection,
   EntityType,
+  EvidencePassage,
   Experiment,
   FixtureMode,
   GraphEdge,
@@ -70,9 +71,12 @@ import {
   type AwsCurImportResult,
   apiClient,
   type ManualCostEntryInput,
+  nextStepFromPlannerRecommendation,
+  type PlannerRecommendation,
   type ResearchData,
 } from "../services/api-client";
 import { CapabilityUnavailableError } from "../services/capabilities";
+import { loadOnboardingDraft } from "../services/onboarding-storage";
 import {
   createProductionRepository,
   emptyCostLedger,
@@ -90,6 +94,8 @@ interface ClyState {
   activeProjectId: string;
   activeScreen: ScreenId;
   activeProduct: ProductArea;
+  lastResearchScreen: ScreenId;
+  lastResearchSelectedId: string | null;
   activeDevSection: DevSection;
   selectedId: string | null;
   sidebarCollapsed: boolean;
@@ -97,6 +103,7 @@ interface ClyState {
   activityOpen: boolean;
   commandPaletteOpen: boolean;
   projectSwitcherOpen: boolean;
+  onboardingRequested: "current" | "new" | null;
   fixtureSwitcherOpen: boolean;
   globalSearch: string;
   toasts: ToastMessage[];
@@ -125,6 +132,8 @@ interface ClyState {
   agentContextProjectId: string | null;
   agentContextLoading: boolean;
   agentContextError: string | null;
+  researchDataLoading: boolean;
+  researchDataError: string | null;
   agentSessionsMode: AgentSessionsMode;
   selectedAgentSessionId: string | null;
   selectedOverviewSessionId: string | null;
@@ -155,19 +164,20 @@ interface ClyState {
   setDevSection: (section: DevSection) => void;
   setSelected: (id: string | null) => void;
   setActiveProject: (id: string) => void;
-  setFixtureMode: (mode: FixtureMode) => void;
-  createResearchProject: (projectPath: string) => Promise<ResearchProject>;
+  selectOnboardingProject: (id: string) => void;
   updateActiveProject: (
     patch: Pick<
       ResearchProject,
       "name" | "question" | "hypothesis" | "description"
     >,
   ) => Promise<ResearchProject>;
+  setFixtureMode: (mode: FixtureMode) => void;
   toggleSidebar: () => void;
   toggleInspector: () => void;
   toggleActivity: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setProjectSwitcherOpen: (open: boolean) => void;
+  setOnboardingRequested: (request: "current" | "new" | null) => void;
   setFixtureSwitcherOpen: (open: boolean) => void;
   setGlobalSearch: (value: string) => void;
   notify: (title: string, detail?: string) => void;
@@ -248,6 +258,8 @@ interface ClyState {
   addClaim: (claim: Claim) => void;
   addSource: (source: Source) => Promise<Source | null>;
   updateSource: (id: string, patch: Partial<Source>) => void;
+  addEvidencePassage: (evidence: EvidencePassage) => void;
+  updateEvidencePassage: (id: string, patch: Partial<EvidencePassage>) => void;
   addExperiment: (experiment: Experiment) => void;
   updateExperiment: (id: string, patch: Partial<Experiment>) => void;
   addNotebook: (notebook: NotebookArtifact) => void;
@@ -259,7 +271,11 @@ interface ClyState {
     findings: AuditFinding[],
   ) => void;
   updateIntegration: (id: string, patch: Partial<Integration>) => void;
-  updateNextStep: (id: string, status: NextStep["status"]) => void;
+  updateNextStep: (
+    id: string,
+    status: "Accepted" | "Deferred" | "Dismissed" | "In progress",
+  ) => void;
+  replaceNextSteps: (steps: NextStep[]) => void;
   addDecision: (decision: ResearchDecision) => void;
   updateDecision: (id: string, patch: Partial<ResearchDecision>) => void;
   addAgentPreset: (preset: AgentPreset) => void;
@@ -336,14 +352,14 @@ const initialFixtureMode = resolveInitialFixtureMode({
   fixtureFlag: import.meta.env.VITE_CLY_TEST_FIXTURES,
   development: import.meta.env.DEV,
 });
-let createTestAgentSession:
+let createTestFixtureAgentSession:
   | ((input: NewAgentSessionInput) => AgentSession)
   | null = null;
-let createTestWorkbenchTabs: (() => WorkbenchTab[]) | null = null;
+let createTestFixtureWorkbenchTabs: (() => WorkbenchTab[]) | null = null;
 if (__CLY_INCLUDE_TEST_FIXTURES__ && testRuntime) {
   const agentFixtureModule = await import("../agent-sessions/fixtures");
-  createTestAgentSession = agentFixtureModule.createNewAgentSession;
-  createTestWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
+  createTestFixtureAgentSession = agentFixtureModule.createNewAgentSession;
+  createTestFixtureWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
 }
 
 const persistUi = (partial: Record<string, unknown>) => {
@@ -360,31 +376,29 @@ const persistUi = (partial: Record<string, unknown>) => {
   }
 };
 
-type SavedUiState = Partial<
-  Pick<
-    ClyState,
-    | "activeScreen"
-    | "activeProduct"
-    | "activeDevSection"
-    | "sidebarCollapsed"
-    | "inspectorOpen"
-    | "activeProjectId"
-    | "agentSessionsMode"
-    | "selectedAgentSessionId"
-    | "selectedOverviewSessionId"
-    | "agentSessionFilter"
-    | "agentSessionSort"
-    | "agentSessionLayouts"
-  >
-> & { projects?: ResearchProject[] };
-
 const loadUi = () => {
   try {
-    return JSON.parse(
-      localStorage.getItem(uiStorageKey) ?? "{}",
-    ) as SavedUiState;
+    return JSON.parse(localStorage.getItem(uiStorageKey) ?? "{}") as Partial<
+      Pick<
+        ClyState,
+        | "activeScreen"
+        | "activeProduct"
+        | "lastResearchScreen"
+        | "lastResearchSelectedId"
+        | "activeDevSection"
+        | "sidebarCollapsed"
+        | "inspectorOpen"
+        | "activeProjectId"
+        | "agentSessionsMode"
+        | "selectedAgentSessionId"
+        | "selectedOverviewSessionId"
+        | "agentSessionFilter"
+        | "agentSessionSort"
+        | "agentSessionLayouts"
+      >
+    >;
   } catch {
-    return {} as SavedUiState;
+    return {};
   }
 };
 
@@ -417,58 +431,8 @@ const snapshotAgentSessionLayouts = (sessions: AgentSession[]) =>
     ]),
   ) as ClyState["agentSessionLayouts"];
 
-const savedProjects = Array.isArray(saved.projects)
-  ? saved.projects.filter((project): project is ResearchProject =>
-      Boolean(
-        project &&
-          typeof project.id === "string" &&
-          typeof project.name === "string" &&
-          typeof project.path === "string" &&
-          typeof project.question === "string" &&
-          typeof project.hypothesis === "string",
-      ),
-    )
-  : undefined;
-
-const researchProjectFromCatalog = (record: {
-  id: string;
-  name: string;
-  path: string;
-  metadata: Record<string, unknown>;
-  updatedAt: string;
-}): ResearchProject | null => {
-  const metadata = record.metadata;
-  if (
-    typeof metadata.question !== "string" ||
-    typeof metadata.hypothesis !== "string"
-  ) {
-    return null;
-  }
-  const approvals = Array.isArray(metadata.externalTransmissionApprovals)
-    ? metadata.externalTransmissionApprovals.filter(
-        (approval): approval is "arxiv" | "semantic-scholar" =>
-          approval === "arxiv" || approval === "semantic-scholar",
-      )
-    : undefined;
-  return {
-    id: record.id,
-    name: record.name,
-    path: record.path,
-    question: metadata.question,
-    hypothesis: metadata.hypothesis,
-    phase: typeof metadata.phase === "string" ? metadata.phase : "Exploration",
-    description:
-      typeof metadata.description === "string"
-        ? metadata.description
-        : "Project-scoped local research workspace.",
-    localOnly:
-      typeof metadata.localOnly === "boolean" ? metadata.localOnly : true,
-    ...(approvals?.length ? { externalTransmissionApprovals: approvals } : {}),
-    updatedAt: record.updatedAt,
-  };
-};
 const initialData = hydrateAgentSessionLayouts(
-  createProductionRepository(savedProjects?.length ? savedProjects : undefined),
+  createProductionRepository(),
   saved.agentSessionLayouts,
 );
 const initialCosts = {
@@ -486,9 +450,14 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
   const sourceType = {
     dataset: "Dataset",
     documentation: "Documentation",
-    note: "Lab note",
+    note: "Note",
     paper: "Paper",
+    pdf: "PDF",
     webpage: "Webpage",
+    book: "Book",
+    repository: "Repository",
+    "hugging-face": "Hugging Face",
+    import: "Import",
   } as const;
   return {
     id: object.id,
@@ -513,10 +482,17 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
     findings: payload.findings ?? [],
     limitations: payload.limitations ?? [],
     tags: payload.tags ?? [],
+    fullTextStatus: payload.fullTextStatus,
+    pdfFailure: payload.pdfFailure,
+    pdfAcquisition: payload.pdfAcquisition,
+    folder: payload.folder,
+    extractedFields: payload.extractedFields,
+    extractedValues: payload.extractedValues,
+    contradictoryEvidence: payload.contradictoryEvidence,
+    customReviewFields: payload.customReviewFields,
     linkedClaimIds: [],
     linkedExperimentIds: [],
     inNotebookBundle: false,
-    archived: Boolean(payload.archivedAt),
     groundedSummary: payload.groundedSummary,
     path: `sources/${object.id}`,
     updatedAt: object.updatedAt,
@@ -531,6 +507,7 @@ const sourceFromResearchObject = (object: ResearchObject): Source => {
             components: payload.rankingComponents,
             explanation: payload.rankingExplanation,
             retrievedAt: payload.retrievedAt ?? object.createdAt,
+            providerCalls: payload.providerCalls,
           }
         : undefined,
   };
@@ -557,19 +534,34 @@ const graphRelationFromRelationship: Record<
 > = {
   supports: "supports",
   contradicts: "contradicts",
+  contains: "contains",
   "generated-by": "generated by",
   uses: "uses",
   tests: "tests",
   implements: "implements",
+  produces: "produces",
+  "depends-on": "depends on",
+  documents: "contains",
+  "has-risk": "requires follow-up",
+  "part-of": "contains",
 };
 
 const entityTypeFromResearchObject: Record<ResearchObject["type"], EntityType> =
   {
     artifact: "report",
     source: "source",
+    evidence: "source",
     claim: "claim",
     experiment: "experiment",
     run: "run",
+    question: "question",
+    objective: "objective",
+    hypothesis: "hypothesis",
+    method: "method",
+    risk: "risk",
+    task: "task",
+    collaborator: "collaborator",
+    agent: "agent",
   };
 
 /**
@@ -580,11 +572,31 @@ const mapResearchData = (
   baseData: ClyRepositoryData,
   researchData: ResearchData,
   experimentLineages: ExperimentLineage[] = [],
+  plannerRecommendations?: PlannerRecommendation[],
 ): ClyRepositoryData => {
   const objectsById = new Map(
     researchData.objects.map((object) => [object.id, object]),
   );
   const relationships = researchData.relationships;
+  const evidenceObjects = researchData.objects.filter(
+    (object) => object.type === "evidence",
+  );
+  const claimSourceIds = (
+    claimId: string,
+    relationshipType: "supports" | "contradicts",
+  ) =>
+    relationships
+      .filter(
+        (relationship) =>
+          relationship.toObjectId === claimId &&
+          relationship.type === relationshipType,
+      )
+      .flatMap((relationship) => {
+        const from = objectsById.get(relationship.fromObjectId);
+        if (from?.type === "source") return [from.id];
+        if (from?.type === "evidence") return [from.payload.sourceId];
+        return [];
+      });
   const lineageByExperimentId = new Map(
     experimentLineages.map((lineage) => [lineage.experiment.id, lineage]),
   );
@@ -598,15 +610,27 @@ const mapResearchData = (
     .filter((object) => object.type === "source")
     .map((object) => {
       const source = sourceFromResearchObject(object);
+      const evidenceIds = relationships
+        .filter(
+          (relationship) =>
+            relationship.fromObjectId === object.id &&
+            relationship.type === "contains",
+        )
+        .map((relationship) => relationship.toObjectId);
       return {
         ...source,
-        linkedClaimIds: relationships
-          .filter(
-            (relationship) =>
-              relationship.fromObjectId === object.id &&
-              objectsById.get(relationship.toObjectId)?.type === "claim",
-          )
-          .map((relationship) => relationship.toObjectId),
+        linkedClaimIds: Array.from(
+          new Set(
+            relationships
+              .filter(
+                (relationship) =>
+                  (relationship.fromObjectId === object.id ||
+                    evidenceIds.includes(relationship.fromObjectId)) &&
+                  objectsById.get(relationship.toObjectId)?.type === "claim",
+              )
+              .map((relationship) => relationship.toObjectId),
+          ),
+        ),
       };
     });
   const claims = researchData.objects
@@ -617,22 +641,12 @@ const mapResearchData = (
       type: "Primary" as const,
       status: claimStatusFromResearchObject(object),
       confidence: 0,
-      supportingSourceIds: relationships
-        .filter(
-          (relationship) =>
-            relationship.toObjectId === object.id &&
-            relationship.type === "supports" &&
-            objectsById.get(relationship.fromObjectId)?.type === "source",
-        )
-        .map((relationship) => relationship.fromObjectId),
-      contradictingSourceIds: relationships
-        .filter(
-          (relationship) =>
-            relationship.toObjectId === object.id &&
-            relationship.type === "contradicts" &&
-            objectsById.get(relationship.fromObjectId)?.type === "source",
-        )
-        .map((relationship) => relationship.fromObjectId),
+      supportingSourceIds: Array.from(
+        new Set(claimSourceIds(object.id, "supports")),
+      ),
+      contradictingSourceIds: Array.from(
+        new Set(claimSourceIds(object.id, "contradicts")),
+      ),
       experimentIds: relationships
         .filter(
           (relationship) =>
@@ -642,7 +656,14 @@ const mapResearchData = (
         )
         .map((relationship) => relationship.fromObjectId),
       notebookIds: [],
-      artifactIds: [],
+      artifactIds: relationships
+        .filter(
+          (relationship) =>
+            relationship.toObjectId === object.id &&
+            relationship.type === "supports" &&
+            objectsById.get(relationship.fromObjectId)?.type === "artifact",
+        )
+        .map((relationship) => relationship.fromObjectId),
       assumptions: [],
       weaknesses: [],
       reviewerRisks: [],
@@ -689,12 +710,7 @@ const mapResearchData = (
             : `${Math.max(0, Math.round(durationMs / 1000))}s`,
         codeVersion:
           detailed?.commitSha ?? object.payload.commitSha ?? "Not recorded",
-        environment:
-          typeof detailed?.configuration.engineVersion === "string"
-            ? detailed.configuration.engineVersion
-            : detailed
-              ? "Inputs captured"
-              : "Not captured",
+        environment: detailed ? "Inputs captured" : "Not captured",
         metrics: detailed
           ? Object.fromEntries(
               detailed.metrics.map((metric) => [metric.name, metric.value]),
@@ -725,8 +741,6 @@ const mapResearchData = (
         (run) => run.experimentId === object.id,
       );
       const configuredType = latestDefinition?.configuration.experimentType;
-      const engineVersion = latestDefinition?.configuration.engineVersion;
-      const analysisWarnings = latestDefinition?.configuration.warnings;
       const validTypes = new Set([
         "Training run",
         "Simulation",
@@ -763,16 +777,8 @@ const mapResearchData = (
                 experimentRuns.every((run) => run.status === "Complete")
               ? ("Complete" as const)
               : ("Planned" as const),
-        command:
-          typeof engineVersion === "string"
-            ? `builtin://${engineVersion.split("@", 1)[0]}`
-            : "Not configured",
-        environment:
-          typeof engineVersion === "string"
-            ? engineVersion
-            : lineage
-              ? "Inputs captured per run"
-              : "Not captured",
+        command: "Not configured",
+        environment: lineage ? "Inputs captured per run" : "Not captured",
         claimIds: relationships
           .filter(
             (relationship) =>
@@ -785,10 +791,7 @@ const mapResearchData = (
           latestDefinition?.datasets
             .map((dataset) => `${dataset.id}@${dataset.version}`)
             .join(", ") || "Not linked",
-        limitations:
-          typeof analysisWarnings === "string"
-            ? analysisWarnings.split(" | ").filter(Boolean)
-            : [],
+        limitations: [],
         nextStep: experimentRuns.length ? "Review run lineage" : "Record a run",
         runIds: experimentRuns.map((run) => run.id),
         updatedAt: latestDefinition?.createdAt ?? object.updatedAt,
@@ -847,15 +850,18 @@ const mapResearchData = (
 
   return {
     ...baseData,
+    researchObjects: researchData.objects,
+    researchRelationships: relationships,
     runs,
     notebooks: [],
     code: [],
     artifacts,
-    findings: researchData.findings ?? [],
-    audits: researchData.audits ?? [],
+    findings: [],
+    audits: [],
     integrations: [],
-    nextSteps: researchData.nextSteps ?? [],
-    decisions: researchData.decisions ?? [],
+    nextSteps:
+      plannerRecommendations?.map(nextStepFromPlannerRecommendation) ?? [],
+    decisions: [],
     contextItems: baseData.contextItems,
     contextPacks: baseData.contextPacks,
     agentPresets: [],
@@ -863,6 +869,20 @@ const mapResearchData = (
     reports: [],
     activity: [],
     sources,
+    evidencePassages: evidenceObjects.map((object) => ({
+      id: object.id,
+      sourceId: object.payload.sourceId,
+      quote: object.payload.quote,
+      locator: object.payload.locator,
+      contentHash: object.payload.contentHash,
+      verificationState: object.payload.verificationState,
+      origin: object.origin,
+      reviewedBy: object.reviewedBy,
+      reviewedAt: object.reviewedAt,
+      version: object.version,
+      createdAt: object.createdAt,
+      updatedAt: object.updatedAt,
+    })),
     claims,
     experiments,
     graphNodes: researchData.objects.map((object, index) => ({
@@ -885,6 +905,12 @@ const mapResearchData = (
       relation: graphRelationFromRelationship[relationship.type],
       confidence: relationship.confidence,
       approved: relationship.reviewState === "approved",
+      origin: relationship.origin,
+      reviewState: relationship.reviewState,
+      reviewedBy: relationship.reviewedBy,
+      reviewedAt: relationship.reviewedAt,
+      version: relationship.version,
+      createdAt: relationship.createdAt,
     })),
   };
 };
@@ -894,6 +920,7 @@ const clearPersistedResearchData = (
 ): ClyRepositoryData => ({
   ...data,
   sources: [],
+  evidencePassages: [],
   claims: [],
   experiments: [],
   runs: [],
@@ -914,6 +941,8 @@ const clearPersistedResearchData = (
   graphEdges: [],
   reports: [],
   activity: [],
+  researchObjects: [],
+  researchRelationships: [],
 });
 
 const emptyAgentContext = (): AgentContextSnapshot => ({
@@ -975,28 +1004,19 @@ const applyAgentContextSnapshot = (
   })),
 });
 
-export const selectCatalogProjectId = (
-  projects: ResearchProject[],
-  savedProjectId?: string | null,
-) => {
-  if (projects.length === 0) return null;
-  return savedProjectId &&
-    projects.some((project) => project.id === savedProjectId)
-    ? savedProjectId
-    : projects[0].id;
-};
-
 export const useClyStore = create<ClyState>((set, get) => ({
   data: initialData,
   fixtureMode: initialFixtureMode,
-  activeProjectId: initialData.projects.some(
-    (project) => project.id === saved.activeProjectId,
-  )
-    ? (saved.activeProjectId ?? initialData.projects[0]?.id ?? "")
-    : (initialData.projects[0]?.id ?? ""),
+  activeProjectId: saved.activeProjectId ?? "",
   activeScreen:
     saved.activeProduct === "dev" ? "dev" : (saved.activeScreen ?? "overview"),
   activeProduct: saved.activeProduct ?? "research",
+  lastResearchScreen:
+    saved.lastResearchScreen ??
+    (saved.activeScreen && saved.activeScreen !== "dev"
+      ? saved.activeScreen
+      : "overview"),
+  lastResearchSelectedId: saved.lastResearchSelectedId ?? null,
   activeDevSection: saved.activeDevSection ?? "projects",
   selectedId: null,
   sidebarCollapsed: saved.sidebarCollapsed ?? false,
@@ -1004,6 +1024,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
   activityOpen: false,
   commandPaletteOpen: false,
   projectSwitcherOpen: false,
+  onboardingRequested: null,
   fixtureSwitcherOpen: false,
   globalSearch: "",
   toasts: [],
@@ -1032,6 +1053,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
   agentContextProjectId: null,
   agentContextLoading: false,
   agentContextError: null,
+  researchDataLoading: false,
+  researchDataError: null,
   agentSessionsMode: savedAgentSessionIsValid
     ? (saved.agentSessionsMode ?? "overview")
     : "overview",
@@ -1048,19 +1071,62 @@ export const useClyStore = create<ClyState>((set, get) => ({
   agentSessionLayouts: saved.agentSessionLayouts ?? {},
 
   setScreen: (activeScreen) => {
+    const current = get();
     const activeProduct = activeScreen === "dev" ? "dev" : "research";
+    const lastResearchScreen =
+      activeProduct === "research"
+        ? activeScreen
+        : current.activeProduct === "research" && current.activeScreen !== "dev"
+          ? current.activeScreen
+          : current.lastResearchScreen;
+    const lastResearchSelectedId =
+      activeProduct === "research"
+        ? null
+        : current.activeProduct === "research"
+          ? current.selectedId
+          : current.lastResearchSelectedId;
     set({
       activeScreen,
       activeProduct,
+      lastResearchScreen,
+      lastResearchSelectedId,
       selectedId: null,
       commandPaletteOpen: false,
     });
-    persistUi({ activeScreen, activeProduct });
+    persistUi({
+      activeScreen,
+      activeProduct,
+      lastResearchScreen,
+      lastResearchSelectedId,
+    });
   },
   setProductArea: (activeProduct) => {
-    const activeScreen: ScreenId = activeProduct === "dev" ? "dev" : "overview";
-    set({ activeProduct, activeScreen, selectedId: null });
-    persistUi({ activeProduct, activeScreen });
+    const current = get();
+    const lastResearchScreen =
+      current.activeProduct === "research" && current.activeScreen !== "dev"
+        ? current.activeScreen
+        : current.lastResearchScreen;
+    const activeScreen: ScreenId =
+      activeProduct === "dev" ? "dev" : lastResearchScreen;
+    const selectedId =
+      activeProduct === "research" ? current.lastResearchSelectedId : null;
+    const lastResearchSelectedId =
+      current.activeProduct === "research"
+        ? current.selectedId
+        : current.lastResearchSelectedId;
+    set({
+      activeProduct,
+      activeScreen,
+      selectedId,
+      lastResearchScreen,
+      lastResearchSelectedId,
+    });
+    persistUi({
+      activeProduct,
+      activeScreen,
+      lastResearchScreen,
+      lastResearchSelectedId,
+    });
   },
   setDevSection: (activeDevSection) => {
     set({
@@ -1075,11 +1141,28 @@ export const useClyStore = create<ClyState>((set, get) => ({
       activeDevSection,
     });
   },
-  setSelected: (selectedId) =>
-    set({ selectedId, inspectorOpen: selectedId ? true : get().inspectorOpen }),
+  setSelected: (selectedId) => {
+    const state = get();
+    const lastResearchSelectedId =
+      state.activeProduct === "research"
+        ? selectedId
+        : state.lastResearchSelectedId;
+    set({
+      selectedId,
+      lastResearchSelectedId,
+      inspectorOpen: selectedId ? true : state.inspectorOpen,
+    });
+    if (state.activeProduct === "research")
+      persistUi({ lastResearchSelectedId });
+  },
   setActiveProject: (activeProjectId) => {
     if (activeProjectId === get().activeProjectId) {
-      set({ projectSwitcherOpen: false, selectedId: null });
+      set({
+        projectSwitcherOpen: false,
+        selectedId: null,
+        lastResearchSelectedId: null,
+      });
+      persistUi({ lastResearchSelectedId: null });
       return;
     }
     set((state) => ({
@@ -1089,6 +1172,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
       agentContextProjectId: null,
       agentContextLoading: true,
       agentContextError: null,
+      researchDataLoading: true,
+      researchDataError: null,
       lineageSuggestions: [],
       lineageMeasurement: null,
       decisionBriefs: [],
@@ -1104,9 +1189,76 @@ export const useClyStore = create<ClyState>((set, get) => ({
       selectedCostEntryId: null,
       projectSwitcherOpen: false,
       selectedId: null,
+      lastResearchSelectedId: null,
     }));
-    persistUi({ activeProjectId });
-    void get().loadFromApi(activeProjectId);
+    persistUi({ activeProjectId, lastResearchSelectedId: null });
+    void loadOnboardingDraft(activeProjectId)
+      .then((draft) => {
+        if (get().activeProjectId !== activeProjectId) return;
+        if (draft.completed || draft.privacyReviewed) {
+          void get().loadFromApi(activeProjectId);
+          return;
+        }
+        set({ agentContextLoading: false });
+      })
+      .catch(() => {
+        // Durable setup state is the privacy authority. A failed read must
+        // remain fail-closed and the onboarding gate will expose retry UI.
+        if (get().activeProjectId === activeProjectId)
+          set({ agentContextLoading: false });
+      });
+  },
+  selectOnboardingProject: (activeProjectId) => {
+    set((state) => ({
+      activeProjectId,
+      data: clearPersistedResearchData(state.data),
+      agentContext: emptyAgentContext(),
+      agentContextProjectId: null,
+      agentContextLoading: false,
+      agentContextError: null,
+      researchDataLoading: false,
+      researchDataError: null,
+      lineageSuggestions: [],
+      lineageMeasurement: null,
+      decisionBriefs: [],
+      decisionBriefsLoading: false,
+      decisionBriefsError: null,
+      preregistrations: [],
+      preregistrationsLoading: false,
+      preregistrationsError: null,
+      costLedger: emptyCostLedger(),
+      claimCosts: {},
+      costsLoading: false,
+      costsError: null,
+      selectedCostEntryId: null,
+      projectSwitcherOpen: false,
+      selectedId: null,
+      lastResearchSelectedId: null,
+    }));
+    persistUi({ activeProjectId, lastResearchSelectedId: null });
+  },
+  updateActiveProject: async (patch) => {
+    const state = get();
+    const project = state.data.projects.find(
+      (item) => item.id === state.activeProjectId,
+    );
+    if (!project) throw new Error("Active research project was not found.");
+    const updated: ResearchProject = {
+      ...project,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    if (!testFixtureRuntime) await apiClient.ensureProject(updated);
+    set((current) => ({
+      data: {
+        ...current.data,
+        projects: current.data.projects.map((item) =>
+          item.id === updated.id ? updated : item,
+        ),
+      },
+    }));
+    persistUi({ projects: get().data.projects });
+    return updated;
   },
   setFixtureMode: (fixtureMode) => {
     if (!__CLY_INCLUDE_TEST_FIXTURES__ || !testFixtureRuntime) return;
@@ -1136,22 +1288,15 @@ export const useClyStore = create<ClyState>((set, get) => ({
       import("../fixtures/cost-ledger"),
       import("../agent-sessions/fixtures"),
     ]).then(([repositoryModule, costModule, agentFixtureModule]) => {
-      createTestAgentSession = agentFixtureModule.createNewAgentSession;
-      createTestWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
+      createTestFixtureAgentSession = agentFixtureModule.createNewAgentSession;
+      createTestFixtureWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
       const data = hydrateAgentSessionLayouts(
         repositoryModule.createFixtureRepository(fixtureMode),
         get().agentSessionLayouts,
       );
       const costs = costModule.createCostLedgerFixture(fixtureMode, data);
-      const currentProjectId = get().activeProjectId;
-      const fixtureProjectId = data.projects.some(
-        (project) => project.id === currentProjectId,
-      )
-        ? currentProjectId
-        : (data.projects[0]?.id ?? "");
       set((state) => ({
         data,
-        activeProjectId: fixtureProjectId,
         fixtureMode,
         selectedId: null,
         agentSessionsMode:
@@ -1189,84 +1334,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
           ? false
           : state.fixtureSwitcherOpen,
       }));
-      persistUi({ activeProjectId: fixtureProjectId });
     });
-  },
-  createResearchProject: async (projectPath) => {
-    const canonicalPath = projectPath.trim();
-    if (!canonicalPath) {
-      throw new Error("Select a local project folder first.");
-    }
-    const pathParts = canonicalPath.split(/[\\/]/).filter(Boolean);
-    const folderName = pathParts.at(-1) ?? "Local research project";
-    const project: ResearchProject = {
-      id: `project-${crypto.randomUUID()}`,
-      name: folderName,
-      path: canonicalPath,
-      question: "",
-      hypothesis: "",
-      phase: "Exploration",
-      description: "Define the project brief, then connect data and evidence.",
-      localOnly: true,
-      updatedAt: new Date().toISOString(),
-    };
-    if (!testFixtureRuntime) await apiClient.ensureProject(project);
-    set((state) => {
-      const cleared = clearPersistedResearchData(state.data);
-      return {
-        data: {
-          ...cleared,
-          projects: [...state.data.projects, project],
-        },
-        activeProjectId: project.id,
-        activeProduct: "research",
-        activeScreen: "overview",
-        selectedId: null,
-        projectSwitcherOpen: false,
-        lineageSuggestions: [],
-        decisionBriefs: [],
-        preregistrations: [],
-        datasetObligations: [],
-        obligationAlerts: [],
-        costLedger: emptyCostLedger(),
-        claimCosts: {},
-        selectedCostEntryId: null,
-      };
-    });
-    persistUi({
-      activeProjectId: project.id,
-      activeProduct: "research",
-      activeScreen: "overview",
-      projects: [...get().data.projects],
-    });
-    return project;
-  },
-  updateActiveProject: async (patch) => {
-    const state = get();
-    const project = state.data.projects.find(
-      (item) => item.id === state.activeProjectId,
-    );
-    if (!project) throw new Error("Active research project was not found.");
-    const updated: ResearchProject = {
-      ...project,
-      ...patch,
-      updatedAt: new Date().toISOString(),
-    };
-    if (!testFixtureRuntime) await apiClient.ensureProject(updated);
-    set((current) => ({
-      data: {
-        ...current.data,
-        projects: current.data.projects.map((item) =>
-          item.id === updated.id ? updated : item,
-        ),
-      },
-    }));
-    persistUi({
-      projects: get().data.projects.map((item) =>
-        item.id === updated.id ? updated : item,
-      ),
-    });
-    return updated;
   },
   toggleSidebar: () =>
     set((state) => {
@@ -1283,6 +1351,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
   toggleActivity: () => set((state) => ({ activityOpen: !state.activityOpen })),
   setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
   setProjectSwitcherOpen: (projectSwitcherOpen) => set({ projectSwitcherOpen }),
+  setOnboardingRequested: (onboardingRequested) => set({ onboardingRequested }),
   setFixtureSwitcherOpen: (fixtureSwitcherOpen) => set({ fixtureSwitcherOpen }),
   setGlobalSearch: (globalSearch) => set({ globalSearch }),
   notify: (title, detail) => {
@@ -1305,45 +1374,16 @@ export const useClyStore = create<ClyState>((set, get) => ({
     }));
   },
   loadFromApi: async (requestedProjectId) => {
-    let projectId = requestedProjectId ?? get().activeProjectId;
-    if (!requestedProjectId && !testFixtureRuntime) {
-      try {
-        const catalog = (await apiClient.fetchProjects())
-          .map(researchProjectFromCatalog)
-          .filter((project): project is ResearchProject => project !== null);
-        const preferredId = selectCatalogProjectId(
-          catalog,
-          typeof saved.activeProjectId === "string"
-            ? saved.activeProjectId
-            : null,
-        );
-        if (!preferredId) {
-          set({
-            activeProjectId: "",
-            agentContext: { items: [], packs: [], manifests: [] },
-            agentContextError: null,
-            agentContextLoading: false,
-            agentContextProjectId: null,
-            data: { ...createProductionRepository(), projects: [] },
-            fixtureMode: "empty",
-          });
-          persistUi({ activeProjectId: "", projects: [] });
-          return true;
-        }
-        projectId = preferredId;
-        set((state) => ({
-          activeProjectId: preferredId,
-          data: { ...state.data, projects: catalog },
-        }));
-        persistUi({ activeProjectId: preferredId, projects: catalog });
-      } catch {
-        // Older local APIs do not expose the catalog; use the boot project.
-      }
-    }
+    const projectId = requestedProjectId ?? get().activeProjectId;
     const project = get().data.projects.find((item) => item.id === projectId);
     if (!project) return false;
     if (get().activeProjectId === projectId)
-      set({ agentContextLoading: true, agentContextError: null });
+      set({
+        agentContextLoading: true,
+        agentContextError: null,
+        researchDataLoading: true,
+        researchDataError: null,
+      });
     let contextHydrationStarted = false;
     try {
       await apiClient.ensureProject(project);
@@ -1353,6 +1393,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
         apiClient.fetchAgentConfigurations(projectId).catch(() => undefined),
         apiClient.fetchLineageSuggestions(projectId).catch(() => []),
         apiClient.fetchDecisionBriefs(projectId).catch(() => undefined),
+        apiClient.fetchNextSteps(projectId).catch(() => undefined),
         apiClient.fetchPreregistrations(projectId).catch(() => undefined),
         apiClient.fetchObligations(projectId).catch(() => undefined),
         apiClient.fetchCostLedger(projectId).catch(() => emptyCostLedger()),
@@ -1391,6 +1432,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
         agentConfigurations,
         lineageSuggestions,
         decisionBriefs,
+        plannerRecommendations,
         preregistrations,
         obligationSummary,
         costLedger,
@@ -1409,6 +1451,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
                         state.data,
                         researchData,
                         experimentLineages,
+                        plannerRecommendations,
                       ),
                       agentConfigurations,
                     }
@@ -1416,6 +1459,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
                       state.data,
                       researchData,
                       experimentLineages,
+                      plannerRecommendations,
                     ),
                 agentContext,
               )
@@ -1425,10 +1469,16 @@ export const useClyStore = create<ClyState>((set, get) => ({
                     state.data,
                     researchData,
                     experimentLineages,
+                    plannerRecommendations,
                   ),
                   agentConfigurations,
                 }
-              : mapResearchData(state.data, researchData, experimentLineages),
+              : mapResearchData(
+                  state.data,
+                  researchData,
+                  experimentLineages,
+                  plannerRecommendations,
+                ),
           state.agentSessionLayouts,
         ),
         ...(agentContext
@@ -1436,6 +1486,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
           : { agentContextProjectId: null }),
         agentContextError: agentContextResult.error,
         agentContextLoading: false,
+        researchDataLoading: false,
+        researchDataError: null,
         fixtureMode: "empty",
         lineageSuggestions,
         lineageMeasurement: null,
@@ -1477,22 +1529,21 @@ export const useClyStore = create<ClyState>((set, get) => ({
         errorName: error instanceof Error ? error.name : "UnknownError",
         operation: "hydrate-project-research",
       });
-      if (get().activeProjectId === projectId && !contextHydrationStarted)
-        set({ agentContextLoading: false, agentContextError: message });
+      if (get().activeProjectId === projectId) {
+        set({
+          researchDataLoading: false,
+          researchDataError: message,
+          ...(!contextHydrationStarted
+            ? { agentContextLoading: false, agentContextError: message }
+            : null),
+        });
+      }
       get().notify("Research data could not load", message);
       return false;
     }
   },
   loadClyDevSessions: async (requestedProjectId) => {
     const projectId = requestedProjectId ?? get().activeProjectId;
-    if (!projectId.trim()) {
-      set({
-        clyDevSessions: [],
-        clyDevSessionsLoading: false,
-        clyDevSessionsError: null,
-      });
-      return false;
-    }
     set({ clyDevSessionsLoading: true, clyDevSessionsError: null });
     try {
       const sessions = await productionAgentSessionServices.hydrate(projectId);
@@ -1514,16 +1565,6 @@ export const useClyStore = create<ClyState>((set, get) => ({
   },
   loadObligations: async (requestedProjectId) => {
     const projectId = requestedProjectId ?? get().activeProjectId;
-    if (!projectId.trim()) {
-      set({
-        datasetObligations: [],
-        obligationAlerts: [],
-        inheritedRestrictions: {},
-        obligationsLoading: false,
-        obligationsError: null,
-      });
-      return false;
-    }
     set({ obligationsLoading: true, obligationsError: null });
     try {
       const summary = await apiClient.fetchObligations(projectId);
@@ -2007,16 +2048,25 @@ export const useClyStore = create<ClyState>((set, get) => ({
         description: source.summary,
         payload: {
           kind: "source",
-          sourceType:
-            source.type === "Dataset"
-              ? "dataset"
-              : source.type === "Documentation"
-                ? "documentation"
-                : source.type === "Lab note"
-                  ? "note"
-                  : source.type === "Webpage"
-                    ? "webpage"
-                    : "paper",
+          sourceType: (
+            {
+              Paper: "paper",
+              PDF: "pdf",
+              Webpage: "webpage",
+              Book: "book",
+              Dataset: "dataset",
+              Documentation: "documentation",
+              Repository: "repository",
+              "Hugging Face": "hugging-face",
+              Note: "note",
+              Import: "import",
+              "Lab note": "note",
+              "NotebookLM result": "import",
+            } as const satisfies Record<
+              Source["type"],
+              NonNullable<SourcePayload["sourceType"]>
+            >
+          )[source.type],
           status: source.url ? "resolved" : "placeholder",
           authors: source.authors
             .split(",")
@@ -2027,6 +2077,15 @@ export const useClyStore = create<ClyState>((set, get) => ({
           doi: source.doi,
           providerId: source.providerId,
           abstract: source.summary,
+          tags: source.tags,
+          fullTextStatus: source.fullTextStatus,
+          pdfFailure: source.pdfFailure,
+          pdfAcquisition: source.pdfAcquisition,
+          folder: source.folder,
+          extractedFields: source.extractedFields,
+          extractedValues: source.extractedValues,
+          contradictoryEvidence: source.contradictoryEvidence,
+          customReviewFields: source.customReviewFields,
           provider: source.provenance?.provider,
           query: source.provenance?.query,
           rankingScore: source.provenance?.score,
@@ -2035,6 +2094,7 @@ export const useClyStore = create<ClyState>((set, get) => ({
           rankingComponents: source.provenance?.components,
           rankingExplanation: source.provenance?.explanation,
           retrievedAt: source.provenance?.retrievedAt,
+          providerCalls: source.provenance?.providerCalls,
         },
       });
       const persistedSource = sourceFromResearchObject(object);
@@ -2080,6 +2140,28 @@ export const useClyStore = create<ClyState>((set, get) => ({
         ),
       },
     })),
+  addEvidencePassage: (evidence) =>
+    set((state) => ({
+      data: {
+        ...state.data,
+        evidencePassages: state.data.evidencePassages.some(
+          (item) => item.id === evidence.id,
+        )
+          ? state.data.evidencePassages.map((item) =>
+              item.id === evidence.id ? evidence : item,
+            )
+          : [evidence, ...state.data.evidencePassages],
+      },
+    })),
+  updateEvidencePassage: (id, patch) =>
+    set((state) => ({
+      data: {
+        ...state.data,
+        evidencePassages: state.data.evidencePassages.map((item) =>
+          item.id === id ? { ...item, ...patch } : item,
+        ),
+      },
+    })),
   addExperiment: (experiment) =>
     set((state) => ({
       data: {
@@ -2102,7 +2184,14 @@ export const useClyStore = create<ClyState>((set, get) => ({
     })),
   addGraphEdge: (edge) =>
     set((state) => ({
-      data: { ...state.data, graphEdges: [...state.data.graphEdges, edge] },
+      data: {
+        ...state.data,
+        graphEdges: state.data.graphEdges.some((item) => item.id === edge.id)
+          ? state.data.graphEdges.map((item) =>
+              item.id === edge.id ? edge : item,
+            )
+          : [...state.data.graphEdges, edge],
+      },
     })),
   updateGraphEdge: (id, patch) =>
     set((state) => ({
@@ -2151,6 +2240,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
         ),
       },
     })),
+  replaceNextSteps: (steps) =>
+    set((state) => ({ data: { ...state.data, nextSteps: steps } })),
   addDecision: (decision) =>
     set((state) => ({
       data: { ...state.data, decisions: [decision, ...state.data.decisions] },
@@ -2242,9 +2333,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
   setAgentDestructiveConfirmation: (agentDestructiveConfirmation) =>
     set({ agentDestructiveConfirmation }),
   createAgentSession: (input, open) => {
-    if (!testFixtureRuntime || !createTestAgentSession)
+    if (!testFixtureRuntime || !createTestFixtureAgentSession)
       throw new CapabilityUnavailableError("agents.execute");
-    const session = createTestAgentSession(input);
+    const session = createTestFixtureAgentSession(input);
     set((state) => ({
       data: {
         ...state.data,
@@ -2289,9 +2380,11 @@ export const useClyStore = create<ClyState>((set, get) => ({
       updatedAt: "Just now",
     })),
   openWorkbenchTab: (sessionId, type) => {
-    if (!testFixtureRuntime || !createTestWorkbenchTabs)
+    if (!testFixtureRuntime || !createTestFixtureWorkbenchTabs)
       throw new CapabilityUnavailableError("agents.workbench");
-    const template = createTestWorkbenchTabs().find((tab) => tab.type === type);
+    const template = createTestFixtureWorkbenchTabs().find(
+      (tab) => tab.type === type,
+    );
     if (!template) return;
     get().updateAgentSession(sessionId, (session) => {
       const existing = session.workbenchTabs.find((tab) => tab.type === type);
@@ -2402,10 +2495,6 @@ export const useClyStore = create<ClyState>((set, get) => ({
   updateDelegatedAgent: (sessionId, agentId, patch) =>
     get().updateAgentSession(sessionId, (session) => ({
       ...session,
-      orchestrator:
-        session.orchestrator.id === agentId
-          ? { ...session.orchestrator, ...patch }
-          : session.orchestrator,
       delegatedAgents: session.delegatedAgents.map((agent) =>
         agent.id === agentId ? { ...agent, ...patch } : agent,
       ),

@@ -729,6 +729,10 @@ export const fetchOpenAiUsageLimits = async () => {
 };
 
 export const fetchAnthropicUsageLimits = async () => {
+  const cached = providerUsageLimitSnapshots.get("anthropic");
+  if (cached) {
+    return cached;
+  }
   const localSnapshot = await readLatestRateLimitsFromFiles([
     path.join(os.homedir(), ".claude", "projects"),
   ]);
@@ -742,7 +746,7 @@ export const fetchAnthropicUsageLimits = async () => {
 
   return makeUsageLimitsResult({
     error:
-      "Claude Code does not expose usage limit windows through a supported local interface. Cly leaves Claude credentials under Claude Code's ownership.",
+      "Claude usage limit windows are unavailable. Claude Code can still be connected and working normally when it does not expose local rate-limit data.",
     provider: "anthropic",
   });
 };

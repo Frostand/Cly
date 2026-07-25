@@ -256,8 +256,6 @@ export function SourcesScreen() {
               },
         );
         await loadFromApi(activeProject.id);
-        const source = result.results[0]?.source;
-        if (source) setSelected(source.id);
         setImportOpen(false);
         resetImport();
         notify(
@@ -597,10 +595,15 @@ export function SourcesScreen() {
             }}
           >
             <option>Paper</option>
+            <option>PDF</option>
+            <option>Webpage</option>
+            <option>Book</option>
             <option>Dataset</option>
             <option>Documentation</option>
-            <option>Lab note</option>
-            <option>Webpage</option>
+            <option>Repository</option>
+            <option>Hugging Face</option>
+            <option>Note</option>
+            <option>Import</option>
           </select>
         </div>
         {importType !== "Paper" || importFormat === "metadata" ? (
@@ -2723,6 +2726,8 @@ function ClaimDetail({
     "supports",
   );
   const [sourceId, setSourceId] = useState(data.sources[0]?.id ?? "");
+  const [evidenceQuote, setEvidenceQuote] = useState("");
+  const [evidenceLocator, setEvidenceLocator] = useState("");
   const [savingEvidence, setSavingEvidence] = useState(false);
   const [experimentOpen, setExperimentOpen] = useState(false);
   const [experimentName, setExperimentName] = useState("");
@@ -2756,15 +2761,22 @@ function ClaimDetail({
     setEvidenceOpen(true);
   };
   const linkEvidence = async () => {
-    if (!sourceId) return;
+    if (!sourceId || !evidenceQuote.trim()) return;
     setSavingEvidence(true);
     try {
       await projectServices.claims.linkEvidence(
         claim.id,
         sourceId,
         relationship,
+        {
+          quote: evidenceQuote.trim(),
+          locator: evidenceLocator.trim() || undefined,
+          origin: "human",
+        },
       );
       const source = data.sources.find((item) => item.id === sourceId);
+      setEvidenceQuote("");
+      setEvidenceLocator("");
       closeEvidence();
       notify(
         relationship === "supports"
@@ -2781,6 +2793,18 @@ function ClaimDetail({
       setSavingEvidence(false);
     }
   };
+  const passageLinks = data.graphEdges
+    .filter(
+      (edge) =>
+        edge.target === claim.id &&
+        (edge.relation === "supports" || edge.relation === "contradicts"),
+    )
+    .flatMap((edge) => {
+      const passage = data.evidencePassages.find(
+        (candidate) => candidate.id === edge.source,
+      );
+      return passage ? [{ edge, passage }] : [];
+    });
   const openExperiment = () => {
     setExperimentName(`Test claim: ${claim.text.slice(0, 72)}`);
     setExperimentGoal(
@@ -3004,6 +3028,60 @@ function ClaimDetail({
               )}
             </Section>
             <Section title="Evidence chain">
+              <div className="cly-passage-list">
+                {passageLinks.map(({ edge, passage }) => (
+                  <article className="cly-passage-card" key={edge.id}>
+                    <div className="cly-passage-card-header">
+                      <strong>
+                        {data.sources.find(
+                          (item) => item.id === passage.sourceId,
+                        )?.title ?? passage.sourceId}
+                      </strong>
+                      <Badge
+                        tone={
+                          edge.relation === "supports" ? "success" : "danger"
+                        }
+                      >
+                        {edge.relation === "supports"
+                          ? "Supports"
+                          : "Contradicts"}
+                      </Badge>
+                    </div>
+                    <blockquote>“{passage.quote}”</blockquote>
+                    {edge.origin === "inferred" &&
+                    edge.reviewState === "unreviewed" ? (
+                      <Badge tone="warning">AI inferred · unverified</Badge>
+                    ) : null}
+                    {edge.reviewState === "unreviewed" ||
+                    edge.reviewState === undefined ? (
+                      <div className="cly-row">
+                        <Button
+                          onClick={() =>
+                            void projectServices.claims.reviewEvidenceRelationship(
+                              edge.id,
+                              "approved",
+                              edge.confidence,
+                            )
+                          }
+                        >
+                          Approve link
+                        </Button>
+                        <Button
+                          onClick={() =>
+                            void projectServices.claims.reviewEvidenceRelationship(
+                              edge.id,
+                              "rejected",
+                              edge.confidence,
+                            )
+                          }
+                        >
+                          Reject link
+                        </Button>
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
               <div className="cly-evidence-chain">
                 {[
                   ...claim.supportingSourceIds
@@ -3105,7 +3183,7 @@ function ClaimDetail({
                   );
               }}
             >
-              <Link2 size={13} /> Link evidence
+              <Link2 size={13} /> Add supporting passage
             </Button>
             <Button
               onClick={(event) =>
@@ -3212,7 +3290,7 @@ function ClaimDetail({
             <Button onClick={closeEvidence}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={!sourceId || savingEvidence}
+              disabled={!sourceId || !evidenceQuote.trim() || savingEvidence}
               onClick={() => void linkEvidence()}
             >
               {savingEvidence ? "Linking…" : "Link source"}
@@ -3248,6 +3326,29 @@ function ClaimDetail({
             <option value="supports">Supports claim</option>
             <option value="contradicts">Contradicts claim</option>
           </select>
+        </div>
+        <div className="cly-field">
+          <label htmlFor={`claim-evidence-quote-${claim.id}`}>
+            Exact evidence passage
+          </label>
+          <textarea
+            id={`claim-evidence-quote-${claim.id}`}
+            className="cly-textarea"
+            rows={4}
+            value={evidenceQuote}
+            onChange={(event) => setEvidenceQuote(event.target.value)}
+          />
+        </div>
+        <div className="cly-field">
+          <label htmlFor={`claim-evidence-locator-${claim.id}`}>
+            Page, section, or locator
+          </label>
+          <input
+            id={`claim-evidence-locator-${claim.id}`}
+            className="cly-input"
+            value={evidenceLocator}
+            onChange={(event) => setEvidenceLocator(event.target.value)}
+          />
         </div>
       </Dialog>
     </div>

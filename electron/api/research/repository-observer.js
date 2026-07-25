@@ -3,6 +3,7 @@ import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
+import { isRepositoryObservationEnabled } from "./repository-workflow-coordinator.js";
 
 const execFileAsync = promisify(execFile);
 const PROJECT_ID_SCHEMA = z.string().trim().min(1).max(500);
@@ -121,7 +122,10 @@ function parsePorcelainStatus(output) {
 
 export function createRepositoryObserver(
   repository,
-  { maxGitOutputBytes = DEFAULT_MAX_GIT_OUTPUT_BYTES } = {},
+  {
+    maxGitOutputBytes = DEFAULT_MAX_GIT_OUTPUT_BYTES,
+    onChanges = async () => [],
+  } = {},
 ) {
   if (!Number.isSafeInteger(maxGitOutputBytes) || maxGitOutputBytes < 1) {
     throw new Error("Repository observation output limit must be positive.");
@@ -131,6 +135,16 @@ export function createRepositoryObserver(
     async scan(projectIdInput) {
       const projectId = PROJECT_ID_SCHEMA.parse(projectIdInput);
       const project = repository.getProject(projectId);
+      if (
+        !isRepositoryObservationEnabled(
+          project,
+          repository.listProvenance(projectId, { limit: 500 }),
+        )
+      ) {
+        throw new Error(
+          "Repository observation is not enabled for this project.",
+        );
+      }
       const configuredRoot = path.resolve(project.path);
       const canonicalRoot = await realpath(configuredRoot);
       if (!samePath(configuredRoot, canonicalRoot)) {
@@ -158,6 +172,16 @@ export function createRepositoryObserver(
         { allowFailure: true },
       );
       const head = rawHead?.trim() || null;
+      const rawBranch = await runGit(
+        canonicalRoot,
+        ["symbolic-ref", "--quiet", "--short", "HEAD"],
+        CONTROL_COMMAND_OUTPUT_BYTES,
+        { allowFailure: true },
+      );
+      const branch = rawBranch?.trim() || null;
+      if (branch && (branch.length > 500 || /[\0\r\n]/.test(branch))) {
+        throw new Error("Git returned an invalid branch name.");
+      }
       const status = await runGit(
         canonicalRoot,
         ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
@@ -174,6 +198,7 @@ export function createRepositoryObserver(
           adapterVersion: ADAPTER_VERSION,
           capability: "repository.observe.metadata",
           changeCount: changes.length,
+          gitBranch: branch,
           gitHead: head,
           ignorePolicyVersion: IGNORE_POLICY_VERSION,
           observedAt,
@@ -188,6 +213,7 @@ export function createRepositoryObserver(
           metadata: {
             ...change,
             adapterVersion: ADAPTER_VERSION,
+            gitBranch: branch,
             gitHead: head,
             observedAt,
           },
@@ -195,11 +221,17 @@ export function createRepositoryObserver(
         });
       }
 
+      const staleLinks = await onChanges(projectId, changes, {
+        gitHead: head,
+        observedAt,
+      });
+
       return {
         changes,
         observedAt,
         projectId,
-        repository: { head },
+        repository: { branch, head },
+        staleLinks,
       };
     },
   };

@@ -1,11 +1,23 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { _electron as electron, expect, test } from "@playwright/test";
+import {
+  _electron as electron,
+  expect,
+  type Page,
+  test,
+} from "@playwright/test";
 import axe from "axe-core";
-import { getClyMainWindow } from "../electron-main-window";
 
 const root = process.cwd();
 const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
+
+async function navigateToResearch(page: Page, id: string) {
+  const destination = page.getByTestId(`nav-${id}`);
+  if (!(await destination.isVisible())) {
+    await page.locator("details.cly-sidebar-advanced > summary").click();
+  }
+  await destination.click();
+}
 
 test("reviews the assembled Electron shell and core interaction states", async () => {
   test.setTimeout(90_000);
@@ -26,7 +38,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
   });
 
   try {
-    const window = await getClyMainWindow(app);
+    const window = await app.firstWindow();
     const browserWindow = await app.browserWindow(window);
     await browserWindow.evaluate((nativeWindow) => {
       nativeWindow.setSize(1024, 700);
@@ -55,9 +67,10 @@ test("reviews the assembled Electron shell and core interaction states", async (
       ["next-steps", "Next-Step Planner"],
       ["integrations", "Integrations & Providers"],
       ["models", "Models & Agents"],
+      ["help", "Setup & Help"],
       ["settings", "Settings"],
     ] as const) {
-      await window.getByTestId(`nav-${id}`).click();
+      await navigateToResearch(window, id);
       await expect(
         window.getByRole("heading", { name: heading, level: 1 }),
       ).toBeVisible();
@@ -69,8 +82,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
     }
 
     await window.getByTestId("nav-overview").click();
-    const titlebar = window.locator(".cly-titlebar");
-    const settingsButton = titlebar.getByRole("button", { name: "Settings" });
+    const settingsButton = window.getByTestId("nav-settings");
     await expect(settingsButton).toBeVisible();
     await settingsButton.click();
     await expect(
@@ -259,7 +271,7 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
   });
 
   try {
-    let window = await getClyMainWindow(app);
+    let window = await app.firstWindow();
     let browserWindow = await app.browserWindow(window);
     await browserWindow.evaluate((nativeWindow) => {
       nativeWindow.setSize(1024, 700);
@@ -351,13 +363,18 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
 
     await runScenario("7. Detach and reattach workspace", async () => {
       await window.getByRole("radio", { name: "Inline workspace" }).click();
+      const workspaceOpened = app.waitForEvent("window");
       await window.getByRole("button", { name: "Detach workspace" }).click();
+      const workspace = await workspaceOpened;
       await expect(
-        window.getByTestId("agent-sessions-chat").getByRole("status"),
-      ).toContainText("Developer workspace detached");
-      await window.getByRole("button", { name: "Reattach workspace" }).click();
-      await expect(window.getByLabel("Session workbench")).toBeVisible();
+        workspace.getByRole("main", { name: "Detached developer workspace" }),
+      ).toBeVisible();
+      await expect(
+        window.getByRole("radio", { name: "Detached workspace" }),
+      ).toBeChecked();
+      await workspace.getByRole("button", { name: "Reattach" }).click();
       await expect.poll(() => app.windows().length).toBe(1);
+      await expect(window.getByLabel("Session workbench")).toBeVisible();
     });
 
     await runScenario("8. Restart and resume", async () => {
@@ -385,23 +402,14 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
         cwd: root,
         env: launchEnvironment,
       });
-      window = await getClyMainWindow(app);
-      // Electron exposes the new Page as soon as navigation begins. Give the
-      // replacement renderer one task turn to mount before native window
-      // inspection; otherwise Playwright can keep polling the outgoing static
-      // boot document through the navigation handoff.
-      await window.waitForTimeout(1_000);
-      await window
-        .getByRole("heading", { level: 1 })
-        .first()
-        .waitFor({ timeout: 45_000 });
+      window = await app.firstWindow();
       browserWindow = await app.browserWindow(window);
       await browserWindow.evaluate((nativeWindow) => {
         nativeWindow.setSize(1024, 700);
       });
       await expect(
         window.getByRole("button", { name: "Resume task" }),
-      ).toBeVisible({ timeout: 45_000 });
+      ).toBeVisible();
       await window.getByRole("button", { name: "Resume task" }).click();
       await expect(
         window.getByRole("button", { name: "Resume task" }),
@@ -465,9 +473,8 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
     label: string,
   ) => {
     await window.keyboard.press("Control+K");
-    await expect(
-      window.getByRole("dialog", { name: "Command palette" }),
-    ).toBeVisible();
+    const palette = window.getByRole("dialog", { name: "Command palette" });
+    await expect(palette).toBeVisible();
     await window.keyboard.type(label);
     await expect(window.getByText(label, { exact: true })).toBeVisible();
     await window.keyboard.press("Enter");
@@ -477,7 +484,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
   };
 
   try {
-    let window = await getClyMainWindow(app);
+    let window = await app.firstWindow();
     let browserWindow = await app.browserWindow(window);
     await browserWindow.evaluate((nativeWindow) => {
       nativeWindow.setSize(1024, 700);
@@ -560,7 +567,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
       cwd: root,
       env: launchEnvironment,
     });
-    window = await getClyMainWindow(app);
+    window = await app.firstWindow();
     browserWindow = await app.browserWindow(window);
     await browserWindow.evaluate((nativeWindow) => {
       nativeWindow.setSize(1024, 700);

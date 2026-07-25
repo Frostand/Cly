@@ -77,8 +77,8 @@ describe("Cly shell modal and inspector focus", () => {
       "Inspect Current Session Diff",
       "Use Agent-only Mode",
       "Use Inline Workspace",
-      "Detach Workspace (Prototype Intent)",
-      "Reattach Workspace (Prototype Intent)",
+      "Detach Workspace",
+      "Reattach Workspace",
       "Open Interrupted Task to Resume",
       "Review Stop Current Agent Session",
     ]) {

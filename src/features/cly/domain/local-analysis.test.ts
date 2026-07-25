@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseDelimitedDataset, runLocalAnalysis } from "./local-analysis";
 
 const classificationCsv = [
-  "age,bmi,hdl,outcome",
+  "age,bmi,biomarker,outcome",
   ...Array.from({ length: 120 }, (_, index) => {
     const outcome = index % 2;
     return `${20 + (index % 50)},${21 + outcome * 8 + (index % 5)},${65 - outcome * 20},${outcome}`;
@@ -31,7 +31,7 @@ describe("local tabular analysis", () => {
     const input = {
       dataset,
       outcome: "outcome",
-      predictors: ["age", "bmi", "hdl"],
+      predictors: ["age", "bmi", "biomarker"],
       task: "classification" as const,
       folds: 5,
       seed: 42,
@@ -44,7 +44,7 @@ describe("local tabular analysis", () => {
     expect(first.metrics.accuracy).toBeGreaterThan(
       first.metrics.baselineAccuracy,
     );
-    expect(first.coefficients[0]?.feature).toMatch(/bmi|hdl/);
+    expect(first.coefficients[0]?.feature).toMatch(/bmi|biomarker/);
     expect(first.warnings).toContain(
       "This is predictive association, not evidence of causation or clinical utility.",
     );

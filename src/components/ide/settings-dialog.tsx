@@ -145,7 +145,6 @@ export const SettingsDialog = () => {
   const [activeHarness, setActiveHarness] = useState<AiProvider>("anthropic");
   const [copiedCommand, setCopiedCommand] = useState<AiProvider | null>(null);
   const [loginRequested, setLoginRequested] = useState<AiProvider | null>(null);
-  const [loginError, setLoginError] = useState<AiProvider | null>(null);
 
   useEffect(() => {
     setThemeMounted(true);
@@ -413,47 +412,37 @@ export const SettingsDialog = () => {
 
   const harnessSetup: Record<
     AiProvider,
-    {
-      docsUrl: string;
-      installCommand: string;
-      loginCommand: string;
-      name: string;
-      runtime: string;
-    }
+    { command: string; docsUrl: string; name: string; runtime: string }
   > = {
     anthropic: {
-      installCommand: "npm install -g @anthropic-ai/claude-code",
-      loginCommand: "claude",
+      command: "claude  # then run /login",
       docsUrl: "https://docs.anthropic.com/en/docs/claude-code",
       name: "Claude Code",
       runtime: "Claude Code CLI",
     },
     cursor: {
-      installCommand: "curl https://cursor.com/install -fsS | bash",
-      loginCommand: "cursor-agent login",
+      command: "agent login",
       docsUrl: "https://cursor.com/docs/cli",
       name: "Cursor",
       runtime: "Cursor Agent CLI",
     },
     openai: {
-      installCommand: "npm install -g @openai/codex",
-      loginCommand: "codex login",
+      command: "codex login",
       docsUrl: "https://developers.openai.com/codex/cli/",
       name: "Codex",
       runtime: "Codex CLI",
     },
     opencode: {
-      installCommand: "npm install -g opencode-ai",
-      loginCommand: "opencode auth login",
+      command: "opencode auth login",
       docsUrl: "https://opencode.ai/docs",
       name: "OpenCode",
       runtime: "OpenCode CLI",
     },
   };
 
-  const copyHarnessCommand = async (provider: AiProvider, command: string) => {
+  const copyHarnessCommand = async (provider: AiProvider) => {
     try {
-      await navigator.clipboard.writeText(command);
+      await navigator.clipboard.writeText(harnessSetup[provider].command);
       setCopiedCommand(provider);
       window.setTimeout(() => setCopiedCommand(null), 1600);
     } catch {
@@ -464,11 +453,7 @@ export const SettingsDialog = () => {
   const launchHarnessLogin = async (provider: AiProvider) => {
     const launched = await getDesktopApi()?.launchProviderLogin(provider);
     if (launched) {
-      setLoginError(null);
       setLoginRequested(provider);
-    } else {
-      setLoginRequested(null);
-      setLoginError(provider);
     }
   };
 
@@ -908,51 +893,19 @@ export const SettingsDialog = () => {
                               </p>
                             ) : null}
 
-                            {loginError === provider ? (
-                              <p
-                                className="text-destructive text-xs"
-                                role="alert"
-                              >
-                                Cly could not open the login command. Install
-                                the CLI first, or copy the login command and run
-                                it in your terminal.
-                              </p>
-                            ) : null}
-
                             <div className="flex flex-wrap items-center gap-2">
-                              {state.installed ? (
-                                <Button
-                                  onClick={() =>
-                                    void launchHarnessLogin(provider)
-                                  }
-                                  size="sm"
-                                  type="button"
-                                >
-                                  Sign in with {setup.name}
-                                </Button>
-                              ) : (
-                                <Button
-                                  onClick={() =>
-                                    void copyHarnessCommand(
-                                      provider,
-                                      setup.installCommand,
-                                    )
-                                  }
-                                  size="sm"
-                                  type="button"
-                                >
-                                  <Copy className="size-3.5" />
-                                  {copiedCommand === provider
-                                    ? "Copied"
-                                    : "Copy install command"}
-                                </Button>
-                              )}
                               <Button
                                 onClick={() =>
-                                  void copyHarnessCommand(
-                                    provider,
-                                    setup.loginCommand,
-                                  )
+                                  void launchHarnessLogin(provider)
+                                }
+                                size="sm"
+                                type="button"
+                              >
+                                Sign in with {setup.name}
+                              </Button>
+                              <Button
+                                onClick={() =>
+                                  void copyHarnessCommand(provider)
                                 }
                                 size="sm"
                                 type="button"
@@ -961,7 +914,7 @@ export const SettingsDialog = () => {
                                 <Copy className="size-3.5" />
                                 {copiedCommand === provider
                                   ? "Copied"
-                                  : `Copy ${setup.loginCommand}`}
+                                  : `Copy ${setup.command}`}
                               </Button>
                               <Button
                                 onClick={() =>

@@ -11,6 +11,9 @@ import { projectServices } from "./project-services";
 describe("production Cly capability boundaries", () => {
   it.each([
     "notebooks.import",
+    "integrations.configure",
+    "planner.update",
+    "decisions.create",
   ])("classifies %s as unavailable with an explanation", (id) => {
     expect(getCapability(id)).toMatchObject({
       state: "unavailable",
@@ -20,26 +23,12 @@ describe("production Cly capability boundaries", () => {
     });
   });
 
-  it.each([
-    ["reproducibility.audit", "projectServices.reproducibility"],
-    ["planner.update", "projectServices.planner"],
-    ["decisions.create", "projectServices.decisions"],
-  ])("classifies %s as a durable production capability", (id, service) => {
-    expect(getCapability(id)).toMatchObject({
+  it("classifies reproducibility auditing as a production capability", () => {
+    expect(getCapability("reproducibility.audit")).toMatchObject({
       state: "production",
+      service: "projectServices.reproducibility",
+      api: expect.stringContaining("reproducibility-audits"),
       reason: null,
-      service,
-      api: expect.stringContaining("/api/projects/:projectId"),
-    });
-  });
-
-  it("classifies local provider and editor detection as production", () => {
-    expect(getCapability("integrations.configure")).toMatchObject({
-      state: "production",
-      reason: null,
-      service: "localIntegrationService",
-      api: expect.stringContaining("/api/provider-models"),
-      test: "src/features/cly/screens/integrations.test.tsx",
     });
   });
 
@@ -294,61 +283,5 @@ describe("project context approval services", () => {
         transmissionApprovalId: "approval-1",
       }),
     ).rejects.toThrow(message);
-  });
-});
-
-describe("test-fixture planner services", () => {
-  beforeEach(() => {
-    const data = createFixtureRepository("active");
-    useClyStore.setState({
-      activeProjectId: "project-cly",
-      data,
-    });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("updates fixture recommendations locally without contacting the production API", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    const step = useClyStore.getState().data.nextSteps[0];
-
-    if (!step) throw new Error("The active fixture must include a next step.");
-    await projectServices.planner.setStatus(step.id, "Accepted");
-
-    expect(
-      useClyStore.getState().data.nextSteps.find((item) => item.id === step.id)
-        ?.status,
-    ).toBe("Accepted");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("creates and supersedes fixture decisions locally without contacting the production API", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    const created = await projectServices.decisions.create({
-      title: "Calibration threshold",
-      decision: "Use conformal residuals as a calibration comparator.",
-      reason: "The measure is available in the imported dataset.",
-    });
-    const replacement = await projectServices.decisions.supersede(created.id, {
-      title: "Calibration measures",
-      decision: "Compare ensemble coverage with conformal residuals.",
-      reason: "The additional marker tests whether the result is robust.",
-    });
-
-    const decisions = useClyStore.getState().data.decisions;
-    expect(decisions.find((item) => item.id === created.id)).toMatchObject({
-      status: "Superseded",
-      supersededBy: replacement.id,
-    });
-    expect(decisions.find((item) => item.id === replacement.id)).toMatchObject({
-      status: "Active",
-      title: "Calibration measures",
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

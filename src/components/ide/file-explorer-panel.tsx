@@ -66,8 +66,8 @@ const isImageFile = (filePath: string): boolean => {
   return IMAGE_EXTENSIONS.has(extension);
 };
 
-const getProjectFileRawUrl = (projectPath: string, filePath: string) =>
-  `/api/project-file-raw?projectPath=${encodeURIComponent(projectPath)}&filePath=${encodeURIComponent(filePath)}`;
+const getProjectFileRawUrl = (projectId: string, filePath: string) =>
+  `/api/project-file-raw?projectId=${encodeURIComponent(projectId)}&filePath=${encodeURIComponent(filePath)}`;
 
 const inferLanguage = (filePath: string): BundledLanguage => {
   const extension = filePath.split(".").pop()?.toLowerCase() ?? "";
@@ -474,7 +474,7 @@ const FileExplorerPanelImpl = ({
         body: JSON.stringify({
           directory: ".",
           maxResults: PROJECT_FILE_LIST_MAX_RESULTS,
-          projectPath,
+          projectId,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -515,15 +515,16 @@ const FileExplorerPanelImpl = ({
   }, [projectId, projectPath]);
 
   const handleOpenProjectPath = useCallback(async () => {
-    if (!projectPath) {
+    if (!projectId || !projectPath) {
       return;
     }
 
     await getDesktopApi()?.openInEditor({
       editorId: "file-explorer",
+      projectId,
       projectPath,
     });
-  }, [projectPath]);
+  }, [projectId, projectPath]);
 
   const handleRefreshFiles = useCallback(() => {
     if (!projectId) {
@@ -630,7 +631,7 @@ const FileExplorerPanelImpl = ({
         const response = await fetch("/api/project-file", {
           body: JSON.stringify({
             filePath: selectedFilePath,
-            projectPath,
+            projectId,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -712,7 +713,7 @@ const FileExplorerPanelImpl = ({
 
       try {
         const response = await fetch(
-          getProjectFileRawUrl(projectPath, selectedFilePath),
+          getProjectFileRawUrl(projectId, selectedFilePath),
         );
 
         if (!response.ok) {

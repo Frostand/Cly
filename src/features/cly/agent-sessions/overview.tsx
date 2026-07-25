@@ -173,7 +173,7 @@ export function AgentSessionsOverview() {
         <section className="agent-session-list" aria-label="Agent sessions">
           <div className="agent-session-list-heading">
             <span>{visible.length} sessions</span>
-            <span>Fixture runtime · local only</span>
+            <span>Test fixture runtime · local only</span>
           </div>
           {visible.length ? (
             visible.map((session) => (
@@ -190,8 +190,8 @@ export function AgentSessionsOverview() {
               <Bot size={22} />
               <h2>No sessions in this view</h2>
               <p>
-                Start a fixture-backed session with an Orchestrator, explicit
-                context, and an agent-team preset.
+                Start a session with an Orchestrator, explicit context, and an
+                agent-team preset.
               </p>
               <Button variant="primary" onClick={() => setNewOpen(true)}>
                 <Plus size={13} /> New session

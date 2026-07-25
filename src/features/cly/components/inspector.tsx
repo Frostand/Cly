@@ -1,6 +1,13 @@
-import { ExternalLink, Link2, PanelRightClose, Pin } from "lucide-react";
-import { getDesktopApi } from "../../../lib/electron";
+import {
+  ExternalLink,
+  Link2,
+  PanelRightClose,
+  Pin,
+  Sparkles,
+} from "lucide-react";
 import type { InheritedRestriction } from "../domain/obligations";
+import { capabilityUnavailableMessage } from "../services/capabilities";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { InheritedRestrictions } from "./inherited-restrictions";
 import { screenLabels } from "./navigation";
@@ -63,18 +70,6 @@ const inspectorFields: Record<string, string[]> = {
     "claimIds",
     "limitations",
     "nextStep",
-  ],
-  run: [
-    "status",
-    "experimentId",
-    "startedAt",
-    "duration",
-    "environment",
-    "codeVersion",
-    "metrics",
-    "config",
-    "reproducibility",
-    "canonical",
   ],
   notebook: [
     "path",
@@ -223,12 +218,6 @@ export function Inspector() {
   );
   const setScreen = useClyStore((s) => s.setScreen);
   const selection = selectedId ? findEntity() : null;
-  const originalUrl =
-    selection &&
-    typeof selection.entity.url === "string" &&
-    /^https?:\/\//i.test(selection.entity.url)
-      ? selection.entity.url
-      : null;
 
   return (
     <aside
@@ -303,32 +292,33 @@ export function Inspector() {
                   >
                     <Pin size={13} /> Open in context
                   </Button>
-                  {originalUrl ? (
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        const desktopApi = getDesktopApi();
-                        if (!desktopApi) {
-                          notify(
-                            "Desktop app required",
-                            "Open Cly in Electron to open external sources.",
-                          );
-                          return;
-                        }
-                        void desktopApi
-                          .openExternal(originalUrl)
-                          .then((opened) => {
-                            if (!opened)
-                              notify(
-                                "Source was not opened",
-                                "Only valid HTTP and HTTPS source URLs can be opened.",
-                              );
-                          });
-                      }}
-                    >
-                      <ExternalLink size={13} /> Open original
-                    </Button>
-                  ) : null}
+                  <Button
+                    disabled={!isClyTestFixtureRuntime}
+                    title={capabilityUnavailableMessage("agents.execute")}
+                    onClick={() =>
+                      notify(
+                        "Agent action preview",
+                        "This action is simulated; no external model call was made.",
+                      )
+                    }
+                  >
+                    <Sparkles size={13} /> Ask agent about this
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={!isClyTestFixtureRuntime}
+                    title={capabilityUnavailableMessage(
+                      "integrations.configure",
+                    )}
+                    onClick={() =>
+                      notify(
+                        "External open unavailable",
+                        "External file and editor actions stay behind an explicit service boundary.",
+                      )
+                    }
+                  >
+                    <ExternalLink size={13} /> Open original
+                  </Button>
                 </div>
               </div>
             </>

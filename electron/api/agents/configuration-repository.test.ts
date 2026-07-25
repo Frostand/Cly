@@ -125,6 +125,7 @@ describe("agent configuration repository", () => {
   it.each([
     "xhigh",
     "max",
+    "ultra",
   ] as const)("round-trips the %s reasoning level", (reasoningLevel) => {
     const { repository } = setup();
     const input = {

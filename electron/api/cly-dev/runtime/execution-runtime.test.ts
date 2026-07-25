@@ -455,6 +455,48 @@ describe("Cly Dev durable execution runtime", () => {
     ).toHaveLength(1);
   });
 
+  it("records actual provider command output as durable process and test events", async () => {
+    const harness = createHarness({
+      script: async (_request, { executeToolCall }) => {
+        await executeToolCall(
+          call("runCommand", { command: "pnpm test:unit" }),
+        );
+        return [{ type: "completed" }];
+      },
+    });
+    harness.executeTool.mockResolvedValueOnce({
+      command: "pnpm test:unit",
+      cwd: "/tmp/cly-project",
+      exitCode: 0,
+      signal: null,
+      stdout: "Tests 2 passed",
+      stderr: "",
+    });
+
+    await expect(
+      harness.runtime.execute(withTools(harness.request, "runCommand")),
+    ).resolves.toEqual({ status: "completed" });
+
+    expect(
+      harness.events.find((event) => event.type === "process.recorded"),
+    ).toMatchObject({
+      payload: {
+        requestId: "call-runCommand",
+        command: "pnpm test:unit",
+        cwd: "/tmp/cly-project",
+        status: "completed",
+        stdout: "Tests 2 passed",
+        stderr: "",
+        exitCode: 0,
+      },
+    });
+    expect(
+      harness.events.find((event) => event.type === "test.recorded"),
+    ).toMatchObject({
+      payload: { commandId: "call-runCommand", passed: 2, failed: 0 },
+    });
+  });
+
   it("suspends an MCP effect on the approval broker and revalidates before execution", async () => {
     const requestApproval = vi.fn(({ approval }) => ({
       approved: true,

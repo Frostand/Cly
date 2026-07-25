@@ -11,11 +11,6 @@ import {
   prepareCodexPromptAttachments,
   serializeCodexMessage,
 } from "./codex-prompt.js";
-import {
-  assertProviderModelId,
-  assertProviderProjectPath,
-  normalizeProviderSessionId,
-} from "./provider-inputs.js";
 
 const MAX_CURSOR_TEXT_CHARS = 250_000;
 
@@ -311,8 +306,7 @@ const shouldResumeCursorSession = ({
       remoteConversationProjectPath === projectPath,
   );
 
-const buildCursorArgs = ({
-  codexPermissionMode,
+export const buildCursorArgs = ({
   model,
   modelSpeed,
   projectPath,
@@ -334,13 +328,13 @@ const buildCursorArgs = ({
       remoteConversationProjectPath,
     })
   ) {
-    args.push(`--resume=${normalizeProviderSessionId(remoteConversationId)}`);
+    args.push(`--resume=${remoteConversationId}`);
   }
 
   args.push("--model", normalizeCursorCliModel(model));
-  if (codexPermissionMode === "default") {
-    args.push("--mode", "plan");
-  }
+  // Cursor has no action interception in Cly yet. Keep every invocation
+  // plan-only even if a caller forges provider permission fields.
+  args.push("--mode", "plan");
   args.push("--force");
 
   return args;
@@ -348,11 +342,12 @@ const buildCursorArgs = ({
 
 export const streamCursorResponse = ({
   abortSignal,
-  codexPermissionMode,
+  authorizeHostAction,
   messages,
   model,
   modelSpeed,
   projectReferencesPrompt,
+  projectId,
   projectPath,
   responseMessageMetadata,
   remoteConversationId,
@@ -360,8 +355,6 @@ export const streamCursorResponse = ({
   remoteConversationModelSpeed,
   remoteConversationProjectPath,
 }) => {
-  const safeModel = assertProviderModelId(model);
-  const safeProjectPath = assertProviderProjectPath(projectPath);
   const stream = createUIMessageStream({
     originalMessages: messages,
     onError: (error) =>
@@ -390,11 +383,13 @@ export const streamCursorResponse = ({
           }
         };
 
-        const finish = (callback, { closeParts = true } = {}) => {
+        const finish = (callback) => {
           if (finished) return;
           finished = true;
-          if (closeParts) finishText();
+          finishText();
           abortSignal?.removeEventListener("abort", handleAbort);
+          child?.stdout?.off?.("data", handleStdoutChunk);
+          child?.stderr?.off?.("data", handleStderrChunk);
           const attachments = preparedAttachments;
           preparedAttachments = null;
           attachments?.cleanup?.();
@@ -402,7 +397,6 @@ export const streamCursorResponse = ({
         };
 
         const writeMetadata = (metadata) => {
-          if (finished || abortSignal?.aborted) return;
           writer.write({
             messageMetadata: metadata,
             type: "message-metadata",
@@ -448,11 +442,7 @@ export const streamCursorResponse = ({
         };
 
         const ensureToolStarted = ({ input, title, toolCallId, toolName }) => {
-          if (
-            finished ||
-            abortSignal?.aborted ||
-            startedToolCalls.has(toolCallId)
-          ) {
+          if (startedToolCalls.has(toolCallId)) {
             return;
           }
 
@@ -546,9 +536,9 @@ export const streamCursorResponse = ({
             writeMetadata({
               ...responseMessageMetadata,
               remoteConversationId: sessionId,
-              remoteConversationModel: safeModel,
+              remoteConversationModel: model,
               remoteConversationModelSpeed: modelSpeed,
-              remoteConversationProjectPath: safeProjectPath,
+              remoteConversationProjectPath: projectPath,
             });
           }
 
@@ -603,13 +593,14 @@ export const streamCursorResponse = ({
           }
         };
 
+        const handleStderrChunk = (chunk) => {
+          if (finished || abortSignal?.aborted) return;
+          stderrBuffer += chunk.toString();
+        };
+
         const handleAbort = () => {
-          stdoutBuffer = "";
-          stderrBuffer = "";
-          child?.stdout?.off?.("data", handleStdoutChunk);
-          child?.stderr?.removeAllListeners?.("data");
-          terminateProcessTree(child);
-          finish(resolve, { closeParts: false });
+          if (child) terminateProcessTree(child);
+          finish(resolve);
         };
 
         abortSignal?.addEventListener("abort", handleAbort, { once: true });
@@ -620,7 +611,7 @@ export const streamCursorResponse = ({
         writeMetadata(responseMessageMetadata);
 
         void prepareCodexPromptAttachments(getLatestUserMessage(messages))
-          .then((attachments) => {
+          .then(async (attachments) => {
             if (finished || abortSignal?.aborted) {
               attachments?.cleanup?.();
               return null;
@@ -631,8 +622,23 @@ export const streamCursorResponse = ({
               currentTurnAttachments: attachments?.promptText ?? null,
               currentTurnProjectReferences: projectReferencesPrompt,
               messages,
-              projectPath: safeProjectPath,
+              projectPath,
             });
+
+            if (typeof authorizeHostAction !== "function") {
+              throw new Error(
+                "Native Cursor authorization is unavailable. The provider was not started.",
+              );
+            }
+            const authorized = await authorizeHostAction({
+              action: "Start a plan-only Cursor Agent turn for this project.",
+              projectId,
+              provider: "cursor",
+              root: projectPath,
+            });
+            if (!authorized) {
+              throw new Error("The Cursor Agent run was canceled.");
+            }
 
             return Promise.all([
               resolveCursorCliLaunch(),
@@ -646,10 +652,9 @@ export const streamCursorResponse = ({
 
             const [launch, prompt] = preparedLaunch;
             const args = buildCursorArgs({
-              codexPermissionMode,
-              model: safeModel,
+              model,
               modelSpeed,
-              projectPath: safeProjectPath,
+              projectPath,
               remoteConversationId,
               remoteConversationModel,
               remoteConversationModelSpeed,
@@ -657,27 +662,28 @@ export const streamCursorResponse = ({
             });
 
             child = spawn(launch.command, [...launch.argsPrefix, ...args], {
-              cwd: safeProjectPath,
-              detached: process.platform !== "win32",
-              env: { ...process.env, ...(launch.env ?? {}) },
-              shell: false,
+              cwd: projectPath,
+              env: process.env,
+              shell: launch.shell ?? false,
               stdio: ["pipe", "pipe", "pipe"],
               windowsHide: true,
             });
 
-            child.stdout.on("data", handleStdoutChunk);
-            child.stderr.on("data", (chunk) => {
-              if (finished || abortSignal?.aborted) return;
-              stderrBuffer += chunk.toString();
+            child.stdin?.on?.("error", (error) => {
+              if (!finished && !abortSignal?.aborted) {
+                finish(() => reject(error));
+              }
             });
+            child.stdin.end(prompt);
+
+            child.stdout.on("data", handleStdoutChunk);
+            child.stderr.on("data", handleStderrChunk);
             child.on("error", (error) => {
-              if (finished || abortSignal?.aborted) return;
               finish(() =>
                 reject(new Error(getCursorCliSpawnErrorMessage(error))),
               );
             });
             child.on("close", (code) => {
-              if (finished || abortSignal?.aborted) return;
               const trimmed = stdoutBuffer.trim();
               if (trimmed) {
                 try {
@@ -701,11 +707,6 @@ export const streamCursorResponse = ({
                 ),
               );
             });
-            if (finished || abortSignal?.aborted) {
-              terminateProcessTree(child);
-              return;
-            }
-            child.stdin.end(prompt);
           })
           .catch((error) => {
             finish(() =>

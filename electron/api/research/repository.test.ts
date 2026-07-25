@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { DatabaseSync } from "node:sqlite";
+import { Hono } from "hono";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createResearchRepository } from "./repository.js";
+import { registerResearchRoutes } from "./routes.js";
 
 let database: DatabaseSync;
 
@@ -20,6 +22,7 @@ beforeEach(() => {
       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL,
       origin TEXT NOT NULL DEFAULT 'human', review_state TEXT NOT NULL DEFAULT 'unreviewed',
       reviewed_by TEXT, reviewed_at TEXT,
+      version INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
@@ -27,7 +30,8 @@ beforeEach(() => {
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, from_object_id TEXT NOT NULL,
       to_object_id TEXT NOT NULL, type TEXT NOT NULL,
       origin TEXT NOT NULL DEFAULT 'human', review_state TEXT NOT NULL DEFAULT 'unreviewed',
-      confidence REAL, reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL,
+      confidence REAL, reviewed_by TEXT, reviewed_at TEXT,
+      version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY (from_object_id) REFERENCES research_objects(id) ON DELETE CASCADE,
       FOREIGN KEY (to_object_id) REFERENCES research_objects(id) ON DELETE CASCADE
@@ -324,6 +328,156 @@ describe("research repository", () => {
     ).toEqual({ count: 3 });
   });
 
+  it("persists source review passages and verification without provider coupling", () => {
+    const repository = createResearchRepository(database);
+    const created = repository.createObject({
+      id: "source-review-contract",
+      projectId: "project-1",
+      type: "source",
+      title: "Local repository review",
+      payload: {
+        kind: "source",
+        sourceType: "repository",
+        citation: "local://repository",
+        folder: "Implementation evidence",
+        extractedFields: {
+          method: {
+            value: "Static symbol scan",
+            passage: {
+              quote: "Symbols are scanned from the checked-out repository.",
+              locator: "README.md:14",
+            },
+            confidence: 88,
+            verificationState: "verified",
+            verifiedBy: "local-user",
+            verifiedAt: "2026-07-19T12:00:00.000Z",
+          },
+        },
+        contradictoryEvidence: [
+          { quote: "Generated symbols are excluded.", locator: "README.md:21" },
+        ],
+      },
+    });
+    expect(created).toMatchObject({
+      payload: {
+        sourceType: "repository",
+        folder: "Implementation evidence",
+        extractedFields: {
+          method: {
+            confidence: 88,
+            verificationState: "verified",
+            passage: { locator: "README.md:14" },
+          },
+        },
+      },
+    });
+    expect(repository.listProject("project-1").objects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "source-review-contract" }),
+      ]),
+    );
+  });
+
+  it("round-trips PDF provenance, extraction confidence, and provider observations through the API", async () => {
+    const repository = createResearchRepository(database);
+    const app = new Hono();
+    registerResearchRoutes(app, { getRepository: () => repository });
+    const payload = {
+      kind: "source",
+      sourceType: "paper",
+      status: "resolved",
+      url: "https://example.com/paper",
+      fullTextStatus: "parsed",
+      pdfFailure: {
+        kind: "rate_limited",
+        message: "The first acquisition attempt was rate limited.",
+        retryable: true,
+        retryAfterMs: 500,
+        action: "Retry after the provider window.",
+      },
+      pdfAcquisition: {
+        attempts: 2,
+        finalUrl: "https://cdn.example.com/paper.pdf",
+        redirects: 1,
+      },
+      extractedValues: {
+        methods: [
+          {
+            value: "We use conformal prediction.",
+            passage: {
+              quote: "We use conformal prediction.",
+              locator: "pdf:page:2:section:methods:chars:0-28",
+            },
+            confidence: 92,
+            verificationState: "unverified",
+          },
+          {
+            value: "We calibrate on ShiftBench.",
+            passage: {
+              quote: "We calibrate on ShiftBench.",
+              locator: "pdf:page:3:section:methods:chars:0-27",
+            },
+            confidence: 88,
+            verificationState: "verified",
+            verifiedBy: "reviewer-1",
+            verifiedAt: "2026-07-21T20:00:00.000Z",
+          },
+        ],
+      },
+      providerCalls: [
+        {
+          attempts: [
+            {
+              attempt: 1,
+              durationMs: 25,
+              outcome: "retryable_http",
+              retryAfterMs: 500,
+              status: 429,
+            },
+            {
+              attempt: 2,
+              durationMs: 40,
+              outcome: "success",
+              retryAfterMs: null,
+              status: 200,
+            },
+          ],
+          durationMs: 565,
+          operation: "search",
+          provider: "crossref",
+          status: "completed",
+        },
+      ],
+    };
+
+    const created = await app.request(
+      "/api/projects/project-1/research/objects",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "source",
+          title: "Parsed paper",
+          payload,
+        }),
+      },
+    );
+    expect(created.status).toBe(201);
+    await expect(created.json()).resolves.toMatchObject({ payload });
+
+    const restartedApp = new Hono();
+    registerResearchRoutes(restartedApp, {
+      getRepository: () => createResearchRepository(database),
+    });
+    const listed = await restartedApp.request(
+      "/api/projects/project-1/research",
+    );
+    expect(listed.status).toBe(200);
+    await expect(listed.json()).resolves.toMatchObject({
+      objects: [expect.objectContaining({ title: "Parsed paper", payload })],
+    });
+  });
+
   it("recovers project objects, relationships, and provenance after service restart", () => {
     const firstService = createResearchRepository(database);
     firstService.createObject({
@@ -421,6 +575,214 @@ describe("research repository", () => {
     });
   });
 
+  it("atomically persists, deduplicates, reviews, and recovers an exact evidence chain", () => {
+    const ids = ["evidence-1", "contains-1", "supports-1"];
+    const repository = createResearchRepository(database, {
+      clock: () => "2026-07-19T12:00:00.000Z",
+      createId: () => ids.shift() ?? "unexpected-id",
+    });
+    repository.createObject({
+      id: "source-chain",
+      projectId: "project-1",
+      type: "source",
+      title: "Durable evidence source",
+      payload: { kind: "source", url: "https://example.com/evidence" },
+    });
+    repository.createObject({
+      id: "claim-chain",
+      projectId: "project-1",
+      type: "claim",
+      title: "Exact passages survive restart",
+      payload: { kind: "claim", status: "draft" },
+    });
+
+    const first = repository.createEvidenceLink({
+      projectId: "project-1",
+      sourceId: "source-chain",
+      claimId: "claim-chain",
+      quote: "The exact reported effect was 24 percent.",
+      locator: "Results, p. 14",
+      type: "supports",
+      origin: "inferred",
+      actorId: "agent-1",
+      confidence: 0.84,
+    });
+    expect(first).toMatchObject({
+      duplicate: false,
+      evidence: {
+        id: "evidence-1",
+        origin: "inferred",
+        reviewState: "unreviewed",
+        version: 1,
+        payload: {
+          kind: "evidence",
+          sourceId: "source-chain",
+          quote: "The exact reported effect was 24 percent.",
+          locator: "Results, p. 14",
+          verificationState: "unverified",
+        },
+      },
+      claimRelationship: {
+        id: "supports-1",
+        origin: "inferred",
+        reviewState: "unreviewed",
+        confidence: 0.84,
+      },
+    });
+    expect(repository.listProvenance("project-1", { limit: 20 })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "evidence.created",
+          actorType: "agent",
+          actorId: "agent-1",
+          objectId: "evidence-1",
+        }),
+      ]),
+    );
+
+    const duplicate = repository.createEvidenceLink({
+      projectId: "project-1",
+      sourceId: "source-chain",
+      claimId: "claim-chain",
+      quote: "The exact reported effect was 24 percent.",
+      locator: "Results, p. 14",
+      type: "supports",
+      origin: "inferred",
+    });
+    expect(duplicate).toMatchObject({
+      duplicate: true,
+      evidence: { id: "evidence-1" },
+      claimRelationship: { id: "supports-1" },
+    });
+    expect(() =>
+      repository.createEvidenceLink({
+        projectId: "project-1",
+        sourceId: "source-chain",
+        claimId: "claim-chain",
+        quote: "The exact reported effect was 24 percent.",
+        locator: "Results, p. 14",
+        type: "contradicts",
+      }),
+    ).toThrow("already linked with the opposite disposition");
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM research_objects WHERE type = 'evidence'",
+        )
+        .get(),
+    ).toEqual({ count: 1 });
+
+    const reviewedLink = repository.reviewRelationship({
+      id: "supports-1",
+      projectId: "project-1",
+      reviewState: "approved",
+      reviewerId: "reviewer-1",
+      confidence: 0.9,
+    });
+    const reviewedPassage = repository.reviewEvidence({
+      id: "evidence-1",
+      projectId: "project-1",
+      verificationState: "verified",
+      reviewerId: "reviewer-1",
+    });
+    expect(reviewedLink).toMatchObject({
+      reviewState: "approved",
+      reviewedBy: "reviewer-1",
+      version: 2,
+    });
+    expect(reviewedPassage).toMatchObject({
+      reviewState: "approved",
+      reviewedBy: "reviewer-1",
+      version: 2,
+      payload: { verificationState: "verified" },
+    });
+
+    const restarted = createResearchRepository(database);
+    expect(restarted.listProject("project-1")).toMatchObject({
+      objects: expect.arrayContaining([
+        expect.objectContaining({
+          id: "evidence-1",
+          version: 2,
+          payload: expect.objectContaining({ verificationState: "verified" }),
+        }),
+      ]),
+      relationships: expect.arrayContaining([
+        expect.objectContaining({
+          id: "supports-1",
+          reviewState: "approved",
+          version: 2,
+        }),
+      ]),
+    });
+    expect(restarted.listProject("project-2")).toEqual({
+      objects: [],
+      relationships: [],
+    });
+    expect(() =>
+      restarted.createEvidenceLink({
+        projectId: "project-2",
+        sourceId: "source-chain",
+        claimId: "claim-chain",
+        quote: "Cross-project passage",
+        type: "supports",
+      }),
+    ).toThrow("The source and claim must belong to the project.");
+  });
+
+  it("rolls back the whole evidence chain when an interrupted relationship write fails", () => {
+    const repository = createResearchRepository(database);
+    repository.createObject({
+      id: "source-interrupted",
+      projectId: "project-1",
+      type: "source",
+      title: "Interrupted source",
+      payload: { kind: "source", url: "https://example.com/interrupted" },
+    });
+    repository.createObject({
+      id: "claim-interrupted",
+      projectId: "project-1",
+      type: "claim",
+      title: "Interrupted claim",
+      payload: { kind: "claim", status: "draft" },
+    });
+    const before = database
+      .prepare("SELECT COUNT(*) AS count FROM provenance_events")
+      .get();
+    database.exec(`
+      CREATE TRIGGER fail_evidence_claim_link
+      BEFORE INSERT ON research_relationships
+      WHEN NEW.type IN ('supports', 'contradicts')
+      BEGIN
+        SELECT RAISE(ABORT, 'simulated interrupted write');
+      END;
+    `);
+
+    expect(() =>
+      repository.createEvidenceLink({
+        projectId: "project-1",
+        sourceId: "source-interrupted",
+        claimId: "claim-interrupted",
+        quote: "This write must be all or nothing.",
+        type: "supports",
+      }),
+    ).toThrow("simulated interrupted write");
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM research_objects WHERE type = 'evidence'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM research_relationships")
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM provenance_events").get(),
+    ).toEqual(before);
+  });
+
   it("validates typed payloads before writing objects or provenance", () => {
     const repository = createResearchRepository(database);
 
@@ -504,6 +866,98 @@ describe("research repository", () => {
       ]),
       relationships: [expect.objectContaining({ type: "generated-by" })],
     });
+  });
+
+  it("manages project lifecycle objects with optimistic versions and graph linkage", () => {
+    const repository = createResearchRepository(database, {
+      clock: () => "2026-07-21T20:00:00.000Z",
+    });
+    const kinds = [
+      "question",
+      "objective",
+      "hypothesis",
+      "method",
+      "risk",
+      "task",
+      "collaborator",
+      "agent",
+    ];
+    for (const kind of kinds) {
+      repository.createObject({
+        id: `${kind}-1`,
+        projectId: "project-1",
+        type: kind,
+        title: `${kind} record`,
+        payload: { kind, status: "draft" },
+      });
+    }
+    repository.createRelationship({
+      id: "objective-method",
+      projectId: "project-1",
+      fromObjectId: "method-1",
+      toObjectId: "objective-1",
+      type: "implements",
+    });
+
+    const updated = repository.updateObject({
+      projectId: "project-1",
+      id: "objective-1",
+      expectedVersion: 1,
+      title: "Calibrated objective",
+      payload: { status: "active", ownerId: "collaborator-1" },
+    });
+
+    expect(updated).toMatchObject({
+      title: "Calibrated objective",
+      version: 2,
+      payload: {
+        kind: "objective",
+        status: "active",
+        ownerId: "collaborator-1",
+      },
+    });
+    expect(repository.listProject("project-1")).toMatchObject({
+      objects: expect.arrayContaining(
+        kinds.map((kind) => expect.objectContaining({ type: kind })),
+      ),
+      relationships: [
+        expect.objectContaining({
+          id: "objective-method",
+          fromObjectId: "method-1",
+          toObjectId: "objective-1",
+        }),
+      ],
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT action, metadata FROM provenance_events WHERE object_id = ? ORDER BY sequence DESC LIMIT 1",
+        )
+        .get("objective-1"),
+    ).toEqual({
+      action: "objective.updated",
+      metadata: JSON.stringify({
+        previousVersion: 1,
+        version: 2,
+        status: "active",
+      }),
+    });
+    expect(() =>
+      repository.updateObject({
+        projectId: "project-1",
+        id: "objective-1",
+        expectedVersion: 1,
+        payload: { status: "completed" },
+      }),
+    ).toThrow("version conflict");
+    expect(() =>
+      repository.updateObject({
+        projectId: "project-2",
+        id: "objective-1",
+        expectedVersion: 2,
+        payload: { status: "archived" },
+      }),
+    ).toThrow("does not belong to the project");
   });
 
   it("rejects strong and paper-ready claim transitions until integrity gates pass", () => {

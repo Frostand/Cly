@@ -11,6 +11,7 @@ const createChatRequest = (body: Record<string, unknown>) =>
     body: JSON.stringify({
       messages: [],
       model: "test-model",
+      projectId: "project-a",
       projectPath: "/tmp",
       provider: "openai",
       ...body,
@@ -19,12 +20,15 @@ const createChatRequest = (body: Record<string, unknown>) =>
     method: "POST",
   });
 
+const resolveProjectPath = ({ projectId }: { projectId?: string }) =>
+  projectId === "project-a" ? "/tmp" : projectId === "project-b" ? "/" : null;
+
 const createApp = (safeEvaluateOperation: ReturnType<typeof vi.fn>) => {
   const app = new Hono();
   registerChatRoutes(app, {
     getDatabase: () => database,
     getObligationService: () => ({ safeEvaluateOperation }),
-    resolveProjectPath: () => null,
+    resolveProjectPath,
   });
   return app;
 };
@@ -55,7 +59,7 @@ describe("chat project authority", () => {
       createChatRequest({ projectId: "missing-project" }),
     );
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(404);
     expect(safeEvaluateOperation).not.toHaveBeenCalled();
   });
 
@@ -69,20 +73,54 @@ describe("chat project authority", () => {
     expect(safeEvaluateOperation).not.toHaveBeenCalled();
   });
 
-  it("binds legacy path-only requests to the matching persisted project", async () => {
+  it("rejects legacy path-only requests", async () => {
     const safeEvaluateOperation = vi.fn(() => ({
       alerts: [],
       decision: "block",
     }));
     const response = await createApp(safeEvaluateOperation).request(
-      createChatRequest({}),
+      createChatRequest({ projectId: undefined }),
     );
 
-    expect(response.status).toBe(409);
-    expect(safeEvaluateOperation).toHaveBeenCalledWith(
-      "project-a",
-      expect.objectContaining({ kind: "provider-transmission" }),
-    );
+    expect(response.status).toBe(400);
+    expect(safeEvaluateOperation).not.toHaveBeenCalled();
+  });
+
+  it("rejects absolute, traversal, missing, and mismatched project references", async () => {
+    const openai = vi.fn(() => new Response("must-not-run"));
+    const app = new Hono();
+    registerChatRoutes(app, {
+      getDatabase: () => database,
+      getObligationService: () => ({
+        safeEvaluateOperation: vi.fn(() => ({ alerts: [], decision: "allow" })),
+      }),
+      resolveProjectPath,
+      providerValidators: {
+        openai: async () => null,
+        opencode: async () => null,
+        cursor: async () => null,
+        anthropic: async () => null,
+      },
+      providerStreams: {
+        openai,
+        opencode: vi.fn(),
+        cursor: vi.fn(),
+        anthropic: vi.fn(),
+      },
+    });
+
+    for (const reference of [
+      { kind: "file", path: "/etc/passwd" },
+      { kind: "file", path: "../etc/passwd" },
+      { kind: "file", path: "cly-reference-that-does-not-exist" },
+      { kind: "folder", path: "package.json" },
+    ]) {
+      const response = await app.request(
+        createChatRequest({ projectReferences: [reference] }),
+      );
+      expect(response.status).toBe(400);
+    }
+    expect(openai).not.toHaveBeenCalled();
   });
 
   it("loads only a persisted byte-identical managed manifest and rejects renderer broadening", async () => {
@@ -95,7 +133,7 @@ describe("chat project authority", () => {
       getDatabase: () => database,
       getObligationService: () => ({ safeEvaluateOperation: vi.fn() }),
       getContextRepository: () => ({ loadManifestForEgress }),
-      resolveProjectPath: () => null,
+      resolveProjectPath,
       providerValidators: {
         openai: async () => null,
         opencode: async () => null,
@@ -154,7 +192,7 @@ describe("chat project authority", () => {
       getDatabase: () => database,
       getObligationService: () => ({ safeEvaluateOperation: vi.fn() }),
       getContextRepository: () => ({ loadManifestForEgress }),
-      resolveProjectPath: () => null,
+      resolveProjectPath,
     });
     const response = await app.request(
       createChatRequest({
@@ -181,7 +219,7 @@ describe("chat project authority", () => {
       getObligationService: () => ({
         safeEvaluateOperation: vi.fn(() => ({ alerts: [], decision: "allow" })),
       }),
-      resolveProjectPath: () => null,
+      resolveProjectPath,
       providerValidators: {
         openai: async () => null,
         opencode: async () => null,
@@ -204,8 +242,9 @@ describe("chat project authority", () => {
       signal: controller.signal,
     });
 
-    await app.request(requestWithSignal);
+    const response = await app.request(requestWithSignal);
 
+    expect(response.status).toBe(200);
     expect(anthropic).toHaveBeenCalledWith(
       expect.objectContaining({ abortSignal: requestWithSignal.signal }),
     );
@@ -225,7 +264,7 @@ describe("chat project authority", () => {
           throw new Error(message);
         }),
       }),
-      resolveProjectPath: () => null,
+      resolveProjectPath,
       providerValidators: {
         openai: async () => null,
         opencode: async () => null,

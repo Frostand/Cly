@@ -1,40 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { dialog, shell, webContents } from "electron";
-
-const normalizedIdentifier = (value) =>
-  typeof value === "string" && value.trim() ? value.trim() : null;
-
-export function isAllowedBrowserGuestNavigation(value) {
-  if (value === "about:blank") return true;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-export function configureBrowserGuestSecurity(
-  guest,
-  { openExternal = (url) => shell.openExternal(url) } = {},
-) {
-  guest.session.setPermissionCheckHandler?.(() => false);
-  guest.session.setPermissionRequestHandler?.(
-    (_requestingWebContents, _permission, callback) => callback(false),
-  );
-
-  const preventUnsafeNavigation = (event, url) => {
-    if (!isAllowedBrowserGuestNavigation(url)) event.preventDefault();
-  };
-  guest.on("will-navigate", preventUnsafeNavigation);
-  guest.on("will-redirect", preventUnsafeNavigation);
-  guest.setWindowOpenHandler?.(({ url }) => {
-    if (isAllowedBrowserGuestNavigation(url) && url !== "about:blank") {
-      void openExternal(url);
-    }
-    return { action: "deny" };
-  });
-}
+import { dialog, webContents } from "electron";
 
 function getSafeScreenshotName(value) {
   const base =
@@ -52,12 +17,9 @@ function getSafeScreenshotName(value) {
 
 export function createBrowserSessionManager({
   getMainWindow,
+  getWebContentsById = (id) => webContents.fromId(id),
   sendToRenderer,
-  resolveWebContents = (id) => webContents.fromId(id),
-  secureGuest = configureBrowserGuestSecurity,
 }) {
-  const registeredGuests = new Map();
-
   function sendBrowserActionError(payload, code, description) {
     sendToRenderer("browser:error", {
       code,
@@ -67,7 +29,7 @@ export function createBrowserSessionManager({
     });
   }
 
-  function getGuestWebContents(payload, actionName, ownerWebContentsId) {
+  function getGuestWebContents(payload, actionName, sender) {
     const webContentsId = Number(payload?.webContentsId);
     if (!Number.isInteger(webContentsId) || webContentsId <= 0) {
       sendBrowserActionError(
@@ -78,15 +40,8 @@ export function createBrowserSessionManager({
       return null;
     }
 
-    const registration = registeredGuests.get(webContentsId);
-    const guest = resolveWebContents(webContentsId);
-    if (
-      !registration ||
-      registration.ownerWebContentsId !== ownerWebContentsId ||
-      registration.guest !== guest ||
-      !guest ||
-      guest.isDestroyed()
-    ) {
+    const guest = getWebContentsById(webContentsId);
+    if (!guest || guest.isDestroyed()) {
       sendBrowserActionError(
         payload,
         "BROWSER_ACTION_FAILED",
@@ -95,27 +50,18 @@ export function createBrowserSessionManager({
       return null;
     }
 
-    const projectId = normalizedIdentifier(payload?.projectId);
-    const tabId = normalizedIdentifier(payload?.tabId);
-    if (!projectId || !tabId) {
-      sendBrowserActionError(
-        payload,
-        "BROWSER_ACTION_FAILED",
-        `Browser ownership is missing for ${actionName}.`,
-      );
-      return null;
-    }
-    if (registration.projectId === null && registration.tabId === null) {
-      registration.projectId = projectId;
-      registration.tabId = tabId;
-    } else if (
-      registration.projectId !== projectId ||
-      registration.tabId !== tabId
+    const host = guest.hostWebContents;
+    if (
+      !sender ||
+      sender.isDestroyed?.() ||
+      guest.getType?.() !== "webview" ||
+      !host ||
+      host.id !== sender.id
     ) {
       sendBrowserActionError(
         payload,
-        "BROWSER_ACTION_FAILED",
-        `Browser ownership changed before ${actionName}.`,
+        "BROWSER_ACTION_FORBIDDEN",
+        `Browser guest is not owned by this window for ${actionName}.`,
       );
       return null;
     }
@@ -123,8 +69,8 @@ export function createBrowserSessionManager({
     return guest;
   }
 
-  async function clearBrowserCookies(payload, ownerWebContentsId) {
-    const guest = getGuestWebContents(payload, "cookies", ownerWebContentsId);
+  async function clearBrowserCookies(payload, sender) {
+    const guest = getGuestWebContents(payload, "cookies", sender);
     if (!guest) {
       return;
     }
@@ -142,8 +88,8 @@ export function createBrowserSessionManager({
     }
   }
 
-  async function clearBrowserCache(payload, ownerWebContentsId) {
-    const guest = getGuestWebContents(payload, "cache", ownerWebContentsId);
+  async function clearBrowserCache(payload, sender) {
+    const guest = getGuestWebContents(payload, "cache", sender);
     if (!guest) {
       return;
     }
@@ -159,12 +105,8 @@ export function createBrowserSessionManager({
     }
   }
 
-  async function takeBrowserScreenshot(payload, ownerWebContentsId) {
-    const guest = getGuestWebContents(
-      payload,
-      "screenshot",
-      ownerWebContentsId,
-    );
+  async function takeBrowserScreenshot(payload, sender) {
+    const guest = getGuestWebContents(payload, "screenshot", sender);
     if (!guest) {
       return;
     }
@@ -201,8 +143,8 @@ export function createBrowserSessionManager({
     }
   }
 
-  function openBrowserDevTools(payload, ownerWebContentsId) {
-    const guest = getGuestWebContents(payload, "DevTools", ownerWebContentsId);
+  function openBrowserDevTools(payload, sender) {
+    const guest = getGuestWebContents(payload, "DevTools", sender);
     if (!guest) {
       return;
     }
@@ -218,56 +160,35 @@ export function createBrowserSessionManager({
     }
   }
 
-  function update(ownerWebContentsId, payload) {
+  function update(payload, sender) {
     if (!payload || typeof payload !== "object") {
       return;
     }
 
     if (payload.openDevTools === true) {
-      openBrowserDevTools(payload, ownerWebContentsId);
+      openBrowserDevTools(payload, sender);
       return;
     }
 
     if (payload.takeScreenshot === true) {
-      void takeBrowserScreenshot(payload, ownerWebContentsId);
+      void takeBrowserScreenshot(payload, sender);
       return;
     }
 
     if (payload.clearCookies === true) {
-      void clearBrowserCookies(payload, ownerWebContentsId);
+      void clearBrowserCookies(payload, sender);
       return;
     }
 
     if (payload.clearCache === true) {
-      void clearBrowserCache(payload, ownerWebContentsId);
+      void clearBrowserCache(payload, sender);
     }
-  }
-
-  function registerGuest(ownerWebContentsId, guest) {
-    if (
-      !Number.isInteger(ownerWebContentsId) ||
-      ownerWebContentsId <= 0 ||
-      !Number.isInteger(guest?.id) ||
-      guest.id <= 0
-    ) {
-      return false;
-    }
-    secureGuest(guest);
-    registeredGuests.set(guest.id, {
-      guest,
-      ownerWebContentsId,
-      projectId: null,
-      tabId: null,
-    });
-    guest.once?.("destroyed", () => registeredGuests.delete(guest.id));
-    return true;
   }
 
   return {
     applyState: () => {},
     hideForRendererNavigation: () => {},
-    registerGuest,
-    reset: () => registeredGuests.clear(),
+    reset: () => {},
     update,
   };
 }

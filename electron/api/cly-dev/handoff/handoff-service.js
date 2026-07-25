@@ -741,7 +741,10 @@ export function createClyDevHandoffService({
       let capabilities;
       try {
         capabilities = normalizeCapabilities(
-          await getProviderCapabilities({ projectId: input.projectId }),
+          await getProviderCapabilities({
+            projectId: input.projectId,
+            targetProvider: input.targetProvider,
+          }),
         );
       } catch (error) {
         conflicts.push(
@@ -887,6 +890,9 @@ export function createClyDevHandoffService({
             source: "target-project",
             permissions: currentPermissions,
             authorizedApprovalIds,
+            ...(input.targetProvider
+              ? { targetProvider: input.targetProvider }
+              : {}),
           }
         : null;
 
@@ -911,6 +917,7 @@ export function createClyDevHandoffService({
     const inspection = await inspectImport({
       projectId: input.projectId,
       envelope: input.envelope,
+      targetProvider: input.targetProvider,
     });
     if (!inspection.compatible || !inspection.envelope) {
       const explanation = inspection.conflicts

@@ -12,11 +12,13 @@ import { randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { projectAuthorityRegistry } from "../project-authority-registry.js";
 import { registerAgentConfigurationRoutes } from "./agents/configuration-routes.js";
 import { registerChatRoutes } from "./chat-routes.js";
 import { registerClyDevHandoffRoutes } from "./cly-dev/handoff/handoff-routes.js";
 import { registerClyDevSessionRoutes } from "./cly-dev/session-routes.js";
 import { registerClyDevSyncRoutes } from "./cly-dev/sync-routes.js";
+import { registerClyDevWorkbenchRoutes } from "./cly-dev/workbench-routes.js";
 import { registerPrImpactReviewRoutes } from "./github/routes.js";
 import { registerLiteratureRoutes } from "./literature/routes.js";
 import { registerProjectGitRoutes } from "./project-git-routes.js";
@@ -27,6 +29,62 @@ import { registerToolApprovalRoutes } from "./tool-approvals.js";
 export const API_SESSION_TOKEN_HEADER = "x-cly-api-token";
 const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 32;
+const AI_UI_MESSAGE_STREAM_HEADER = "x-vercel-ai-ui-message-stream";
+
+const isStreamingResponse = (response) => {
+  if (response.headers.get(AI_UI_MESSAGE_STREAM_HEADER)) {
+    return true;
+  }
+
+  const contentType = response.headers.get("content-type");
+  return (
+    contentType?.split(";", 1)[0].trim().toLowerCase() === "text/event-stream"
+  );
+};
+
+const retainSlotForStreamingResponse = (response, release) => {
+  const reader = response.body.getReader();
+  let released = false;
+  const finish = () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    release();
+  };
+
+  // This observes the upstream lifetime even when it errors before the HTTP
+  // adapter asks for the next chunk. Do not error the downstream controller
+  // here: it may still hold a successfully-read chunk that must be delivered.
+  reader.closed.then(finish, finish);
+
+  const body = new ReadableStream({
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          finish();
+          controller.close();
+          return;
+        }
+        controller.enqueue(result.value);
+      } catch (error) {
+        finish();
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      finish();
+      return reader.cancel(reason);
+    },
+  });
+
+  return new Response(body, {
+    headers: response.headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
+};
 
 // ---------------------------------------------------------------------------
 // Session token
@@ -48,6 +106,9 @@ export function createApiApp(
     maxConcurrentRequests = DEFAULT_MAX_CONCURRENT_REQUESTS,
     clyDev,
     clyDevHandoff,
+    clyDevWorkbench,
+    authorizeProviderHostAction,
+    resolveProjectPathById,
     registerAdditionalRoutes,
   } = {},
 ) {
@@ -86,10 +147,34 @@ export function createApiApp(
     }
 
     activeRequests += 1;
+    let released = false;
+    const release = () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      activeRequests -= 1;
+    };
     try {
       await next();
-    } finally {
-      activeRequests -= 1;
+      if (c.req.method === "HEAD") {
+        release();
+        return;
+      }
+
+      const response = c.res;
+      if (!response.body || !isStreamingResponse(response)) {
+        // Keep Hono's original Response object intact. The Node adapter uses
+        // its internal body cache to preserve Content-Length and avoid
+        // needlessly switching ordinary text/JSON responses to chunked I/O.
+        release();
+        return;
+      }
+
+      c.res = retainSlotForStreamingResponse(response, release);
+    } catch (error) {
+      release();
+      throw error;
     }
   });
   guardedApp.use(
@@ -105,11 +190,17 @@ export function createApiApp(
   registerClyDevSessionRoutes(guardedApp, clyDev);
   registerClyDevSyncRoutes(guardedApp);
   registerClyDevHandoffRoutes(guardedApp, clyDevHandoff);
+  registerClyDevWorkbenchRoutes(guardedApp, clyDevWorkbench);
   registerProviderRoutes(guardedApp);
-  registerChatRoutes(guardedApp);
+  registerChatRoutes(guardedApp, {
+    authorizeHostAction: authorizeProviderHostAction,
+    ...(resolveProjectPathById
+      ? { resolveProjectPath: resolveProjectPathById }
+      : {}),
+  });
   registerLiteratureRoutes(guardedApp);
   registerPrImpactReviewRoutes(guardedApp);
-  registerProjectGitRoutes(guardedApp);
+  registerProjectGitRoutes(guardedApp, { resolveProjectPathById });
   registerResearchRoutes(guardedApp);
   registerAdditionalRoutes?.(guardedApp);
 
@@ -120,11 +211,19 @@ export function startApiServer({
   port,
   apiToken,
   allowedRendererOrigin,
+  authorizeProviderHostAction,
+  clyDev,
   clyDevHandoff,
+  clyDevWorkbench,
+  resolveProjectPathById = projectAuthorityRegistry.resolveProjectPathById,
 }) {
   const guardedApp = createApiApp(apiToken, {
     allowedRendererOrigin,
+    authorizeProviderHostAction,
+    clyDev,
     clyDevHandoff,
+    clyDevWorkbench,
+    resolveProjectPathById,
   });
 
   return new Promise((resolve, reject) => {

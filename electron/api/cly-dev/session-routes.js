@@ -1,11 +1,8 @@
-import { createHash } from "node:crypto";
 import { getStateDatabase } from "../../persisted-state.js";
-import { getGitRepositoryInfo, runGitCommand } from "../project-git/core.js";
 import {
   clyDevCancellationRequestSchema,
   clyDevExecutionRequestSchema,
 } from "./runtime/execution-request-schema.js";
-import { deriveTransferableContextSummary } from "./runtime/execution-runtime.js";
 import { createProductionClyDevRuntime } from "./runtime/production-composition.js";
 import { createClyDevSessionRepository } from "./session-repository.js";
 import {
@@ -14,125 +11,16 @@ import {
   clyDevEventsQuerySchema,
   clyDevSessionAggregateInputSchema,
   clyDevSessionInputSchema,
-  clyDevSessionLaunchInputSchema,
   clyDevSessionOverviewQuerySchema,
   clyDevTaskInputSchema,
   clyDevWorkspaceInputSchema,
 } from "./session-schema.js";
-
-const stableLocalId = (prefix, value) =>
-  `${prefix}-${createHash("sha256").update(value).digest("hex").slice(0, 24)}`;
-
-export async function createProductionSessionLaunchAggregate({
-  db,
-  input,
-  projectId,
-  repository,
-  getRepositoryInfo = getGitRepositoryInfo,
-  gitCommand = runGitCommand,
-}) {
-  const project = db
-    .prepare("SELECT id, name, path FROM projects WHERE id = ?")
-    .get(projectId);
-  if (!project) throw new Error("Project was not found.");
-  const git = await getRepositoryInfo(project.path);
-  if (!git?.isRepo || !git.repoRoot || !git.branch) {
-    throw new Error(
-      "Agent Sessions require the active project to be inside a Git repository with a checked-out commit.",
-    );
-  }
-  const head = await gitCommand(git.repoRoot, ["rev-parse", "HEAD"]);
-  const commitSha = String(head.stdout ?? "").trim();
-  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(commitSha)) {
-    throw new Error("The active Git commit could not be resolved.");
-  }
-
-  const rootKey = `${projectId}:${input.idempotencyKey}`;
-  const repositoryId = stableLocalId("repository", git.repoRoot);
-  const entries = [{ kind: "commit", commitSha }];
-  return repository.createSessionAggregate(projectId, {
-    workspace: {
-      schemaVersion: 1,
-      idempotencyKey: `${input.idempotencyKey}:workspace`,
-      id: stableLocalId("workspace", rootKey),
-      name: `${project.name} · ${git.branch}`,
-      repository: { id: repositoryId },
-      worktree: {
-        id: stableLocalId("worktree", `${git.repoRoot}:${git.branch}`),
-        branch: git.branch,
-      },
-      machine: {
-        id: "cly-local-machine",
-        platform: process.platform,
-        architecture: process.arch,
-      },
-      localOnly: {
-        repositoryPath: project.path,
-        worktreePath: project.path,
-      },
-    },
-    contextManifest: {
-      schemaVersion: 1,
-      idempotencyKey: `${input.idempotencyKey}:context`,
-      id: stableLocalId("context", rootKey),
-      localOnly: {
-        absolutePaths: [],
-        environmentVariableNames: [],
-        notes: [],
-        uncommittedFilePaths: [],
-      },
-      transferable: {
-        summary: deriveTransferableContextSummary(entries),
-        entries,
-      },
-    },
-    task: {
-      schemaVersion: 1,
-      idempotencyKey: `${input.idempotencyKey}:task`,
-      id: stableLocalId("task", rootKey),
-      title: input.title,
-      objective: input.objective,
-      researchObjectIds: [],
-    },
-    session: {
-      schemaVersion: 1,
-      idempotencyKey: `${input.idempotencyKey}:session`,
-      id: stableLocalId("session", rootKey),
-      title: input.title,
-      provider: input.provider,
-      commit: { sha: commitSha },
-      state: "queued",
-    },
-  });
-}
-
-const assertLaunchProvider = (providers, input) => {
-  const provider = providers.find((entry) => entry.id === input.provider.id);
-  if (!provider || provider.authentication !== "authenticated") {
-    throw new Error(
-      "The selected provider is not connected and authenticated.",
-    );
-  }
-  if (!provider.supportedModes.includes(input.mode)) {
-    throw new Error(
-      `The selected provider does not support ${input.mode} sessions.`,
-    );
-  }
-  const model = provider.models.find(
-    (entry) => entry.id === input.provider.model,
-  );
-  if (!model) {
-    throw new Error("The selected model is not in the live provider catalog.");
-  }
-  if (
-    input.provider.reasoningEffort &&
-    !model.reasoningEfforts.includes(input.provider.reasoningEffort)
-  ) {
-    throw new Error(
-      "The selected reasoning level is not advertised by this model.",
-    );
-  }
-};
+import {
+  buildClyDevSessionStartAggregate,
+  clyDevSessionStartInputSchema,
+  resolveClyDevSessionStartContext,
+} from "./session-start.js";
+import { resolveClyDevWorkspaceAuthority } from "./workspace-authority.js";
 
 async function parseBody(c, schema) {
   try {
@@ -174,10 +62,12 @@ export function registerClyDevSessionRoutes(
     getRuntime,
     runner,
     claudeRunner,
+    authorizeCommand,
     executeTool,
     durableToolEffects,
     requestApproval,
-    createSessionLaunchAggregate = createProductionSessionLaunchAggregate,
+    resolveWorkspaceAuthority = resolveClyDevWorkspaceAuthority,
+    resolveSessionStartContext = resolveClyDevSessionStartContext,
     now,
   } = {},
 ) {
@@ -189,6 +79,7 @@ export function registerClyDevSessionRoutes(
         db: getDatabase(),
         runner,
         claudeRunner,
+        authorizeCommand,
         executeTool,
         durableToolEffects,
         requestApproval,
@@ -197,14 +88,24 @@ export function registerClyDevSessionRoutes(
     }
     return productionRuntime;
   };
+  const assertSessionWorkspaceAuthority = async (projectId, sessionId) => {
+    const source = getRepository().getHandoffSource(projectId, sessionId);
+    return resolveWorkspaceAuthority({
+      projectId,
+      localOnly: source.workspace.localOnly,
+    });
+  };
   const executeRequest = (operation) => async (c) => {
     const body = await parseBody(c, clyDevExecutionRequestSchema);
     if (body.error) return body.error;
     try {
+      const projectId = c.req.param("projectId");
+      const sessionId = c.req.param("sessionId");
+      await assertSessionWorkspaceAuthority(projectId, sessionId);
       const result = await resolveRuntime()[operation]({
         ...body.data,
-        projectId: c.req.param("projectId"),
-        sessionId: c.req.param("sessionId"),
+        projectId,
+        sessionId,
         signal: c.req.raw.signal,
       });
       return c.json(result);
@@ -214,67 +115,6 @@ export function registerClyDevSessionRoutes(
       return c.text(message, /not found/i.test(message) ? 404 : 400);
     }
   };
-
-  app.get("/api/cly-dev/providers", async (c) => {
-    try {
-      return c.json(await resolveRuntime().listProviders());
-    } catch {
-      return c.text("Provider status could not be verified.", 503);
-    }
-  });
-
-  app.post("/api/projects/:projectId/cly-dev/session-launches", async (c) => {
-    const body = await parseBody(c, clyDevSessionLaunchInputSchema);
-    if (body.error) return body.error;
-    try {
-      const runtime = resolveRuntime();
-      assertLaunchProvider(await runtime.listProviders(), body.data);
-      const repository = getRepository();
-      const aggregate = await createSessionLaunchAggregate({
-        db: getDatabase(),
-        input: body.data,
-        projectId: c.req.param("projectId"),
-        repository,
-      });
-      const tools =
-        body.data.provider.id === "anthropic-claude"
-          ? body.data.mode === "workspace_write"
-            ? ["listFiles", "readFile", "writeFile", "runCommand"]
-            : ["listFiles", "readFile"]
-          : [];
-      repository.appendEvent(c.req.param("projectId"), aggregate.session.id, {
-        schemaVersion: 1,
-        payloadVersion: 1,
-        idempotencyKey: `${body.data.idempotencyKey}:execution-settings`,
-        type: "summary.recorded",
-        transferability: "local-only",
-        occurredAt: new Date().toISOString(),
-        actor: { kind: "system", id: "cly-dev-runtime" },
-        payload: {
-          title: "Execution settings",
-          sections: [
-            `mode:${body.data.mode}`,
-            ...tools.map((tool) => `tool:${tool}`),
-          ],
-        },
-      });
-      return c.json(
-        {
-          ...aggregate,
-          execution: {
-            mode: body.data.mode,
-            tools,
-          },
-        },
-        201,
-      );
-    } catch (error) {
-      return c.text(
-        error instanceof Error ? error.message : "Agent session launch failed.",
-        400,
-      );
-    }
-  });
 
   app.post(
     "/api/projects/:projectId/cly-dev/sessions/:sessionId/execute",
@@ -310,12 +150,29 @@ export function registerClyDevSessionRoutes(
   app.post("/api/projects/:projectId/cly-dev/workspaces", async (c) => {
     const body = await parseBody(c, clyDevWorkspaceInputSchema);
     if (body.error) return body.error;
-    return respond(
-      c,
-      () =>
-        getRepository().createWorkspace(c.req.param("projectId"), body.data),
-      201,
-    );
+    try {
+      const projectId = c.req.param("projectId");
+      const localOnly = await resolveWorkspaceAuthority({
+        projectId,
+        localOnly: body.data.localOnly,
+      });
+      return c.json(
+        getRepository().createWorkspace(projectId, {
+          ...body.data,
+          localOnly,
+        }),
+        201,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Cly Dev workspace authority failed.";
+      return c.text(
+        message,
+        /not found|unknown project/i.test(message) ? 404 : 400,
+      );
+    }
   });
   app.get(
     "/api/projects/:projectId/cly-dev/workspaces/:workspaceId/tasks",
@@ -388,15 +245,75 @@ export function registerClyDevSessionRoutes(
   app.post("/api/projects/:projectId/cly-dev/session-aggregates", async (c) => {
     const body = await parseBody(c, clyDevSessionAggregateInputSchema);
     if (body.error) return body.error;
-    return respond(
-      c,
-      () =>
-        getRepository().createSessionAggregate(
-          c.req.param("projectId"),
-          body.data,
-        ),
-      201,
-    );
+    try {
+      const projectId = c.req.param("projectId");
+      const localOnly = await resolveWorkspaceAuthority({
+        projectId,
+        localOnly: body.data.workspace.localOnly,
+      });
+      return c.json(
+        getRepository().createSessionAggregate(projectId, {
+          ...body.data,
+          workspace: { ...body.data.workspace, localOnly },
+        }),
+        201,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Cly Dev workspace authority failed.";
+      return c.text(
+        message,
+        /not found|unknown project/i.test(message) ? 404 : 400,
+      );
+    }
+  });
+  app.post("/api/projects/:projectId/cly-dev/session-starts", async (c) => {
+    const body = await parseBody(c, clyDevSessionStartInputSchema);
+    if (body.error) return body.error;
+    try {
+      const projectId = c.req.param("projectId");
+      const context = await resolveSessionStartContext({
+        projectId,
+        researchObjectIds: body.data.researchObjectIds,
+        getDatabase,
+        resolveWorkspaceAuthority,
+      });
+      const { aggregate: input, execution } = buildClyDevSessionStartAggregate(
+        body.data,
+        context,
+      );
+      const aggregate = getRepository().createSessionAggregate(
+        projectId,
+        input,
+      );
+      const executionRequest = {
+        ...execution,
+        projectId,
+        sessionId: aggregate.session.id,
+      };
+      // Provider execution is deliberately detached from the HTTP request.
+      // Effectful providers can pause on an approval while the returned durable
+      // session opens immediately in the agent window.
+      void resolveRuntime()
+        .execute(executionRequest)
+        .catch(() => undefined);
+      return c.json(
+        {
+          ...aggregate,
+          execution: { requestId: execution.requestId, status: "queued" },
+        },
+        202,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Cly Dev task start failed.";
+      return c.text(
+        message,
+        /not found|unknown project/i.test(message) ? 404 : 400,
+      );
+    }
   });
   app.post(
     "/api/projects/:projectId/cly-dev/tasks/:taskId/sessions",

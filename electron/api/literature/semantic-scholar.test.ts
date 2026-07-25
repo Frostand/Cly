@@ -40,10 +40,15 @@ describe("Semantic Scholar literature search", () => {
       .fn()
       .mockResolvedValue(new Response("", { status: 429 }));
     await expect(
-      searchSemanticScholar("topic", { fetchImpl }),
+      searchSemanticScholar("topic", {
+        fetchImpl,
+        maxAttempts: 2,
+        sleep: vi.fn(),
+      }),
     ).rejects.toMatchObject({
       kind: "rate_limited",
     } satisfies Partial<LiteratureSearchError>);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("does not request a blank query", async () => {

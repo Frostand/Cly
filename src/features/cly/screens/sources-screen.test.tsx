@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureRepository } from "../fixtures/repository";
@@ -64,6 +70,22 @@ describe("Source Manager literature import", () => {
 
     await user.click(screen.getByRole("button", { name: "Import source" }));
     expect(screen.getByLabelText("Source title")).toHaveFocus();
+    expect(
+      within(screen.getByLabelText("Source type"))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual([
+      "Paper",
+      "PDF",
+      "Webpage",
+      "Book",
+      "Dataset",
+      "Documentation",
+      "Repository",
+      "Hugging Face",
+      "Note",
+      "Import",
+    ]);
     fireEvent.change(screen.getByLabelText("Source title"), {
       target: { value: "Reliable calibration" },
     });
@@ -108,7 +130,7 @@ describe("Source Manager literature import", () => {
       readingListIds: ["list-1"],
     });
     expect(useClyStore.getState().toasts.at(-1)?.title).toBe("Paper imported");
-    expect(useClyStore.getState().selectedId).toBe("source-imported");
+    expect(useClyStore.getState().selectedId).toBeNull();
   });
 
   it("enables real enrichment and durable source archival", async () => {

@@ -9,12 +9,27 @@ const fields = [
   "url",
   "externalIds",
   "fieldsOfStudy",
+  "openAccessPdf",
 ].join(",");
 
 export class LiteratureSearchError extends Error {
-  constructor(message, kind = "general") {
+  constructor(
+    message,
+    kind = "general",
+    { provider = null, retryAfterMs = null } = {},
+  ) {
     super(message);
     this.kind = kind;
+    this.provider = provider;
+    this.retryAfterMs = retryAfterMs;
+    this.retryable =
+      kind === "rate_limited" || kind === "timeout" || kind === "general";
+    this.action =
+      kind === "rate_limited"
+        ? "Wait for the provider retry window, then retry the search."
+        : kind === "timeout"
+          ? "Retry the search or select the other literature provider."
+          : "Retry the search or select a different literature provider.";
   }
 }
 
@@ -38,16 +53,15 @@ export function normalizeSemanticScholarPaper(value) {
     url:
       clean(value.url) || `https://www.semanticscholar.org/paper/${providerId}`,
     doi: clean(externalIds.DOI) || undefined,
+    pdfUrl: clean(value?.openAccessPdf?.url) || undefined,
     tags: Array.isArray(value.fieldsOfStudy)
       ? value.fieldsOfStudy.map(clean).filter(Boolean)
       : [],
   };
 }
 
-export async function searchSemanticScholar(
-  query,
-  { fetchImpl = fetch, limit = 25, timeoutMs = 20_000 } = {},
-) {
+export async function searchSemanticScholar(query, options = {}) {
+  const { limit = 25 } = options;
   const normalizedQuery = query.trim();
   if (!normalizedQuery) return [];
   const url = new URL(SEMANTIC_SCHOLAR_SEARCH_URL);
@@ -55,34 +69,77 @@ export async function searchSemanticScholar(
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("fields", fields);
 
-  let response;
+  let requested;
   try {
-    response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+    requested = await requestLiteratureProvider(
+      "semantic-scholar",
+      url,
+      options,
+    );
   } catch (error) {
     if (error?.name === "TimeoutError" || error?.name === "AbortError") {
-      throw new LiteratureSearchError(
+      const wrapped = new LiteratureSearchError(
         "Semantic Scholar search timed out.",
         "timeout",
+        { provider: "semantic-scholar" },
       );
+      wrapped.providerCall = error.providerCall;
+      throw wrapped;
     }
-    throw new LiteratureSearchError(
+    const wrapped = new LiteratureSearchError(
       "Unable to search Semantic Scholar right now.",
+      "general",
+      { provider: "semantic-scholar" },
     );
+    wrapped.providerCall = error.providerCall;
+    throw wrapped;
   }
+  const { response, providerCall } = requested;
   if (response.status === 429) {
-    throw new LiteratureSearchError(
+    const error = new LiteratureSearchError(
       "Semantic Scholar rate limit reached.",
       "rate_limited",
+      {
+        provider: "semantic-scholar",
+        retryAfterMs: providerCall.attempts.at(-1)?.retryAfterMs ?? null,
+      },
     );
+    error.providerCall = providerCall;
+    throw error;
   }
   if (!response.ok) {
-    throw new LiteratureSearchError(
+    const error = new LiteratureSearchError(
       "Unable to search Semantic Scholar right now.",
+      "general",
+      { provider: "semantic-scholar" },
     );
+    error.providerCall = providerCall;
+    throw error;
   }
   const payload = await response.json();
   if (!payload || !Array.isArray(payload.data)) {
-    throw new LiteratureSearchError("Semantic Scholar returned invalid data.");
+    const error = new LiteratureSearchError(
+      "Semantic Scholar returned invalid data.",
+      "invalid_response",
+      { provider: "semantic-scholar" },
+    );
+    error.providerCall = providerCall;
+    throw error;
   }
-  return payload.data.map(normalizeSemanticScholarPaper).filter(Boolean);
+  return attachProviderCalls(
+    payload.data.map(normalizeSemanticScholarPaper).filter(Boolean),
+    [providerCall],
+  );
 }
+
+export const semanticScholarAdapter = defineLiteratureSourceAdapter({
+  id: "semantic-scholar",
+  kind: "remote",
+  search: searchSemanticScholar,
+});
+
+import {
+  attachProviderCalls,
+  requestLiteratureProvider,
+} from "./provider-runtime.js";
+import { defineLiteratureSourceAdapter } from "./source-adapter.js";

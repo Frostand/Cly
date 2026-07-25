@@ -307,6 +307,65 @@ describe("inspectable context screen", () => {
     );
   });
 
+  it("marks the approved revision outdated and restores prior immutable history", async () => {
+    const staleRevision = {
+      ...approved,
+      id: "revision-5",
+      revision: 5,
+      producerProcess: "cly-renderer",
+      producerModel: null,
+      verificationState: "stale" as const,
+    };
+    const proposedItem = {
+      ...snapshot.items[0],
+      version: 3,
+      proposedRevisions: [proposal, staleRevision],
+      revisions: [staleRevision, proposal, approved, historical],
+    };
+    const propose = vi
+      .spyOn(projectServices.context, "proposeRevision")
+      .mockResolvedValue(proposedItem);
+    const approve = vi
+      .spyOn(projectServices.context, "approveRevision")
+      .mockResolvedValue(snapshot.items[0]);
+    const user = userEvent.setup();
+    render(<ContextScreen />);
+
+    const controls = screen.getByLabelText(
+      "Lifecycle controls for Primary endpoint",
+    );
+    await user.click(
+      within(controls).getByRole("button", { name: "Mark outdated" }),
+    );
+    expect(propose).toHaveBeenCalledWith(
+      "project-cly",
+      "item-memory",
+      2,
+      expect.objectContaining({
+        content: approved.content,
+        producerProcess: "cly-renderer",
+        verificationState: "stale",
+      }),
+      expect.objectContaining({ actorId: "local-user" }),
+    );
+    expect(approve).toHaveBeenCalledWith(
+      "project-cly",
+      "item-memory",
+      "revision-5",
+      3,
+      expect.objectContaining({ actorId: "local-user" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Restore r4" }));
+    expect(approve).toHaveBeenLastCalledWith(
+      "project-cly",
+      "item-memory",
+      "revision-4",
+      2,
+      expect.objectContaining({ producerProcess: "cly-renderer" }),
+    );
+  });
+
   it("shows exact provider destination, server token totals, hash, exclusions, and privacy warnings", async () => {
     vi.spyOn(projectServices.context, "preview").mockResolvedValue(
       restrictedPreview(),

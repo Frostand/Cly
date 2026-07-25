@@ -1,8 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { installProviderModelsFixture } from "./provider-models-fixture";
 
 test.beforeEach(async ({ page }) => {
-  await installProviderModelsFixture(page);
   await page.goto("/");
   await page.getByTestId("nav-agents").click();
   await expect(
@@ -64,11 +62,11 @@ test("runs the complete fixture-backed Agent Sessions workflow", async ({
   await page.getByRole("radio", { name: "tiled" }).click();
 
   await page.getByRole("tab", { name: "Tests" }).click();
-  await expect(page.getByLabel("Fixture terminal output")).toBeVisible();
+  await expect(page.getByLabel("Terminal output preview")).toBeVisible();
   await expect(page.getByText(/calibration\.test\.ts/)).toBeVisible();
 
   await page.getByRole("tab", { name: "Calibration paper" }).click();
-  await expect(page.getByLabel("Research browser fixture")).toBeVisible();
+  await expect(page.getByLabel("Research browser preview")).toBeVisible();
   await page.getByRole("button", { name: "Add page as source" }).click();
   await expect(
     page.getByRole("button", { name: "Source added" }),
@@ -281,9 +279,7 @@ test("validates Cly Dev identity, workspace ownership, restoration, and fallback
   ).toBeVisible();
 
   await page.getByRole("radio", { name: "Inline workspace" }).click();
-  await page
-    .getByRole("button", { name: "Detach workspace" })
-    .click();
+  await page.getByRole("button", { name: "Detach workspace" }).click();
   await expect(
     page.getByTestId("agent-sessions-chat").getByRole("status"),
   ).toContainText("Developer workspace detached");
@@ -291,9 +287,7 @@ test("validates Cly Dev identity, workspace ownership, restoration, and fallback
   await expect(
     page.getByRole("button", { name: "Reattach workspace" }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Reattach workspace" })
-    .click();
+  await page.getByRole("button", { name: "Reattach workspace" }).click();
   await expect(page.getByLabel("Session workbench")).toBeVisible();
 
   await page

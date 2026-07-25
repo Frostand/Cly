@@ -172,6 +172,7 @@ describe("IntegrationsScreen", () => {
       await screen.findByRole("button", { name: "Open project in VS Code" }),
     );
     expect(desktop.openInEditor).toHaveBeenCalledWith({
+      projectId: "project-cly",
       editorId: "vscode",
       projectPath: useClyStore.getState().data.projects[0].path,
     });

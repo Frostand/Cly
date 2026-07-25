@@ -1,122 +1,55 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 
-const electron = vi.hoisted(() => ({
-  fromId: vi.fn(),
-  openExternal: vi.fn(),
-  showSaveDialog: vi.fn(),
-}));
+import { createBrowserSessionManager } from "./browser-sessions.js";
 
-vi.mock("electron", () => ({
-  dialog: { showSaveDialog: electron.showSaveDialog },
-  shell: { openExternal: electron.openExternal },
-  webContents: { fromId: electron.fromId },
-}));
+const createGuest = (ownerId: number, type = "webview") => ({
+  getType: vi.fn(() => type),
+  hostWebContents: { id: ownerId },
+  isDestroyed: vi.fn(() => false),
+  openDevTools: vi.fn(),
+});
 
-import {
-  configureBrowserGuestSecurity,
-  createBrowserSessionManager,
-} from "./browser-sessions.js";
-
-const createGuest = (id = 91) => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>();
-  const permission = { check: vi.fn(), request: vi.fn() };
-  return {
-    id,
-    handlers,
-    openDevTools: vi.fn(),
-    isDestroyed: vi.fn(() => false),
-    once: vi.fn(),
-    on: vi.fn((name, handler) => handlers.set(name, handler)),
-    setWindowOpenHandler: vi.fn((handler) =>
-      handlers.set("window-open", handler),
-    ),
-    session: {
-      setPermissionCheckHandler: vi.fn((handler) => permission.check(handler)),
-      setPermissionRequestHandler: vi.fn((handler) =>
-        permission.request(handler),
-      ),
-    },
-    permission,
-  };
-};
-
-describe("embedded browser security", () => {
-  it("denies every permission and blocks unsafe navigation schemes", () => {
-    const guest = createGuest();
-    configureBrowserGuestSecurity(guest);
-
-    const check = guest.permission.check.mock.calls[0]?.[0];
-    const request = guest.permission.request.mock.calls[0]?.[0];
-    for (const permission of [
-      "camera",
-      "microphone",
-      "geolocation",
-      "notifications",
-      "midi",
-      "usb",
-      "serial",
-      "bluetooth",
-      "clipboard-read",
-      "unknown-future-permission",
-    ]) {
-      expect(check(null, permission)).toBe(false);
-    }
-    const callback = vi.fn();
-    request(null, "microphone", callback);
-    expect(callback).toHaveBeenCalledWith(false);
-
-    const preventDefault = vi.fn();
-    guest.handlers.get("will-navigate")?.(
-      { preventDefault },
-      "file:///tmp/private",
-    );
-    expect(preventDefault).toHaveBeenCalledOnce();
-    preventDefault.mockClear();
-    guest.handlers.get("will-navigate")?.(
-      { preventDefault },
-      "https://example.com",
-    );
-    expect(preventDefault).not.toHaveBeenCalled();
-    expect(
-      guest.handlers.get("window-open")?.({ url: "javascript:alert(1)" }),
-    ).toEqual({ action: "deny" });
-    expect(electron.openExternal).not.toHaveBeenCalled();
-  });
-
-  it("rejects forged guest IDs, foreign owners, and changed project/tab ownership", () => {
-    const guest = createGuest();
-    electron.fromId.mockReturnValue(guest);
-    const errors: unknown[] = [];
+describe("browser guest authority", () => {
+  it("allows an action only for a webview owned by the sender", () => {
+    const guest = createGuest(11);
+    const sendToRenderer = vi.fn();
     const manager = createBrowserSessionManager({
       getMainWindow: () => null,
-      sendToRenderer: (_channel, payload) => errors.push(payload),
-      secureGuest: vi.fn(),
+      getWebContentsById: () => guest,
+      sendToRenderer,
     });
-    expect(manager.registerGuest(11, guest)).toBe(true);
 
-    manager.update(12, {
-      openDevTools: true,
-      projectId: "project-a",
-      tabId: "tab-a",
-      webContentsId: guest.id,
+    manager.update(
+      { openDevTools: true, projectId: "project-1", webContentsId: 42 },
+      { id: 11, isDestroyed: () => false },
+    );
+
+    expect(guest.openDevTools).toHaveBeenCalledWith({ mode: "detach" });
+    expect(sendToRenderer).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { ownerId: 12, senderId: 11, type: "webview" },
+    { ownerId: 11, senderId: 11, type: "window" },
+  ])("rejects a guest outside the sender boundary: %o", (fixture) => {
+    const guest = createGuest(fixture.ownerId, fixture.type);
+    const sendToRenderer = vi.fn();
+    const manager = createBrowserSessionManager({
+      getMainWindow: () => null,
+      getWebContentsById: () => guest,
+      sendToRenderer,
     });
+
+    manager.update(
+      { openDevTools: true, projectId: "project-1", webContentsId: 42 },
+      { id: fixture.senderId, isDestroyed: () => false },
+    );
+
     expect(guest.openDevTools).not.toHaveBeenCalled();
-
-    manager.update(11, {
-      openDevTools: true,
-      projectId: "project-a",
-      tabId: "tab-a",
-      webContentsId: guest.id,
-    });
-    expect(guest.openDevTools).toHaveBeenCalledOnce();
-
-    manager.update(11, {
-      openDevTools: true,
-      projectId: "project-b",
-      tabId: "tab-a",
-      webContentsId: guest.id,
-    });
-    expect(guest.openDevTools).toHaveBeenCalledOnce();
-    expect(errors).toHaveLength(2);
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      "browser:error",
+      expect.objectContaining({ code: "BROWSER_ACTION_FORBIDDEN" }),
+    );
   });
 });

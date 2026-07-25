@@ -20,12 +20,12 @@ import type { LiteratureSearchResult } from "../domain/literature-search";
 import type { LocalAnalysisResult } from "../domain/local-analysis";
 import type {
   AgentPreset,
-  AuditFinding,
   Claim,
   ClaimStatus,
   ContextItem,
   Experiment,
   GraphEdge,
+  Integration,
   NextStep,
   NotebookArtifact,
   ReproducibilityAudit,
@@ -127,6 +127,7 @@ export interface ContextService {
 
 export interface AgentService {
   savePreset(preset: AgentPreset): Promise<void>;
+  startPreview(presetId: string): Promise<void>;
   listConfigurations(projectId: string): Promise<AgentConfiguration[]>;
   saveConfiguration(
     projectId: string,
@@ -170,6 +171,11 @@ export interface SourceService {
   linkClaim(sourceId: string, claimId: string): Promise<void>;
   enrich(sourceId: string): Promise<Source>;
   setArchived(sourceId: string, archived: boolean): Promise<Source>;
+  reviewField(
+    sourceId: string,
+    fieldId: string,
+    verificationState: "verified" | "rejected",
+  ): Promise<Source>;
 }
 
 export interface LiteratureService {
@@ -191,6 +197,21 @@ export interface ClaimService {
     claimId: string,
     sourceId: string,
     relationship: "supports" | "contradicts",
+    passage: {
+      quote: string;
+      locator?: string;
+      origin?: "human" | "imported" | "inferred" | "system";
+      confidence?: number | null;
+    },
+  ): Promise<void>;
+  reviewEvidenceRelationship(
+    relationshipId: string,
+    reviewState: "approved" | "rejected",
+    confidence: number | null,
+  ): Promise<void>;
+  verifyEvidencePassage(
+    evidenceId: string,
+    verificationState: "verified" | "rejected",
   ): Promise<void>;
 }
 
@@ -205,16 +226,34 @@ export interface ReproducibilityService {
   setFindingDisposition(
     id: string,
     input: {
-      status: AuditFinding["status"];
+      status: "Open" | "Assigned" | "Resolved" | "Deferred";
       assignee?: string;
       reason?: string;
     },
-  ): Promise<AuditFinding>;
+  ): Promise<void>;
+}
+
+export interface IntegrationService {
+  updateStatus(id: string, status: Integration["status"]): Promise<void>;
 }
 
 export interface PlannerService {
-  setStatus(id: string, status: NextStep["status"]): Promise<void>;
-  generate(steps: NextStep[]): Promise<NextStep[]>;
+  generate(seed?: NextStep[]): Promise<NextStep[]>;
+  setStatus(
+    id: string,
+    status:
+      | "Recommended"
+      | "Accepted"
+      | "Deferred"
+      | "Dismissed"
+      | "In progress",
+    reason?: string,
+  ): Promise<void>;
+  edit(
+    id: string,
+    edit: Pick<NextStep, "title" | "rationale">,
+    reason?: string,
+  ): Promise<NextStep>;
 }
 
 export interface DecisionService {
@@ -223,30 +262,13 @@ export interface DecisionService {
   ): Promise<ResearchDecision>;
   update(
     id: string,
-    input: Partial<
-      Pick<
-        ResearchDecision,
-        | "title"
-        | "decision"
-        | "reason"
-        | "alternatives"
-        | "evidenceIds"
-        | "affectedIds"
-        | "status"
-        | "outcome"
-        | "origin"
-      >
-    >,
+    input: Pick<ResearchDecision, "title" | "decision" | "reason">,
   ): Promise<ResearchDecision>;
   supersede(
     id: string,
-    replacement: Pick<ResearchDecision, "title" | "decision" | "reason"> &
-      Partial<
-        Pick<
-          ResearchDecision,
-          "alternatives" | "evidenceIds" | "affectedIds" | "outcome" | "origin"
-        >
-      >,
+    replacement:
+      | string
+      | Pick<ResearchDecision, "title" | "decision" | "reason">,
   ): Promise<ResearchDecision>;
 }
 
@@ -261,6 +283,7 @@ export interface ClyServices {
   claims: ClaimService;
   graph: ResearchGraphService;
   reproducibility: ReproducibilityService;
+  integrations: IntegrationService;
   planner: PlannerService;
   decisions: DecisionService;
 }

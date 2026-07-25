@@ -512,6 +512,11 @@ const DEV_SECTION_META: Record<
   DevSection,
   { title: string; description: string; action: string }
 > = {
+  board: {
+    title: "Development board",
+    description: "Agent tasks organized by durable execution state.",
+    action: "Open task",
+  },
   projects: {
     title: "Projects",
     description:
@@ -632,6 +637,7 @@ function useDevRecords(section: DevSection): DevRecord[] {
       Exclude<DevSection, "projects" | "sessions" | "agents" | "context">,
       DevRecord[]
     > = {
+      board: [],
       repositories: [
         {
           id: "repo-core",

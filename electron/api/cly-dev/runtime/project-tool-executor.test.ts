@@ -49,6 +49,21 @@ describe("project-scoped Cly Dev tool executor", () => {
     );
     await expect(
       execute(
+        { tool: "listFiles", arguments: { directory: ".", maxResults: 10 } },
+        metadata,
+      ),
+    ).resolves.toEqual({ count: 1, files: ["nested/result.txt"] });
+    await expect(
+      execute(
+        {
+          tool: "listFiles",
+          arguments: { directory: "../../", maxResults: 10 },
+        },
+        metadata,
+      ),
+    ).rejects.toThrow(/outside of the project root/i);
+    await expect(
+      execute(
         {
           tool: "readFile",
           arguments: { filePath: "../../outside.txt" },
@@ -56,6 +71,15 @@ describe("project-scoped Cly Dev tool executor", () => {
         metadata,
       ),
     ).rejects.toThrow(/outside of the project root/i);
+    await expect(
+      execute(
+        {
+          tool: "runCommand",
+          arguments: { command: "printf should-not-run" },
+        },
+        metadata,
+      ),
+    ).rejects.toThrow(/native command authorization is unavailable/i);
     db.close();
   });
 });

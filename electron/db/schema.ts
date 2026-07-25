@@ -355,6 +355,7 @@ export const researchObjects = sqliteTable(
     reviewState: text("review_state").notNull().default("unreviewed"),
     reviewedBy: text("reviewed_by"),
     reviewedAt: text("reviewed_at"),
+    version: integer("version").notNull().default(1),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -434,6 +435,11 @@ export const researchRelationships = sqliteTable(
     confidence: real("confidence"),
     reviewedBy: text("reviewed_by"),
     reviewedAt: text("reviewed_at"),
+    evidence: text("evidence").notNull().default("[]"),
+    verificationState: text("verification_state")
+      .notNull()
+      .default("unverified"),
+    version: integer("version").notNull().default(1),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
@@ -450,6 +456,14 @@ export const researchRelationships = sqliteTable(
       table.fromObjectId,
       table.toObjectId,
       table.type,
+    ),
+    check(
+      "research_relationships_evidence_json",
+      sql`json_valid(${table.evidence}) AND json_type(${table.evidence}) = 'array'`,
+    ),
+    check(
+      "research_relationships_verification_state",
+      sql`${table.verificationState} IN ('unverified', 'reviewed', 'approved', 'rejected')`,
     ),
   ],
 );
@@ -951,6 +965,8 @@ export const experimentRuns = sqliteTable(
     configurationJson: text("configuration_json").notNull(),
     datasetsJson: text("datasets_json").notNull(),
     codeRefsJson: text("code_refs_json").notNull(),
+    environmentJson: text("environment_json").notNull().default("{}"),
+    dependenciesJson: text("dependencies_json").notNull().default("[]"),
     inputFingerprint: text("input_fingerprint").notNull(),
     startedAt: text("started_at").notNull(),
     finishedAt: text("finished_at"),
@@ -977,6 +993,14 @@ export const experimentRuns = sqliteTable(
     check(
       "experiment_runs_code_refs_json",
       sql`json_valid(${table.codeRefsJson}) AND json_type(${table.codeRefsJson}) = 'array'`,
+    ),
+    check(
+      "experiment_runs_environment_json",
+      sql`json_valid(${table.environmentJson}) AND json_type(${table.environmentJson}) = 'object'`,
+    ),
+    check(
+      "experiment_runs_dependencies_json",
+      sql`json_valid(${table.dependenciesJson}) AND json_type(${table.dependenciesJson}) = 'array'`,
     ),
     uniqueIndex("experiment_runs_project_id_unique").on(
       table.id,
@@ -1078,6 +1102,102 @@ export const runArtifacts = sqliteTable(
       table.runId,
       table.state,
       table.generatedAt,
+    ),
+  ],
+);
+
+export const researchObjectStaleness = sqliteTable(
+  "research_object_staleness",
+  {
+    objectId: text("object_id")
+      .primaryKey()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    state: text("state").notNull().default("current"),
+    reasonsJson: text("reasons_json").notNull().default("[]"),
+    explanation: text("explanation").notNull().default(""),
+    dependencyPathJson: text("dependency_path_json").notNull().default("[]"),
+    recommendationsJson: text("recommendations_json").notNull().default("[]"),
+    checkedAt: text("checked_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "research_object_staleness_state",
+      sql`${table.state} IN ('current', 'stale', 'needs-review')`,
+    ),
+    check(
+      "research_object_staleness_reasons_json",
+      sql`json_valid(${table.reasonsJson}) AND json_type(${table.reasonsJson}) = 'array'`,
+    ),
+    check(
+      "research_object_staleness_dependency_path_json",
+      sql`json_valid(${table.dependencyPathJson}) AND json_type(${table.dependencyPathJson}) = 'array'`,
+    ),
+    check(
+      "research_object_staleness_recommendations_json",
+      sql`json_valid(${table.recommendationsJson}) AND json_type(${table.recommendationsJson}) = 'array'`,
+    ),
+    uniqueIndex("research_object_staleness_project_object_unique").on(
+      table.projectId,
+      table.objectId,
+    ),
+    index("idx_research_object_staleness_project_state").on(
+      table.projectId,
+      table.state,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const researchObjectStalenessTransitions = sqliteTable(
+  "research_object_staleness_transitions",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    objectId: text("object_id")
+      .notNull()
+      .references(() => researchObjects.id, { onDelete: "cascade" }),
+    fromState: text("from_state").notNull(),
+    toState: text("to_state").notNull(),
+    reasonsJson: text("reasons_json").notNull(),
+    explanation: text("explanation").notNull(),
+    dependencyPathJson: text("dependency_path_json").notNull(),
+    recommendationsJson: text("recommendations_json").notNull(),
+    provenanceEventId: text("provenance_event_id")
+      .notNull()
+      .references(() => provenanceEvents.id),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "research_object_staleness_transitions_from_state",
+      sql`${table.fromState} IN ('current', 'stale', 'needs-review')`,
+    ),
+    check(
+      "research_object_staleness_transitions_to_state",
+      sql`${table.toState} IN ('current', 'stale', 'needs-review')`,
+    ),
+    check(
+      "research_object_staleness_transitions_reasons_json",
+      sql`json_valid(${table.reasonsJson}) AND json_type(${table.reasonsJson}) = 'array'`,
+    ),
+    check(
+      "research_object_staleness_transitions_dependency_path_json",
+      sql`json_valid(${table.dependencyPathJson}) AND json_type(${table.dependencyPathJson}) = 'array'`,
+    ),
+    check(
+      "research_object_staleness_transitions_recommendations_json",
+      sql`json_valid(${table.recommendationsJson}) AND json_type(${table.recommendationsJson}) = 'array'`,
+    ),
+    index("idx_research_object_staleness_transitions_object").on(
+      table.projectId,
+      table.objectId,
+      table.createdAt,
     ),
   ],
 );
@@ -2284,67 +2404,6 @@ export const agentContextAuditEvents = sqliteTable(
   ],
 );
 
-export const researchDecisions = sqliteTable(
-  "research_decisions",
-  {
-    id: text("id").primaryKey(),
-    projectId: text("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    decisionText: text("decision_text").notNull(),
-    reason: text("reason").notNull(),
-    alternativesJson: text("alternatives_json").notNull().default("[]"),
-    evidenceIdsJson: text("evidence_ids_json").notNull().default("[]"),
-    affectedIdsJson: text("affected_ids_json").notNull().default("[]"),
-    status: text("status").notNull().default("Active"),
-    outcome: text("outcome"),
-    supersededBy: text("superseded_by"),
-    origin: text("origin").notNull().default("Researcher"),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-  },
-  (table) => [
-    index("idx_research_decisions_project_updated").on(
-      table.projectId,
-      table.updatedAt,
-      table.id,
-    ),
-  ],
-);
-
-export const plannerSteps = sqliteTable(
-  "planner_steps",
-  {
-    id: text("id").primaryKey(),
-    projectId: text("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    category: text("category").notNull(),
-    rationale: text("rationale").notNull(),
-    impact: text("impact").notNull(),
-    effort: text("effort").notNull(),
-    urgency: text("urgency").notNull(),
-    evidenceIdsJson: text("evidence_ids_json").notNull().default("[]"),
-    claimId: text("claim_id"),
-    experimentId: text("experiment_id"),
-    agentPreset: text("agent_preset").notNull(),
-    contextPack: text("context_pack").notNull(),
-    status: text("status").notNull().default("Recommended"),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-  },
-  (table) => [
-    index("idx_planner_steps_project_status").on(
-      table.projectId,
-      table.status,
-      table.updatedAt,
-      table.id,
-    ),
-  ],
-);
-
 export const reproducibilityAudits = sqliteTable(
   "reproducibility_audits",
   {
@@ -2352,52 +2411,75 @@ export const reproducibilityAudits = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    inputSha256: text("input_sha256").notNull(),
     score: integer("score").notNull(),
     status: text("status").notNull(),
-    areasJson: text("areas_json").notNull().default("[]"),
+    summaryJson: text("summary_json").notNull(),
+    findingsJson: text("findings_json").notNull(),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
+    uniqueIndex("reproducibility_audits_project_id_unique").on(
+      table.id,
+      table.projectId,
+    ),
     index("idx_reproducibility_audits_project_created").on(
       table.projectId,
-      table.createdAt,
-      table.id,
+      sql`${table.createdAt} DESC`,
+      sql`${table.id} DESC`,
+    ),
+    check(
+      "reproducibility_audits_input_sha256",
+      sql`length(${table.inputSha256}) = 64 AND ${table.inputSha256} NOT GLOB '*[^0-9a-f]*'`,
+    ),
+    check(
+      "reproducibility_audits_score",
+      sql`${table.score} BETWEEN 0 AND 100`,
+    ),
+    check(
+      "reproducibility_audits_status",
+      sql`${table.status} IN ('Not reproducible','Partially reproducible','Mostly reproducible','Artifact-ready','Publication-ready')`,
+    ),
+    check(
+      "reproducibility_audits_summary_json",
+      sql`json_valid(${table.summaryJson}) AND json_type(${table.summaryJson}) = 'object'`,
+    ),
+    check(
+      "reproducibility_audits_findings_json",
+      sql`json_valid(${table.findingsJson}) AND json_type(${table.findingsJson}) = 'array'`,
     ),
   ],
 );
 
-export const reproducibilityFindings = sqliteTable(
-  "reproducibility_findings",
+export const reproducibilityFindingDispositions = sqliteTable(
+  "reproducibility_finding_dispositions",
   {
-    id: text("id").primaryKey(),
-    projectId: text("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    auditId: text("audit_id")
-      .notNull()
-      .references(() => reproducibilityAudits.id, { onDelete: "cascade" }),
-    category: text("category").notNull(),
-    title: text("title").notNull(),
-    detail: text("detail").notNull(),
-    severity: text("severity").notNull(),
-    status: text("status").notNull().default("Open"),
-    objectIdsJson: text("object_ids_json").notNull().default("[]"),
-    area: text("area"),
-    affectedClaimIdsJson: text("affected_claim_ids_json")
-      .notNull()
-      .default("[]"),
-    recommendedFix: text("recommended_fix"),
-    assignee: text("assignee"),
-    deferredReason: text("deferred_reason"),
-    createdAt: text("created_at").notNull(),
+    auditId: text("audit_id").notNull(),
+    projectId: text("project_id").notNull(),
+    findingId: text("finding_id").notNull(),
+    status: text("status").notNull(),
+    actorId: text("actor_id").notNull(),
+    note: text("note"),
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [
-    index("idx_reproducibility_findings_project_audit").on(
+    primaryKey({ columns: [table.auditId, table.findingId] }),
+    foreignKey({
+      columns: [table.auditId, table.projectId],
+      foreignColumns: [
+        reproducibilityAudits.id,
+        reproducibilityAudits.projectId,
+      ],
+      name: "reproducibility_finding_dispositions_audit_project_fk",
+    }).onDelete("cascade"),
+    index("idx_reproducibility_finding_dispositions_project").on(
       table.projectId,
       table.auditId,
       table.status,
-      table.id,
+    ),
+    check(
+      "reproducibility_finding_dispositions_status",
+      sql`${table.status} IN ('Assigned','Resolved','Ignored')`,
     ),
   ],
 );

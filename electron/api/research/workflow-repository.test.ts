@@ -180,7 +180,7 @@ describe("research workflow repository", () => {
     expect(
       database
         .prepare(
-          "SELECT COUNT(*) AS count FROM reproducibility_finding_transitions",
+          "SELECT COUNT(*) AS count FROM research_workflow_finding_transitions",
         )
         .get(),
     ).toEqual({ count: 4 });

@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS planner_step_transitions (
   FOREIGN KEY (step_id) REFERENCES planner_steps(id) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS reproducibility_audits (
+CREATE TABLE IF NOT EXISTS research_workflow_audits (
   id TEXT PRIMARY KEY NOT NULL,
   project_id TEXT NOT NULL,
   score INTEGER NOT NULL,
@@ -98,10 +98,10 @@ CREATE TABLE IF NOT EXISTS reproducibility_audits (
   CHECK(json_valid(areas_json) AND json_type(areas_json) = 'array')
 );
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS idx_reproducibility_audits_project_created
-  ON reproducibility_audits(project_id, created_at DESC, id);
+CREATE INDEX IF NOT EXISTS idx_research_workflow_audits_project_created
+  ON research_workflow_audits(project_id, created_at DESC, id);
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS reproducibility_findings (
+CREATE TABLE IF NOT EXISTS research_workflow_findings (
   id TEXT PRIMARY KEY NOT NULL,
   project_id TEXT NOT NULL,
   audit_id TEXT NOT NULL,
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS reproducibility_findings (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-  FOREIGN KEY (audit_id) REFERENCES reproducibility_audits(id) ON DELETE CASCADE,
+  FOREIGN KEY (audit_id) REFERENCES research_workflow_audits(id) ON DELETE CASCADE,
   CHECK(severity IN ('Blocking','High','Warning','Passed')),
   CHECK(status IN ('Open','Assigned','Resolved','Deferred','Ignored')),
   CHECK(status <> 'Assigned' OR length(trim(coalesce(assignee, ''))) > 0),
@@ -128,10 +128,10 @@ CREATE TABLE IF NOT EXISTS reproducibility_findings (
   CHECK(json_valid(affected_claim_ids_json) AND json_type(affected_claim_ids_json) = 'array')
 );
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS idx_reproducibility_findings_project_audit
-  ON reproducibility_findings(project_id, audit_id, status, id);
+CREATE INDEX IF NOT EXISTS idx_research_workflow_findings_project_audit
+  ON research_workflow_findings(project_id, audit_id, status, id);
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS reproducibility_finding_transitions (
+CREATE TABLE IF NOT EXISTS research_workflow_finding_transitions (
   id TEXT PRIMARY KEY NOT NULL,
   project_id TEXT NOT NULL,
   finding_id TEXT NOT NULL,
@@ -142,11 +142,11 @@ CREATE TABLE IF NOT EXISTS reproducibility_finding_transitions (
   reason TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-  FOREIGN KEY (finding_id) REFERENCES reproducibility_findings(id) ON DELETE CASCADE
+  FOREIGN KEY (finding_id) REFERENCES research_workflow_findings(id) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS idx_reproducibility_finding_transitions_project_finding
-  ON reproducibility_finding_transitions(project_id, finding_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_research_workflow_finding_transitions_project_finding
+  ON research_workflow_finding_transitions(project_id, finding_id, created_at, id);
 --> statement-breakpoint
 CREATE TRIGGER IF NOT EXISTS research_decision_transitions_immutable_update
 BEFORE UPDATE ON research_decision_transitions BEGIN SELECT RAISE(ABORT, 'Decision transitions are immutable'); END;
@@ -157,5 +157,5 @@ BEFORE DELETE ON research_decision_transitions BEGIN SELECT RAISE(ABORT, 'Decisi
 CREATE TRIGGER IF NOT EXISTS planner_step_transitions_immutable_update
 BEFORE UPDATE ON planner_step_transitions BEGIN SELECT RAISE(ABORT, 'Planner transitions are immutable'); END;
 --> statement-breakpoint
-CREATE TRIGGER IF NOT EXISTS reproducibility_finding_transitions_immutable_update
-BEFORE UPDATE ON reproducibility_finding_transitions BEGIN SELECT RAISE(ABORT, 'Finding transitions are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS research_workflow_finding_transitions_immutable_update
+BEFORE UPDATE ON research_workflow_finding_transitions BEGIN SELECT RAISE(ABORT, 'Finding transitions are immutable'); END;

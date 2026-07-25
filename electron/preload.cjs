@@ -1,7 +1,17 @@
 const electron = require("electron");
 const { contextBridge, ipcRenderer } = electron.default ?? electron;
 
-const apiSessionToken = ipcRenderer.sendSync("api:get-session-token");
+const getPreloadArgument = (prefix) => {
+  const argument = process.argv.find((value) => value.startsWith(prefix));
+  if (!argument) return null;
+  try {
+    return decodeURIComponent(argument.slice(prefix.length));
+  } catch {
+    return null;
+  }
+};
+
+const apiSessionToken = getPreloadArgument("--dream-api-session-token=");
 
 const BASE_COLORS = new Set(["neutral", "slate", "gray", "zinc", "stone"]);
 const ACCENT_COLORS = new Set([
@@ -40,15 +50,10 @@ const getSystemTheme = () =>
     : "light";
 
 const getPreloadThemePreferences = () => {
-  const prefix = "--dream-theme-preferences=";
-  const argument = process.argv.find((value) => value.startsWith(prefix));
-  if (!argument) {
-    return null;
-  }
-
+  const preferences = getPreloadArgument("--dream-theme-preferences=");
+  if (!preferences) return null;
   try {
-    const raw = decodeURIComponent(argument.slice(prefix.length));
-    return JSON.parse(raw);
+    return JSON.parse(preferences);
   } catch {
     return null;
   }
@@ -165,6 +170,10 @@ contextBridge.exposeInMainWorld("dream", {
 
   loadState: () => ipcRenderer.invoke("state:load"),
   saveState: (state) => ipcRenderer.invoke("state:save", state),
+  loadOnboardingDraft: (projectId) =>
+    ipcRenderer.invoke("onboarding-draft:load", { projectId }),
+  saveOnboardingDraft: (draft) =>
+    ipcRenderer.invoke("onboarding-draft:save", draft),
   getThemePreferences: () => ipcRenderer.invoke("theme:get-preferences"),
   setThemePreference: (theme) => ipcRenderer.invoke("theme:set", { theme }),
   setBaseColor: (baseColor) =>
@@ -177,8 +186,8 @@ contextBridge.exposeInMainWorld("dream", {
   startTerminal: (payload) => ipcRenderer.invoke("terminal:start", payload),
   sendTerminalInput: (payload) => ipcRenderer.send("terminal:input", payload),
   resizeTerminal: (payload) => ipcRenderer.send("terminal:resize", payload),
-  stopTerminal: (projectId) =>
-    ipcRenderer.invoke("terminal:stop", { projectId }),
+  stopTerminal: (sessionId) =>
+    ipcRenderer.invoke("terminal:stop", { sessionId }),
   onTerminalData: (listener) => subscribe("terminal:data", listener),
   onTerminalStatus: (listener) => subscribe("terminal:status", listener),
 

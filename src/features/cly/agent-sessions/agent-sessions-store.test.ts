@@ -85,8 +85,9 @@ describe("Agent Sessions store", () => {
     expect(session?.draft).toBe("Keep the claim scope narrow");
     expect(session?.messages.at(-1)?.id).toBe("message-test");
     expect(
-      JSON.parse(localStorage.getItem("cly-ui") ?? "{}")
-        .agentSessionLayouts["session-01"].draft,
+      JSON.parse(localStorage.getItem("cly-ui") ?? "{}").agentSessionLayouts[
+        "session-01"
+      ].draft,
     ).toBe("Keep the claim scope narrow");
   });
 

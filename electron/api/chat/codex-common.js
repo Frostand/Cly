@@ -1,4 +1,7 @@
-import { waitForToolApproval } from "../tool-approvals.js";
+import {
+  createToolApprovalChallenge,
+  waitForToolApproval,
+} from "../tool-approvals.js";
 
 export const codexSessionsByChatId = new Map();
 
@@ -235,10 +238,9 @@ export const getCodexAppSandboxMode = () => "workspace-write";
 
 export const getCodexAppTurnSandboxPolicy = ({ projectPath }) => {
   return {
-    excludeSlashTmp: false,
-    excludeTmpdirEnvVar: false,
+    excludeSlashTmp: true,
+    excludeTmpdirEnvVar: true,
     networkAccess: false,
-    readOnlyAccess: { type: "fullAccess" },
     type: "workspaceWrite",
     writableRoots: [projectPath],
   };
@@ -292,6 +294,12 @@ export const writeCodexApprovalRequest = async ({
   toolName,
   writer,
 }) => {
+  const challenge = createToolApprovalChallenge({
+    id: approvalId,
+    projectId,
+    request,
+    runId,
+  });
   writer.write({
     dynamic: true,
     providerExecuted: true,
@@ -311,6 +319,7 @@ export const writeCodexApprovalRequest = async ({
   });
   writer.write({
     approvalId,
+    signature: challenge.signature,
     toolCallId,
     type: "tool-approval-request",
   });
@@ -322,5 +331,6 @@ export const writeCodexApprovalRequest = async ({
     request,
     runId,
     signal,
+    challenge,
   });
 };

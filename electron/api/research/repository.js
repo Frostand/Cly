@@ -2,6 +2,95 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createExperimentProvenanceMethods } from "./experiment-provenance.js";
 import { createPreregistrationMethods } from "./preregistration.js";
+import { createStalenessMethods } from "./staleness.js";
+
+const NOTEBOOK_OBJECT_TYPES = [
+  "notebook",
+  "notebook-cell",
+  "notebook-output",
+  "dependency",
+  "dataset",
+  "metric",
+  "figure",
+  "table",
+];
+
+const PROJECT_LIFECYCLE_OBJECT_TYPES = [
+  "question",
+  "objective",
+  "hypothesis",
+  "method",
+  "risk",
+  "task",
+  "collaborator",
+  "agent",
+];
+
+const RESEARCH_OBJECT_TYPES = [
+  "artifact",
+  "source",
+  "evidence",
+  "claim",
+  "experiment",
+  "run",
+  ...NOTEBOOK_OBJECT_TYPES,
+  ...PROJECT_LIFECYCLE_OBJECT_TYPES,
+];
+
+const RESEARCH_RELATIONSHIP_TYPES = [
+  "supports",
+  "contradicts",
+  "generated-by",
+  "uses",
+  "tests",
+  "implements",
+  "contains",
+  "produces",
+  "depends-on",
+  "documents",
+  "has-risk",
+  "part-of",
+];
+
+const relationshipEvidenceSchema = z.object({
+  kind: z.string().trim().min(1).max(100),
+  path: z.string().trim().min(1).max(4_000),
+  locator: z.string().trim().min(1).max(500),
+  excerpt: z.string().max(1_000),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+});
+
+const extractedSourceValueSchema = z.object({
+  value: z.string().trim().min(1).max(20_000),
+  passage: z.object({
+    quote: z.string().trim().min(1).max(20_000),
+    locator: z.string().trim().min(1).max(1_000).optional(),
+    sourceId: z.string().trim().min(1).max(500).optional(),
+  }),
+  confidence: z.number().finite().min(0).max(100),
+  verificationState: z.enum(["unverified", "verified", "rejected"]),
+  verifiedBy: z.string().trim().min(1).max(500).optional(),
+  verifiedAt: z.iso.datetime().optional(),
+});
+
+const literatureProviderCallSchema = z.object({
+  attempts: z
+    .array(
+      z.object({
+        attempt: z.number().int().min(1),
+        durationMs: z.number().finite().min(0),
+        outcome: z.string().trim().min(1).max(200),
+        retryAfterMs: z.number().int().min(0).nullable(),
+        status: z.number().int().min(100).max(599).nullable(),
+      }),
+    )
+    .min(1)
+    .max(10),
+  durationMs: z.number().finite().min(0),
+  operation: z.string().trim().min(1).max(200),
+  provider: z.string().trim().min(1).max(200),
+  status: z.enum(["completed", "failed"]),
+});
 
 const objectPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -16,7 +105,18 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("source"),
     sourceType: z
-      .enum(["paper", "dataset", "documentation", "note", "webpage"])
+      .enum([
+        "paper",
+        "pdf",
+        "webpage",
+        "book",
+        "dataset",
+        "documentation",
+        "repository",
+        "hugging-face",
+        "note",
+        "import",
+      ])
       .optional(),
     status: z.enum(["placeholder", "resolved"]).default("resolved"),
     authors: z.array(z.string().trim().min(1)).optional(),
@@ -62,10 +162,86 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
     rankingComponents: z.record(z.string(), z.number().finite()).optional(),
     rankingExplanation: z.string().trim().min(1).max(2_000).optional(),
     retrievedAt: z.iso.datetime().optional(),
+    providerCalls: z.array(literatureProviderCallSchema).max(100).optional(),
     researchProblem: z.string().trim().min(1).max(10_000).optional(),
     methods: z.array(z.string().trim().min(1)).optional(),
     findings: z.array(z.string().trim().min(1)).optional(),
     limitations: z.array(z.string().trim().min(1)).optional(),
+    fullTextStatus: z
+      .enum([
+        "parsed",
+        "not_available",
+        "not_attempted_limit",
+        "download_failed",
+        "parse_failed",
+      ])
+      .optional(),
+    pdfFailure: z
+      .object({
+        kind: z.string().trim().min(1).max(200),
+        message: z.string().trim().min(1).max(2_000),
+        retryable: z.boolean(),
+        retryAfterMs: z.number().int().min(0).nullable(),
+        action: z.string().trim().min(1).max(2_000),
+      })
+      .optional(),
+    pdfAcquisition: z
+      .object({
+        attempts: z.number().int().min(1),
+        finalUrl: z.url().max(4_000).optional(),
+        redirects: z.number().int().min(0).optional(),
+      })
+      .optional(),
+    folder: z.string().trim().min(1).max(500).optional(),
+    extractedFields: z
+      .record(
+        z.string().trim().min(1),
+        z.object({
+          value: z.string().trim().min(1).max(20_000),
+          passage: z.object({
+            quote: z.string().trim().min(1).max(20_000),
+            locator: z.string().trim().min(1).max(1_000).optional(),
+            sourceId: z.string().trim().min(1).max(500).optional(),
+          }),
+          confidence: z.number().finite().min(0).max(100),
+          verificationState: z.enum(["unverified", "verified", "rejected"]),
+          verifiedBy: z.string().trim().min(1).max(500).optional(),
+          verifiedAt: z.iso.datetime().optional(),
+        }),
+      )
+      .optional(),
+    extractedValues: z
+      .record(
+        z.string().trim().min(1),
+        z.array(extractedSourceValueSchema).max(1_000),
+      )
+      .optional(),
+    contradictoryEvidence: z
+      .array(
+        z.object({
+          quote: z.string().trim().min(1).max(20_000),
+          locator: z.string().trim().min(1).max(1_000).optional(),
+          sourceId: z.string().trim().min(1).max(500).optional(),
+        }),
+      )
+      .optional(),
+    customReviewFields: z
+      .record(
+        z.string().trim().min(1),
+        z.object({
+          value: z.string().trim().min(1).max(20_000),
+          passage: z.object({
+            quote: z.string().trim().min(1).max(20_000),
+            locator: z.string().trim().min(1).max(1_000).optional(),
+            sourceId: z.string().trim().min(1).max(500).optional(),
+          }),
+          confidence: z.number().finite().min(0).max(100),
+          verificationState: z.enum(["unverified", "verified", "rejected"]),
+          verifiedBy: z.string().trim().min(1).max(500).optional(),
+          verifiedAt: z.iso.datetime().optional(),
+        }),
+      )
+      .optional(),
     enrichmentMethod: z.string().trim().min(1).max(200).optional(),
     enrichedAt: z.iso.datetime().optional(),
     archivedAt: z.iso.datetime().optional(),
@@ -88,26 +264,84 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
       .enum(["not-assessed", "passed", "failed"])
       .optional(),
     openRiskCount: z.number().int().min(0).optional(),
+    inferredFrom: z.record(z.string(), z.unknown()).optional(),
   }),
   z.object({
-    kind: z.literal("experiment"),
-    hypothesis: z.string().trim().min(1).optional(),
+    kind: z.literal("evidence"),
+    sourceId: z.string().trim().min(1),
+    quote: z.string().trim().min(1).max(20_000),
+    locator: z.string().trim().min(1).max(1_000).optional(),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+    verificationState: z
+      .enum(["unverified", "verified", "rejected"])
+      .default("unverified"),
   }),
-  z.object({
-    kind: z.literal("run"),
-    commitSha: z
-      .string()
-      .regex(/^[a-f0-9]{7,64}$/i)
-      .optional(),
-    status: z.enum(["planned", "running", "completed", "failed"]),
-  }),
+  z
+    .object({
+      kind: z.literal("experiment"),
+      hypothesis: z.string().trim().min(1).optional(),
+      notebookId: z.string().trim().min(1).optional(),
+      cellId: z.string().trim().min(1).optional(),
+      inferred: z.boolean().optional(),
+    })
+    .passthrough(),
+  z
+    .object({
+      kind: z.literal("run"),
+      commitSha: z
+        .string()
+        .regex(/^[a-f0-9]{7,64}$/i)
+        .optional(),
+      status: z.enum(["planned", "running", "completed", "failed"]),
+      notebookId: z.string().trim().min(1).optional(),
+      importedStatic: z.boolean().optional(),
+      executedByImporter: z.boolean().optional(),
+      executionCounts: z.array(z.number().int().min(1)).max(5_000).optional(),
+    })
+    .passthrough(),
+  ...NOTEBOOK_OBJECT_TYPES.map((kind) =>
+    z.object({ kind: z.literal(kind) }).passthrough(),
+  ),
+  ...PROJECT_LIFECYCLE_OBJECT_TYPES.map((kind) =>
+    z
+      .object({
+        kind: z.literal(kind),
+        status: z
+          .enum(["draft", "active", "blocked", "completed", "archived"])
+          .default("draft"),
+        ownerId: z.string().trim().min(1).max(500).nullable().optional(),
+        dueAt: z.iso.datetime().optional(),
+        role: z.string().trim().min(1).max(500).optional(),
+        provider: z.string().trim().min(1).max(500).optional(),
+        model: z.string().trim().min(1).max(500).optional(),
+        severity: z.enum(["low", "medium", "high", "blocking"]).optional(),
+      })
+      .passthrough(),
+  ),
 ]);
+
+const objectUpdateSchema = z
+  .object({
+    projectId: z.string().trim().min(1),
+    id: z.string().trim().min(1),
+    expectedVersion: z.number().int().min(1),
+    title: z.string().trim().min(1).max(500).optional(),
+    description: z.string().trim().max(10_000).optional(),
+    payload: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine(
+    (value) =>
+      value.title !== undefined ||
+      value.description !== undefined ||
+      value.payload !== undefined,
+    "An object update requires at least one changed field.",
+  );
 
 const objectInputSchema = z
   .object({
     id: z.string().trim().min(1).optional(),
     projectId: z.string().trim().min(1),
-    type: z.enum(["artifact", "source", "claim", "experiment", "run"]),
+    type: z.enum(RESEARCH_OBJECT_TYPES),
     title: z.string().trim().min(1).max(500),
     description: z.string().trim().max(10_000).default(""),
     origin: z
@@ -137,21 +371,28 @@ const objectInputSchema = z
     }
   });
 
-const relationshipInputSchema = z.object({
-  id: z.string().trim().min(1).optional(),
-  projectId: z.string().trim().min(1),
-  fromObjectId: z.string().trim().min(1),
-  toObjectId: z.string().trim().min(1),
-  type: z.enum([
-    "supports",
-    "contradicts",
-    "generated-by",
-    "uses",
-    "tests",
-    "implements",
-  ]),
-  origin: z.enum(["human", "imported", "inferred", "system"]).default("human"),
-});
+const relationshipInputSchema = z
+  .object({
+    id: z.string().trim().min(1).optional(),
+    projectId: z.string().trim().min(1),
+    fromObjectId: z.string().trim().min(1),
+    toObjectId: z.string().trim().min(1),
+    type: z.enum(RESEARCH_RELATIONSHIP_TYPES),
+    origin: z
+      .enum(["human", "imported", "inferred", "system"])
+      .default("human"),
+    verificationState: z.literal("unverified").default("unverified"),
+    evidence: z.array(relationshipEvidenceSchema).max(100).default([]),
+  })
+  .superRefine((value, context) => {
+    if (value.origin === "inferred" && value.evidence.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Inferred relationships require evidence.",
+        path: ["evidence"],
+      });
+    }
+  });
 
 const relationshipReviewInputSchema = z.object({
   id: z.string().trim().min(1),
@@ -159,6 +400,25 @@ const relationshipReviewInputSchema = z.object({
   reviewState: z.enum(["approved", "rejected"]),
   reviewerId: z.string().trim().min(1).max(200),
   confidence: z.number().finite().min(0).max(1).nullable().default(null),
+});
+
+const evidenceLinkInputSchema = z.object({
+  projectId: z.string().trim().min(1),
+  sourceId: z.string().trim().min(1),
+  claimId: z.string().trim().min(1),
+  quote: z.string().trim().min(1).max(20_000),
+  locator: z.string().trim().min(1).max(1_000).optional(),
+  type: z.enum(["supports", "contradicts"]),
+  origin: z.enum(["human", "imported", "inferred", "system"]).default("human"),
+  actorId: z.string().trim().min(1).max(200).optional(),
+  confidence: z.number().finite().min(0).max(1).nullable().default(null),
+});
+
+const evidenceVerificationInputSchema = z.object({
+  id: z.string().trim().min(1),
+  projectId: z.string().trim().min(1),
+  verificationState: z.enum(["verified", "rejected"]),
+  reviewerId: z.string().trim().min(1).max(200),
 });
 
 const claimStatusInputSchema = z.object({
@@ -353,6 +613,7 @@ const mapObject = (row) => ({
   reviewState: row.review_state ?? "unreviewed",
   reviewedBy: row.reviewed_by ?? null,
   reviewedAt: row.reviewed_at ?? null,
+  version: row.version ?? 1,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -366,8 +627,19 @@ const mapRelationship = (row) => ({
   origin: row.origin ?? "human",
   reviewState: row.review_state ?? "unreviewed",
   confidence: typeof row.confidence === "number" ? row.confidence : null,
+  verificationState:
+    row.verification_state ??
+    (row.review_state === "approved"
+      ? "approved"
+      : row.review_state === "rejected"
+        ? "rejected"
+        : "unverified"),
+  evidence: Array.isArray(parseJson(row.evidence))
+    ? parseJson(row.evidence)
+    : [],
   reviewedBy: row.reviewed_by ?? null,
   reviewedAt: row.reviewed_at ?? null,
+  version: row.version ?? 1,
   createdAt: row.created_at,
 });
 
@@ -453,6 +725,12 @@ export function createResearchRepository(
     .all();
   const hasProvenanceChain = ["sequence", "previous_hash", "event_hash"].every(
     (column) => provenanceColumns.some((row) => row.name === column),
+  );
+  const relationshipColumns = database
+    .prepare("PRAGMA table_info(research_relationships)")
+    .all();
+  const hasRelationshipEvidence = ["evidence", "verification_state"].every(
+    (column) => relationshipColumns.some((row) => row.name === column),
   );
 
   if (hasProvenanceChain) {
@@ -974,9 +1252,18 @@ export function createResearchRepository(
     createId,
   });
 
+  const stalenessMethods = createStalenessMethods({
+    database,
+    ensureProject,
+    insertProvenance,
+    clock,
+    createId,
+  });
+
   return {
     ...preregistrationMethods,
     ...experimentProvenanceMethods,
+    ...stalenessMethods,
     upsertProject(input) {
       const parsed = projectInputSchema.parse(input);
       const normalizedPath = normalizeProjectPath(parsed.path);
@@ -991,7 +1278,7 @@ export function createResearchRepository(
       const existing = database
         .prepare("SELECT metadata, created_at FROM projects WHERE id = ?")
         .get(parsed.id);
-      const now = new Date().toISOString();
+      const now = clock();
       const metadata = JSON.stringify({
         ...parseJson(existing?.metadata),
         ...parsed.metadata,
@@ -1028,8 +1315,24 @@ export function createResearchRepository(
     createObject(input) {
       const parsed = objectInputSchema.parse(input);
       ensureProject(parsed.projectId);
-      const id = parsed.id ?? randomUUID();
-      const now = new Date().toISOString();
+      if (parsed.payload.kind === "evidence") {
+        const source = database
+          .prepare(
+            "SELECT id FROM research_objects WHERE id = ? AND project_id = ? AND type = 'source'",
+          )
+          .get(parsed.payload.sourceId, parsed.projectId);
+        if (!source) {
+          throw new Error("Evidence source does not belong to the project.");
+        }
+        const expectedHash = createHash("sha256")
+          .update(parsed.payload.quote)
+          .digest("hex");
+        if (expectedHash !== parsed.payload.contentHash.toLowerCase()) {
+          throw new Error("Evidence content hash does not match its quote.");
+        }
+      }
+      const id = parsed.id ?? createId();
+      const now = clock();
       database.exec("BEGIN IMMEDIATE");
       try {
         database
@@ -1081,6 +1384,368 @@ export function createResearchRepository(
       );
     },
 
+    updateObject(input) {
+      const parsed = objectUpdateSchema.parse(input);
+      ensureProject(parsed.projectId);
+      const existing = database
+        .prepare(
+          "SELECT * FROM research_objects WHERE id = ? AND project_id = ?",
+        )
+        .get(parsed.id, parsed.projectId);
+      if (!existing)
+        throw new Error("Research object does not belong to the project.");
+      if (existing.version !== parsed.expectedVersion)
+        throw new Error(
+          `Research object version conflict: expected ${parsed.expectedVersion}, current ${existing.version}.`,
+        );
+      const payload = objectPayloadSchema.parse({
+        ...parseJson(existing.payload),
+        ...(parsed.payload ?? {}),
+        kind: existing.type,
+      });
+      const nextVersion = existing.version + 1;
+      const now = clock();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const result = database
+          .prepare(
+            `UPDATE research_objects
+             SET title = ?, description = ?, payload = ?, version = ?,
+                 review_state = 'unreviewed', reviewed_by = NULL,
+                 reviewed_at = NULL, updated_at = ?
+             WHERE id = ? AND project_id = ? AND version = ?`,
+          )
+          .run(
+            parsed.title ?? existing.title,
+            parsed.description ?? existing.description,
+            JSON.stringify(payload),
+            nextVersion,
+            now,
+            parsed.id,
+            parsed.projectId,
+            parsed.expectedVersion,
+          );
+        if (result.changes !== 1)
+          throw new Error("Research object changed while it was being saved.");
+        insertProvenance(
+          {
+            action: `${existing.type}.updated`,
+            objectId: parsed.id,
+            projectId: parsed.projectId,
+            metadata: {
+              previousVersion: existing.version,
+              version: nextVersion,
+              status: payload.status,
+            },
+          },
+          now,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      return mapObject(
+        database
+          .prepare("SELECT * FROM research_objects WHERE id = ?")
+          .get(parsed.id),
+      );
+    },
+
+    importNotebookGraph(input) {
+      const header = z
+        .object({
+          projectId: z.string().trim().min(1),
+          notebookId: z.string().trim().min(1),
+          notebookPath: z.string().trim().min(1).max(4_000),
+          contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+          scannerVersion: z.string().trim().min(1).max(200),
+          objects: z.array(z.unknown()).max(25_000),
+          relationships: z.array(z.unknown()).max(50_000),
+          summary: z
+            .object({ riskCount: z.number().int().min(0) })
+            .passthrough(),
+        })
+        .parse(input);
+      if (!hasRelationshipEvidence) {
+        throw new Error(
+          "Notebook relationship evidence migration is unavailable.",
+        );
+      }
+      ensureProject(header.projectId);
+      const objects = header.objects.map((object) => {
+        const parsed = objectInputSchema.parse({
+          ...object,
+          projectId: header.projectId,
+        });
+        if (!parsed.id || parsed.origin !== "inferred") {
+          throw new Error(
+            "Notebook objects require stable IDs and inferred origin.",
+          );
+        }
+        return parsed;
+      });
+      const relationships = header.relationships.map((relationship) => {
+        const parsed = relationshipInputSchema.parse({
+          ...relationship,
+          projectId: header.projectId,
+        });
+        if (
+          !parsed.id ||
+          parsed.origin !== "inferred" ||
+          parsed.verificationState !== "unverified" ||
+          parsed.evidence.length === 0
+        ) {
+          throw new Error(
+            "Notebook relationships require stable IDs, evidence, and unverified inferred state.",
+          );
+        }
+        return parsed;
+      });
+      const objectIds = new Set(objects.map((object) => object.id));
+      if (
+        objectIds.size !== objects.length ||
+        !objectIds.has(header.notebookId)
+      ) {
+        throw new Error(
+          "Notebook graph contains duplicate or missing object identities.",
+        );
+      }
+      const relationshipIds = new Set(
+        relationships.map((relationship) => relationship.id),
+      );
+      if (relationshipIds.size !== relationships.length) {
+        throw new Error(
+          "Notebook graph contains duplicate relationship identities.",
+        );
+      }
+
+      const now = clock();
+      const counts = {
+        insertedObjects: 0,
+        updatedObjects: 0,
+        unchangedObjects: 0,
+        insertedRelationships: 0,
+        updatedRelationships: 0,
+        unchangedRelationships: 0,
+      };
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const object of objects) {
+          const existing = database
+            .prepare("SELECT * FROM research_objects WHERE id = ?")
+            .get(object.id);
+          if (existing && existing.project_id !== header.projectId) {
+            throw new Error(
+              "Notebook object identity belongs to another project.",
+            );
+          }
+          if (existing && existing.origin !== "inferred") {
+            throw new Error(
+              "Notebook import cannot replace a reviewed or authored object.",
+            );
+          }
+          const payload = JSON.stringify(object.payload);
+          const changed =
+            !existing ||
+            existing.type !== object.type ||
+            existing.title !== object.title ||
+            existing.description !== object.description ||
+            existing.payload !== payload;
+          if (!existing) {
+            database
+              .prepare(
+                `INSERT INTO research_objects
+                  (id, project_id, type, title, description, payload, origin,
+                   review_state, reviewed_by, reviewed_at, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, 'inferred', 'unreviewed', NULL, NULL, ?, ?)`,
+              )
+              .run(
+                object.id,
+                header.projectId,
+                object.type,
+                object.title,
+                object.description,
+                payload,
+                now,
+                now,
+              );
+            counts.insertedObjects += 1;
+          } else if (changed) {
+            database
+              .prepare(
+                `UPDATE research_objects
+                 SET type = ?, title = ?, description = ?, payload = ?,
+                     review_state = 'unreviewed', reviewed_by = NULL, reviewed_at = NULL,
+                     updated_at = ?
+                 WHERE id = ? AND project_id = ?`,
+              )
+              .run(
+                object.type,
+                object.title,
+                object.description,
+                payload,
+                now,
+                object.id,
+                header.projectId,
+              );
+            counts.updatedObjects += 1;
+          } else {
+            counts.unchangedObjects += 1;
+          }
+          if (changed) {
+            insertProvenance(
+              {
+                action: existing
+                  ? "notebook.object.updated"
+                  : "notebook.object.imported",
+                actorId: header.scannerVersion,
+                actorType: "system",
+                objectId: object.id,
+                projectId: header.projectId,
+                metadata: {
+                  contentHash: header.contentHash,
+                  notebookId: header.notebookId,
+                  notebookPath: header.notebookPath,
+                  objectType: object.type,
+                },
+              },
+              now,
+            );
+          }
+        }
+
+        for (const relationship of relationships) {
+          const endpoints = database
+            .prepare(
+              `SELECT id FROM research_objects
+               WHERE project_id = ? AND id IN (?, ?)`,
+            )
+            .all(
+              header.projectId,
+              relationship.fromObjectId,
+              relationship.toObjectId,
+            );
+          if (endpoints.length !== 2) {
+            throw new Error(
+              "Notebook relationship endpoints must belong to the project.",
+            );
+          }
+          const existing = database
+            .prepare("SELECT * FROM research_relationships WHERE id = ?")
+            .get(relationship.id);
+          if (existing && existing.project_id !== header.projectId) {
+            throw new Error(
+              "Notebook relationship identity belongs to another project.",
+            );
+          }
+          if (existing && existing.origin !== "inferred") {
+            throw new Error(
+              "Notebook import cannot replace an authored relationship.",
+            );
+          }
+          const evidence = JSON.stringify(relationship.evidence);
+          const changed =
+            !existing ||
+            existing.from_object_id !== relationship.fromObjectId ||
+            existing.to_object_id !== relationship.toObjectId ||
+            existing.type !== relationship.type ||
+            existing.evidence !== evidence;
+          if (!existing) {
+            database
+              .prepare(
+                `INSERT INTO research_relationships
+                  (id, project_id, from_object_id, to_object_id, type, origin,
+                   review_state, confidence, reviewed_by, reviewed_at, evidence,
+                   verification_state, created_at)
+                 VALUES (?, ?, ?, ?, ?, 'inferred', 'unreviewed', NULL, NULL, NULL,
+                         ?, 'unverified', ?)`,
+              )
+              .run(
+                relationship.id,
+                header.projectId,
+                relationship.fromObjectId,
+                relationship.toObjectId,
+                relationship.type,
+                evidence,
+                now,
+              );
+            counts.insertedRelationships += 1;
+          } else if (changed) {
+            database
+              .prepare(
+                `UPDATE research_relationships
+                 SET from_object_id = ?, to_object_id = ?, type = ?, evidence = ?,
+                     review_state = 'unreviewed', verification_state = 'unverified',
+                     confidence = NULL, reviewed_by = NULL, reviewed_at = NULL
+                 WHERE id = ? AND project_id = ?`,
+              )
+              .run(
+                relationship.fromObjectId,
+                relationship.toObjectId,
+                relationship.type,
+                evidence,
+                relationship.id,
+                header.projectId,
+              );
+            counts.updatedRelationships += 1;
+          } else {
+            counts.unchangedRelationships += 1;
+          }
+          if (changed) {
+            insertProvenance(
+              {
+                action: existing
+                  ? "notebook.relationship.updated"
+                  : "notebook.relationship.imported",
+                actorId: header.scannerVersion,
+                actorType: "system",
+                objectId: relationship.toObjectId,
+                projectId: header.projectId,
+                metadata: {
+                  evidence: relationship.evidence,
+                  notebookId: header.notebookId,
+                  notebookPath: header.notebookPath,
+                  relationshipId: relationship.id,
+                  relationshipType: relationship.type,
+                  verificationState: "unverified",
+                },
+              },
+              now,
+            );
+          }
+        }
+        insertProvenance(
+          {
+            action: "notebook.import.completed",
+            actorId: header.scannerVersion,
+            actorType: "system",
+            objectId: header.notebookId,
+            projectId: header.projectId,
+            metadata: {
+              ...counts,
+              contentHash: header.contentHash,
+              notebookPath: header.notebookPath,
+              objectCount: objects.length,
+              relationshipCount: relationships.length,
+              riskCount: header.summary.riskCount,
+              executedCells: false,
+            },
+          },
+          now,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      return {
+        ...counts,
+        objectIds: objects.map((object) => object.id),
+        relationshipIds: relationships.map((relationship) => relationship.id),
+      };
+    },
+
     updateSource(input) {
       ensureProject(input.projectId);
       const existing = database
@@ -1089,7 +1754,7 @@ export function createResearchRepository(
         )
         .get(input.id, input.projectId);
       if (!existing) throw new Error("Source does not belong to the project.");
-      const now = new Date().toISOString();
+      const now = clock();
       const payload = objectPayloadSchema.parse({
         ...parseJson(existing.payload),
         ...input.payload,
@@ -1108,7 +1773,7 @@ export function createResearchRepository(
       try {
         database
           .prepare(
-            "UPDATE research_objects SET description = ?, payload = ?, updated_at = ? WHERE id = ? AND project_id = ?",
+            "UPDATE research_objects SET description = ?, payload = ?, version = version + 1, updated_at = ? WHERE id = ? AND project_id = ?",
           )
           .run(
             input.description,
@@ -1280,12 +1945,12 @@ export function createResearchRepository(
         status: canonicalClaimStatus(parsed.reviewStatus),
         reviewStatus: parsed.reviewStatus,
       });
-      const now = new Date().toISOString();
+      const now = clock();
       database.exec("BEGIN IMMEDIATE");
       try {
         database
           .prepare(
-            "UPDATE research_objects SET payload = ?, updated_at = ? WHERE id = ? AND project_id = ?",
+            "UPDATE research_objects SET payload = ?, version = version + 1, updated_at = ? WHERE id = ? AND project_id = ?",
           )
           .run(JSON.stringify(payload), now, parsed.id, parsed.projectId);
         insertProvenance(
@@ -1327,31 +1992,58 @@ export function createResearchRepository(
       if (objects.length !== 2) {
         throw new Error("Both research objects must belong to the project.");
       }
-      const id = parsed.id ?? randomUUID();
-      const now = new Date().toISOString();
+      const id = parsed.id ?? createId();
+      const now = clock();
       database.exec("BEGIN IMMEDIATE");
       try {
-        database
-          .prepare(
-            `INSERT INTO research_relationships
-              (id, project_id, from_object_id, to_object_id, type, origin,
-               review_state, confidence, reviewed_by, reviewed_at, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'unreviewed', NULL, NULL, NULL, ?)`,
-          )
-          .run(
-            id,
-            parsed.projectId,
-            parsed.fromObjectId,
-            parsed.toObjectId,
-            parsed.type,
-            parsed.origin,
-            now,
-          );
+        if (hasRelationshipEvidence) {
+          database
+            .prepare(
+              `INSERT INTO research_relationships
+                (id, project_id, from_object_id, to_object_id, type, origin,
+                 review_state, confidence, reviewed_by, reviewed_at, evidence,
+                 verification_state, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'unreviewed', NULL, NULL, NULL, ?, ?, ?)`,
+            )
+            .run(
+              id,
+              parsed.projectId,
+              parsed.fromObjectId,
+              parsed.toObjectId,
+              parsed.type,
+              parsed.origin,
+              JSON.stringify(parsed.evidence),
+              parsed.verificationState,
+              now,
+            );
+        } else {
+          database
+            .prepare(
+              `INSERT INTO research_relationships
+                (id, project_id, from_object_id, to_object_id, type, origin,
+                 review_state, confidence, reviewed_by, reviewed_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'unreviewed', NULL, NULL, NULL, ?)`,
+            )
+            .run(
+              id,
+              parsed.projectId,
+              parsed.fromObjectId,
+              parsed.toObjectId,
+              parsed.type,
+              parsed.origin,
+              now,
+            );
+        }
         insertProvenance(
           {
             action: `relationship.${parsed.type}.created`,
             objectId: parsed.toObjectId,
             projectId: parsed.projectId,
+            metadata: {
+              evidence: parsed.evidence,
+              relationshipId: id,
+              verificationState: parsed.verificationState,
+            },
           },
           now,
         );
@@ -1380,23 +2072,43 @@ export function createResearchRepository(
           "Research relationship does not belong to the project.",
         );
       }
-      const now = new Date().toISOString();
+      const now = clock();
       database.exec("BEGIN IMMEDIATE");
       try {
-        database
-          .prepare(
-            `UPDATE research_relationships
-             SET review_state = ?, confidence = ?, reviewed_by = ?, reviewed_at = ?
-             WHERE id = ? AND project_id = ?`,
-          )
-          .run(
-            parsed.reviewState,
-            parsed.confidence,
-            parsed.reviewerId,
-            now,
-            parsed.id,
-            parsed.projectId,
-          );
+        if (hasRelationshipEvidence) {
+          database
+            .prepare(
+              `UPDATE research_relationships
+               SET review_state = ?, verification_state = ?, confidence = ?,
+                   reviewed_by = ?, reviewed_at = ?, version = version + 1
+               WHERE id = ? AND project_id = ?`,
+            )
+            .run(
+              parsed.reviewState,
+              parsed.reviewState,
+              parsed.confidence,
+              parsed.reviewerId,
+              now,
+              parsed.id,
+              parsed.projectId,
+            );
+        } else {
+          database
+            .prepare(
+              `UPDATE research_relationships
+               SET review_state = ?, confidence = ?, reviewed_by = ?, reviewed_at = ?,
+                   version = version + 1
+               WHERE id = ? AND project_id = ?`,
+            )
+            .run(
+              parsed.reviewState,
+              parsed.confidence,
+              parsed.reviewerId,
+              now,
+              parsed.id,
+              parsed.projectId,
+            );
+        }
         insertProvenance(
           {
             action: "relationship.reviewed",
@@ -1419,6 +2131,275 @@ export function createResearchRepository(
       return mapRelationship(
         database
           .prepare("SELECT * FROM research_relationships WHERE id = ?")
+          .get(parsed.id),
+      );
+    },
+
+    createEvidenceLink(input) {
+      const parsed = evidenceLinkInputSchema.parse(input);
+      ensureProject(parsed.projectId);
+      const source = database
+        .prepare(
+          "SELECT id FROM research_objects WHERE id = ? AND project_id = ? AND type = 'source'",
+        )
+        .get(parsed.sourceId, parsed.projectId);
+      const claim = database
+        .prepare(
+          "SELECT id FROM research_objects WHERE id = ? AND project_id = ? AND type = 'claim'",
+        )
+        .get(parsed.claimId, parsed.projectId);
+      if (!source || !claim) {
+        throw new Error("The source and claim must belong to the project.");
+      }
+
+      const contentHash = createHash("sha256")
+        .update(parsed.quote)
+        .digest("hex");
+      const actorType = {
+        human: "human",
+        imported: "integration",
+        inferred: "agent",
+        system: "system",
+      }[parsed.origin];
+      const actorId =
+        parsed.actorId ??
+        {
+          human: "local-user",
+          integration: "source-import",
+          agent: "cly-agent",
+          system: "cly-system",
+        }[actorType];
+      const now = clock();
+      let duplicate = false;
+      let evidence;
+      let containsRelationship;
+      let claimRelationship;
+
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const existingEvidence = database
+          .prepare(
+            `SELECT * FROM research_objects
+             WHERE project_id = ? AND type = 'evidence'
+               AND json_extract(payload, '$.sourceId') = ?
+               AND json_extract(payload, '$.contentHash') = ?
+               AND COALESCE(json_extract(payload, '$.locator'), '') = ?`,
+          )
+          .get(
+            parsed.projectId,
+            parsed.sourceId,
+            contentHash,
+            parsed.locator ?? "",
+          );
+        if (existingEvidence) {
+          evidence = mapObject(existingEvidence);
+        } else {
+          const evidenceId = createId();
+          const payload = {
+            kind: "evidence",
+            sourceId: parsed.sourceId,
+            quote: parsed.quote,
+            ...(parsed.locator ? { locator: parsed.locator } : {}),
+            contentHash,
+            verificationState: "unverified",
+          };
+          database
+            .prepare(
+              `INSERT INTO research_objects
+                (id, project_id, type, title, description, payload, origin,
+                 review_state, reviewed_by, reviewed_at, created_at, updated_at)
+               VALUES (?, ?, 'evidence', ?, '', ?, ?, 'unreviewed', NULL, NULL, ?, ?)`,
+            )
+            .run(
+              evidenceId,
+              parsed.projectId,
+              parsed.locator
+                ? `Evidence at ${parsed.locator}`
+                : "Evidence passage",
+              JSON.stringify(payload),
+              parsed.origin,
+              now,
+              now,
+            );
+          insertProvenance(
+            {
+              action: "evidence.created",
+              actorId,
+              actorType,
+              objectId: evidenceId,
+              projectId: parsed.projectId,
+              metadata: { contentHash, sourceId: parsed.sourceId },
+            },
+            now,
+          );
+          evidence = mapObject(
+            database
+              .prepare("SELECT * FROM research_objects WHERE id = ?")
+              .get(evidenceId),
+          );
+        }
+
+        const existingContains = database
+          .prepare(
+            `SELECT * FROM research_relationships
+             WHERE project_id = ? AND from_object_id = ? AND to_object_id = ?
+               AND type = 'contains'`,
+          )
+          .get(parsed.projectId, parsed.sourceId, evidence.id);
+        if (existingContains) {
+          containsRelationship = mapRelationship(existingContains);
+        } else {
+          const containsId = createId();
+          database
+            .prepare(
+              `INSERT INTO research_relationships
+                (id, project_id, from_object_id, to_object_id, type, origin,
+                 review_state, confidence, reviewed_by, reviewed_at, created_at)
+               VALUES (?, ?, ?, ?, 'contains', ?, 'unreviewed', NULL, NULL, NULL, ?)`,
+            )
+            .run(
+              containsId,
+              parsed.projectId,
+              parsed.sourceId,
+              evidence.id,
+              parsed.origin,
+              now,
+            );
+          insertProvenance(
+            {
+              action: "relationship.contains.created",
+              actorId,
+              actorType,
+              objectId: evidence.id,
+              projectId: parsed.projectId,
+              metadata: { relationshipId: containsId },
+            },
+            now,
+          );
+          containsRelationship = mapRelationship(
+            database
+              .prepare("SELECT * FROM research_relationships WHERE id = ?")
+              .get(containsId),
+          );
+        }
+
+        const existingClaimLink = database
+          .prepare(
+            `SELECT * FROM research_relationships
+             WHERE project_id = ? AND from_object_id = ? AND to_object_id = ?
+               AND type IN ('supports', 'contradicts')`,
+          )
+          .get(parsed.projectId, evidence.id, parsed.claimId);
+        if (existingClaimLink && existingClaimLink.type !== parsed.type) {
+          throw new Error(
+            "This evidence passage is already linked with the opposite disposition.",
+          );
+        }
+        if (existingClaimLink) {
+          duplicate = true;
+          claimRelationship = mapRelationship(existingClaimLink);
+        } else {
+          const relationshipId = createId();
+          database
+            .prepare(
+              `INSERT INTO research_relationships
+                (id, project_id, from_object_id, to_object_id, type, origin,
+                 review_state, confidence, reviewed_by, reviewed_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'unreviewed', ?, NULL, NULL, ?)`,
+            )
+            .run(
+              relationshipId,
+              parsed.projectId,
+              evidence.id,
+              parsed.claimId,
+              parsed.type,
+              parsed.origin,
+              parsed.confidence,
+              now,
+            );
+          insertProvenance(
+            {
+              action: `relationship.${parsed.type}.created`,
+              actorId,
+              actorType,
+              objectId: parsed.claimId,
+              projectId: parsed.projectId,
+              metadata: { evidenceId: evidence.id, relationshipId },
+            },
+            now,
+          );
+          claimRelationship = mapRelationship(
+            database
+              .prepare("SELECT * FROM research_relationships WHERE id = ?")
+              .get(relationshipId),
+          );
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+
+      return {
+        duplicate,
+        evidence,
+        containsRelationship,
+        claimRelationship,
+      };
+    },
+
+    reviewEvidence(input) {
+      const parsed = evidenceVerificationInputSchema.parse(input);
+      ensureProject(parsed.projectId);
+      const existing = database
+        .prepare(
+          "SELECT * FROM research_objects WHERE id = ? AND project_id = ? AND type = 'evidence'",
+        )
+        .get(parsed.id, parsed.projectId);
+      if (!existing)
+        throw new Error("Evidence does not belong to the project.");
+      const payload = objectPayloadSchema.parse({
+        ...parseJson(existing.payload),
+        verificationState: parsed.verificationState,
+      });
+      const now = clock();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database
+          .prepare(
+            `UPDATE research_objects
+             SET payload = ?, review_state = ?, reviewed_by = ?, reviewed_at = ?,
+                 version = version + 1, updated_at = ?
+             WHERE id = ? AND project_id = ?`,
+          )
+          .run(
+            JSON.stringify(payload),
+            parsed.verificationState === "verified" ? "approved" : "rejected",
+            parsed.reviewerId,
+            now,
+            now,
+            parsed.id,
+            parsed.projectId,
+          );
+        insertProvenance(
+          {
+            action: "evidence.verification.reviewed",
+            actorId: parsed.reviewerId,
+            actorType: "human",
+            objectId: parsed.id,
+            projectId: parsed.projectId,
+            metadata: { verificationState: parsed.verificationState },
+          },
+          now,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      return mapObject(
+        database
+          .prepare("SELECT * FROM research_objects WHERE id = ?")
           .get(parsed.id),
       );
     },

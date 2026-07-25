@@ -24,6 +24,7 @@ const app = await electron.launch({
 });
 try {
   const page = await app.firstWindow();
+  await page.getByRole("heading", { level: 1 }).first().waitFor();
   const native = await app.browserWindow(page);
   await native.evaluate(
     (window, size) => window.setSize(size.width, size.height),
@@ -35,7 +36,11 @@ try {
     await page.getByTestId("product-dev").click();
     await page.getByTestId(`nav-${route}`).click();
   } else {
-    await page.getByTestId(`nav-${route}`).click();
+    const destination = page.getByTestId(`nav-${route}`);
+    if (!(await destination.isVisible())) {
+      await page.locator("details.cly-sidebar-advanced > summary").click();
+    }
+    await destination.click();
   }
   await page.waitForTimeout(650);
   await page.screenshot({

@@ -196,13 +196,6 @@ export function CostLedgerScreen() {
           icon={<Coins size={24} />}
           title="No costs attributed"
           description="Add a run cost or import an AWS CUR export."
-          action={
-            runs.length ? (
-              <Button variant="primary" onClick={() => setManualOpen(true)}>
-                Add cost
-              </Button>
-            ) : undefined
-          }
         />
       ) : (
         <ClySplitPane

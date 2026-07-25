@@ -8,15 +8,14 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CLY_MENU_COMMANDS } from "../../../../electron/menu-commands.js";
-import { useIdeStore } from "../../../components/ide/ide-store";
 import type { AgentConfiguration } from "../agent-sessions/types";
 import type { ScreenId } from "../domain/types";
 import { createCostLedgerFixture } from "../fixtures/cost-ledger";
 import { createFixtureRepository } from "../fixtures/repository";
+import { onboardingStorageKey } from "../services/onboarding-storage";
 import { projectServices } from "../services/project-services";
 import { useClyStore } from "../store/cly-store";
-import { ClyAppShell, runMenuCommand } from "./app-shell";
+import { ClyAppShell } from "./app-shell";
 
 const loadFromApi = useClyStore.getState().loadFromApi;
 
@@ -39,7 +38,7 @@ const agentConfiguration: AgentConfiguration = {
       instanceCount: 1,
       maxParallel: 1,
       provider: "openai",
-      model: "gpt-5.6-sol",
+      model: "gpt-5",
       reasoningLevel: "medium",
       budget: {
         maxInputTokens: 1_000,
@@ -74,53 +73,16 @@ describe("Cly application shell", () => {
 
   beforeEach(() => {
     localStorage.clear();
-    useIdeStore.setState({
-      appReady: false,
-      settingsOpen: false,
-      settingsSection: "appearance",
-      stateHydrated: false,
-      providerModels: {
-        fetchedAt: new Date().toISOString(),
-        openai: {
-          installed: true,
-          loading: false,
-          error: null,
-          source: "cli",
-          version: "1.0.0",
-          models: [
-            {
-              id: "gpt-5.6-sol",
-              label: "GPT-5.6 Sol",
-              reasoningEfforts: ["low", "medium", "high", "xhigh"],
-            },
-          ],
-        },
-        anthropic: {
-          installed: false,
-          loading: false,
-          error: null,
-          source: "unavailable",
-          version: null,
-          models: [],
-        },
-        opencode: {
-          installed: false,
-          loading: false,
-          error: null,
-          source: "unavailable",
-          version: null,
-          models: [],
-        },
-        cursor: {
-          installed: false,
-          loading: false,
-          error: null,
-          source: "unavailable",
-          version: null,
-          models: [],
-        },
-      },
-    });
+    localStorage.setItem(
+      onboardingStorageKey("project-cly"),
+      JSON.stringify({
+        version: 1,
+        projectId: "project-cly",
+        completed: true,
+        privacyReviewed: true,
+      }),
+    );
+    sessionStorage.clear();
     const data = createFixtureRepository("active");
     const costs = createCostLedgerFixture("active", data);
     useClyStore.setState({
@@ -132,6 +94,8 @@ describe("Cly application shell", () => {
       activeProjectId: "project-cly",
       activeScreen: "overview",
       activeProduct: "research",
+      lastResearchScreen: "overview",
+      lastResearchSelectedId: null,
       activeDevSection: "projects",
       selectedId: null,
       sidebarCollapsed: false,
@@ -180,14 +144,6 @@ describe("Cly application shell", () => {
     const user = userEvent.setup();
     render(<ClyAppShell />);
 
-    expect(
-      screen.getByRole("group", { name: "Cly product area" }),
-    ).toBeVisible();
-    expect(screen.getByTestId("product-research")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-
     const destinations = [
       ["objectives", "Objectives"],
       ["agents", "Agent Sessions"],
@@ -204,7 +160,7 @@ describe("Cly application shell", () => {
       ["reproducibility", "Reproducibility Auditor"],
       ["decisions", "Research Decision Log"],
       ["next-steps", "Next-Step Planner"],
-      ["reviewer-capsules", "Reviewer Capsules"],
+      ["reviewer-capsules", "Reviewer Packages"],
       ["integrations", "Integrations & Providers"],
       ["models", "Models & Agents"],
     ] as const;
@@ -404,33 +360,28 @@ describe("Cly application shell", () => {
     ).toBeVisible();
   });
 
-  it("handles every command advertised by the native application menu", () => {
-    for (const command of CLY_MENU_COMMANDS) {
-      expect(runMenuCommand(command)).toBe(true);
-    }
-    expect(runMenuCommand("unknown-command")).toBe(false);
-  });
-
-  it("switches between Cly Research and the live Cly Dev workspace", async () => {
+  it("switches between Cly Research and the Cly Dev command center", async () => {
     const user = userEvent.setup();
     render(<ClyAppShell />);
 
     await user.click(screen.getByTestId("product-dev"));
-    expect(screen.getByTestId("product-dev")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
     expect(
-      screen.getByRole("region", { name: "Cly Dev AI workspace" }),
+      screen.getByRole("heading", { name: "Projects", level: 1 }),
     ).toBeVisible();
     expect(document.querySelector(".cly-shell")).toHaveAttribute(
       "data-product",
       "dev",
     );
 
-    await user.click(screen.getByTestId("nav-dev-agents"));
-    expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
-    expect(screen.getByRole("tablist", { name: "AI harnesses" })).toBeVisible();
+    await user.click(screen.getByTestId("nav-dev-board"));
+    expect(
+      screen.getByRole("heading", { name: "Board", level: 1 }),
+    ).toBeVisible();
+
+    await user.click(screen.getByTestId("nav-dev-features"));
+    expect(
+      screen.getByRole("heading", { name: "Features", level: 1 }),
+    ).toBeVisible();
 
     await user.click(screen.getByTestId("product-research"));
     expect(
@@ -441,21 +392,120 @@ describe("Cly application shell", () => {
     ).toBeVisible();
   });
 
-  it("opens provider setup from the Cly Dev titlebar", async () => {
+  it("presents the five-step workflow and keeps advanced routes searchable", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    for (const label of [
+      "Set up",
+      "Understand",
+      "Build / Run",
+      "Review",
+      "Share",
+    ]) {
+      expect(screen.getByRole("navigation", { name: label })).toBeVisible();
+    }
+    await user.keyboard("{Control>}k{/Control}");
+    const palette = screen.getByRole("dialog", { name: "Command palette" });
+    await user.type(within(palette).getByRole("combobox"), "Research Graph");
+    expect(within(palette).getByText("Go to Research Graph")).toBeVisible();
+  });
+
+  it("returns to the same research route and selection after Dev work", async () => {
+    const user = userEvent.setup();
+    const claimId = useClyStore.getState().data.claims[0].id;
+    useClyStore.getState().setScreen("claims");
+    useClyStore.getState().setSelected(claimId);
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByTestId("product-dev"));
+    await user.click(screen.getByTestId("nav-dev-issues"));
+    await user.click(screen.getByTestId("product-research"));
+
+    expect(
+      screen.getByRole("heading", { name: "Claim Audit Board", level: 1 }),
+    ).toBeVisible();
+    expect(useClyStore.getState()).toMatchObject({
+      activeProjectId: "project-cly",
+      activeScreen: "claims",
+      selectedId: claimId,
+      activeDevSection: "issues",
+    });
+  });
+
+  it("does not restore a selection from a different research route", () => {
+    const claimId = useClyStore.getState().data.claims[0].id;
+    useClyStore.getState().setScreen("claims");
+    useClyStore.getState().setSelected(claimId);
+    useClyStore.getState().setScreen("sources");
+    useClyStore.getState().setScreen("dev");
+    useClyStore.getState().setProductArea("research");
+
+    expect(useClyStore.getState()).toMatchObject({
+      activeProduct: "research",
+      activeScreen: "sources",
+      selectedId: null,
+      lastResearchSelectedId: null,
+    });
+  });
+
+  it("opens setup guidance and returns through route history", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByTestId("nav-help"));
+    expect(
+      screen.getByRole("heading", { name: "Setup & Help", level: 1 }),
+    ).toBeVisible();
+    expect(screen.getByText("First evidence chain")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Import source" }));
+    expect(
+      screen.getByRole("heading", { name: "Source Manager", level: 1 }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Go back" }));
+    expect(
+      screen.getByRole("heading", { name: "Setup & Help", level: 1 }),
+    ).toBeVisible();
+  });
+
+  it("opens a real session flow from the Cly Dev primary action", async () => {
     const user = userEvent.setup();
     render(<ClyAppShell />);
 
     await user.click(screen.getByTestId("product-dev"));
+    const devWorkspace = document.querySelector(
+      ".cly-route-dev",
+    ) as HTMLElement;
     await user.click(
-      screen.getByRole("button", { name: "Configure AI providers" }),
+      within(devWorkspace).getByRole("button", { name: "New session" }),
     );
 
-    expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
     expect(
-      screen.getByText(
-        "Connect the local AI tools Cly can run in your projects.",
-      ),
+      screen.getByRole("dialog", { name: "New agent session" }),
     ).toBeVisible();
+    expect(useClyStore.getState()).toMatchObject({
+      activeProduct: "dev",
+      activeScreen: "agents",
+      agentSessionsMode: "overview",
+    });
+  });
+
+  it("opens handoff details instead of using a toast-only action", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByTestId("product-dev"));
+    await user.click(screen.getByRole("button", { name: "Prepare handoff" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Handoff summary" });
+    expect(dialog).toBeVisible();
+    expect(
+      within(dialog).getByText("Neural surrogate reliability"),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByRole("button", { name: "Copy summary" }),
+    ).toBeEnabled();
+    expect(screen.queryByText("Handoff prepared")).not.toBeInTheDocument();
   });
 
   it("opens the command palette and executes navigation", async () => {
@@ -484,25 +534,28 @@ describe("Cly application shell", () => {
     render(<ClyAppShell />);
 
     const toggle = screen.getByRole("switch", {
-      name: "Include Legacy discussion: baseline choice",
+      name: "Include Raman et al. 2025",
     });
     expect(toggle).not.toBeChecked();
     await user.click(toggle);
 
     expect(toggle).toBeChecked();
-    expect(screen.getByText("24,740 tokens")).toBeVisible();
+    expect(screen.getByText("28,720 tokens")).toBeVisible();
   });
 
   it("renders source, notebook, claim, experiment, provenance, finding, integration, and decision components", () => {
     const { rerender } = render(<ClyAppShell />);
     const expectations: [ScreenId, string][] = [
-      ["sources", "Reliable neural surrogates"],
+      ["sources", "Reliable neural surrogates for nonlinear dynamical systems"],
       ["notebooks", "Ensemble size and calibration"],
-      ["claims", "Calibration-aware ensembles"],
+      ["claims", "Calibration-aware ensembles reduce simulation cost"],
       ["experiments", "Calibrated ensemble sweep"],
       ["provenance", "Figure 2 · Cost vs calibration"],
-      ["reproducibility", "Figure 4 includes an undocumented"],
-      ["integrations", "Local AI providers"],
+      [
+        "reproducibility",
+        "Figure 4 includes an undocumented manual annotation",
+      ],
+      ["integrations", "NotebookLM"],
       ["decisions", "Use ensemble ×5 as the canonical configuration"],
     ];
 
@@ -550,7 +603,9 @@ describe("Cly application shell", () => {
     );
 
     await user.click(
-      screen.getAllByText(/Calibration-aware ensembles/).at(0) as HTMLElement,
+      screen
+        .getAllByText(/Calibration-aware ensembles reduce simulation cost/)
+        .at(0) as HTMLElement,
     );
     expect(document.querySelector(".cly-inspector")).toBeInTheDocument();
     expect(document.querySelector(".cly-shell")).toHaveAttribute(
@@ -559,7 +614,7 @@ describe("Cly application shell", () => {
     );
   });
 
-  it("renders all titlebar action buttons directly", () => {
+  it("keeps the titlebar focused on global context", () => {
     render(<ClyAppShell />);
 
     const titlebar = document.querySelector(".cly-titlebar") as HTMLElement;
@@ -570,9 +625,32 @@ describe("Cly application shell", () => {
       within(titlebar).getByLabelText(/Local and cloud status/),
     ).toBeVisible();
     expect(
-      within(titlebar).getByLabelText("Notification center"),
+      within(titlebar).queryByLabelText("Notification center"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(titlebar).queryByLabelText("Create new object"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(titlebar).queryByLabelText("Settings"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(titlebar).queryByLabelText("Toggle inspector"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("nav-settings")).toBeVisible();
+  });
+
+  it("opens the activity drawer from the global activity control", async () => {
+    const user = userEvent.setup();
+    render(<ClyAppShell />);
+
+    await user.click(screen.getByRole("button", { name: /Open activity/ }));
+
+    expect(screen.getByTestId("activity-drawer")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Close activity drawer" }),
     ).toBeVisible();
-    expect(within(titlebar).getByLabelText("Settings")).toBeVisible();
-    expect(within(titlebar).getByLabelText("Toggle inspector")).toBeVisible();
   });
 });

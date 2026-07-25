@@ -167,8 +167,10 @@ const ensureCliEnvironment = async () => {
       const augmentedPath = pathEntries.join(path.delimiter);
 
       // Packaged GUI apps, especially on macOS, often start without the user's
-      // shell PATH. Mutate process.env so downstream libraries that spawn CLIs
-      // directly (for example Claude Code's SDK adapter) inherit the same fix.
+      // shell PATH. This one-time mutation provides a fallback for third-party
+      // libraries that read process.env.PATH directly. All cly child processes
+      // receive the augmented env explicitly via the returned object.
+      // Only mutates once at startup (guarded by cliEnvironmentPromise).
       process.env[pathKey] = augmentedPath;
       if (pathKey !== "PATH") {
         process.env.PATH = augmentedPath;

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -41,9 +40,10 @@ const STATE_DB_FILENAME = "dream.db";
 const STATE_DB_PATH_ENV_VAR = "DREAM_DB_PATH";
 const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 const DRIZZLE_MIGRATIONS_FOLDER = path.join(__dirname, "drizzle");
-const INSTALL_ID_CONFIG_KEY = "installId";
 const THEME_PREFERENCES_CONFIG_KEY = "themePreferences";
 const CLY_DEV_WINDOW_LAYOUT_CONFIG_KEY = "clyDevWindowLayoutV1";
+const ONBOARDING_DRAFT_CONFIG_KEY_PREFIX = "clyOnboardingDraftV1:";
+const LEGACY_INSTALL_ID_CONFIG_KEY = "installId";
 const PERSISTED_STATE_CONFIG_KEYS = [
   "activeProjectId",
   "chatSort",
@@ -100,15 +100,6 @@ function parseJson(value, fallback) {
   } catch {
     return fallback;
   }
-}
-
-function isUuidV4(value) {
-  return (
-    typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value,
-    )
-  );
 }
 
 function normalizeProjectPathKey(projectPath) {
@@ -353,7 +344,32 @@ function hasRelationalState(database) {
   return projectCount > 0 || configCount > 0;
 }
 
+const KNOWN_TABLE_NAMES = new Set([
+  "app_state",
+  "agent_role_configurations",
+  "chat_messages",
+  "chats",
+  "config",
+  "experiment_runs",
+  "projects",
+  "provenance_events",
+  "research_objects",
+  "research_relationships",
+  "__drizzle_migrations",
+  "schema_migrations",
+]);
+
+function validateTableName(tableName) {
+  if (!KNOWN_TABLE_NAMES.has(tableName)) {
+    throw new Error(
+      `Unexpected SQL table name: ${tableName}. Expected one of: ${[...KNOWN_TABLE_NAMES].join(", ")}`,
+    );
+  }
+  return tableName;
+}
+
 function getTableRowCount(database, tableName) {
+  validateTableName(tableName);
   if (!tableExists(database, tableName)) {
     return 0;
   }
@@ -397,6 +413,20 @@ function writeConfig(database, key, value, updatedAt) {
       `,
     )
     .run(key, toJson(value), updatedAt);
+}
+
+function onboardingDraftConfigKey(projectId) {
+  if (projectId === null || projectId === undefined) {
+    return `${ONBOARDING_DRAFT_CONFIG_KEY_PREFIX}new-project`;
+  }
+
+  const normalizedProjectId =
+    typeof projectId === "string" ? projectId.trim() : "";
+  if (!normalizedProjectId || normalizedProjectId.length > 512) {
+    throw new TypeError("A valid onboarding project id is required.");
+  }
+
+  return `${ONBOARDING_DRAFT_CONFIG_KEY_PREFIX}${normalizedProjectId}`;
 }
 
 function buildProjectMetadata(project) {
@@ -1174,6 +1204,7 @@ function loadStateFromRelationalDatabase(database) {
 }
 
 function ensureTableColumn(database, tableName, columnName, columnDefinition) {
+  validateTableName(tableName);
   const rows = database.prepare(`PRAGMA table_info(${tableName})`).all();
   const hasColumn = rows.some((row) => row?.name === columnName);
   if (hasColumn) {
@@ -1228,21 +1259,13 @@ function stripMigrationDirectives(statement) {
 }
 
 function getPendingDrizzleMigrations(database, migrations) {
-  const lastMigration = database
-    .prepare(
-      `
-        SELECT created_at
-        FROM __drizzle_migrations
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-    )
-    .get();
-  const lastMigrationTimestamp = Number(lastMigration?.created_at ?? 0);
-
-  return migrations.filter(
-    (migration) => lastMigrationTimestamp < migration.folderMillis,
+  const appliedHashes = new Set(
+    database
+      .prepare("SELECT hash FROM __drizzle_migrations")
+      .all()
+      .map((row) => row.hash),
   );
+  return migrations.filter((migration) => !appliedHashes.has(migration.hash));
 }
 
 function quoteSqlString(value) {
@@ -1366,6 +1389,13 @@ export function getStateDatabase(databasePath = resolveStateDatabasePath()) {
     saveStateToRelationalDatabase(database, legacyState);
   }
 
+  // Older builds persisted an installation-scoped UUID used by update checks.
+  // It is no longer transmitted or needed, so remove existing copies as soon
+  // as the database opens instead of retaining a durable tracking identifier.
+  database
+    .prepare("DELETE FROM config WHERE key = ?")
+    .run(LEGACY_INSTALL_ID_CONFIG_KEY);
+
   database
     .prepare(
       `
@@ -1390,26 +1420,6 @@ export function loadPersistedState({ databasePath } = {}) {
   return loadStateFromRelationalDatabase(database);
 }
 
-export function ensurePersistedInstallId({ databasePath } = {}) {
-  const database = getStateDatabase(databasePath);
-  const row = database
-    .prepare("SELECT value FROM config WHERE key = ? LIMIT 1")
-    .get(INSTALL_ID_CONFIG_KEY);
-  const existingInstallId = parseJson(row?.value, null);
-  if (isUuidV4(existingInstallId)) {
-    return existingInstallId.toLowerCase();
-  }
-
-  const installId = randomUUID();
-  writeConfig(
-    database,
-    INSTALL_ID_CONFIG_KEY,
-    installId,
-    new Date().toISOString(),
-  );
-  return installId;
-}
-
 export function loadPersistedThemePreference({ databasePath } = {}) {
   const database = getStateDatabase(databasePath);
   const row = database
@@ -1432,6 +1442,36 @@ export function savePersistedThemePreference(
     database,
     THEME_PREFERENCES_CONFIG_KEY,
     preferences,
+    new Date().toISOString(),
+  );
+  return true;
+}
+
+export function loadOnboardingDraft(projectId, { databasePath } = {}) {
+  const database = getStateDatabase(databasePath);
+  const row = database
+    .prepare("SELECT value FROM config WHERE key = ? LIMIT 1")
+    .get(onboardingDraftConfigKey(projectId));
+  const draft = parseJson(row?.value, null);
+  return isRecord(draft) && draft.version === 1 ? draft : null;
+}
+
+export function saveOnboardingDraft(draft, { databasePath } = {}) {
+  if (!isRecord(draft) || draft.version !== 1) {
+    throw new TypeError("A versioned onboarding draft is required.");
+  }
+
+  const projectId =
+    typeof draft.projectId === "string" ? draft.projectId.trim() : null;
+  if (draft.projectId !== null && !projectId) {
+    throw new TypeError("The onboarding draft project id is invalid.");
+  }
+
+  const database = getStateDatabase(databasePath);
+  writeConfig(
+    database,
+    onboardingDraftConfigKey(projectId),
+    { ...draft, projectId },
     new Date().toISOString(),
   );
   return true;

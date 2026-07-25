@@ -12,6 +12,7 @@ import {
   closePersistedStateDatabase,
   getStateDatabase,
 } from "../../../persisted-state.js";
+import { projectAuthorityRegistry } from "../../../project-authority-registry.js";
 import { API_SESSION_TOKEN_HEADER, startApiServer } from "../../app.js";
 import { createClyDevSessionRepository } from "../session-repository.js";
 import { createProductionClyDevHandoffDependencies } from "./handoff-production.js";
@@ -22,6 +23,7 @@ let server: Awaited<ReturnType<typeof startApiServer>> | undefined;
 afterEach(async () => {
   await server?.close();
   server = undefined;
+  projectAuthorityRegistry.hydrate({ projects: [], closedProjects: [] });
   closePersistedStateDatabase();
   for (const directory of directories.splice(0)) {
     rmSync(directory, { force: true, recursive: true });
@@ -29,6 +31,55 @@ afterEach(async () => {
 });
 
 describe("production Cly Dev handoff startup", () => {
+  it("validates and selects either supported provider without embedding source credentials", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "cly-handoff-switch-"));
+    directories.push(directory);
+    const db = getStateDatabase(path.join(directory, "state.sqlite"));
+    const provider = (model: string) => ({
+      getAuthentication: () => ({ status: "authenticated" }),
+      listModels: () => [{ id: model }],
+      getCapabilities: () => ({
+        streaming: true,
+        reasoning: true,
+        toolCalls: true,
+        interceptBeforeEffect: true,
+      }),
+    });
+    const dependencies = createProductionClyDevHandoffDependencies({
+      db,
+      runner: provider("gpt-test"),
+      claudeRunner: provider("claude-test"),
+    });
+
+    await expect(
+      dependencies.getProviderRequirements({
+        session: {
+          provider: { id: "anthropic-claude", model: "claude-test" },
+        },
+      }),
+    ).resolves.toEqual({
+      required: true,
+      capabilities: [
+        "intercept_before_effect",
+        "reasoning",
+        "streaming",
+        "tool_calls",
+      ],
+    });
+    await expect(
+      dependencies.getProviderCapabilities({
+        targetProvider: { id: "anthropic-claude" },
+      }),
+    ).resolves.toContain("tool_calls");
+    await expect(
+      dependencies.resolveTargetProvider({
+        inspection: {
+          authority: { targetProvider: { id: "anthropic-claude" } },
+        },
+      }),
+    ).resolves.toEqual({ id: "anthropic-claude", model: "claude-test" });
+  });
+
   it.each([
     [
       "missing capability",
@@ -356,6 +407,10 @@ describe("production Cly Dev handoff startup", () => {
     const dependencies = createProductionClyDevHandoffDependencies({
       db,
       runner,
+    });
+    projectAuthorityRegistry.hydrate({
+      projects: [{ id: "project-1", path: repositoryPath }],
+      closedProjects: [],
     });
     const port = await getPort({ host: "127.0.0.1" });
     const token = "startup-authority";

@@ -1,9 +1,6 @@
 import { apiClient } from "../services/api-client";
 import type {
   ClyDevEventInput,
-  ClyDevExecutionInput,
-  ClyDevSessionEvent,
-  ClyDevSessionLaunchInput,
   ClyDevSessionOverview,
   ClyDevSessionState,
 } from "./types";
@@ -12,13 +9,8 @@ type SessionApi = Pick<
   typeof apiClient,
   | "fetchClyDevSessionOverviews"
   | "fetchClyDevSessionEvents"
-  | "fetchClyDevSessionSnapshot"
-  | "fetchClyDevRuntimeProviders"
   | "createClyDevSessionAggregate"
-  | "launchClyDevSession"
-  | "executeClyDevSession"
-  | "resumeClyDevSession"
-  | "cancelClyDevSession"
+  | "startClyDevSession"
   | "respondToClyDevApproval"
   | "appendClyDevSessionEvent"
 >;
@@ -30,86 +22,6 @@ interface ProductionServiceOptions {
 }
 
 const defaultIdempotencyKey = () => crypto.randomUUID();
-
-const requestPrefix = (projectId: string, sessionId: string) =>
-  `cly-dev:${projectId}:${sessionId}:`;
-
-export const getClyDevRequestId = (
-  projectId: string,
-  sessionId: string,
-  events: ClyDevSessionEvent[],
-): string | null => {
-  const prefix = requestPrefix(projectId, sessionId);
-  for (const event of events.toReversed()) {
-    if (!event.idempotencyKey.startsWith(prefix)) continue;
-    const suffix = event.idempotencyKey.slice(prefix.length);
-    const separator = suffix.indexOf(":");
-    if (separator > 0) return suffix.slice(0, separator);
-  }
-  return null;
-};
-
-export const getClyDevResumeInput = (
-  projectId: string,
-  sessionId: string,
-  events: ClyDevSessionEvent[],
-  fallbackMode: ClyDevExecutionInput["mode"] = "read_only",
-): ClyDevExecutionInput | null => {
-  const requestId = getClyDevRequestId(projectId, sessionId, events);
-  if (!requestId) return null;
-  const prefix = `${requestPrefix(projectId, sessionId)}${requestId}:`;
-  const userMessage = events.find(
-    (event) =>
-      event.idempotencyKey === `${prefix}request` &&
-      event.type === "message.recorded" &&
-      event.payload.role === "user",
-  );
-  const approvals = Object.fromEntries(
-    events.flatMap((event) => {
-      if (event.type !== "approval.requested") return [];
-      const approvalId = String(event.payload.approvalId ?? "");
-      let detail: Record<string, unknown> = {};
-      try {
-        detail = JSON.parse(String(event.payload.detail ?? "{}"));
-      } catch {
-        return [];
-      }
-      const toolCallId = String(detail.toolCallId ?? "");
-      return approvalId && toolCallId
-        ? [[toolCallId, { approvalId }] as const]
-        : [];
-    }),
-  );
-  const settings = events.find(
-    (event) =>
-      event.type === "summary.recorded" &&
-      event.payload.title === "Execution settings",
-  );
-  const sections = Array.isArray(settings?.payload.sections)
-    ? settings.payload.sections.map(String)
-    : [];
-  const storedMode = sections
-    .find((section) => section.startsWith("mode:"))
-    ?.slice("mode:".length);
-  const mode = new Set(["read_only", "workspace_write"]).has(String(storedMode))
-    ? storedMode === "workspace_write"
-      ? "execute"
-      : "read_only"
-    : fallbackMode;
-  const tools = sections
-    .filter((section) => section.startsWith("tool:"))
-    .map((section) => ({ name: section.slice("tool:".length) }))
-    .filter((tool) => tool.name);
-  return {
-    schemaVersion: 1,
-    payloadVersion: 1,
-    requestId,
-    prompt: String(userMessage?.payload.body ?? "Resume the interrupted task."),
-    mode,
-    tools,
-    ...(Object.keys(approvals).length ? { approvals } : {}),
-  };
-};
 
 export function createProductionAgentSessionServices({
   api: apiOverrides,
@@ -170,28 +82,11 @@ export function createProductionAgentSessionServices({
       return aggregate.session;
     },
 
-    providers() {
-      return api.fetchClyDevRuntimeProviders();
-    },
-
-    launch(projectId: string, input: ClyDevSessionLaunchInput) {
-      return api.launchClyDevSession(projectId, input);
-    },
-
-    snapshot(projectId: string, sessionId: string) {
-      return api.fetchClyDevSessionSnapshot(projectId, sessionId);
-    },
-
-    execute(projectId: string, sessionId: string, input: ClyDevExecutionInput) {
-      return api.executeClyDevSession(projectId, sessionId, input);
-    },
-
-    resume(projectId: string, sessionId: string, input: ClyDevExecutionInput) {
-      return api.resumeClyDevSession(projectId, sessionId, input);
-    },
-
-    cancel(projectId: string, sessionId: string, requestId: string) {
-      return api.cancelClyDevSession(projectId, sessionId, requestId);
+    async startSession(
+      projectId: string,
+      input: Parameters<SessionApi["startClyDevSession"]>[1],
+    ) {
+      return api.startClyDevSession(projectId, input);
     },
 
     appendEvent: append,
@@ -243,26 +138,6 @@ export function createProductionAgentSessionServices({
         afterSequence,
         limit,
       );
-    },
-
-    async allEvents(projectId: string, sessionId: string) {
-      const events: ClyDevSessionEvent[] = [];
-      let afterSequence = 0;
-      while (true) {
-        const page = await api.fetchClyDevSessionEvents(
-          projectId,
-          sessionId,
-          afterSequence,
-          500,
-        );
-        events.push(...page);
-        if (page.length < 500) return events;
-        const nextSequence = page.at(-1)?.sequence ?? afterSequence;
-        if (nextSequence <= afterSequence) {
-          throw new Error("Cly Dev event pagination did not advance.");
-        }
-        afterSequence = nextSequence;
-      }
     },
   };
 }

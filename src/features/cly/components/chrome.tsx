@@ -2,7 +2,6 @@ import * as RadixDialog from "@radix-ui/react-dialog";
 import { Command as CommandPrimitive } from "cmdk";
 import {
   Activity,
-  Bell,
   Check,
   CircleDot,
   Command as CommandIcon,
@@ -10,16 +9,13 @@ import {
   HardDrive,
   Info,
   PanelRight,
-  Plus,
   Search,
-  Settings,
   Sparkles,
   WifiOff,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-import { useIdeStore } from "../../../components/ide/ide-store";
 import { getDesktopApi } from "../../../lib/electron";
 import type { ClyDevWorkspaceMode } from "../agent-sessions/types";
 import { seedWorkspaceSnapshot } from "../agent-sessions/window-sync";
@@ -30,6 +26,7 @@ import { projectServices } from "../services/project-services";
 import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import {
+  devSectionLabels,
   ProjectSwitcherButton,
   ProjectSwitcherPopover,
   screenLabels,
@@ -48,7 +45,7 @@ const fixtureModes: { id: FixtureMode; label: string; description: string }[] =
     {
       id: "active",
       label: "Active Project",
-      description: "Coherent linked research fixtures",
+      description: "Coherent linked research data",
     },
     {
       id: "large",
@@ -111,91 +108,18 @@ async function setSelectedWorkspaceMode(workspaceMode: ClyDevWorkspaceMode) {
 }
 
 export function Titlebar() {
-  const project = useClyStore(
-    (s) =>
-      s.data.projects.find((item) => item.id === s.activeProjectId) ??
-      s.data.projects[0],
-  );
   const search = useClyStore((s) => s.globalSearch);
   const activeProduct = useClyStore((s) => s.activeProduct);
   const setCommandOpen = useClyStore((s) => s.setCommandPaletteOpen);
   const setFixtureOpen = useClyStore((s) => s.setFixtureSwitcherOpen);
-  const setScreen = useClyStore((s) => s.setScreen);
-  const setDevSection = useClyStore((s) => s.setDevSection);
   const toggleInspector = useClyStore((s) => s.toggleInspector);
+  const toggleActivity = useClyStore((s) => s.toggleActivity);
   const selectedId = useClyStore((s) => s.selectedId);
   const notify = useClyStore((s) => s.notify);
   const activeSessions = useClyStore(
     (s) =>
       s.data.agentSessions.filter((item) => item.status === "running").length,
   );
-
-  const createObject = async () => {
-    try {
-      if (activeProduct === "dev") {
-        const desktopApi = getDesktopApi();
-        if (!desktopApi) {
-          notify(
-            "Desktop app required",
-            "Open Cly in Electron to select a local project folder.",
-          );
-          return;
-        }
-        const selectedPath = await desktopApi.pickProjectDirectory();
-        if (selectedPath) {
-          useIdeStore.getState().addProject(selectedPath);
-        }
-        return;
-      }
-      const screen = useClyStore.getState().activeScreen;
-      if (screen === "claims") {
-        const claim = await projectServices.claims.create(
-          "New research claim — edit evidence and scope",
-        );
-        useClyStore.getState().setSelected(claim.id);
-        notify(
-          "Claim created",
-          "The new claim is unsupported until evidence is linked.",
-        );
-        return;
-      }
-      if (screen === "experiments") {
-        const experiment = await projectServices.experiments.create({
-          name: "Untitled experiment",
-          goal: "Define the research goal",
-          type: "Custom",
-        });
-        useClyStore.getState().setSelected(experiment.id);
-        notify(
-          "Experiment created",
-          "Complete configuration before scheduling a run.",
-        );
-        return;
-      }
-      if (screen === "sources") {
-        const source = await projectServices.sources.create({
-          title: "Untitled source",
-          type: "Paper",
-        });
-        useClyStore.getState().setSelected(source.id);
-        notify(
-          "Source created",
-          "Review the source record and add verified metadata before citing it.",
-        );
-        return;
-      }
-      notify(
-        "Create new research object",
-        "Choose New Claim, New Experiment, New Source, or New Decision from the command palette.",
-      );
-      setCommandOpen(true);
-    } catch (error) {
-      notify(
-        "Research object was not saved",
-        error instanceof Error ? error.message : "Unable to save the object.",
-      );
-    }
-  };
 
   return (
     <header className="cly-titlebar">
@@ -208,7 +132,7 @@ export function Titlebar() {
         data-testid="global-search"
       >
         <Search size={13} />
-        <span style={{ flex: 1, textAlign: "left" }}>
+        <span className="cly-global-search-label">
           {search ||
             (activeProduct === "dev"
               ? "Search code, sessions, issues, or run a command"
@@ -217,138 +141,62 @@ export function Titlebar() {
         <kbd>⌘K</kbd>
       </button>
       <div className="cly-title-actions cly-no-drag">
-        <Badge
-          className="cly-title-product-badge"
-          tone={activeProduct === "research" ? "info" : "success"}
-          square
-        >
-          {activeProduct === "research" ? "Research" : "Dev"}
-        </Badge>
-        {project && activeProduct === "research" ? (
-          <Badge className="cly-title-phase-badge" tone="info" square>
-            {project.phase}
-          </Badge>
-        ) : null}
-        <ClyTooltip label="Agent activity">
+        <ClyTooltip label="Activity">
           <Button
             variant="ghost"
             iconOnly
-            aria-label={
-              activeProduct === "dev"
-                ? "Configure AI providers"
-                : `${activeSessions} active agent sessions`
-            }
-            onClick={() => {
-              if (activeProduct === "dev") {
-                setDevSection("agents");
-                const ide = useIdeStore.getState();
-                ide.setSettingsSection("providers");
-                ide.setSettingsOpen(true);
-              } else {
-                setScreen("agents");
-              }
-            }}
+            className="cly-title-activity"
+            aria-label={`Open activity, ${activeSessions} active agent sessions`}
+            onClick={toggleActivity}
           >
             <Activity size={14} />
             {activeSessions ? (
-              <span className="cly-sr-only">{activeSessions} active</span>
+              <span className="cly-title-activity-count" aria-hidden="true">
+                {activeSessions > 9 ? "9+" : activeSessions}
+              </span>
             ) : null}
           </Button>
         </ClyTooltip>
         <ClyTooltip label="Local-first status">
           <Button
             variant="ghost"
-            iconOnly
+            className="cly-title-local-status"
             aria-label="Local and cloud status"
             onClick={() =>
               notify(
                 "Local-first status",
-                "Research records stay in the project-scoped local service. AI prompts are sent only to the harness you select and pass Cly's data-obligation check first.",
+                "Research records are stored by the project-scoped local service. External effects remain unavailable until their approval flows are implemented.",
               )
             }
           >
             <HardDrive size={14} />
-          </Button>
-        </ClyTooltip>
-        <ClyTooltip label="Notifications">
-          <Button
-            variant="ghost"
-            iconOnly
-            aria-label="Notification center"
-            onClick={() =>
-              notify(
-                "No unread notifications",
-                "Agent and audit events remain available in the activity drawer.",
-              )
-            }
-          >
-            <Bell size={14} />
+            <span>Local</span>
           </Button>
         </ClyTooltip>
         {__CLY_INCLUDE_TEST_FIXTURES__ && isClyTestFixtureRuntime ? (
           <Button
             variant="ghost"
             iconOnly
-            title="Fixture mode"
-            aria-label="Open fixture mode selector"
+            title="Test fixture state"
+            aria-label="Open test fixture state selector"
             onClick={() => setFixtureOpen(true)}
             data-testid="fixture-selector"
           >
             <CircleDot size={14} />
           </Button>
         ) : null}
-        <Button
-          variant="primary"
-          aria-label={
-            activeProduct === "dev"
-              ? "Open project folder"
-              : "Create new object"
-          }
-          title={
-            activeProduct === "dev"
-              ? "Open project folder"
-              : "Create new object"
-          }
-          onClick={createObject}
-        >
-          <Plus size={14} /> {activeProduct === "dev" ? "Open project" : "New"}
-        </Button>
-        <ClyTooltip label="Toggle inspector">
-          <Button
-            variant="ghost"
-            iconOnly
-            aria-label="Toggle inspector"
-            onClick={() => {
-              if (selectedId) toggleInspector();
-              else
-                notify(
-                  "Nothing selected",
-                  "Select a source, claim, run, notebook, finding, or other research object to open its inspector.",
-                );
-            }}
-          >
-            <PanelRight size={14} />
-          </Button>
-        </ClyTooltip>
-        <ClyTooltip label="Settings">
-          <Button
-            variant="ghost"
-            iconOnly
-            aria-label="Settings"
-            onClick={() => {
-              if (activeProduct === "dev") {
-                setDevSection("settings");
-                const ide = useIdeStore.getState();
-                ide.setSettingsSection("appearance");
-                ide.setSettingsOpen(true);
-              } else {
-                setScreen("settings");
-              }
-            }}
-          >
-            <Settings size={14} />
-          </Button>
-        </ClyTooltip>
+        {selectedId ? (
+          <ClyTooltip label="Toggle inspector">
+            <Button
+              variant="ghost"
+              iconOnly
+              aria-label="Toggle inspector"
+              onClick={toggleInspector}
+            >
+              <PanelRight size={14} />
+            </Button>
+          </ClyTooltip>
+        ) : null}
       </div>
       <ProjectSwitcherPopover />
       <FixtureSwitcherPopover />
@@ -374,16 +222,16 @@ function FixtureSwitcherPopover() {
           backdropFilter: "none",
           padding: 0,
         }}
-        aria-label="Close fixture selector"
+        aria-label="Close test fixture state selector"
         onClick={() => setOpen(false)}
       />
       <div
         className="cly-popover cly-fixture-popover"
         role="dialog"
-        aria-label="Cly fixture mode"
+        aria-label="Cly test fixture state"
       >
         <div className="cly-command-group-label">
-          Cly fixture mode · development only
+          Cly test fixture state · development only
         </div>
         {fixtureModes.map((fixture) => (
           <button
@@ -393,7 +241,7 @@ function FixtureSwitcherPopover() {
             data-active={fixture.id === mode}
             onClick={() => {
               setMode(fixture.id);
-              notify("Fixture state changed", fixture.label);
+              notify("Test fixture state changed", fixture.label);
             }}
           >
             <span style={{ width: 16 }}>
@@ -453,8 +301,21 @@ export function CommandPalette() {
       icon: CommandIcon,
       run: () => setScreen(id),
     }));
+    const developerNavigation: CommandAction[] = Object.entries(
+      devSectionLabels,
+    ).map(([id, label]) => ({
+      id: `nav-dev-${id}`,
+      label: `Go to Dev ${label}`,
+      group: "Navigate",
+      icon: CommandIcon,
+      run: () =>
+        useClyStore
+          .getState()
+          .setDevSection(id as keyof typeof devSectionLabels),
+    }));
     return [
       ...navigation,
+      ...developerNavigation,
       {
         id: "project-switcher",
         label: "Switch project",
@@ -724,6 +585,8 @@ export function CommandPalette() {
         label: "New Decision",
         group: "Create",
         icon: FilePlus2,
+        disabled: !isClyTestFixtureRuntime,
+        reason: capabilityUnavailableMessage("decisions.create"),
         run: async () => {
           await projectServices.decisions.create({
             title: "Untitled decision",
@@ -742,6 +605,33 @@ export function CommandPalette() {
         run: async () => {
           await projectServices.reproducibility.runAudit();
           setScreen("reproducibility");
+        },
+      },
+      {
+        id: "claim-audit",
+        label: "Run Claim Audit",
+        group: "Research",
+        icon: Sparkles,
+        disabled: !isClyTestFixtureRuntime,
+        reason: capabilityUnavailableMessage("agents.execute"),
+        run: () => {
+          setScreen("agents");
+          notify("Claim Audit preview", "An agent session preview is ready.");
+        },
+      },
+      {
+        id: "notebooklm",
+        label: "Create NotebookLM Bundle",
+        group: "Research",
+        icon: FilePlus2,
+        disabled: !isClyTestFixtureRuntime,
+        reason: capabilityUnavailableMessage("exports.notebook-bundle"),
+        run: () => {
+          setScreen("literature");
+          notify(
+            "NotebookLM bundle ready",
+            "4 sources and a manifest are ready to preview.",
+          );
         },
       },
       {
@@ -988,7 +878,7 @@ export function LocalStatusBanner() {
       <div className="cly-muted cly-small" style={{ marginTop: 4 }}>
         {mode === "offline"
           ? "All research objects remain available locally. Cloud-connected actions explain their unavailable state."
-          : "This fixture demonstrates permission, synchronization, and partial-data states across the UI."}
+          : "This test fixture shows permission, synchronization, and partial-data states across the UI."}
       </div>
     </div>
   );

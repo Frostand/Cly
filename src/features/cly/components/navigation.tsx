@@ -1,42 +1,57 @@
 import {
   Activity,
   Archive,
+  ArrowLeft,
+  ArrowRight,
   Beaker,
   BookOpen,
   Bot,
   Boxes,
+  Braces,
   BrainCircuit,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   CircleGauge,
   ClipboardCheck,
   Code2,
+  Columns3,
   FileStack,
   GitBranch,
   GitPullRequest,
   Goal,
   HardDrive,
+  HelpCircle,
   Library,
+  Lightbulb,
   ListChecks,
+  ListTodo,
+  Monitor,
   PackageCheck,
   PanelLeftClose,
   PanelLeftOpen,
   PanelsTopLeft,
-  Plug,
-  Plus,
   ScrollText,
   Settings,
   ShieldCheck,
+  TestTube2,
+  Tickets,
   WalletCards,
 } from "lucide-react";
-import type { ComponentType } from "react";
-import { useIdeStore } from "../../../components/ide/ide-store";
-import { getDesktopApi } from "../../../lib/electron";
-import type { DevSection, ScreenId } from "../domain/types";
-import routeManifest from "../route-manifest.json";
-import { isClyTestFixtureRuntime } from "../services/runtime";
+import {
+  type ComponentType,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createOnboardingDraft } from "../domain/onboarding";
+import type { DevSection, ProductArea, ScreenId } from "../domain/types";
+import { saveOnboardingDraft } from "../services/onboarding-storage";
 import { useClyStore } from "../store/cly-store";
 import { ClyLogo, ThemeSwitcher } from "./brand";
+import { Button } from "./primitives";
+import { ClyMenu } from "./toolkit";
 
 interface NavigationItem {
   id: ScreenId;
@@ -50,10 +65,33 @@ interface NavigationItem {
 
 const researchGroups: { label: string; items: NavigationItem[] }[] = [
   {
-    label: "Workspace",
+    label: "Set up",
     items: [
-      { id: "overview", label: "Research Loop", icon: CircleGauge },
+      { id: "overview", label: "Overview", icon: CircleGauge },
+      {
+        id: "sources",
+        label: "Sources",
+        icon: Library,
+        count: (s) => s.data.sources.length,
+      },
+    ],
+  },
+  {
+    label: "Understand",
+    items: [
       { id: "objectives", label: "Objectives", icon: Goal },
+      { id: "literature", label: "Literature", icon: BookOpen },
+    ],
+  },
+  {
+    label: "Build / Run",
+    items: [
+      {
+        id: "experiments",
+        label: "Experiments",
+        icon: Beaker,
+        count: (s) => s.data.experiments.length,
+      },
       {
         id: "agents",
         label: "Agent Sessions",
@@ -63,49 +101,11 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
             (x) => x.status === "running" || x.status === "waiting_approval",
           ).length,
       },
-      {
-        id: "context",
-        label: "Context",
-        icon: BrainCircuit,
-        count: (s) => s.data.contextItems.filter((x) => x.included).length,
-      },
     ],
   },
   {
-    label: "Research",
+    label: "Review",
     items: [
-      { id: "graph", label: "Research Graph", icon: GitBranch },
-      {
-        id: "experiments",
-        label: "Experiments",
-        icon: Beaker,
-        count: (s) => s.data.experiments.length,
-      },
-      {
-        id: "costs",
-        label: "Costs",
-        icon: WalletCards,
-        count: (s) => s.costLedger.waste.entryCount,
-      },
-      {
-        id: "sources",
-        label: "Sources",
-        icon: Library,
-        count: (s) => s.data.sources.length,
-      },
-      { id: "literature", label: "Literature", icon: BookOpen },
-      ...(__CLY_INCLUDE_TEST_FIXTURES__ && isClyTestFixtureRuntime
-        ? [
-            {
-              id: "notebooks" as const,
-              label: "Notebooks",
-              icon: Code2,
-              count: (s: ReturnType<typeof useClyStore.getState>) =>
-                s.data.notebooks.length,
-            },
-            { id: "code" as const, label: "Code Linker", icon: Code2 },
-          ]
-        : []),
       {
         id: "claims",
         label: "Claims",
@@ -115,27 +115,17 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
             ["Weak", "Unsupported", "Needs review"].includes(x.status),
           ).length,
       },
-    ],
-  },
-  {
-    label: "Integrity",
-    items: [
-      {
-        id: "obligations",
-        label: "Data Obligations",
-        icon: ShieldCheck,
-        count: (s) =>
-          s.obligationAlerts.filter((alert) => alert.state === "open").length,
-      },
-      { id: "provenance", label: "Provenance", icon: FileStack },
       {
         id: "reproducibility",
         label: "Reproducibility",
         icon: ClipboardCheck,
         count: (s) => s.data.findings.filter((x) => x.status === "Open").length,
       },
-      { id: "impact-review", label: "Impact Review", icon: GitPullRequest },
-      { id: "decisions", label: "Decisions", icon: Archive },
+    ],
+  },
+  {
+    label: "Share",
+    items: [
       {
         id: "next-steps",
         label: "Next Steps",
@@ -145,20 +135,47 @@ const researchGroups: { label: string; items: NavigationItem[] }[] = [
       },
       {
         id: "reviewer-capsules",
-        label: "Reviewer Capsules",
+        label: "Reviewer Packages",
         ariaLabel: "Reviewer evidence packages",
         icon: PackageCheck,
       },
     ],
   },
+];
+
+const researchAdvancedItems: NavigationItem[] = [
   {
-    label: "System",
-    items: [
-      { id: "integrations", label: "Integrations", icon: Boxes },
-      { id: "models", label: "Models & Agents", icon: Activity },
-      { id: "settings", label: "Settings", icon: Settings },
-    ],
+    id: "context",
+    label: "Context",
+    icon: BrainCircuit,
+    count: (s) => s.data.contextItems.filter((x) => x.included).length,
   },
+  { id: "graph", label: "Research Graph", icon: GitBranch },
+  {
+    id: "notebooks",
+    label: "Notebooks",
+    icon: Braces,
+    count: (s) => s.data.notebooks.length,
+  },
+  { id: "code", label: "Code Linker", icon: Code2 },
+  {
+    id: "costs",
+    label: "Costs",
+    icon: WalletCards,
+    count: (s) => s.costLedger.waste.entryCount,
+  },
+  {
+    id: "obligations",
+    label: "Data Obligations",
+    icon: ShieldCheck,
+    count: (s) =>
+      s.obligationAlerts.filter((alert) => alert.state === "open").length,
+  },
+  { id: "provenance", label: "Provenance", icon: FileStack },
+  { id: "impact-review", label: "Impact Review", icon: GitPullRequest },
+  { id: "decisions", label: "Decisions", icon: Archive },
+  { id: "integrations", label: "Integrations", icon: Boxes },
+  { id: "models", label: "Models & Agents", icon: Activity },
 ];
 
 interface DevNavigationItem {
@@ -172,21 +189,282 @@ interface DevNavigationItem {
 
 const devGroups: { label: string; items: DevNavigationItem[] }[] = [
   {
-    label: "Workspace",
-    items: [{ id: "projects", label: "AI Workspace", icon: PanelsTopLeft }],
+    label: "Set up",
+    items: [
+      { id: "projects", label: "Projects", icon: PanelsTopLeft },
+      { id: "repositories", label: "Repositories", icon: GitBranch },
+    ],
   },
   {
-    label: "Configure",
+    label: "Understand",
     items: [
-      { id: "agents", label: "AI Providers", icon: Plug },
-      { id: "settings", label: "Workspace Settings", icon: Settings },
+      { id: "features", label: "Features", icon: ListTodo },
+      { id: "issues", label: "Issues", icon: Tickets },
+    ],
+  },
+  {
+    label: "Build / Run",
+    items: [
+      {
+        id: "board",
+        label: "Board",
+        icon: Columns3,
+        count: (s) =>
+          s.data.agentSessions.filter((session) => !session.archived).length ||
+          s.clyDevSessions.length,
+      },
+      {
+        id: "sessions",
+        label: "Sessions",
+        icon: Bot,
+        count: (s) =>
+          s.data.agentSessions.filter((session) =>
+            ["running", "waiting_approval"].includes(session.status),
+          ).length,
+      },
+    ],
+  },
+  {
+    label: "Review",
+    items: [
+      { id: "pull-requests", label: "Pull Requests", icon: GitPullRequest },
+      { id: "tests", label: "Tests", icon: TestTube2 },
+    ],
+  },
+  {
+    label: "Share",
+    items: [
+      {
+        id: "context",
+        label: "Context",
+        icon: BrainCircuit,
+        count: (s) =>
+          s.data.contextItems.filter((item) => item.included).length,
+      },
     ],
   },
 ];
 
-export const screenLabels = Object.fromEntries(
-  routeManifest.map((route) => [route.id, route.label]),
-) as Record<ScreenId, string>;
+const devAdvancedItems: DevNavigationItem[] = [
+  { id: "agents", label: "Agents", icon: Activity },
+  { id: "machines", label: "Machines", icon: Monitor },
+];
+
+export const screenLabels = Object.fromEntries([
+  ...researchGroups.flatMap((group) =>
+    group.items.map((item) => [item.id, item.label]),
+  ),
+  ...researchAdvancedItems.map((item) => [item.id, item.label]),
+  ["help", "Setup & Help"],
+  ["settings", "Settings"],
+  ["dev", "Cly Dev"],
+]) as Record<ScreenId, string>;
+
+export const devSectionLabels: Record<DevSection, string> = Object.fromEntries(
+  [...devGroups.flatMap((group) => group.items), ...devAdvancedItems].map(
+    (item) => [item.id, item.label],
+  ),
+) as Record<DevSection, string>;
+
+interface NavigationLocation {
+  product: ProductArea;
+  screen: ScreenId;
+  devSection: DevSection;
+  label: string;
+}
+
+const navigationHistoryKey = "cly:navigation-history";
+
+function readNavigationHistory(): NavigationLocation[] {
+  try {
+    return JSON.parse(
+      window.sessionStorage.getItem(navigationHistoryKey) ?? "[]",
+    ) as NavigationLocation[];
+  } catch {
+    return [];
+  }
+}
+
+function locationKey(location: NavigationLocation) {
+  return location.product === "dev"
+    ? `dev:${location.devSection}`
+    : `research:${location.screen}`;
+}
+
+const researchNext: Partial<Record<ScreenId, [ScreenId, string]>> = {
+  objectives: ["sources", "Add evidence"],
+  sources: ["claims", "Draft a claim"],
+  literature: ["claims", "Connect a claim"],
+  notebooks: ["code", "Link code"],
+  code: ["experiments", "Record a run"],
+  experiments: ["reproducibility", "Review evidence"],
+  agents: ["claims", "Review claims"],
+  claims: ["reproducibility", "Run audit"],
+  reproducibility: ["reviewer-capsules", "Build package"],
+  "next-steps": ["overview", "Return to overview"],
+  "reviewer-capsules": ["overview", "Return to overview"],
+};
+
+function setupNextAction(
+  data: ReturnType<typeof useClyStore.getState>["data"],
+): [ScreenId, string] {
+  if (!data.sources.length) return ["sources", "Add a source"];
+  if (!data.claims.length) return ["claims", "Draft a claim"];
+  if (!data.experiments.length || !data.runs.length)
+    return ["experiments", "Open experiments"];
+  if (
+    !data.audits.length ||
+    data.findings.some((finding) => finding.status === "Open")
+  )
+    return ["reproducibility", "Open audit"];
+  return ["reviewer-capsules", "Build package"];
+}
+
+const devNext: Record<DevSection, [DevSection, string]> = {
+  projects: ["repositories", "Open repositories"],
+  repositories: ["features", "Review features"],
+  features: ["issues", "Open issues"],
+  issues: ["board", "Open board"],
+  board: ["sessions", "Open sessions"],
+  sessions: ["pull-requests", "Review changes"],
+  agents: ["board", "Open board"],
+  machines: ["sessions", "Open sessions"],
+  "pull-requests": ["tests", "Review tests"],
+  tests: ["context", "Prepare context"],
+  context: ["projects", "Return to projects"],
+  settings: ["projects", "Return to projects"],
+};
+
+export function WorkspaceNavigationBar() {
+  const activeProduct = useClyStore((state) => state.activeProduct);
+  const activeScreen = useClyStore((state) => state.activeScreen);
+  const activeDevSection = useClyStore((state) => state.activeDevSection);
+  const project = useClyStore(
+    (state) =>
+      state.data.projects.find((item) => item.id === state.activeProjectId) ??
+      state.data.projects[0],
+  );
+  const setScreen = useClyStore((state) => state.setScreen);
+  const setDevSection = useClyStore((state) => state.setDevSection);
+  const setProjectSwitcherOpen = useClyStore(
+    (state) => state.setProjectSwitcherOpen,
+  );
+  const data = useClyStore((state) => state.data);
+  const setupAction = setupNextAction(data);
+  const [history, setHistory] = useState<NavigationLocation[]>(
+    readNavigationHistory,
+  );
+  const suppressNextRecord = useRef(false);
+  const current = useMemo<NavigationLocation>(
+    () => ({
+      product: activeProduct,
+      screen: activeScreen,
+      devSection: activeDevSection,
+      label:
+        activeProduct === "dev"
+          ? devSectionLabels[activeDevSection]
+          : screenLabels[activeScreen],
+    }),
+    [activeDevSection, activeProduct, activeScreen],
+  );
+
+  useEffect(() => {
+    if (suppressNextRecord.current) {
+      suppressNextRecord.current = false;
+      return;
+    }
+    setHistory((existing) => {
+      if (locationKey(existing.at(-1) ?? current) === locationKey(current))
+        return existing.length ? existing : [current];
+      const next = [...existing, current].slice(-12);
+      window.sessionStorage.setItem(navigationHistoryKey, JSON.stringify(next));
+      return next;
+    });
+  }, [current]);
+
+  const navigate = (location: NavigationLocation) => {
+    if (location.product === "dev") setDevSection(location.devSection);
+    else setScreen(location.screen);
+  };
+  const goBack = () => {
+    if (history.length < 2) return;
+    const target = history.at(-2);
+    if (!target) return;
+    const nextHistory = history.slice(0, -1);
+    suppressNextRecord.current = true;
+    setHistory(nextHistory);
+    window.sessionStorage.setItem(
+      navigationHistoryKey,
+      JSON.stringify(nextHistory),
+    );
+    navigate(target);
+  };
+  const recent = [...history]
+    .reverse()
+    .filter(
+      (item, index, all) =>
+        locationKey(item) !== locationKey(current) &&
+        all.findIndex(
+          (candidate) => locationKey(candidate) === locationKey(item),
+        ) === index,
+    )
+    .slice(0, 5);
+  const researchAction =
+    activeScreen === "overview" || activeScreen === "help"
+      ? setupAction
+      : researchNext[activeScreen];
+  const nextAction =
+    activeProduct === "dev" ? devNext[activeDevSection] : researchAction;
+
+  return (
+    <div className="cly-navigation-bar">
+      <Button
+        variant="ghost"
+        iconOnly
+        aria-label="Go back"
+        disabled={history.length < 2}
+        onClick={goBack}
+      >
+        <ArrowLeft size={14} />
+      </Button>
+      <nav className="cly-breadcrumbs" aria-label="Breadcrumb">
+        <button type="button" onClick={() => setProjectSwitcherOpen(true)}>
+          {project?.name ?? "Project"}
+        </button>
+        <ChevronRight aria-hidden="true" />
+        <span>{activeProduct === "dev" ? "Dev" : "Research"}</span>
+        <ChevronRight aria-hidden="true" />
+        <strong aria-current="page">{current.label}</strong>
+      </nav>
+      <ClyMenu
+        label="Recent destinations"
+        trigger={
+          <Button variant="ghost" disabled={!recent.length}>
+            Recent <ChevronDown size={13} />
+          </Button>
+        }
+        items={recent.map((item) => ({
+          id: locationKey(item),
+          label: item.label,
+          onSelect: () => navigate(item),
+        }))}
+      />
+      {nextAction ? (
+        <Button
+          className="cly-next-action"
+          onClick={() => {
+            if (activeProduct === "dev")
+              setDevSection(nextAction[0] as DevSection);
+            else setScreen(nextAction[0] as ScreenId);
+          }}
+        >
+          <span>{nextAction[1]}</span>
+          <ArrowRight size={13} aria-hidden="true" />
+        </Button>
+      ) : null}
+    </div>
+  );
+}
 
 export function Sidebar() {
   const activeScreen = useClyStore((s) => s.activeScreen);
@@ -198,36 +476,24 @@ export function Sidebar() {
   const setDevSection = useClyStore((s) => s.setDevSection);
   const toggleSidebar = useClyStore((s) => s.toggleSidebar);
   const state = useClyStore();
-  const openDevDestination = (section: DevSection) => {
-    setDevSection(section);
-    const ide = useIdeStore.getState();
-    if (section === "agents") {
-      ide.setSettingsSection("providers");
-      ide.setSettingsOpen(true);
-    } else if (section === "settings") {
-      ide.setSettingsSection("appearance");
-      ide.setSettingsOpen(true);
-    } else {
-      ide.setSettingsOpen(false);
-    }
-  };
 
   return (
     <aside className="cly-sidebar" aria-label="Main navigation">
       <div className="cly-sidebar-brand">
         <ClyLogo compact={sidebarCollapsed} />
       </div>
-      <fieldset className="cly-product-switcher">
-        <legend className="cly-sr-only">Cly product area</legend>
+      <div
+        className="cly-product-switcher"
+        role="tablist"
+        aria-label="Cly application"
+      >
         <button
           type="button"
-          aria-pressed={activeProduct === "research"}
+          role="tab"
+          aria-selected={activeProduct === "research"}
           aria-label="Cly Research"
           title={sidebarCollapsed ? "Cly Research" : undefined}
-          onClick={() => {
-            useIdeStore.getState().setSettingsOpen(false);
-            setProductArea("research");
-          }}
+          onClick={() => setProductArea("research")}
           data-testid="product-research"
         >
           <Library size={14} />
@@ -235,7 +501,8 @@ export function Sidebar() {
         </button>
         <button
           type="button"
-          aria-pressed={activeProduct === "dev"}
+          role="tab"
+          aria-selected={activeProduct === "dev"}
           aria-label="Cly Dev"
           title={sidebarCollapsed ? "Cly Dev" : undefined}
           onClick={() => setProductArea("dev")}
@@ -244,10 +511,11 @@ export function Sidebar() {
           <Code2 size={14} />
           <span>Dev</span>
         </button>
-      </fieldset>
+      </div>
       <div className="cly-sidebar-scroll">
-        {activeProduct === "research"
-          ? researchGroups.map((group) => (
+        {activeProduct === "research" ? (
+          <>
+            {researchGroups.map((group) => (
               <nav
                 className="cly-sidebar-group"
                 key={group.label}
@@ -285,8 +553,52 @@ export function Sidebar() {
                   );
                 })}
               </nav>
-            ))
-          : devGroups.map((group) => (
+            ))}
+            <details
+              className="cly-sidebar-advanced"
+              open={researchAdvancedItems.some(
+                (item) => item.id === activeScreen,
+              )}
+            >
+              <summary title="Advanced research destinations">
+                <Boxes size={15} aria-hidden="true" />
+                <span>Advanced</span>
+                <ChevronDown size={13} aria-hidden="true" />
+              </summary>
+              <nav aria-label="Advanced research">
+                {researchAdvancedItems.map((item) => {
+                  const Icon = item.icon;
+                  const count = item.count?.(state);
+                  return (
+                    <button
+                      type="button"
+                      className="cly-sidebar-item"
+                      aria-current={
+                        activeScreen === item.id ? "page" : undefined
+                      }
+                      aria-label={item.ariaLabel ?? item.label}
+                      onClick={() => setScreen(item.id)}
+                      key={item.id}
+                      data-testid={`nav-${item.id}`}
+                    >
+                      <Icon size={15} />
+                      <span className="cly-sidebar-item-label">
+                        {item.label}
+                      </span>
+                      {count ? (
+                        <span className="cly-nav-count">
+                          {count > 999 ? "999+" : count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </nav>
+            </details>
+          </>
+        ) : (
+          <>
+            {devGroups.map((group) => (
               <nav
                 className="cly-sidebar-group"
                 key={group.label}
@@ -308,7 +620,7 @@ export function Sidebar() {
                       aria-current={active ? "page" : undefined}
                       aria-label={item.label}
                       title={sidebarCollapsed ? item.label : undefined}
-                      onClick={() => openDevDestination(item.id)}
+                      onClick={() => setDevSection(item.id)}
                       key={item.id}
                       data-testid={`nav-dev-${item.id}`}
                     >
@@ -326,8 +638,71 @@ export function Sidebar() {
                 })}
               </nav>
             ))}
+            <details
+              className="cly-sidebar-advanced"
+              open={devAdvancedItems.some(
+                (item) =>
+                  activeScreen === "dev" && item.id === activeDevSection,
+              )}
+            >
+              <summary title="Advanced developer destinations">
+                <Boxes size={15} aria-hidden="true" />
+                <span>Advanced</span>
+                <ChevronDown size={13} aria-hidden="true" />
+              </summary>
+              <nav aria-label="Advanced developer tools">
+                {devAdvancedItems.map((item) => {
+                  const Icon = item.icon;
+                  const active =
+                    activeScreen === "dev" && activeDevSection === item.id;
+                  return (
+                    <button
+                      type="button"
+                      className="cly-sidebar-item"
+                      aria-current={active ? "page" : undefined}
+                      aria-label={item.label}
+                      onClick={() => setDevSection(item.id)}
+                      key={item.id}
+                      data-testid={`nav-dev-${item.id}`}
+                    >
+                      <Icon size={15} />
+                      <span className="cly-sidebar-item-label">
+                        {item.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </details>
+          </>
+        )}
       </div>
       <div className="cly-sidebar-footer">
+        <button
+          className="cly-sidebar-item"
+          type="button"
+          aria-current={activeScreen === "help" ? "page" : undefined}
+          aria-label="Setup and help"
+          title={sidebarCollapsed ? "Setup and help" : undefined}
+          onClick={() => setScreen("help")}
+          data-testid="nav-help"
+        >
+          <HelpCircle size={15} />
+          <span className="cly-sidebar-item-label">Setup & Help</span>
+        </button>
+        <button
+          className="cly-sidebar-item"
+          type="button"
+          aria-current={activeScreen === "settings" ? "page" : undefined}
+          aria-label="Settings"
+          title={sidebarCollapsed ? "Settings" : undefined}
+          onClick={() => setScreen("settings")}
+          data-testid="nav-settings"
+        >
+          <Settings size={15} />
+          <span className="cly-sidebar-item-label">Settings</span>
+          {!sidebarCollapsed ? <span className="cly-kbd">⌘,</span> : null}
+        </button>
         <ThemeSwitcher compact={sidebarCollapsed} />
         {activeProduct === "dev" ? (
           <button
@@ -336,15 +711,13 @@ export function Sidebar() {
             onClick={() =>
               useClyStore
                 .getState()
-                .notify(
-                  "Local workspace",
-                  "Folder access stays unavailable until you choose a local project directory.",
-                )
+                .notify("Execution machine", "Local Mac · connected · private")
             }
-            aria-label="Local workspace status"
+            aria-label="Local execution machine"
           >
             <HardDrive size={15} />
-            <span className="cly-sidebar-item-label">This device</span>
+            <span className="cly-sidebar-item-label">Local machine</span>
+            {!sidebarCollapsed ? <span className="cly-device-dot" /> : null}
           </button>
         ) : null}
         <button
@@ -403,7 +776,6 @@ export function ProjectSwitcherPopover() {
   const activeProjectId = useClyStore((s) => s.activeProjectId);
   const setProject = useClyStore((s) => s.setActiveProject);
   const setOpen = useClyStore((s) => s.setProjectSwitcherOpen);
-  const createProject = useClyStore((s) => s.createResearchProject);
   if (!open) return null;
   return (
     <>
@@ -446,44 +818,17 @@ export function ProjectSwitcherPopover() {
         <button
           className="cly-popover-item"
           type="button"
-          data-testid="new-local-project"
           onClick={() => {
-            const desktopApi = getDesktopApi();
-            if (!desktopApi) {
-              useClyStore
-                .getState()
-                .notify(
-                  "Desktop app required",
-                  "Open Cly in the desktop app to select a local project folder.",
-                );
-              return;
-            }
-            void desktopApi
-              .pickProjectDirectory()
-              .then((selectedPath) => {
-                if (!selectedPath) return null;
-                return createProject(selectedPath);
-              })
-              .then((project) => {
-                if (!project) return;
-                useClyStore
-                  .getState()
-                  .notify(
-                    "Local project opened",
-                    "Define the research question and hypothesis to begin.",
-                  );
-              })
-              .catch((error) => {
-                useClyStore
-                  .getState()
-                  .notify(
-                    "Project was not created",
-                    error instanceof Error ? error.message : "Try again.",
-                  );
-              });
+            setOpen(false);
+            void saveOnboardingDraft({
+              ...createOnboardingDraft(),
+              currentStep: "project",
+            }).then(() => {
+              useClyStore.getState().setOnboardingRequested("new");
+            });
           }}
         >
-          <Plus size={15} /> New local project
+          <Lightbulb size={15} /> Open another project…
         </button>
       </div>
     </>

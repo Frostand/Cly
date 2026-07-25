@@ -1,4 +1,5 @@
 import "./load-env.js";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -14,35 +15,42 @@ import {
   shell,
 } from "electron";
 import getPort from "get-port";
-
+import { createProjectAuthorityResolver } from "./api/project-git/authority.js";
+import { resolveRegisteredProjectWorktree } from "./api/project-git/worktree-authority.js";
 import {
   configureApplicationMenu,
   toggleWebContentsDevToolsDetached,
 } from "./app-menu.js";
+import { createBrowserSessionManager } from "./browser-sessions.js";
 import {
-  createBrowserSessionManager,
-  isAllowedBrowserGuestNavigation,
-} from "./browser-sessions.js";
-import {
-  authorizeClyDevSession,
   clampWindowBounds,
   createClyDevWorkspaceCore,
 } from "./cly-dev-windows.js";
 import { detectAvailableEditors, openProjectInEditor } from "./editors.js";
 import {
   closePersistedStateDatabase,
-  ensurePersistedInstallId,
   loadClyDevWindowLayout,
+  loadOnboardingDraft,
   loadPersistedState,
   loadPersistedThemePreference,
   saveClyDevWindowLayout,
+  saveOnboardingDraft,
   savePersistedState,
   savePersistedThemePreference,
 } from "./persisted-state.js";
+import {
+  getBoundRendererId,
+  getHostCommandApprovalOptions,
+  getPrivilegedRendererId,
+  getProviderHostActionApprovalOptions,
+  getTerminalLaunchApprovalOptions,
+  isTerminalSessionOwner,
+  resolveTerminalLaunch,
+} from "./privileged-ipc.js";
 import { createProcessSessionManager } from "./process-sessions.js";
-import { launchProviderLogin } from "./provider-login.js";
+import { projectAuthorityRegistry } from "./project-authority-registry.js";
+import { canBypassNativeCommandConfirmationForReleaseSmoke } from "./release-provider-smoke.js";
 import { createRendererServerManager } from "./renderer-server.js";
-import { createStartupController } from "./startup-controller.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
 import { initializeAutoUpdater } from "./updater.js";
 
@@ -56,9 +64,9 @@ const appIconPath = app.isPackaged
 const isDevelopment = process.env.NODE_ENV === "development";
 
 // Diagnostic only: opt-in via env var to test whether software rendering is
-// caused by Chromium's GPU blocklist (do NOT enable in production builds —
-// blocklist entries exist because the matched configs crash or misrender).
-if (process.env.DREAM_IGNORE_GPU_BLOCKLIST === "1") {
+// caused by Chromium's GPU blocklist. Only allowed in development builds —
+// blocklist entries exist because the matched configs crash or misrender.
+if (!app.isPackaged && process.env.DREAM_IGNORE_GPU_BLOCKLIST === "1") {
   app.commandLine.appendSwitch("ignore-gpu-blocklist");
   console.warn(
     "[gpu] --ignore-gpu-blocklist enabled via DREAM_IGNORE_GPU_BLOCKLIST (diagnostic mode)",
@@ -106,22 +114,16 @@ app.setName(APP_NAME);
 if (process.platform === "win32") {
   app.setAppUserModelId(APP_ID);
 }
-mkdirSync(APP_USER_DATA_PATH, { recursive: true });
-mkdirSync(APP_SESSION_DATA_PATH, { recursive: true });
 app.setPath("userData", APP_USER_DATA_PATH);
 // Keep Chromium caches per process so parallel launches do not lock user data.
 app.setPath("sessionData", APP_SESSION_DATA_PATH);
 
 let mainWindow = null;
-let startupWindow = null;
 let workspaceWindow = null;
 let workspaceWindowSessionId = null;
 const workspaceWindowsClosingForReattach = new WeakSet();
 let appIsQuitting = false;
 let updateManager = null;
-let installId = null;
-let startupController = null;
-let startupDiagnostic = null;
 const windowBindings = new Map();
 const clyDevWorkspaceCore = createClyDevWorkspaceCore();
 
@@ -139,7 +141,8 @@ function loadThemePreference() {
       theme: normalizeThemePreference(parsed?.theme),
       baseColor: parsed?.baseColor ?? DEFAULT_THEME_PREFERENCES.baseColor,
     };
-  } catch {
+  } catch (error) {
+    console.error("Failed to load theme preference:", error);
     return DEFAULT_THEME_PREFERENCES;
   }
 }
@@ -187,6 +190,12 @@ function applyWindowThemeBackground(theme, baseColor) {
   }
 }
 
+function getApiSessionTokenPreloadArgument() {
+  const token = rendererServerManager?.getApiSessionToken();
+  if (!token) return "";
+  return `--dream-api-session-token=${encodeURIComponent(token)}`;
+}
+
 function getThemePreferencePreloadArgument() {
   return `--dream-theme-preferences=${encodeURIComponent(
     JSON.stringify(loadThemePreference()),
@@ -201,14 +210,122 @@ function sendToRenderer(channel, payload) {
   mainWindow.webContents.send(channel, payload);
 }
 
+const terminalSessionOwners = new Map();
+const pendingTerminalApprovalSenders = new Set();
+const pendingTerminalSessionIds = new Set();
+
 const browserSessionManager = createBrowserSessionManager({
   getMainWindow: () => mainWindow,
   sendToRenderer,
 });
 
 const processSessionManager = createProcessSessionManager({
-  sendToRenderer,
+  sendToRenderer: (channel, payload) => {
+    if (
+      channel === "terminal:status" &&
+      payload?.status === "stopped" &&
+      typeof payload.projectId === "string"
+    ) {
+      terminalSessionOwners.delete(payload.projectId);
+    }
+    sendToRenderer(channel, payload);
+  },
 });
+const resolveEditorProjectPath = createProjectAuthorityResolver({
+  resolveAlternateProjectPath: resolveRegisteredProjectWorktree,
+  resolveProjectPathById: projectAuthorityRegistry.resolveProjectPathById,
+});
+
+let hostActionConfirmationPending = false;
+
+async function confirmHostAction({ getApprovalOptions, projectId, root }) {
+  if (hostActionConfirmationPending) return false;
+  const owner = mainWindow;
+  if (!owner || owner.isDestroyed()) return false;
+
+  let authorizedRoot;
+  try {
+    authorizedRoot = await resolveEditorProjectPath({
+      projectId,
+      projectPath: root,
+    });
+  } catch {
+    return false;
+  }
+  if (path.resolve(authorizedRoot) !== path.resolve(root)) return false;
+
+  hostActionConfirmationPending = true;
+  try {
+    const approval = await dialog.showMessageBox(
+      owner,
+      getApprovalOptions(authorizedRoot),
+    );
+    if (
+      approval.response !== 1 ||
+      owner.isDestroyed() ||
+      mainWindow !== owner
+    ) {
+      return false;
+    }
+    const currentRoot = await resolveEditorProjectPath({
+      projectId,
+      projectPath: root,
+    });
+    return path.resolve(currentRoot) === path.resolve(authorizedRoot);
+  } catch {
+    return false;
+  } finally {
+    hostActionConfirmationPending = false;
+  }
+}
+
+const authorizeClyDevCommand = async ({ command, projectId, root }) => {
+  if (
+    canBypassNativeCommandConfirmationForReleaseSmoke({
+      isPackaged: app.isPackaged,
+    })
+  ) {
+    // The test bypasses only the native modal. Preserve the same main-process
+    // project authority check before allowing its deterministic command.
+    try {
+      const authorizedRoot = await resolveEditorProjectPath({
+        projectId,
+        projectPath: root,
+      });
+      return path.resolve(authorizedRoot) === path.resolve(root);
+    } catch {
+      return false;
+    }
+  }
+  return confirmHostAction({
+    projectId,
+    root,
+    getApprovalOptions: (authorizedRoot) =>
+      getHostCommandApprovalOptions({ command, root: authorizedRoot }),
+  });
+};
+
+const authorizeProviderHostAction = ({ action, projectId, provider, root }) => {
+  if (!new Set(["cursor", "opencode"]).has(provider)) return false;
+  return confirmHostAction({
+    projectId,
+    root,
+    getApprovalOptions: (authorizedRoot) =>
+      getProviderHostActionApprovalOptions({
+        action,
+        provider,
+        root: authorizedRoot,
+      }),
+  });
+};
+
+function stopTerminalSessionsForOwner(senderId) {
+  for (const [sessionId, ownerId] of terminalSessionOwners) {
+    if (ownerId !== senderId) continue;
+    processSessionManager.stopTerminalSession(sessionId);
+    terminalSessionOwners.delete(sessionId);
+  }
+}
 
 let rendererServerManager = null;
 
@@ -232,7 +349,7 @@ function isDevToolsShortcut(input) {
 function configureDetachedDevToolsShortcuts() {
   app.on("web-contents-created", (_event, contents) => {
     contents.on("before-input-event", (event, input) => {
-      if (!windowBindings.has(contents.id) || !isDevToolsShortcut(input)) {
+      if (!isDevToolsShortcut(input)) {
         return;
       }
 
@@ -240,48 +357,6 @@ function configureDetachedDevToolsShortcuts() {
       toggleWebContentsDevToolsDetached(contents);
     });
   });
-}
-
-function publishStartupState(payload) {
-  if (!startupWindow || startupWindow.isDestroyed()) return;
-  startupWindow.webContents.send("startup:state", payload);
-}
-
-async function createStartupWindow() {
-  if (startupWindow && !startupWindow.isDestroyed()) return startupWindow;
-  startupWindow = new BrowserWindow({
-    backgroundColor: "#09090b",
-    center: true,
-    frame: false,
-    height: 430,
-    icon:
-      process.platform === "darwin" || !existsSync(appIconPath)
-        ? undefined
-        : appIconPath,
-    maximizable: false,
-    minimizable: false,
-    resizable: false,
-    show: false,
-    title: `Starting ${APP_NAME}`,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: path.join(__dirname, "startup-preload.cjs"),
-      sandbox: true,
-    },
-    width: 520,
-  });
-  startupWindow.once("ready-to-show", () => startupWindow?.show());
-  startupWindow.on("closed", () => {
-    startupWindow = null;
-  });
-  await startupWindow.loadFile(path.join(__dirname, "startup-splash.html"));
-  publishStartupState({
-    message: "Preparing your local research workspace…",
-    stage: "initializing",
-    status: "starting",
-  });
-  return startupWindow;
 }
 
 async function createStartupRendererServerManager() {
@@ -327,6 +402,8 @@ async function createStartupRendererServerManager() {
     rendererProbeIntervalMs,
     rendererStartupTimeoutMs,
     rendererUrlFromEnv,
+    authorizeClyDevCommand,
+    authorizeProviderHostAction,
   });
 }
 
@@ -374,12 +451,26 @@ async function configureRendererProxy(webContents) {
   }
 }
 
-async function pickDirectory() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
+async function pickDirectory(event) {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (senderId === null || !owner || owner.isDestroyed()) {
     return null;
   }
 
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const e2eProjectPath =
+    process.env.CLY_E2E === "1" ? process.env.CLY_E2E_PROJECT_PATH?.trim() : "";
+  if (e2eProjectPath) {
+    return projectAuthorityRegistry.authorizePathForRegistration(
+      path.resolve(e2eProjectPath),
+    );
+  }
+
+  const result = await dialog.showOpenDialog(owner, {
     properties: ["openDirectory"],
     title: "Select project folder",
   });
@@ -388,7 +479,10 @@ async function pickDirectory() {
     return null;
   }
 
-  return result.filePaths[0] ?? null;
+  const selectedPath = result.filePaths[0];
+  return selectedPath
+    ? projectAuthorityRegistry.authorizePathForRegistration(selectedPath)
+    : null;
 }
 
 async function createMainWindow() {
@@ -409,7 +503,10 @@ async function createMainWindow() {
       process.platform === "darwin" ? { x: 14, y: 14 } : undefined,
     webPreferences: {
       contextIsolation: true,
-      additionalArguments: [getThemePreferencePreloadArgument()],
+      additionalArguments: [
+        getThemePreferencePreloadArgument(),
+        getApiSessionTokenPreloadArgument(),
+      ],
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,
@@ -425,7 +522,7 @@ async function createMainWindow() {
   });
 
   mainWindow.once("ready-to-show", () => {
-    if (!startupWindow || startupWindow.isDestroyed()) mainWindow.show();
+    mainWindow.show();
   });
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
@@ -441,11 +538,7 @@ async function createMainWindow() {
 
   mainWindow.webContents.on(
     "will-attach-webview",
-    (event, webPreferences, params) => {
-      if (!params.src || !isAllowedBrowserGuestNavigation(params.src)) {
-        event.preventDefault();
-        return;
-      }
+    (_event, webPreferences, params) => {
       delete webPreferences.preload;
       webPreferences.nodeIntegration = false;
       webPreferences.contextIsolation = true;
@@ -453,9 +546,6 @@ async function createMainWindow() {
       params.allowpopups = false;
     },
   );
-  mainWindow.webContents.on("did-attach-webview", (_event, guest) => {
-    browserSessionManager.registerGuest(mainWindowWebContentsId, guest);
-  });
 
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (isRendererNavigation(url)) {
@@ -481,8 +571,12 @@ async function createMainWindow() {
     },
   );
 
-  mainWindow.webContents.on("render-process-gone", () => {
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
     browserSessionManager.hideForRendererNavigation();
+    stopTerminalSessionsForOwner(mainWindowWebContentsId);
+    if (details.reason === "crashed" || details.reason === "oom") {
+      windowBindings.delete(mainWindowWebContentsId);
+    }
   });
 
   // Throttle embedded-view layout during interactive resize. Windows fires
@@ -509,6 +603,10 @@ async function createMainWindow() {
   });
 
   mainWindow.on("closed", () => {
+    if (resizeFrame !== null) {
+      clearTimeout(resizeFrame);
+      resizeFrame = null;
+    }
     browserSessionManager.reset();
     windowBindings.delete(mainWindowWebContentsId);
     mainWindow = null;
@@ -516,7 +614,9 @@ async function createMainWindow() {
 
   await configureRendererProxy(mainWindow.webContents);
 
-  await mainWindow.loadURL(rendererServerManager.getUrl());
+  mainWindow.loadURL(rendererServerManager.getUrl()).catch((error) => {
+    console.error("Failed to load renderer:", error);
+  });
 }
 
 function saveWorkspaceWindowLayoutFor(
@@ -555,7 +655,11 @@ function broadcastWorkspaceSnapshot(snapshot) {
       binding?.role === "agent" ||
       binding?.sessionId === snapshot.sessionId
     ) {
-      window.webContents.send("cly-dev:workspace-snapshot", snapshot);
+      try {
+        window.webContents.send("cly-dev:workspace-snapshot", snapshot);
+      } catch {
+        // Window may have been destroyed between the check and send
+      }
     }
   }
 }
@@ -603,7 +707,10 @@ async function createWorkspaceWindow(sessionId) {
       process.platform === "darwin" ? { x: 14, y: 14 } : undefined,
     webPreferences: {
       contextIsolation: true,
-      additionalArguments: [getThemePreferencePreloadArgument()],
+      additionalArguments: [
+        getThemePreferencePreloadArgument(),
+        getApiSessionTokenPreloadArgument(),
+      ],
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,
@@ -680,8 +787,34 @@ async function createWorkspaceWindow(sessionId) {
 }
 
 ipcMain.handle("projects:pick-directory", pickDirectory);
-ipcMain.handle("state:load", () => loadPersistedState());
+ipcMain.handle("state:load", (event) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null) throw new Error("State access is not allowed.");
+  return loadPersistedState();
+});
+ipcMain.handle("onboarding-draft:load", (event, { projectId } = {}) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null)
+    throw new Error("Onboarding state access is not allowed.");
+  return loadOnboardingDraft(projectId ?? null);
+});
 ipcMain.on("api:get-session-token", (event) => {
+  const senderId = getBoundRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    windowBindings,
+  });
+  if (senderId === null) {
+    event.returnValue = "";
+    return;
+  }
   const apiSessionToken = rendererServerManager?.getApiSessionToken();
   if (!apiSessionToken) {
     console.error(
@@ -701,107 +834,99 @@ const getStateSaveQueue = () =>
   (stateSaveQueue ??= createStateSaveQueue({
     saveState: savePersistedState,
   }));
+const onboardingDraftSaveQueues = new Map();
+const getOnboardingDraftSaveQueue = (projectId) => {
+  const key = typeof projectId === "string" ? projectId : "new-project";
+  let queue = onboardingDraftSaveQueues.get(key);
+  if (!queue) {
+    queue = createStateSaveQueue({ saveState: saveOnboardingDraft });
+    onboardingDraftSaveQueues.set(key, queue);
+  }
+  return queue;
+};
 
-ipcMain.handle("state:save", (_event, state) =>
-  getStateSaveQueue().save(state),
-);
+ipcMain.handle("state:save", (event, state) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null) throw new Error("State writes are not allowed.");
+  projectAuthorityRegistry.validateState(state);
+  return getStateSaveQueue().save(state);
+});
+
+ipcMain.handle("onboarding-draft:save", (event, draft) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null)
+    throw new Error("Onboarding state writes are not allowed.");
+  return getOnboardingDraftSaveQueue(draft?.projectId).save(draft);
+});
 
 ipcMain.handle("cly-dev:get-window-role", (event) => {
-  return windowBindings.get(event.sender.id)?.role ?? null;
+  return windowBindings.get(event.sender.id)?.role ?? "agent";
 });
 ipcMain.handle("cly-dev:get-session-id", (event) => {
   return windowBindings.get(event.sender.id)?.sessionId ?? null;
 });
-ipcMain.handle(
-  "cly-dev:get-workspace-snapshot",
-  (event, { sessionId } = {}) => {
-    const ownedSessionId = authorizeClyDevSession(
-      windowBindings.get(event.sender.id),
-      sessionId,
-    );
-    if (!ownedSessionId) throw new Error("Workspace session access denied.");
-    return clyDevWorkspaceCore.getSnapshot(ownedSessionId);
-  },
+ipcMain.handle("cly-dev:get-workspace-snapshot", (_event, { sessionId } = {}) =>
+  clyDevWorkspaceCore.getSnapshot(sessionId),
 );
 ipcMain.handle("cly-dev:dispatch-workspace-intent", (event, intent) => {
-  const binding = windowBindings.get(event.sender.id);
-  const ownedSessionId = authorizeClyDevSession(binding, intent?.sessionId);
-  if (!ownedSessionId) throw new Error("Workspace session access denied.");
-  return clyDevWorkspaceCore.dispatchIntent(binding.role, {
-    ...intent,
-    sessionId: ownedSessionId,
-  });
+  const role = windowBindings.get(event.sender.id)?.role ?? "agent";
+  return clyDevWorkspaceCore.dispatchIntent(role, intent);
 });
 ipcMain.handle(
   "cly-dev:detach-workspace",
-  async (event, { sessionId } = {}) => {
-    const ownedSessionId = authorizeClyDevSession(
-      windowBindings.get(event.sender.id),
-      sessionId,
-      { agentOnly: true },
-    );
-    const current = clyDevWorkspaceCore.getSnapshot(ownedSessionId);
+  async (_event, { sessionId } = {}) => {
+    const current = clyDevWorkspaceCore.getSnapshot(sessionId);
     if (!current) throw new Error("A valid session is required to detach.");
     const result = clyDevWorkspaceCore.dispatchIntent("agent", {
-      mutationId: `detach:${ownedSessionId}:${current.revision}`,
-      sessionId: ownedSessionId,
+      mutationId: `detach:${sessionId}:${current.revision}`,
+      sessionId,
       baseRevision: current.revision,
       type: "set_workspace_mode",
       payload: { workspaceMode: "detached" },
     });
     if (!result.accepted)
       throw new Error("The workspace state changed. Try again.");
-    await createWorkspaceWindow(ownedSessionId);
+    await createWorkspaceWindow(sessionId);
   },
 );
-ipcMain.handle("cly-dev:reattach-workspace", (event, { sessionId } = {}) => {
-  const ownedSessionId = authorizeClyDevSession(
-    windowBindings.get(event.sender.id),
-    sessionId,
-  );
-  const current = clyDevWorkspaceCore.getSnapshot(ownedSessionId);
+ipcMain.handle("cly-dev:reattach-workspace", (_event, { sessionId } = {}) => {
+  const current = clyDevWorkspaceCore.getSnapshot(sessionId);
   if (!current) throw new Error("A valid session is required to reattach.");
-  const result = clyDevWorkspaceCore.dispatchIntent(
-    windowBindings.get(event.sender.id).role,
-    {
-      mutationId: `reattach:${ownedSessionId}:${current.revision}`,
-      sessionId: ownedSessionId,
-      baseRevision: current.revision,
-      type: "set_workspace_mode",
-      payload: { workspaceMode: "inline" },
-    },
-  );
+  const result = clyDevWorkspaceCore.dispatchIntent("agent", {
+    mutationId: `reattach:${sessionId}:${current.revision}`,
+    sessionId,
+    baseRevision: current.revision,
+    type: "set_workspace_mode",
+    payload: { workspaceMode: "inline" },
+  });
   if (!result.accepted)
     throw new Error("The workspace state changed. Try again.");
   if (
     workspaceWindow &&
     !workspaceWindow.isDestroyed() &&
-    workspaceWindowSessionId === ownedSessionId
+    workspaceWindowSessionId === sessionId
   ) {
     const targetWorkspaceWindow = workspaceWindow;
-    saveWorkspaceWindowLayoutFor(targetWorkspaceWindow, ownedSessionId, false);
+    saveWorkspaceWindowLayoutFor(targetWorkspaceWindow, sessionId, false);
     workspaceWindowsClosingForReattach.add(targetWorkspaceWindow);
     targetWorkspaceWindow.close();
   }
 });
-ipcMain.handle("cly-dev:focus-agent-window", (event) => {
-  if (!windowBindings.has(event.sender.id)) return false;
+ipcMain.handle("cly-dev:focus-agent-window", () => {
   mainWindow?.show();
   mainWindow?.focus();
-  return true;
 });
-ipcMain.handle("cly-dev:focus-workspace-window", (event) => {
-  const binding = windowBindings.get(event.sender.id);
-  if (
-    !binding ||
-    (binding.role === "workspace" &&
-      binding.sessionId !== workspaceWindowSessionId)
-  ) {
-    return false;
-  }
+ipcMain.handle("cly-dev:focus-workspace-window", () => {
   workspaceWindow?.show();
   workspaceWindow?.focus();
-  return true;
 });
 
 ipcMain.handle("theme:set", (_event, { theme } = {}) => {
@@ -830,9 +955,13 @@ nativeTheme.on("updated", () => {
 
 // Window controls (Windows/Linux frameless window)
 ipcMain.handle("window:minimize", (event) => {
+  const senderId = getBoundRendererId(event, { windowBindings });
+  if (senderId === null) return;
   BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
 ipcMain.handle("window:maximize", (event) => {
+  const senderId = getBoundRendererId(event, { windowBindings });
+  if (senderId === null) return;
   const target = BrowserWindow.fromWebContents(event.sender);
   if (target?.isMaximized()) {
     target.unmaximize();
@@ -841,6 +970,8 @@ ipcMain.handle("window:maximize", (event) => {
   }
 });
 ipcMain.handle("window:close", (event) => {
+  const senderId = getBoundRendererId(event, { windowBindings });
+  if (senderId === null) return;
   BrowserWindow.fromWebContents(event.sender)?.close();
 });
 
@@ -852,6 +983,55 @@ ipcMain.handle("shell:open-external", (_event, { url }) => {
   shell.openExternal(url);
   return true;
 });
+
+const PROVIDER_LOGIN_COMMANDS = {
+  anthropic: "claude",
+  cursor: "agent login",
+  openai: "codex login",
+  opencode: "opencode auth login",
+};
+
+const launchProviderLogin = (provider) => {
+  const command = PROVIDER_LOGIN_COMMANDS[provider];
+  if (!command) {
+    return false;
+  }
+
+  try {
+    if (process.platform === "darwin") {
+      const script = `tell application "Terminal" to do script ${JSON.stringify(command)}`;
+      const child = spawn("osascript", ["-e", script], {
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      return true;
+    }
+
+    if (process.platform === "win32") {
+      const child = spawn(
+        "cmd.exe",
+        ["/c", "start", "", "cmd.exe", "/k", command],
+        {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: false,
+        },
+      );
+      child.unref();
+      return true;
+    }
+
+    const child = spawn("x-terminal-emulator", ["-e", "sh", "-lc", command], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 ipcMain.handle("providers:launch-login", (_event, { provider } = {}) => {
   return launchProviderLogin(provider);
@@ -898,104 +1078,202 @@ ipcMain.handle("editors:detect", () => {
   return detectAvailableEditors();
 });
 
-ipcMain.handle("editors:open", (_event, payload) => {
-  return openProjectInEditor(payload ?? {});
+ipcMain.handle("editors:open", async (event, payload) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent", "workspace"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null) {
+    throw new Error("Editor access is not allowed from this window.");
+  }
+  const projectPath = await resolveEditorProjectPath({
+    projectId: payload?.projectId,
+    projectPath: payload?.projectPath,
+  });
+  return openProjectInEditor({ ...payload, projectPath });
 });
 
-ipcMain.handle(
-  "runner:start",
-  (_event, { command, cwd, projectId, projectName }) => {
-    return processSessionManager.startRunner({
-      command,
-      cwd,
-      projectId,
-      projectName,
-    });
-  },
-);
+ipcMain.handle("terminal:start", async (event, payload) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null) {
+    throw new Error("Terminal access is not allowed from this window.");
+  }
+  if (pendingTerminalApprovalSenders.has(senderId)) {
+    throw new Error("A terminal approval is already pending for this window.");
+  }
 
-ipcMain.handle("runner:stop", (_event, { projectId }) => {
-  if (!projectId) {
+  const projectPath = projectAuthorityRegistry.resolveProjectPathById({
+    projectId: payload?.projectId,
+  });
+  if (!projectPath) throw new Error("Unknown or unavailable project.");
+  const launch = {
+    ...resolveTerminalLaunch(payload, loadPersistedState()),
+    cwd: projectPath,
+  };
+  if (
+    terminalSessionOwners.has(launch.sessionId) ||
+    pendingTerminalSessionIds.has(launch.sessionId)
+  ) {
+    throw new Error("Terminal session is already active.");
+  }
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner.isDestroyed()) {
+    throw new Error("Terminal owner window is unavailable.");
+  }
+  pendingTerminalApprovalSenders.add(senderId);
+  pendingTerminalSessionIds.add(launch.sessionId);
+  let approval;
+  try {
+    approval = await dialog.showMessageBox(
+      owner,
+      getTerminalLaunchApprovalOptions(launch),
+    );
+  } finally {
+    pendingTerminalApprovalSenders.delete(senderId);
+    pendingTerminalSessionIds.delete(launch.sessionId);
+  }
+  if (approval.response !== 1) return { status: "stopped" };
+  const approvedSenderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (
+    approvedSenderId !== senderId ||
+    owner.isDestroyed() ||
+    terminalSessionOwners.has(launch.sessionId)
+  ) {
+    throw new Error("Terminal owner changed while approval was pending.");
+  }
+
+  terminalSessionOwners.set(launch.sessionId, senderId);
+  try {
+    const result = processSessionManager.startTerminal({
+      command: launch.command,
+      cwd: launch.cwd,
+      projectId: launch.sessionId,
+      shellPath: launch.shellPath,
+    });
+    if (result.status !== "running") {
+      terminalSessionOwners.delete(launch.sessionId);
+    }
+    return result;
+  } catch (error) {
+    terminalSessionOwners.delete(launch.sessionId);
+    throw error;
+  }
+});
+
+ipcMain.on("terminal:input", (event, payload) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (
+    senderId === null ||
+    !isTerminalSessionOwner(
+      terminalSessionOwners,
+      senderId,
+      payload?.sessionId,
+    ) ||
+    typeof payload?.data !== "string" ||
+    payload.data.length > 65_536
+  ) {
+    return;
+  }
+  processSessionManager.writeTerminalInput({
+    data: payload.data,
+    projectId: payload.sessionId,
+  });
+});
+
+ipcMain.on("terminal:resize", (event, payload) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (
+    senderId === null ||
+    !isTerminalSessionOwner(
+      terminalSessionOwners,
+      senderId,
+      payload?.sessionId,
+    ) ||
+    !Number.isInteger(payload?.cols) ||
+    payload.cols < 2 ||
+    payload.cols > 500 ||
+    !Number.isInteger(payload?.rows) ||
+    payload.rows < 1 ||
+    payload.rows > 300
+  ) {
+    return;
+  }
+  processSessionManager.resizeTerminal({
+    cols: payload.cols,
+    projectId: payload.sessionId,
+    rows: payload.rows,
+  });
+});
+
+ipcMain.handle("terminal:stop", (event, { sessionId } = {}) => {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles: ["agent"],
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (
+    senderId === null ||
+    !isTerminalSessionOwner(terminalSessionOwners, senderId, sessionId)
+  ) {
     return false;
   }
 
-  processSessionManager.stopRunProcess(projectId);
-  return true;
-});
-
-ipcMain.handle(
-  "terminal:start",
-  (_event, { command, cwd, projectId, shellPath: preferredShellPath }) => {
-    return processSessionManager.startTerminal({
-      command,
-      cwd,
-      projectId,
-      shellPath: preferredShellPath,
-    });
-  },
-);
-
-ipcMain.on("terminal:input", (_event, payload) => {
-  processSessionManager.writeTerminalInput(payload);
-});
-
-ipcMain.on("terminal:resize", (_event, payload) => {
-  processSessionManager.resizeTerminal(payload);
-});
-
-ipcMain.handle("terminal:stop", (_event, { projectId }) => {
-  if (!projectId) {
-    return false;
-  }
-
-  processSessionManager.stopTerminalSession(projectId);
+  processSessionManager.stopTerminalSession(sessionId);
+  terminalSessionOwners.delete(sessionId);
   return true;
 });
 
 ipcMain.on("browser:update", (event, payload) => {
-  if (windowBindings.get(event.sender.id)?.role !== "agent") return;
-  browserSessionManager.update(event.sender.id, payload);
+  browserSessionManager.update(payload, event.sender);
 });
 
-ipcMain.on("startup:action", (event, action) => {
-  if (event.sender.id !== startupWindow?.webContents.id) return;
-  if (action === "retry" && startupController?.getState() === "failed") {
-    void startupController.start();
-  } else if (action === "quit") {
-    app.quit();
-  } else if (action === "copy-diagnostics" && startupDiagnostic) {
-    clipboard.writeText(
-      JSON.stringify(
-        {
-          ...startupDiagnostic,
-          appVersion: app.getVersion(),
-          platform: process.platform,
-        },
-        null,
-        2,
-      ),
-    );
-  }
-});
-
-async function cleanupFailedStartup() {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+app.whenReady().then(async () => {
   try {
-    await rendererServerManager?.stop();
+    mkdirSync(APP_USER_DATA_PATH, { recursive: true });
   } catch (error) {
-    console.error("Failed to clean up startup services:", error);
+    console.error("Failed to create user data directory:", error);
+    dialog.showErrorBox(
+      "Startup Error",
+      `Could not create the user data directory at:\n${APP_USER_DATA_PATH}\n\n${error.message}`,
+    );
+    app.quit();
+    return;
   }
-  rendererServerManager = null;
-}
 
-async function bootApplication(report) {
-  report("local-services", "Starting local research services…");
+  try {
+    mkdirSync(APP_SESSION_DATA_PATH, { recursive: true });
+  } catch (error) {
+    console.error("Failed to create session data directory:", error);
+  }
+  configureDetachedDevToolsShortcuts();
+  configureApplicationMenu(app, APP_NAME);
+
+  if (process.platform === "darwin" && existsSync(appIconPath)) {
+    app.dock?.setIcon(appIconPath);
+  }
+
+  projectAuthorityRegistry.hydrate(loadPersistedState());
   rendererServerManager = await createStartupRendererServerManager();
   await rendererServerManager.start();
-  report("renderer", "Loading the Cly workspace…");
   await createMainWindow();
 
-  report("workspace", "Restoring your workspace…");
   const restoredWindowLayout = loadClyDevWindowLayout()?.workspace;
   if (restoredWindowLayout?.detached && restoredWindowLayout.sessionId) {
     const snapshot = clyDevWorkspaceCore.getSnapshot(
@@ -1011,81 +1289,34 @@ async function bootApplication(report) {
     await createWorkspaceWindow(restoredWindowLayout.sessionId);
   }
 
-  try {
-    installId = ensurePersistedInstallId();
-  } catch (error) {
-    console.error("Failed to initialize install ID:", error);
-  }
-
   updateManager = initializeAutoUpdater({
     app,
     getMainWindow: () => mainWindow,
-    installId,
     ipcMain,
     isDevelopment,
   });
-  mainWindow?.show();
-  mainWindow?.focus();
-  startupWindow?.close();
-}
 
-app
-  .whenReady()
-  .then(async () => {
-    configureDetachedDevToolsShortcuts();
-    configureApplicationMenu(app, APP_NAME);
-
-    if (process.platform === "darwin" && existsSync(appIconPath)) {
-      app.dock?.setIcon(appIconPath);
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      void createMainWindow();
     }
-
-    await createStartupWindow();
-    startupController = createStartupController({
-      boot: bootApplication,
-      cleanup: cleanupFailedStartup,
-      onFailure: (diagnostic) => {
-        startupDiagnostic = diagnostic;
-        publishStartupState({ ...diagnostic, status: "failed" });
-      },
-      onProgress: ({ message, stage }) => {
-        startupDiagnostic = null;
-        publishStartupState({ message, stage, status: "starting" });
-      },
-    });
-    await startupController.start();
-
-    app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        void createMainWindow();
-      }
-    });
-  })
-  .catch((error) => {
-    console.error("Fatal Cly startup failure:", error);
-    dialog.showErrorBox(
-      "Cly could not start",
-      "Cly could not open its recovery window. Your projects were not changed.",
-    );
   });
+});
 
 // Electron does not wait for async "before-quit" listeners, so we must
 // preventDefault, finish cleanup (including flushing any queued state save),
 // and then re-trigger quit ourselves. Without this,
 // the final renderer-side persist could be lost on exit.
 let quitCleanupDone = false;
+let quitCleanupInProgress = false;
 app.on("before-quit", (event) => {
-  if (quitCleanupDone) {
+  if (quitCleanupDone || quitCleanupInProgress) {
     return;
   }
   event.preventDefault();
+  quitCleanupInProgress = true;
   appIsQuitting = true;
-  if (
-    workspaceWindow &&
-    !workspaceWindow.isDestroyed() &&
-    !workspaceWindowsClosingForReattach.has(workspaceWindow)
-  ) {
-    saveWorkspaceWindowLayout(true);
-  }
+  saveWorkspaceWindowLayout(true);
 
   updateManager?.stop();
   processSessionManager.stopAllProcesses();
@@ -1094,6 +1325,11 @@ app.on("before-quit", (event) => {
     .then(async () => {
       await rendererServerManager?.stop();
       await stateSaveQueue?.flushAndClose();
+      await Promise.all(
+        [...onboardingDraftSaveQueues.values()].map((queue) =>
+          queue.flushAndClose(),
+        ),
+      );
       closePersistedStateDatabase();
     })
     .catch((error) => {
@@ -1101,6 +1337,7 @@ app.on("before-quit", (event) => {
     })
     .finally(() => {
       quitCleanupDone = true;
+      quitCleanupInProgress = false;
       app.quit();
     });
 });
