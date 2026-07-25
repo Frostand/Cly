@@ -7,9 +7,18 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Dialog, Segmented } from "../components/primitives";
 import { useClyStore } from "../store/cly-store";
+import {
+  formatAgentModelName,
+  getAgentReasoningOptions,
+  parseAgentModelKey,
+  resolveAgentModelSelection,
+  resolveAgentReasoningEffort,
+  toAgentReasoningLabel,
+  useAgentModelCatalog,
+} from "./model-catalog";
 import type {
   AgentIdentity,
   AgentSession,
@@ -82,7 +91,7 @@ export function ClyDevTaskIdentitySurface({
         />
         <IdentityGroup
           label="Provider"
-          value={`${identity.provider.model} · ${identity.provider.reasoningLevel}`}
+          value={`${formatAgentModelName(identity.provider.id, identity.provider.model)} · ${identity.provider.reasoningLevel}`}
           detail={identity.provider.id}
         />
         <IdentityGroup
@@ -149,9 +158,9 @@ function IdentityGroup({
 const defaultInput: NewAgentSessionInput = {
   title: "",
   objective: "",
-  provider: "OpenAI",
-  model: "GPT-5",
-  reasoningLevel: "High",
+  provider: "",
+  model: "",
+  reasoningLevel: "Medium",
   preset: "Code Implementation",
   contextPackName: "Claim Audit Pack",
   approvalPolicy: "Approve writes and network",
@@ -164,8 +173,13 @@ export function NewSessionFlow() {
   const setOpen = useClyStore((state) => state.setNewAgentSessionOpen);
   const createSession = useClyStore((state) => state.createAgentSession);
   const notify = useClyStore((state) => state.notify);
+  const modelCatalog = useAgentModelCatalog();
   const [input, setInput] = useState(defaultInput);
-  const canCreate = Boolean(input.title.trim() && input.objective.trim());
+  const selectedModel = resolveAgentModelSelection(modelCatalog.choices, input);
+  const reasoningOptions = getAgentReasoningOptions(selectedModel);
+  const canCreate = Boolean(
+    input.title.trim() && input.objective.trim() && selectedModel,
+  );
   const update = <K extends keyof NewAgentSessionInput>(
     key: K,
     value: NewAgentSessionInput[K],
@@ -181,6 +195,26 @@ export function NewSessionFlow() {
     );
     setInput(defaultInput);
   };
+
+  useEffect(() => {
+    if (!selectedModel) return;
+    const reasoningLevel = toAgentReasoningLabel(
+      resolveAgentReasoningEffort(input.reasoningLevel, selectedModel),
+    );
+    if (
+      input.provider === selectedModel.provider &&
+      input.model === selectedModel.model &&
+      input.reasoningLevel === reasoningLevel
+    ) {
+      return;
+    }
+    setInput((current) => ({
+      ...current,
+      provider: selectedModel.provider,
+      model: selectedModel.model,
+      reasoningLevel,
+    }));
+  }, [input.model, input.provider, input.reasoningLevel, selectedModel]);
 
   return (
     <Dialog
@@ -225,22 +259,65 @@ export function NewSessionFlow() {
             placeholder="Describe the research objective, desired evidence, and stopping condition…"
           />
         </label>
-        <SelectField
-          label="Orchestrator provider"
-          value={input.provider}
-          options={["OpenAI", "Anthropic", "Local CLI"]}
-          onChange={(value) => update("provider", value)}
-        />
+        <label className="agent-field">
+          <span>Orchestrator provider</span>
+          <input
+            aria-label="Orchestrator provider"
+            value={selectedModel?.providerLabel ?? "No provider detected"}
+            readOnly
+          />
+        </label>
         <SelectField
           label="Model"
-          value={input.model}
-          options={["GPT-5", "Claude Opus 4.6", "Codex CLI"]}
-          onChange={(value) => update("model", value)}
+          value={selectedModel?.key ?? ""}
+          disabled={modelCatalog.choices.length === 0}
+          options={
+            modelCatalog.choices.length
+              ? modelCatalog.choices.map((choice) => ({
+                  label: choice.displayLabel,
+                  value: choice.key,
+                }))
+              : [
+                  {
+                    label: modelCatalog.loading
+                      ? "Detecting installed models…"
+                      : "No installed models detected",
+                    value: "",
+                    disabled: true,
+                  },
+                ]
+          }
+          onChange={(value) => {
+            const choice = parseAgentModelKey(modelCatalog.choices, value);
+            if (!choice) return;
+            setInput((current) => ({
+              ...current,
+              provider: choice.provider,
+              model: choice.model,
+              reasoningLevel: toAgentReasoningLabel(
+                resolveAgentReasoningEffort(current.reasoningLevel, choice),
+              ),
+            }));
+          }}
         />
         <SelectField
           label="Reasoning level"
           value={input.reasoningLevel}
-          options={["Low", "Medium", "High"]}
+          disabled={reasoningOptions.length === 0}
+          options={
+            reasoningOptions.length
+              ? reasoningOptions.map((option) => ({
+                  label: option.label,
+                  value: option.label,
+                }))
+              : [
+                  {
+                    label: "Not supported by this model",
+                    value: input.reasoningLevel,
+                    disabled: true,
+                  },
+                ]
+          }
           onChange={(value) =>
             update(
               "reasoningLevel",
@@ -291,7 +368,7 @@ export function NewSessionFlow() {
         <SelectField
           label="Usage budget"
           value={input.usageBudget}
-          options={["$5", "$10", "$25", "No demo limit"]}
+          options={["$5", "$10", "$25", "No test limit"]}
           onChange={(value) => update("usageBudget", value)}
         />
       </div>
@@ -303,6 +380,17 @@ export function NewSessionFlow() {
           its configuration.
         </span>
       </div>
+      {!modelCatalog.loading && modelCatalog.choices.length === 0 ? (
+        <div className="cly-callout" data-tone="warning">
+          <span>
+            Cly could not detect a usable local model. Install and sign in to
+            Codex, Claude Code, OpenCode, or Cursor.
+          </span>
+          <Button onClick={() => void modelCatalog.refresh()}>
+            Refresh models
+          </Button>
+        </div>
+      ) : null}
     </Dialog>
   );
 }
@@ -312,11 +400,13 @@ function SelectField({
   value,
   options,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: string;
-  options: string[];
+  options: Array<string | { value: string; label: string; disabled?: boolean }>;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <label className="agent-field">
@@ -325,11 +415,24 @@ function SelectField({
         <select
           aria-label={label}
           value={value}
+          disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
         >
-          {options.map((option) => (
-            <option key={option}>{option}</option>
-          ))}
+          {options.map((option) => {
+            const item =
+              typeof option === "string"
+                ? { value: option, label: option, disabled: false }
+                : option;
+            return (
+              <option
+                key={`${item.value}:${item.label}`}
+                value={item.value}
+                disabled={item.disabled}
+              >
+                {item.label}
+              </option>
+            );
+          })}
         </select>
         <ChevronDown size={12} />
       </div>
@@ -344,6 +447,7 @@ export function AgentConfigurationSheet() {
     (state) => state.setAgentConfigurationId,
   );
   const updateAgent = useClyStore((state) => state.updateDelegatedAgent);
+  const modelCatalog = useAgentModelCatalog();
   const session = useMemo(
     () =>
       sessions.find(
@@ -360,12 +464,35 @@ export function AgentConfigurationSheet() {
     : undefined;
   const [draft, setDraft] = useState<AgentIdentity | null>(null);
   const active = draft?.id === identity?.id ? draft : identity;
+  const selectedModel = active
+    ? (modelCatalog.choices.find(
+        (choice) =>
+          choice.provider === active.provider && choice.model === active.model,
+      ) ?? null)
+    : null;
+  const unavailableModelKey = active
+    ? `unavailable:${active.provider}:${active.model}`
+    : "";
+  const modelOptions = [
+    ...(!selectedModel && active
+      ? [
+          {
+            label: `${formatAgentModelName(active.provider, active.model)} · unavailable`,
+            value: unavailableModelKey,
+            disabled: true,
+          },
+        ]
+      : []),
+    ...modelCatalog.choices.map((choice) => ({
+      label: choice.displayLabel,
+      value: choice.key,
+    })),
+  ];
+  const reasoningOptions = getAgentReasoningOptions(selectedModel);
 
   const save = () => {
     if (!session || !active) return;
-    if (session.orchestrator.id !== active.id) {
-      updateAgent(session.id, active.id, active);
-    }
+    updateAgent(session.id, active.id, active);
     setConfigurationId(null);
   };
 
@@ -411,14 +538,40 @@ export function AgentConfigurationSheet() {
             </label>
             <SelectField
               label="Model"
-              value={active.model}
-              options={["GPT-5", "Claude Opus 4.6", "Codex CLI"]}
-              onChange={(model) => setDraft({ ...active, model })}
+              value={selectedModel?.key ?? unavailableModelKey}
+              options={modelOptions}
+              disabled={modelCatalog.choices.length === 0}
+              onChange={(value) => {
+                const choice = parseAgentModelKey(modelCatalog.choices, value);
+                if (!choice) return;
+                setDraft({
+                  ...active,
+                  provider: choice.provider,
+                  model: choice.model,
+                  reasoningLevel: toAgentReasoningLabel(
+                    resolveAgentReasoningEffort(active.reasoningLevel, choice),
+                  ),
+                });
+              }}
             />
             <SelectField
               label="Reasoning level"
               value={active.reasoningLevel}
-              options={["Low", "Medium", "High"]}
+              disabled={reasoningOptions.length === 0}
+              options={
+                reasoningOptions.length
+                  ? reasoningOptions.map((option) => ({
+                      label: option.label,
+                      value: option.label,
+                    }))
+                  : [
+                      {
+                        label: "Not supported by this model",
+                        value: active.reasoningLevel,
+                        disabled: true,
+                      },
+                    ]
+              }
               onChange={(reasoningLevel) =>
                 setDraft({
                   ...active,

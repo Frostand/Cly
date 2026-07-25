@@ -36,8 +36,9 @@ import { getDesktopApi } from "../../../lib/electron";
 import { Badge, Button, Dialog } from "../components/primitives";
 import { ClySplitPane } from "../components/toolkit";
 import { useClyStore } from "../store/cly-store";
-import { demoAgentSessionServices } from "./demo-services";
+import { formatAgentModelName } from "./model-catalog";
 import { AgentSessionsModeSwitcher, ClyDevTaskIdentitySurface } from "./shared";
+import { testFixtureAgentSessionServices } from "./test-fixture-services";
 import type {
   AgentMessage as AgentMessageType,
   AgentSession,
@@ -547,7 +548,11 @@ export function SessionHeader({ session }: { session: AgentSession }) {
         </div>
         <div className="agent-session-header-meta">
           <span>
-            {session.orchestrator.model} · {session.orchestrator.reasoningLevel}
+            {formatAgentModelName(
+              session.orchestrator.provider,
+              session.orchestrator.model,
+            )}{" "}
+            · {session.orchestrator.reasoningLevel}
           </span>
           <button
             type="button"
@@ -1120,7 +1125,7 @@ export function ChatComposer({ session }: { session: AgentSession }) {
     });
     setDraft(session.id, "");
     setStreaming(true);
-    for await (const message of demoAgentSessionServices.transcript.send(
+    for await (const message of testFixtureAgentSessionServices.transcript.send(
       session.id,
       body,
     )) {
@@ -1211,7 +1216,13 @@ export function ChatComposer({ session }: { session: AgentSession }) {
                     notify("Model selector", session.orchestrator.model)
                   }
                 >
-                  Model <span>{session.orchestrator.model}</span>
+                  Model{" "}
+                  <span>
+                    {formatAgentModelName(
+                      session.orchestrator.provider,
+                      session.orchestrator.model,
+                    )}
+                  </span>
                 </button>
                 <button
                   type="button"

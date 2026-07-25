@@ -23,6 +23,18 @@ const normalizedString = (value) =>
 const workspaceMode = (value) =>
   value === "detached" || value === "inline" ? value : null;
 
+export function authorizeClyDevSession(
+  binding,
+  requestedSessionId,
+  { agentOnly = false } = {},
+) {
+  const sessionId = normalizedString(requestedSessionId);
+  if (!sessionId || !WINDOW_ROLES.has(binding?.role)) return null;
+  if (binding.role === "agent") return sessionId;
+  if (agentOnly) return null;
+  return binding.sessionId === sessionId ? sessionId : null;
+}
+
 /**
  * The main-process state authority for replaceable Cly Dev renderers. It keeps
  * only the small shared projection needed by both windows; conversation and

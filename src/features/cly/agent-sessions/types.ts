@@ -8,7 +8,7 @@ export interface ClyDevTaskIdentity {
   provider: {
     id: string;
     model: string;
-    reasoningLevel: "low" | "medium" | "high";
+    reasoningLevel: ReasoningLevel;
   };
   budget: {
     usedTokens: number;
@@ -420,7 +420,20 @@ export interface AgentPermissions {
   requiresApprovalForNetwork: boolean;
 }
 
-export type ReasoningLevel = "low" | "medium" | "high";
+export type ReasoningLevel =
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
+export type AgentReasoningLabel =
+  | "Low"
+  | "Medium"
+  | "High"
+  | "Extra High"
+  | "Max"
+  | "Ultra";
 
 export interface AgentResourceBudget {
   maxInputTokens: number;
@@ -503,7 +516,7 @@ export interface AgentIdentity {
   roleLabel: string;
   provider: string;
   model: string;
-  reasoningLevel: "Low" | "Medium" | "High";
+  reasoningLevel: AgentReasoningLabel;
   instanceCount?: number;
   maxParallel?: number;
   budget?: AgentResourceBudget;
@@ -716,7 +729,7 @@ export interface NewAgentSessionInput {
   objective: string;
   provider: string;
   model: string;
-  reasoningLevel: "Low" | "Medium" | "High";
+  reasoningLevel: AgentReasoningLabel;
   preset: string;
   contextPackName: string;
   approvalPolicy: string;

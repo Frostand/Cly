@@ -23,7 +23,7 @@ import { clyFadeSlide, clyMotion } from "../design-system/motion";
 import type { FixtureMode, ScreenId } from "../domain/types";
 import { capabilityUnavailableMessage } from "../services/capabilities";
 import { projectServices } from "../services/project-services";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import {
   devSectionLabels,
@@ -173,12 +173,12 @@ export function Titlebar() {
             <span>Local</span>
           </Button>
         </ClyTooltip>
-        {__CLY_INCLUDE_DEMOS__ && isClyDemoRuntime ? (
+        {__CLY_INCLUDE_TEST_FIXTURES__ && isClyTestFixtureRuntime ? (
           <Button
             variant="ghost"
             iconOnly
-            title="Demo state"
-            aria-label="Open demo state selector"
+            title="Test fixture state"
+            aria-label="Open test fixture state selector"
             onClick={() => setFixtureOpen(true)}
             data-testid="fixture-selector"
           >
@@ -210,7 +210,8 @@ function FixtureSwitcherPopover() {
   const setMode = useClyStore((s) => s.setFixtureMode);
   const setOpen = useClyStore((s) => s.setFixtureSwitcherOpen);
   const notify = useClyStore((s) => s.notify);
-  if (!__CLY_INCLUDE_DEMOS__ || !isClyDemoRuntime || !open) return null;
+  if (!__CLY_INCLUDE_TEST_FIXTURES__ || !isClyTestFixtureRuntime || !open)
+    return null;
   return (
     <>
       <button
@@ -221,16 +222,16 @@ function FixtureSwitcherPopover() {
           backdropFilter: "none",
           padding: 0,
         }}
-        aria-label="Close demo state selector"
+        aria-label="Close test fixture state selector"
         onClick={() => setOpen(false)}
       />
       <div
         className="cly-popover cly-fixture-popover"
         role="dialog"
-        aria-label="Cly demo state"
+        aria-label="Cly test fixture state"
       >
         <div className="cly-command-group-label">
-          Cly demo state · development only
+          Cly test fixture state · development only
         </div>
         {fixtureModes.map((fixture) => (
           <button
@@ -240,7 +241,7 @@ function FixtureSwitcherPopover() {
             data-active={fixture.id === mode}
             onClick={() => {
               setMode(fixture.id);
-              notify("Demo state changed", fixture.label);
+              notify("Test fixture state changed", fixture.label);
             }}
           >
             <span style={{ width: 16 }}>
@@ -437,7 +438,7 @@ export function CommandPalette() {
         group: "Create",
         icon: FilePlus2,
         shortcut: "⌘N",
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           const state = useClyStore.getState();
@@ -451,7 +452,7 @@ export function CommandPalette() {
         label: "Configure Agent Team",
         group: "Research",
         icon: Sparkles,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.configure"),
         run: () => {
           const state = useClyStore.getState();
@@ -479,7 +480,7 @@ export function CommandPalette() {
         label,
         group: "View" as const,
         icon: CommandIcon,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.workbench"),
         run: () => {
           const state = useClyStore.getState();
@@ -510,7 +511,7 @@ export function CommandPalette() {
         label: "Pause Current Agent Session",
         group: "Research",
         icon: CommandIcon,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           const state = useClyStore.getState();
@@ -523,7 +524,7 @@ export function CommandPalette() {
         label: "Review Stop Current Agent Session",
         group: "Research",
         icon: CommandIcon,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           const state = useClyStore.getState();
@@ -584,7 +585,7 @@ export function CommandPalette() {
         label: "New Decision",
         group: "Create",
         icon: FilePlus2,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("decisions.create"),
         run: async () => {
           await projectServices.decisions.create({
@@ -611,7 +612,7 @@ export function CommandPalette() {
         label: "Run Claim Audit",
         group: "Research",
         icon: Sparkles,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("agents.execute"),
         run: () => {
           setScreen("agents");
@@ -623,7 +624,7 @@ export function CommandPalette() {
         label: "Create NotebookLM Bundle",
         group: "Research",
         icon: FilePlus2,
-        disabled: !isClyDemoRuntime,
+        disabled: !isClyTestFixtureRuntime,
         reason: capabilityUnavailableMessage("exports.notebook-bundle"),
         run: () => {
           setScreen("literature");
@@ -877,7 +878,7 @@ export function LocalStatusBanner() {
       <div className="cly-muted cly-small" style={{ marginTop: 4 }}>
         {mode === "offline"
           ? "All research objects remain available locally. Cloud-connected actions explain their unavailable state."
-          : "This demo shows permission, synchronization, and partial-data states across the UI."}
+          : "This test fixture shows permission, synchronization, and partial-data states across the UI."}
       </div>
     </div>
   );

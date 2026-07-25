@@ -137,6 +137,7 @@ export const agentRoleConfigurations = sqliteTable(
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     reasoningLevel: text("reasoning_level").notNull(),
+    reasoningEffort: text("reasoning_effort"),
     maxInputTokens: integer("max_input_tokens").notNull(),
     maxOutputTokens: integer("max_output_tokens").notNull(),
     maxCostMinorUnits: integer("max_cost_minor_units").notNull(),
@@ -176,6 +177,10 @@ export const agentRoleConfigurations = sqliteTable(
     check(
       "agent_roles_reasoning",
       sql`${table.reasoningLevel} IN ('low', 'medium', 'high')`,
+    ),
+    check(
+      "agent_roles_reasoning_effort",
+      sql`${table.reasoningEffort} IS NULL OR ${table.reasoningEffort} IN ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')`,
     ),
     check(
       "agent_roles_budget_nonnegative",

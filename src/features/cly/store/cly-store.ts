@@ -63,6 +63,7 @@ import type {
   ProductArea,
   ReproducibilityAudit,
   ResearchDecision,
+  ResearchProject,
   ScreenId,
   Source,
 } from "../domain/types";
@@ -164,6 +165,12 @@ interface ClyState {
   setSelected: (id: string | null) => void;
   setActiveProject: (id: string) => void;
   selectOnboardingProject: (id: string) => void;
+  updateActiveProject: (
+    patch: Pick<
+      ResearchProject,
+      "name" | "question" | "hypothesis" | "description"
+    >,
+  ) => Promise<ResearchProject>;
   setFixtureMode: (mode: FixtureMode) => void;
   toggleSidebar: () => void;
   toggleInspector: () => void;
@@ -258,13 +265,7 @@ interface ClyState {
   addNotebook: (notebook: NotebookArtifact) => void;
   addGraphEdge: (edge: GraphEdge) => void;
   updateGraphEdge: (id: string, patch: Partial<GraphEdge>) => void;
-  updateFinding: (
-    id: string,
-    patch: {
-      status?: "Open" | "Assigned" | "Resolved" | "Ignored";
-      assignee?: string;
-    },
-  ) => void;
+  updateFinding: (id: string, patch: Partial<AuditFinding>) => void;
   replaceReproducibilityAudit: (
     audit: ReproducibilityAudit,
     findings: AuditFinding[],
@@ -333,32 +334,32 @@ interface ClyState {
 
 let toastSequence = 0;
 export const resolveInitialFixtureMode = ({
-  demoFlag,
+  fixtureFlag,
   development,
 }: {
-  demoFlag?: string;
+  fixtureFlag?: string;
   development: boolean;
-}): FixtureMode => (development && demoFlag === "1" ? "active" : "empty");
-const explicitDemoMode =
+}): FixtureMode => (development && fixtureFlag === "1" ? "active" : "empty");
+const explicitTestFixtureMode =
   resolveInitialFixtureMode({
-    demoFlag: import.meta.env.VITE_CLY_DEMO_MODE,
+    fixtureFlag: import.meta.env.VITE_CLY_TEST_FIXTURES,
     development: import.meta.env.DEV,
   }) === "active";
 const testRuntime = import.meta.env.MODE === "test";
-const demoFixtureRuntime = explicitDemoMode || testRuntime;
-const uiStorageKey = explicitDemoMode ? "cly-demo-ui" : "cly-prototype-ui";
+const testFixtureRuntime = explicitTestFixtureMode || testRuntime;
+const uiStorageKey = explicitTestFixtureMode ? "cly-test-fixture-ui" : "cly-ui";
 const initialFixtureMode = resolveInitialFixtureMode({
-  demoFlag: import.meta.env.VITE_CLY_DEMO_MODE,
+  fixtureFlag: import.meta.env.VITE_CLY_TEST_FIXTURES,
   development: import.meta.env.DEV,
 });
-let createDemoAgentSession:
+let createTestFixtureAgentSession:
   | ((input: NewAgentSessionInput) => AgentSession)
   | null = null;
-let createDemoWorkbenchTabs: (() => WorkbenchTab[]) | null = null;
-if (__CLY_INCLUDE_DEMOS__ && testRuntime) {
+let createTestFixtureWorkbenchTabs: (() => WorkbenchTab[]) | null = null;
+if (__CLY_INCLUDE_TEST_FIXTURES__ && testRuntime) {
   const agentFixtureModule = await import("../agent-sessions/fixtures");
-  createDemoAgentSession = agentFixtureModule.createNewAgentSession;
-  createDemoWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
+  createTestFixtureAgentSession = agentFixtureModule.createNewAgentSession;
+  createTestFixtureWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
 }
 
 const persistUi = (partial: Record<string, unknown>) => {
@@ -1236,8 +1237,31 @@ export const useClyStore = create<ClyState>((set, get) => ({
     }));
     persistUi({ activeProjectId, lastResearchSelectedId: null });
   },
+  updateActiveProject: async (patch) => {
+    const state = get();
+    const project = state.data.projects.find(
+      (item) => item.id === state.activeProjectId,
+    );
+    if (!project) throw new Error("Active research project was not found.");
+    const updated: ResearchProject = {
+      ...project,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    if (!testFixtureRuntime) await apiClient.ensureProject(updated);
+    set((current) => ({
+      data: {
+        ...current.data,
+        projects: current.data.projects.map((item) =>
+          item.id === updated.id ? updated : item,
+        ),
+      },
+    }));
+    persistUi({ projects: get().data.projects });
+    return updated;
+  },
   setFixtureMode: (fixtureMode) => {
-    if (!__CLY_INCLUDE_DEMOS__ || !demoFixtureRuntime) return;
+    if (!__CLY_INCLUDE_TEST_FIXTURES__ || !testFixtureRuntime) return;
     const beforeHydration = get();
     const restoreSavedSession =
       beforeHydration.fixtureMode === fixtureMode &&
@@ -1264,8 +1288,8 @@ export const useClyStore = create<ClyState>((set, get) => ({
       import("../fixtures/cost-ledger"),
       import("../agent-sessions/fixtures"),
     ]).then(([repositoryModule, costModule, agentFixtureModule]) => {
-      createDemoAgentSession = agentFixtureModule.createNewAgentSession;
-      createDemoWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
+      createTestFixtureAgentSession = agentFixtureModule.createNewAgentSession;
+      createTestFixtureWorkbenchTabs = agentFixtureModule.workbenchFixtureTabs;
       const data = hydrateAgentSessionLayouts(
         repositoryModule.createFixtureRepository(fixtureMode),
         get().agentSessionLayouts,
@@ -2309,9 +2333,9 @@ export const useClyStore = create<ClyState>((set, get) => ({
   setAgentDestructiveConfirmation: (agentDestructiveConfirmation) =>
     set({ agentDestructiveConfirmation }),
   createAgentSession: (input, open) => {
-    if (!demoFixtureRuntime || !createDemoAgentSession)
+    if (!testFixtureRuntime || !createTestFixtureAgentSession)
       throw new CapabilityUnavailableError("agents.execute");
-    const session = createDemoAgentSession(input);
+    const session = createTestFixtureAgentSession(input);
     set((state) => ({
       data: {
         ...state.data,
@@ -2356,9 +2380,11 @@ export const useClyStore = create<ClyState>((set, get) => ({
       updatedAt: "Just now",
     })),
   openWorkbenchTab: (sessionId, type) => {
-    if (!demoFixtureRuntime || !createDemoWorkbenchTabs)
+    if (!testFixtureRuntime || !createTestFixtureWorkbenchTabs)
       throw new CapabilityUnavailableError("agents.workbench");
-    const template = createDemoWorkbenchTabs().find((tab) => tab.type === type);
+    const template = createTestFixtureWorkbenchTabs().find(
+      (tab) => tab.type === type,
+    );
     if (!template) return;
     get().updateAgentSession(sessionId, (session) => {
       const existing = session.workbenchTabs.find((tab) => tab.type === type);

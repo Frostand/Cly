@@ -1,10 +1,6 @@
 import inventory from "../../../../docs/cly-v1-capabilities.json";
 
-export type CapabilityState =
-  | "production"
-  | "read-only-preview"
-  | "unavailable"
-  | "demo-only";
+export type CapabilityState = "production" | "unavailable";
 
 export interface ClyCapability {
   id: string;

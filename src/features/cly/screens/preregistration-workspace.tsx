@@ -72,7 +72,7 @@ function SnapshotEditor({
               event.target.value.split(",").map((item) => item.trimStart()),
             )
           }
-          placeholder="Accuracy, calibration error"
+          placeholder="Weighted AUC, Brier score"
         />
       </div>
       <div className="cly-field">

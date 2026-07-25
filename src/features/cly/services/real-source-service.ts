@@ -214,6 +214,10 @@ export function createRealSourceService(
       throw new Error("Enrichment requires the project research API boundary.");
     },
 
+    async setArchived(_sourceId: string, _archived: boolean) {
+      throw new Error("Archiving requires the project research API boundary.");
+    },
+
     async reviewField(_sourceId, _fieldId, _verificationState) {
       throw new Error(
         "Source review requires the project research API boundary.",

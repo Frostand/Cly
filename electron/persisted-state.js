@@ -346,6 +346,7 @@ function hasRelationalState(database) {
 
 const KNOWN_TABLE_NAMES = new Set([
   "app_state",
+  "agent_role_configurations",
   "chat_messages",
   "chats",
   "config",

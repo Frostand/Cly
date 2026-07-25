@@ -33,7 +33,7 @@ test("reviews the production handoff setup and resume dialog", async () => {
       CLY_E2E_USER_DATA_PATH: userDataPath,
       CLY_E2E_PROJECT_PATH: canonicalProjectPath,
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
-      VITE_CLY_DEMO_MODE: "0",
+      VITE_CLY_TEST_FIXTURES: "0",
     },
   });
 

@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
+import { getClyMainWindow } from "./electron-main-window";
 
 const root = process.cwd();
 const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
@@ -15,7 +16,7 @@ const environment = {
   CLY_E2E: "1",
   CLY_E2E_USER_DATA_PATH: userDataPath,
   CLY_E2E_SESSION_DATA_PATH: path.join(userDataPath, "session-data"),
-  VITE_CLY_DEMO_MODE: "1",
+  VITE_CLY_TEST_FIXTURES: "1",
 };
 
 test("detaches, synchronizes, restores, and safely closes the developer workspace", async () => {
@@ -33,7 +34,7 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
 
   let app = await launch();
   try {
-    let agent = await app.firstWindow();
+    let agent = await getClyMainWindow(app);
     await agent.getByRole("heading", { level: 1 }).first().waitFor();
     await agent.getByTestId("nav-agents").click();
     await agent
@@ -69,10 +70,21 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
 
     await app.close();
     app = await launch();
-    await expect.poll(() => app.windows().length, { timeout: 45_000 }).toBe(2);
+    await getClyMainWindow(app);
+    await expect
+      .poll(
+        () =>
+          app
+            .windows()
+            .some((page) => page.url().includes("clyWindowRole=workspace")),
+        { timeout: 45_000 },
+      )
+      .toBe(true);
     const restoredWindows = app.windows();
     const restoredAgent = restoredWindows.find(
-      (page) => !page.url().includes("clyWindowRole"),
+      (page) =>
+        !page.url().includes("startup-splash.html") &&
+        !page.url().includes("clyWindowRole"),
     );
     const restoredWorkspace = restoredWindows.find((page) =>
       page.url().includes("clyWindowRole"),
@@ -86,8 +98,10 @@ test("detaches, synchronizes, restores, and safely closes the developer workspac
     workspace = restoredWorkspace;
     await expect(
       workspace.getByRole("main", { name: "Detached developer workspace" }),
-    ).toBeVisible();
-    await expect(agent.getByLabel("Message the Orchestrator")).toBeVisible();
+    ).toBeVisible({ timeout: 45_000 });
+    await expect(agent.getByLabel("Message the Orchestrator")).toBeVisible({
+      timeout: 45_000,
+    });
 
     const expectedBounds = { x: 180, y: 120, width: 780, height: 560 };
     const restoredNativeWorkspace = await app.browserWindow(workspace);

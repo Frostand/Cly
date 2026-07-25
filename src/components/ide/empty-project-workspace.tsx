@@ -1,5 +1,4 @@
 import {
-  ArrowRight,
   Folder,
   FolderOpen,
   FolderTree,
@@ -9,22 +8,17 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useMemo } from "react";
-import dreamSvg from "@/assets/dream.svg";
-import { ProviderIcon } from "@/components/ai-elements/provider-icons";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyContent,
-  EmptyDescription,
   EmptyHeader,
-  EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
 import { getDesktopApi } from "@/lib/electron";
 import { getConnectedProviders } from "@/lib/ide-defaults";
 import { ProjectTabIcon } from "./header/project-tab-icon";
 import { useIdeStore } from "./ide-store";
-import { ALL_PROVIDERS, getProviderLabel } from "./ide-types";
 
 const RECENT_PROJECT_LIMIT = 20;
 const RECENT_PROJECT_VISIBLE_COUNT = 6;
@@ -177,53 +171,10 @@ export const EmptyProjectWorkspace = () => {
     setSettingsOpen(true);
   }, [setSettingsOpen, setSettingsSection]);
 
-  if (!hasConnectedProvider) {
-    return (
-      <Empty className="h-full gap-6 rounded-none border-0 p-6">
-        <EmptyHeader className="max-w-xl gap-4">
-          <img alt="" className="size-16" draggable={false} src={dreamSvg} />
-          <EmptyMedia className="mb-0 size-10 rounded-full" variant="icon">
-            <Plug className="size-5" />
-          </EmptyMedia>
-          <EmptyTitle>{emptyT("connectProvider")}</EmptyTitle>
-          <EmptyDescription className="max-w-md">
-            {emptyT("connectProviderDescription")}
-          </EmptyDescription>
-        </EmptyHeader>
-
-        <EmptyContent className="max-w-xl gap-6">
-          <Button onClick={handleOpenProviders} size="lg">
-            <Settings className="size-4" />
-            {emptyT("openProviders")}
-          </Button>
-
-          <div className="grid w-full gap-1">
-            {ALL_PROVIDERS.map((provider) => (
-              <button
-                className="flex min-h-10 w-full min-w-0 items-center gap-3 rounded-sm border border-transparent px-3 py-2 text-left text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:border-surface-300 dark:hover:bg-[color-mix(in_oklab,var(--muted)_70%,var(--background))] dark:focus-visible:border-surface-700 focus-visible:outline-none"
-                key={provider}
-                onClick={handleOpenProviders}
-                type="button"
-              >
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
-                  <ProviderIcon provider={provider} className="size-4" />
-                </span>
-                <span className="block min-w-0 flex-1 truncate font-medium text-foreground text-sm">
-                  {getProviderLabel(provider)}
-                </span>
-                <ArrowRight className="size-4 shrink-0" />
-              </button>
-            ))}
-          </div>
-        </EmptyContent>
-      </Empty>
-    );
-  }
-
   return (
     <Empty className="h-full gap-6 rounded-none border-0 p-6">
       <EmptyHeader className="max-w-xl gap-4">
-        <img alt="" className="size-16" draggable={false} src={dreamSvg} />
+        <img alt="" className="size-16" draggable={false} src="/icon.png" />
         <EmptyTitle>{emptyT("getStarted")}</EmptyTitle>
       </EmptyHeader>
 
@@ -232,6 +183,26 @@ export const EmptyProjectWorkspace = () => {
           <FolderOpen className="size-4" />
           {emptyT("openFolder")}
         </Button>
+
+        {!hasConnectedProvider ? (
+          <div className="grid w-full gap-3 rounded-md border p-4 text-left">
+            <div className="flex items-start gap-3">
+              <Plug className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <p className="font-medium text-sm">
+                  {emptyT("connectProvider")}
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  {emptyT("connectProviderDescription")}
+                </p>
+              </div>
+            </div>
+            <Button onClick={handleOpenProviders} variant="outline">
+              <Settings className="size-4" />
+              {emptyT("openProviders")}
+            </Button>
+          </div>
+        ) : null}
 
         {recentProjects.length > 0 ? (
           <div className="flex w-full flex-col items-stretch gap-2">

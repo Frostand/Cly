@@ -18,7 +18,7 @@ test("critical V1 routes have no serious or critical axe violations", async () =
       ...process.env,
       NODE_ENV: "development",
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
-      VITE_CLY_DEMO_MODE: "1",
+      VITE_CLY_TEST_FIXTURES: "1",
     },
   });
 

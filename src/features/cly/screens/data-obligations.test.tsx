@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureRepository } from "../fixtures/repository";
@@ -94,5 +94,18 @@ describe("data obligations screen", () => {
       expect.objectContaining({ method: "PUT" }),
     );
     expect(screen.getByText(/does not provide legal advice/i)).toBeVisible();
+  });
+
+  it("does not request obligations before a project is selected", async () => {
+    useClyStore.setState({ activeProjectId: "" });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<DataObligationsScreen />);
+
+    expect(
+      screen.getByRole("heading", { name: "Choose a research project first" }),
+    ).toBeVisible();
+    await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
   });
 });

@@ -10,7 +10,7 @@ const mapRole = (row) => ({
   maxParallel: row.max_parallel,
   provider: row.provider,
   model: row.model,
-  reasoningLevel: row.reasoning_level,
+  reasoningLevel: row.reasoning_effort ?? row.reasoning_level,
   budget: {
     maxInputTokens: row.max_input_tokens,
     maxOutputTokens: row.max_output_tokens,
@@ -63,12 +63,13 @@ const insertRoles = (db, projectId, configurationId, roles) => {
   const statement = db.prepare(
     `INSERT INTO agent_role_configurations
      (configuration_id, project_id, id, position, role, instance_count,
-      max_parallel, provider, model, reasoning_level, max_input_tokens,
+      max_parallel, provider, model, reasoning_level, reasoning_effort,
+      max_input_tokens,
       max_output_tokens, max_cost_minor_units, max_runtime_ms,
       allowed_tools_json, allowed_context_sources_json,
       allowed_file_globs_json, permissions_json, approval_checkpoints_json,
       fallback_model)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   roles.forEach((role, position) => {
     statement.run(
@@ -81,6 +82,9 @@ const insertRoles = (db, projectId, configurationId, roles) => {
       role.maxParallel,
       role.provider,
       role.model,
+      ["low", "medium", "high"].includes(role.reasoningLevel)
+        ? role.reasoningLevel
+        : "high",
       role.reasoningLevel,
       role.budget.maxInputTokens,
       role.budget.maxOutputTokens,

@@ -25,7 +25,13 @@ export type AccentColor =
   | "rose";
 export type BaseColor = "neutral" | "gray" | "zinc" | "stone" | "slate";
 export type ModelSpeed = "standard" | "fast";
-export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type ReasoningEffort =
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
 export type AgentMode = "plan" | "build";
 export type ChatSortOrder =
   | "recent"

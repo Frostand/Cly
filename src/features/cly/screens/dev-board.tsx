@@ -26,7 +26,7 @@ import {
   SearchInput,
 } from "../components/primitives";
 import { capabilityUnavailableMessage } from "../services/capabilities";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 
 export type DevBoardLaneId = "active" | "attention" | "finished";
@@ -49,10 +49,10 @@ export interface DevBoardCard {
   lane: DevBoardLaneId;
   status: AgentSessionStatus | ClyDevSessionState;
   attention?: string;
-  demoSession: boolean;
+  fixtureSession: boolean;
 }
 
-const laneForDemoStatus = (status: AgentSessionStatus): DevBoardLaneId => {
+const laneForFixtureStatus = (status: AgentSessionStatus): DevBoardLaneId => {
   if (status === "completed" || status === "archived") return "finished";
   if (
     status === "waiting_approval" ||
@@ -76,7 +76,7 @@ const laneForDurableState = (state: ClyDevSessionState): DevBoardLaneId => {
   return "active";
 };
 
-export const boardCardsFromDemoSessions = (
+export const boardCardsFromFixtureSessions = (
   sessions: AgentSession[],
 ): DevBoardCard[] =>
   sessions.map((session) => {
@@ -110,10 +110,10 @@ export const boardCardsFromDemoSessions = (
         session.status === "completed"
           ? `Completed ${session.updatedAt.toLowerCase()}`
           : session.orchestrator.lastAction,
-      lane: laneForDemoStatus(session.status),
+      lane: laneForFixtureStatus(session.status),
       status: session.status,
       attention,
-      demoSession: true,
+      fixtureSession: true,
     };
   });
 
@@ -151,7 +151,7 @@ export const boardCardsFromDurableSessions = (
             ? "Ready to resume"
             : `Session ${session.state}`
           : undefined,
-    demoSession: false,
+    fixtureSession: false,
   }));
 
 export const groupBoardCards = (cards: DevBoardCard[]) => ({
@@ -237,7 +237,7 @@ function DevBoardSessionCard({
 
 export function ClyDevBoardScreen() {
   const projectId = useClyStore((state) => state.activeProjectId);
-  const demoSessions = useClyStore((state) => state.data.agentSessions);
+  const fixtureSessions = useClyStore((state) => state.data.agentSessions);
   const durableSessions = useClyStore((state) => state.clyDevSessions);
   const loading = useClyStore((state) => state.clyDevSessionsLoading);
   const error = useClyStore((state) => state.clyDevSessionsError);
@@ -245,15 +245,15 @@ export function ClyDevBoardScreen() {
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    if (!isClyDemoRuntime) void load(projectId);
+    if (!isClyTestFixtureRuntime) void load(projectId);
   }, [load, projectId]);
 
   const cards = useMemo(
     () =>
-      isClyDemoRuntime
-        ? boardCardsFromDemoSessions(demoSessions)
+      isClyTestFixtureRuntime
+        ? boardCardsFromFixtureSessions(fixtureSessions)
         : boardCardsFromDurableSessions(durableSessions),
-    [demoSessions, durableSessions],
+    [fixtureSessions, durableSessions],
   );
   const normalizedQuery = query.trim().toLowerCase();
   const visibleCards = normalizedQuery
@@ -267,7 +267,7 @@ export function ClyDevBoardScreen() {
   const attentionCount = grouped.attention.length;
 
   const openNewSession = () => {
-    if (!isClyDemoRuntime) return;
+    if (!isClyTestFixtureRuntime) return;
     const store = useClyStore.getState();
     store.setAgentSessionsMode("overview");
     store.setNewAgentSessionOpen(true);
@@ -275,7 +275,7 @@ export function ClyDevBoardScreen() {
 
   const openSession = (card: DevBoardCard) => {
     const store = useClyStore.getState();
-    if (card.demoSession) store.openAgentSession(card.id);
+    if (card.fixtureSession) store.openAgentSession(card.id);
     else
       useClyStore.setState({
         activeProduct: "dev",
@@ -298,9 +298,9 @@ export function ClyDevBoardScreen() {
             </StatusIndicator>
             <Button
               variant="primary"
-              disabled={!isClyDemoRuntime}
+              disabled={!isClyTestFixtureRuntime}
               title={
-                isClyDemoRuntime
+                isClyTestFixtureRuntime
                   ? "Create a new agent session"
                   : capabilityUnavailableMessage("agents.execute")
               }
@@ -329,7 +329,7 @@ export function ClyDevBoardScreen() {
         <span data-tone={attentionCount ? "warning" : "neutral"}>
           <ShieldAlert aria-hidden="true" /> {attentionCount} need attention
         </span>
-        {!isClyDemoRuntime ? (
+        {!isClyTestFixtureRuntime ? (
           <Button
             iconOnly
             variant="ghost"

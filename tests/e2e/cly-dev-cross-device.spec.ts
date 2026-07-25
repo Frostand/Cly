@@ -105,7 +105,9 @@ const append = (
     payloadVersion: 1,
     idempotencyKey: key,
     type,
-    transferability: "transferable",
+    transferability: ["diff.recorded", "test.recorded"].includes(type)
+      ? "local-only"
+      : "transferable",
     occurredAt: "2026-07-16T12:00:00.000Z",
     actor,
     payload,
@@ -228,13 +230,12 @@ test("hands a Git-backed task from machine A to B and returns updated state with
     destinationRepository
       .listEvents("project-a", "session-a")
       .map((event: { type: string }) => event.type),
-  ).toEqual([
-    "message.recorded",
-    "plan.recorded",
-    "diff.recorded",
-    "test.recorded",
-    "remaining_work.recorded",
-  ]);
+  ).toEqual(["message.recorded", "plan.recorded", "remaining_work.recorded"]);
+  expect(
+    sourceRepository
+      .listEvents("project-a", "session-a")
+      .map((event: { type: string }) => event.type),
+  ).toEqual(expect.arrayContaining(["diff.recorded", "test.recorded"]));
 
   append(destinationRepository, "message-b", "message.recorded", {
     role: "agent",

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import type { InheritedRestriction } from "../domain/obligations";
 import { capabilityUnavailableMessage } from "../services/capabilities";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { InheritedRestrictions } from "./inherited-restrictions";
 import { screenLabels } from "./navigation";
@@ -293,7 +293,7 @@ export function Inspector() {
                     <Pin size={13} /> Open in context
                   </Button>
                   <Button
-                    disabled={!isClyDemoRuntime}
+                    disabled={!isClyTestFixtureRuntime}
                     title={capabilityUnavailableMessage("agents.execute")}
                     onClick={() =>
                       notify(
@@ -306,7 +306,7 @@ export function Inspector() {
                   </Button>
                   <Button
                     variant="ghost"
-                    disabled={!isClyDemoRuntime}
+                    disabled={!isClyTestFixtureRuntime}
                     title={capabilityUnavailableMessage(
                       "integrations.configure",
                     )}

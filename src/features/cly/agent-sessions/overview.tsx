@@ -19,6 +19,7 @@ import {
 import { useMemo } from "react";
 import { Badge, Button } from "../components/primitives";
 import { useClyStore } from "../store/cly-store";
+import { formatAgentModelName } from "./model-catalog";
 import { AgentSessionsModeSwitcher } from "./shared";
 import type { AgentSession, AgentSessionOverviewSort } from "./types";
 import { sessionStatusLabel, toneForAgentStatus } from "./utils";
@@ -172,7 +173,7 @@ export function AgentSessionsOverview() {
         <section className="agent-session-list" aria-label="Agent sessions">
           <div className="agent-session-list-heading">
             <span>{visible.length} sessions</span>
-            <span>Demo runtime · local only</span>
+            <span>Test fixture runtime · local only</span>
           </div>
           {visible.length ? (
             visible.map((session) => (
@@ -298,7 +299,11 @@ export function OverviewSessionRow({
           <GitBranch size={11} /> {session.branch}
         </span>
         <span>
-          {session.orchestrator.model} · {session.orchestrator.reasoningLevel}
+          {formatAgentModelName(
+            session.orchestrator.provider,
+            session.orchestrator.model,
+          )}{" "}
+          · {session.orchestrator.reasoningLevel}
         </span>
         <span>
           {session.activeContextPackName} · {session.contextSummary}
@@ -416,7 +421,8 @@ function OverviewInspector({
             <div>
               <strong>{agent.name}</strong>
               <span>
-                {agent.roleLabel} · {agent.model}
+                {agent.roleLabel} ·{" "}
+                {formatAgentModelName(agent.provider, agent.model)}
               </span>
             </div>
             <i data-status={agent.status} title={agent.status} />

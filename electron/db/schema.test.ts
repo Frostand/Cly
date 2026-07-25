@@ -220,6 +220,8 @@ describe("agent configuration Drizzle schema", () => {
         agent_roles_permissions_json:
           "json_valid(permissions_json) AND json_type(permissions_json) = 'object'",
         agent_roles_reasoning: "reasoning_level IN ('low', 'medium', 'high')",
+        agent_roles_reasoning_effort:
+          "reasoning_effort IS NULL OR reasoning_effort IN ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')",
         agent_roles_role:
           "role IN ('orchestrator', 'implementation', 'review', 'literature', 'analysis', 'experiment', 'custom')",
         agent_roles_tools_json:

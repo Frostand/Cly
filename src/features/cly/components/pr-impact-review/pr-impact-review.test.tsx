@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useClyStore } from "../../store/cly-store";
 import {
   emptyPrImpactReviewFixture,
   populatedPrImpactReviewFixture,
@@ -9,6 +10,24 @@ import { PrImpactReviewScreen } from "./pr-impact-review";
 
 describe("pull request impact review workspace", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("does not request a review until a local repository is linked", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    useClyStore.setState({
+      activeProjectId: "",
+      data: { ...useClyStore.getState().data, projects: [] },
+      fixtureMode: "empty",
+    });
+
+    render(<PrImpactReviewScreen />);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Connect a local repository" }),
+    ).toBeVisible();
+    expect(document.body).not.toHaveTextContent("/Users/");
+  });
 
   it("renders loading, error, and empty states", () => {
     const { rerender } = render(

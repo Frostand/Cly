@@ -48,7 +48,7 @@ import {
 } from "../services/api-client";
 import { capabilityUnavailableMessage } from "../services/capabilities";
 import { projectServices } from "../services/project-services";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 
 type ProvenanceView =
@@ -72,9 +72,17 @@ export function ProvenanceScreen() {
   const [integrity, setIntegrity] = useState<ProvenanceIntegrity | null>(null);
 
   useEffect(() => {
-    const explicitDemoRuntime =
-      import.meta.env.DEV && import.meta.env.VITE_CLY_DEMO_MODE === "1";
-    if (fixtureMode !== "empty" || explicitDemoRuntime) return;
+    if (
+      fixtureMode !== "empty" ||
+      isClyTestFixtureRuntime ||
+      !activeProjectId
+    ) {
+      if (!activeProjectId) {
+        setEvents([]);
+        setIntegrity(null);
+      }
+      return;
+    }
     let current = true;
     Promise.all([
       apiClient.fetchProvenance(activeProjectId),
@@ -136,7 +144,7 @@ export function ProvenanceScreen() {
               label="Provenance view"
             />
             <Button
-              disabled={!isClyDemoRuntime}
+              disabled={!isClyTestFixtureRuntime}
               title={capabilityUnavailableMessage("reproducibility.audit")}
               onClick={() =>
                 notify(
@@ -159,8 +167,20 @@ export function ProvenanceScreen() {
                 {events.length} immutable, ordered events from SQLite
               </div>
             </div>
-            <Badge tone={integrity?.valid ? "success" : "danger"}>
-              {integrity?.valid ? "Chain verified" : "Integrity warning"}
+            <Badge
+              tone={
+                !activeProjectId
+                  ? "info"
+                  : integrity?.valid
+                    ? "success"
+                    : "danger"
+              }
+            >
+              {!activeProjectId
+                ? "Choose a project"
+                : integrity?.valid
+                  ? "Chain verified"
+                  : "Integrity warning"}
             </Badge>
           </div>
           {integrity?.reason ? (
@@ -258,10 +278,12 @@ export function ProvenanceScreen() {
           view === "Unlinked" ? (
             <div className="cly-grid-3">
               {visible.slice(0, 120).map((artifact) => (
-                <Panel
+                <button
+                  type="button"
+                  className="cly-panel cly-interactive-panel"
                   key={artifact.id}
+                  aria-label={`Open provenance for ${artifact.name}`}
                   onClick={() => setSelected(artifact.id)}
-                  style={{ cursor: "pointer" }}
                 >
                   <div className="cly-preview">
                     <div>
@@ -288,7 +310,7 @@ export function ProvenanceScreen() {
                       </span>
                     </div>
                   </div>
-                </Panel>
+                </button>
               ))}
             </div>
           ) : null}
@@ -404,7 +426,7 @@ export function ReproducibilityScreen() {
   const [filter, setFilter] = useState("All");
   const [running, setRunning] = useState(false);
   useEffect(() => {
-    if (isClyDemoRuntime || fixtureMode !== "empty") return;
+    if (isClyTestFixtureRuntime || fixtureMode !== "empty") return;
     let current = true;
     apiClient
       .fetchLatestReproducibilityAudit(activeProjectId)
@@ -852,7 +874,7 @@ function NextStepRow({
           variant="ghost"
           iconOnly
           aria-label={`Create agent session for ${step.title}`}
-          disabled={!isClyDemoRuntime}
+          disabled={!isClyTestFixtureRuntime}
           title={capabilityUnavailableMessage("agents.execute")}
           onClick={onCreateSession}
         >
@@ -1483,7 +1505,7 @@ export function DecisionsScreen() {
             {mode === "Decisions" ? (
               <Button
                 variant="primary"
-                disabled={!isClyDemoRuntime}
+                disabled={!isClyTestFixtureRuntime}
                 title={capabilityUnavailableMessage("decisions.create")}
                 onClick={() => setCreateOpen(true)}
               >

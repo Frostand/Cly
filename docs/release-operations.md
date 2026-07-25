@@ -48,7 +48,7 @@ it never points at a mutable root-level binary.
 ## Release procedure
 
 1. Merge only after CI, migration/recovery, accessibility, and the production
-   evidence-loop tests pass with demo mode disabled. The release workflow reruns
+   evidence-loop tests pass with test fixtures disabled. The release workflow reruns
    lint, type checking, tests, capability checks, dependency audits, production
    license policy, a secret scan, and a real authenticated Claude provider run
    against the exact tagged commit.

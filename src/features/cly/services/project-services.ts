@@ -8,6 +8,7 @@ import {
   type LiteratureSearchResult,
   rankLiteratureWithRrf,
 } from "../domain/literature-search";
+import { type LocalAnalysisResult, sha256Hex } from "../domain/local-analysis";
 import { generateReproducibilityAudit } from "../domain/reproducibility-audit";
 import type {
   Claim,
@@ -20,7 +21,10 @@ import { useClyStore } from "../store/cly-store";
 import { apiClient, nextStepFromPlannerRecommendation } from "./api-client";
 import { CapabilityUnavailableError } from "./capabilities";
 import type { ClyServices } from "./interfaces";
-import { isClyDemoRuntime, isClyExplicitDemoRuntime } from "./runtime";
+import {
+  isClyExplicitTestFixtureRuntime,
+  isClyTestFixtureRuntime,
+} from "./runtime";
 
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const isoNow = () => new Date().toISOString();
@@ -67,10 +71,13 @@ export const projectServices: ClyServices = {
     async switchProject(projectId) {
       useClyStore.getState().setActiveProject(projectId);
     },
+    async update(patch) {
+      return useClyStore.getState().updateActiveProject(patch);
+    },
   },
   context: {
     async setIncluded(itemId, included) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().updateContextItem(itemId, { included });
         return;
       }
@@ -127,7 +134,7 @@ export const projectServices: ClyServices = {
       await refreshAgentContext(projectId);
     },
     async setPinned(itemId, pinned) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().updateContextItem(itemId, { pinned });
         return;
       }
@@ -146,7 +153,7 @@ export const projectServices: ClyServices = {
       await refreshAgentContext(projectId);
     },
     async setRepresentation(itemId, representation) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().updateContextItem(itemId, {
           representation,
           tokens: representation === "Summary" ? 1400 : 7200,
@@ -250,14 +257,14 @@ export const projectServices: ClyServices = {
   },
   agents: {
     async savePreset(preset) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().addAgentPreset(preset);
         return;
       }
       throw new CapabilityUnavailableError("agents.configure");
     },
     async startPreview(presetId) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         const preset = useClyStore
           .getState()
           .data.agentPresets.find((item) => item.id === presetId);
@@ -384,6 +391,131 @@ export const projectServices: ClyServices = {
       stateForProject(projectId)?.addExperiment(persistedDuplicate);
       return persistedDuplicate;
     },
+    async recordLocalAnalysis(input) {
+      if (isClyExplicitTestFixtureRuntime) {
+        throw new Error(
+          "Dataset execution is unavailable in the automated fixture service. Use the production local-analysis workflow.",
+        );
+      }
+      const projectId = await ensureActiveProject();
+      const state = stateForProject(projectId);
+      const experiment = state?.data.experiments.find(
+        (item) => item.id === input.experimentId,
+      );
+      if (!experiment) throw new Error("Experiment not found.");
+      const source = state?.data.sources.find(
+        (item) => item.id === input.datasetSourceId,
+      );
+      if (!source || source.type !== "Dataset")
+        throw new Error("The imported dataset source was not found.");
+
+      const result: LocalAnalysisResult = input.result;
+      const engineHash = await sha256Hex(result.engineVersion);
+      const datasets = [
+        {
+          id: input.datasetSourceId,
+          version: input.datasetHash.slice(0, 12),
+          contentHash: input.datasetHash,
+          uri: input.datasetFileName,
+        },
+      ];
+      const configuration: Record<string, unknown> = {
+        experimentType: "Statistical analysis",
+        analysisTask: result.task,
+        outcome: result.outcome,
+        predictors: result.predictors.join(", "),
+        folds: result.folds,
+        seed: result.seed,
+        rowsUsed: result.rowsUsed,
+        rowsExcluded: result.rowsExcluded,
+        engineVersion: `${result.engineVersion}@sha256:${engineHash}`,
+        datasetFile: input.datasetFileName,
+        datasetHash: input.datasetHash,
+        coefficientSummary: result.coefficients
+          .slice(0, 8)
+          .map((item) => `${item.feature}=${item.value}`)
+          .join("; "),
+        warnings: result.warnings.join(" | "),
+      };
+      await apiClient.reviseExperimentDefinition(
+        projectId,
+        input.experimentId,
+        {
+          hypothesis: experiment.hypothesis,
+          objective: experiment.goal,
+          configuration,
+          datasets,
+          declaredMetrics: Object.keys(result.metrics),
+        },
+      );
+      const run = await apiClient.createExperimentRun(
+        projectId,
+        input.experimentId,
+        {
+          title: `${experiment.name} · local cross-validation`,
+          description: result.conclusion,
+          status: "running",
+          commitSha: engineHash,
+          configuration,
+          datasets,
+          codeRefs: [
+            {
+              path: `builtin://${result.engineVersion}`,
+              contentHash: engineHash,
+            },
+          ],
+          startedAt: isoNow(),
+        },
+      );
+      await apiClient.logExperimentRunMetrics(
+        projectId,
+        run.id,
+        Object.entries(result.metrics)
+          .filter(([, value]) => Number.isFinite(value))
+          .map(([name, value]) => ({ name, value })),
+      );
+      const resultJson = JSON.stringify(result, null, 2);
+      await apiClient.registerExperimentRunArtifact(projectId, run.id, {
+        title: "Local analysis summary",
+        description: `${result.conclusion} Limitations: ${result.warnings.join(" ")}`,
+        kind: "file",
+        path: `cly://analysis/${run.id}/summary.json`,
+        mediaType: "application/json",
+        contentHash: await sha256Hex(resultJson),
+        generatorPath: `builtin://${result.engineVersion}`,
+        generatorHash: engineHash,
+      });
+      await apiClient.updateExperimentRunStatus(projectId, run.id, {
+        status: "completed",
+        finishedAt: isoNow(),
+        exitCode: 0,
+      });
+
+      const claim = await projectServices.claims.create(
+        `${result.conclusion} Predictors: ${result.predictors.join(", ")}; outcome: ${result.outcome}.`,
+      );
+      await projectServices.claims.linkExperiment(claim.id, input.experimentId);
+      await projectServices.claims.linkEvidence(
+        claim.id,
+        input.datasetSourceId,
+        "supports",
+        { quote: result.conclusion, origin: "system" },
+      );
+      const exceedsBaseline =
+        result.task === "classification"
+          ? (result.metrics.auc ?? 0.5) >= 0.6 &&
+            (result.metrics.accuracy ?? 0) >
+              (result.metrics.baselineAccuracy ?? 1)
+          : (result.metrics.r2 ?? 0) > 0.1 &&
+            (result.metrics.rmse ?? Number.POSITIVE_INFINITY) <
+              (result.metrics.baselineRmse ?? 0);
+      await projectServices.claims.setStatus(
+        claim.id,
+        exceedsBaseline ? "Medium" : "Needs review",
+      );
+      await useClyStore.getState().loadFromApi(projectId);
+      return { runId: run.id, claimId: claim.id };
+    },
   },
   literature: {
     async search(_project, query) {
@@ -399,13 +531,14 @@ export const projectServices: ClyServices = {
       const source: Source = {
         id: id("src"),
         title: input.title,
-        authors: "Metadata pending",
-        year: new Date().getFullYear(),
+        authors: input.authors ?? "Metadata pending",
+        year: input.year ?? new Date().getFullYear(),
         type: input.type,
         status: "Needs metadata",
         relevance: "Medium",
         confidence: 0,
-        summary: "Imported source awaiting extraction.",
+        summary: input.summary ?? "Imported source awaiting extraction.",
+        url: input.url,
         methods: [],
         findings: [],
         limitations: [],
@@ -440,7 +573,7 @@ export const projectServices: ClyServices = {
       return persisted;
     },
     async addToNotebookBundle(sourceId) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore
           .getState()
           .updateSource(sourceId, { inNotebookBundle: true });
@@ -517,6 +650,21 @@ export const projectServices: ClyServices = {
       stateForProject(projectId)?.updateSource(sourceId, updated);
       return updated;
     },
+    async setArchived(sourceId, archived) {
+      const projectId = activeProjectId();
+      const object = await apiClient.setSourceArchived(
+        projectId,
+        sourceId,
+        archived,
+      );
+      const source = stateForProject(projectId)?.data.sources.find(
+        (item) => item.id === sourceId,
+      );
+      if (!source) throw new Error("Source not found.");
+      const updated = { ...source, archived, updatedAt: object.updatedAt };
+      stateForProject(projectId)?.updateSource(sourceId, updated);
+      return updated;
+    },
     async reviewField(sourceId, fieldId, verificationState) {
       const projectId = activeProjectId();
       const state = stateForProject(projectId);
@@ -549,7 +697,7 @@ export const projectServices: ClyServices = {
   },
   notebooks: {
     async importMock(name) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         const notebook: NotebookArtifact = {
           id: id("nb"),
           name,
@@ -575,8 +723,8 @@ export const projectServices: ClyServices = {
   },
   claims: {
     async create(text) {
-      const demoState = useClyStore.getState();
-      if (isClyExplicitDemoRuntime) {
+      const fixtureState = useClyStore.getState();
+      if (isClyExplicitTestFixtureRuntime) {
         const claim: Claim = {
           id: id("claim"),
           text,
@@ -594,7 +742,7 @@ export const projectServices: ClyServices = {
           nextExperiment: "Link evidence or design a test.",
           updatedAt: isoNow(),
         };
-        demoState.addClaim(claim);
+        fixtureState.addClaim(claim);
         return claim;
       }
       const projectId = await ensureActiveProject();
@@ -646,7 +794,7 @@ export const projectServices: ClyServices = {
         (item) => item.id === experimentId,
       );
       if (!experiment) return;
-      if (isClyExplicitDemoRuntime) {
+      if (isClyExplicitTestFixtureRuntime) {
         state.updateClaim(claimId, {
           experimentIds: Array.from(
             new Set([...claim.experimentIds, experimentId]),
@@ -703,18 +851,20 @@ export const projectServices: ClyServices = {
       const claim = state.data.claims.find((item) => item.id === claimId);
       const source = state.data.sources.find((item) => item.id === sourceId);
       if (!claim || !source) throw new Error("Claim or source not found.");
-      const demoEvidenceId = isClyExplicitDemoRuntime ? id("evidence") : null;
-      const result = isClyExplicitDemoRuntime
+      const fixtureEvidenceId = isClyExplicitTestFixtureRuntime
+        ? id("evidence")
+        : null;
+      const result = isClyExplicitTestFixtureRuntime
         ? {
             duplicate: false,
             evidence: {
-              id: demoEvidenceId ?? "",
+              id: fixtureEvidenceId ?? "",
               payload: {
                 kind: "evidence" as const,
                 sourceId,
                 quote: passage.quote,
                 locator: passage.locator,
-                contentHash: "demo",
+                contentHash: "test-fixture",
                 verificationState: "unverified" as const,
               },
               origin: passage.origin ?? ("human" as const),
@@ -727,7 +877,7 @@ export const projectServices: ClyServices = {
             containsRelationship: {
               id: id("edge"),
               fromObjectId: sourceId,
-              toObjectId: demoEvidenceId ?? "",
+              toObjectId: fixtureEvidenceId ?? "",
               type: "contains" as const,
               confidence: null,
               origin: passage.origin ?? ("human" as const),
@@ -739,7 +889,7 @@ export const projectServices: ClyServices = {
             },
             claimRelationship: {
               id: id("edge"),
-              fromObjectId: demoEvidenceId ?? "",
+              fromObjectId: fixtureEvidenceId ?? "",
               toObjectId: claimId,
               type,
               confidence: passage.confidence ?? null,
@@ -900,7 +1050,7 @@ export const projectServices: ClyServices = {
   },
   reproducibility: {
     async runAudit() {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         const state = useClyStore.getState();
         const generated = generateReproducibilityAudit(state.data);
         state.replaceReproducibilityAudit(generated.audit, generated.findings);
@@ -923,7 +1073,7 @@ export const projectServices: ClyServices = {
       return report.audit;
     },
     async resolveFinding(findingId) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().updateFinding(findingId, { status: "Resolved" });
         return;
       }
@@ -938,10 +1088,21 @@ export const projectServices: ClyServices = {
       );
       state?.updateFinding(findingId, { status: finding.status });
     },
+    async setFindingDisposition(findingId, input) {
+      if (isClyTestFixtureRuntime) {
+        useClyStore.getState().updateFinding(findingId, input);
+        return;
+      }
+      if (input.status === "Resolved") {
+        await this.resolveFinding(findingId);
+        return;
+      }
+      throw new CapabilityUnavailableError("reproducibility.audit");
+    },
   },
   integrations: {
     async updateStatus(integrationId, status) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         useClyStore.getState().updateIntegration(integrationId, { status });
         return;
       }
@@ -949,8 +1110,11 @@ export const projectServices: ClyServices = {
     },
   },
   planner: {
-    async generate() {
-      if (isClyDemoRuntime) return useClyStore.getState().data.nextSteps;
+    async generate(seed) {
+      if (isClyTestFixtureRuntime) {
+        if (seed) useClyStore.getState().replaceNextSteps(seed);
+        return seed ?? useClyStore.getState().data.nextSteps;
+      }
       const projectId = await ensureActiveProject();
       const result = await apiClient.generateNextSteps(projectId);
       const steps = result.recommendations.map(
@@ -960,9 +1124,26 @@ export const projectServices: ClyServices = {
       return steps;
     },
     async setStatus(stepId, status, reason) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
+        if (status === "Recommended") {
+          useClyStore
+            .getState()
+            .replaceNextSteps(
+              useClyStore
+                .getState()
+                .data.nextSteps.map((step) =>
+                  step.id === stepId ? { ...step, status } : step,
+                ),
+            );
+          return;
+        }
         useClyStore.getState().updateNextStep(stepId, status);
         return;
+      }
+      if (status === "Recommended") {
+        throw new Error(
+          "A reviewed recommendation cannot return to draft state.",
+        );
       }
       if (status === "In progress") {
         throw new Error(
@@ -1001,7 +1182,7 @@ export const projectServices: ClyServices = {
         );
     },
     async edit(stepId, edit, reason) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         const current = useClyStore
           .getState()
           .data.nextSteps.find((step) => step.id === stepId);
@@ -1036,7 +1217,7 @@ export const projectServices: ClyServices = {
   },
   decisions: {
     async create(input) {
-      if (isClyDemoRuntime) {
+      if (isClyTestFixtureRuntime) {
         const decision: ResearchDecision = {
           id: id("decision"),
           title: input.title,
@@ -1054,13 +1235,32 @@ export const projectServices: ClyServices = {
       }
       throw new CapabilityUnavailableError("decisions.create");
     },
-    async supersede(decisionId, replacementId) {
-      if (isClyDemoRuntime) {
+    async update(decisionId, input) {
+      if (isClyTestFixtureRuntime) {
+        useClyStore.getState().updateDecision(decisionId, input);
+        const updated = useClyStore
+          .getState()
+          .data.decisions.find((item) => item.id === decisionId);
+        if (!updated) throw new Error("Decision was not found.");
+        return updated;
+      }
+      throw new CapabilityUnavailableError("decisions.create");
+    },
+    async supersede(decisionId, replacement) {
+      if (isClyTestFixtureRuntime) {
+        const replacementId =
+          typeof replacement === "string"
+            ? replacement
+            : (await this.create(replacement)).id;
         useClyStore.getState().updateDecision(decisionId, {
           status: "Superseded",
           supersededBy: replacementId,
         });
-        return;
+        const item = useClyStore
+          .getState()
+          .data.decisions.find((decision) => decision.id === replacementId);
+        if (!item) throw new Error("Replacement decision was not found.");
+        return item;
       }
       throw new CapabilityUnavailableError("decisions.create");
     },

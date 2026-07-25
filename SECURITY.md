@@ -33,4 +33,4 @@ filesystem, command, network, provider, or repository capabilities change.
 
 ## Supported versions
 
-Only the current private development branch receives security fixes until the first tagged Cly release.
+Until the first tagged release, security fixes target the current default branch.

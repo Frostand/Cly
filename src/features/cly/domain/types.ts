@@ -173,6 +173,7 @@ export interface Source {
   linkedClaimIds: string[];
   linkedExperimentIds: string[];
   inNotebookBundle: boolean;
+  archived?: boolean;
   groundedSummary?: GroundedLiteratureSummary;
   path: string;
   updatedAt: string;
@@ -486,9 +487,10 @@ export interface AuditFinding {
   title: string;
   detail: string;
   severity: "Blocking" | "High" | "Warning" | "Passed";
-  status: "Open" | "Assigned" | "Resolved" | "Ignored";
+  status: "Open" | "Assigned" | "Resolved" | "Deferred" | "Ignored";
   objectIds: string[];
   assignee?: string;
+  deferredReason?: string;
   area?: AuditArea;
   affectedClaimIds?: string[];
   requirementStatus?: "missing" | "failed" | "warning" | "passed";

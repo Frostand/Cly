@@ -1,6 +1,6 @@
 {
   "app": {
-    "loadingDream": "Loading Cly"
+    "loadingCly": "Loading Cly"
   },
   "common": {
     "appName": "Cly",
@@ -40,7 +40,7 @@
   },
   "emptyProject": {
     "connectProvider": "Connect a provider",
-    "connectProviderDescription": "Select at least one model before opening a project.",
+    "connectProviderDescription": "Folder, Git, and terminal tools work without AI. Connect a provider when you want to use chat.",
     "electronRequired": "Open this app inside Electron to add project folders.",
     "getStarted": "Get started",
     "openFolder": "Open Folder",

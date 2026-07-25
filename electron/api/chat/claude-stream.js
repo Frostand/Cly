@@ -22,7 +22,7 @@ import {
   buildCodexMessageFilePartsSummary,
   getLatestUserMessage,
 } from "./codex-prompt.js";
-import { formatStreamError } from "./errors.js";
+import { formatStreamError, logProviderError } from "./errors.js";
 import { createClaudeProjectTools } from "./project-tools.js";
 import {
   DEFAULT_TOOL_STEP_LIMIT,
@@ -514,6 +514,7 @@ const parseAskUserQuestionApproval = (reason) => {
 };
 
 export const streamClaudeResponse = async ({
+  abortSignal,
   agentMode,
   claudePermissionMode,
   messages,
@@ -601,7 +602,7 @@ export const streamClaudeResponse = async ({
     modelMessages = normalized.messages;
     usesClaudeImageInput = normalized.hasImageInput;
   } catch (err) {
-    console.error("[chat] Failed to convert messages:", err);
+    logProviderError("[chat message conversion error]", err);
     const detail =
       err instanceof Error && err.message ? err.message : String(err);
     return new Response(`Failed to prepare messages: ${detail}`, {
@@ -612,11 +613,12 @@ export const streamClaudeResponse = async ({
   const stream = createUIMessageStream({
     originalMessages: messages,
     onError: (error) => {
-      console.error("[chat stream error]", error);
+      logProviderError("[chat stream error]", error);
       return formatStreamError(error);
     },
     execute: ({ writer }) => {
       const textResult = streamText({
+        abortSignal,
         messages: modelMessages,
         model: providerFactory(model, writer),
         stopWhen: stepCountIs(
@@ -645,7 +647,7 @@ export const streamClaudeResponse = async ({
             return undefined;
           },
           onError: (error) => {
-            console.error("[chat stream error]", error);
+            logProviderError("[chat stream error]", error);
             return formatStreamError(error);
           },
         }),

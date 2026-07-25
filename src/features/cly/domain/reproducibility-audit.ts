@@ -448,7 +448,7 @@ export function generateReproducibilityAudit(
     );
   });
   const audit: ReproducibilityAudit = {
-    id: `audit-${createdAt.replace(/[^0-9]/g, "").slice(0, 14)}`,
+    id: `audit-${createdAt.replace(/[^0-9]/g, "").slice(0, 17)}`,
     score,
     status: statusForScore(score, sortedFindings),
     createdAt,

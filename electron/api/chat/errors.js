@@ -77,3 +77,34 @@ export const formatStreamError = (error) => {
 
   return "An unexpected error occurred. Check the server console for details.";
 };
+
+const getSafeScalar = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return /^[a-zA-Z0-9_.:-]{1,100}$/.test(trimmed) ? trimmed : undefined;
+};
+
+export const getProviderErrorLogMetadata = (error) => {
+  if (error == null || typeof error !== "object") {
+    return { name: "ProviderError" };
+  }
+
+  return {
+    name:
+      typeof error.name === "string" &&
+      /^[a-zA-Z0-9_.:-]{1,100}$/.test(error.name)
+        ? error.name
+        : "ProviderError",
+    ...(getSafeScalar(error.code) !== undefined
+      ? { code: getSafeScalar(error.code) }
+      : {}),
+    ...(getSafeScalar(error.statusCode ?? error.status) !== undefined
+      ? { status: getSafeScalar(error.statusCode ?? error.status) }
+      : {}),
+  };
+};
+
+export const logProviderError = (scope, error, logger = console.error) => {
+  logger(scope, getProviderErrorLogMetadata(error));
+};

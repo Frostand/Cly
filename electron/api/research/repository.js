@@ -244,6 +244,7 @@ const objectPayloadSchema = z.discriminatedUnion("kind", [
       .optional(),
     enrichmentMethod: z.string().trim().min(1).max(200).optional(),
     enrichedAt: z.iso.datetime().optional(),
+    archivedAt: z.iso.datetime().optional(),
   }),
   z.object({
     kind: z.literal("claim"),
@@ -1805,6 +1806,55 @@ export function createResearchRepository(
       );
     },
 
+    setSourceArchived(projectId, sourceId, archived, actorId = "local-user") {
+      ensureProject(projectId);
+      const existing = database
+        .prepare(
+          "SELECT * FROM research_objects WHERE id = ? AND project_id = ? AND type = 'source'",
+        )
+        .get(sourceId, projectId);
+      if (!existing) throw new Error("Source does not belong to the project.");
+      const payload = objectPayloadSchema.parse(parseJson(existing.payload));
+      if (payload.kind !== "source")
+        throw new Error("Source payload is invalid.");
+      const now = clock();
+      const nextPayload = {
+        ...payload,
+        archivedAt: archived ? now : undefined,
+      };
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database
+          .prepare(
+            "UPDATE research_objects SET payload = ?, updated_at = ? WHERE id = ? AND project_id = ?",
+          )
+          .run(JSON.stringify(nextPayload), now, sourceId, projectId);
+        insertProvenance(
+          {
+            action: archived ? "source.archived" : "source.unarchived",
+            actorId,
+            actorType: "human",
+            metadata: {
+              archived,
+              previousArchivedAt: payload.archivedAt ?? null,
+            },
+            objectId: sourceId,
+            projectId,
+          },
+          now,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      return mapObject(
+        database
+          .prepare("SELECT * FROM research_objects WHERE id = ?")
+          .get(sourceId),
+      );
+    },
+
     updateClaimStatus(input) {
       const parsed = claimStatusInputSchema.parse(input);
       ensureProject(parsed.projectId);
@@ -2882,6 +2932,20 @@ export function createResearchRepository(
         .all(projectId)
         .map(mapRelationship);
       return { objects, relationships };
+    },
+
+    listProjects() {
+      return database
+        .prepare(
+          `SELECT * FROM projects
+           WHERE status = 'open'
+           ORDER BY updated_at DESC, created_at DESC, id`,
+        )
+        .all()
+        .map((row) => ({
+          ...mapProject(row),
+          updatedAt: row.updated_at,
+        }));
     },
 
     getProject(projectId) {

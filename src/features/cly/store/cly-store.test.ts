@@ -10,10 +10,10 @@ import { resolveInitialFixtureMode, useClyStore } from "./cly-store";
 describe("Cly UI store", () => {
   it("always starts packaged production with an empty research repository", () => {
     expect(
-      resolveInitialFixtureMode({ demoFlag: "1", development: false }),
+      resolveInitialFixtureMode({ fixtureFlag: "1", development: false }),
     ).toBe("empty");
     expect(
-      resolveInitialFixtureMode({ demoFlag: "1", development: true }),
+      resolveInitialFixtureMode({ fixtureFlag: "1", development: true }),
     ).toBe("active");
   });
   afterEach(() => {
@@ -741,7 +741,7 @@ describe("Cly UI store", () => {
     expect(useClyStore.getState().data.claims).toHaveLength(0);
   });
 
-  it("preserves a fixture selector opened during background demo hydration", async () => {
+  it("preserves a fixture selector opened during background test-fixture hydration", async () => {
     useClyStore.setState({ fixtureSwitcherOpen: false });
 
     useClyStore.getState().setFixtureMode("active");

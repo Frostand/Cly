@@ -20,6 +20,7 @@ import { createRepositoryWorkflowCoordinator } from "./repository-workflow-coord
 import { createReproducibilityAuditService } from "./reproducibility-audit.js";
 import { createReviewerCapsuleService } from "./reviewer-capsule.js";
 import { registerStalenessRoutes } from "./staleness-routes.js";
+import { createResearchWorkflowRepository } from "./workflow-repository.js";
 
 const objectBodySchema = z.object({
   type: z.enum([
@@ -136,6 +137,62 @@ const sourceUpdateBodySchema = z.object({
   description: z.string().trim().max(10_000),
   payload: z.record(z.string(), z.unknown()),
 });
+
+const sourceArchiveBodySchema = z.object({ archived: z.boolean() }).strict();
+
+const decisionSupersedeBodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(500),
+    decision: z.string().trim().min(1).max(10_000),
+    reason: z.string().trim().min(1).max(10_000),
+    alternatives: z.array(z.string().trim().min(1)).max(100).default([]),
+    evidenceIds: z.array(z.string().trim().min(1)).max(500).default([]),
+    affectedIds: z.array(z.string().trim().min(1)).max(500).default([]),
+    outcome: z.string().trim().min(1).max(10_000).nullable().optional(),
+    origin: z
+      .enum(["Researcher", "Team", "Agent-assisted"])
+      .default("Researcher"),
+    actor: z.string().trim().min(1).max(200).default("local-user"),
+  })
+  .strict();
+
+const plannerStepTransitionBodySchema = z
+  .object({
+    status: z.enum([
+      "Recommended",
+      "Accepted",
+      "Deferred",
+      "Dismissed",
+      "In progress",
+    ]),
+    actor: z.string().trim().min(1).max(200).default("local-user"),
+  })
+  .strict();
+
+const findingDispositionBodySchema = z
+  .object({
+    status: z.enum(["Open", "Assigned", "Resolved", "Deferred"]),
+    assignee: z.string().trim().min(1).max(200).optional(),
+    reason: z.string().trim().min(1).max(10_000).optional(),
+    actor: z.string().trim().min(1).max(200).default("local-user"),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.status === "Assigned" && !value.assignee) {
+      context.addIssue({
+        code: "custom",
+        message: "Assigning a finding requires an assignee.",
+        path: ["assignee"],
+      });
+    }
+    if (value.status === "Deferred" && !value.reason) {
+      context.addIssue({
+        code: "custom",
+        message: "Deferring a finding requires a reason.",
+        path: ["reason"],
+      });
+    }
+  });
 
 const projectBodySchema = z.object({
   name: z.string().trim().min(1).max(500),
@@ -332,6 +389,12 @@ export function registerResearchRoutes(
   app,
   {
     getRepository = () => createResearchRepository(getStateDatabase()),
+    getWorkflowRepository = () => {
+      const repository = getRepository();
+      return createResearchWorkflowRepository(getStateDatabase(), {
+        appendProvenance: (event) => repository.appendProvenance(event),
+      });
+    },
     getRepositoryObserver = () =>
       (() => {
         const database = getStateDatabase();
@@ -441,6 +504,105 @@ export function registerResearchRoutes(
       );
     }
   });
+
+  app.post(
+    "/api/projects/:projectId/decisions/:decisionId/supersede",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = decisionSupersedeBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          getWorkflowRepository().supersedeDecision(
+            c.req.param("projectId"),
+            c.req.param("decisionId"),
+            parsed.data,
+          ),
+          201,
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error
+            ? error.message
+            : "Decision supersession failed.",
+          400,
+        );
+      }
+    },
+  );
+
+  app.patch("/api/projects/:projectId/planner/:stepId", async (c) => {
+    const body = await readJson(c);
+    if (body.error) return body.error;
+    const parsed = plannerStepTransitionBodySchema.safeParse(body.data);
+    if (!parsed.success) return c.text(parsed.error.message, 400);
+    try {
+      return c.json(
+        getWorkflowRepository().transitionPlannerStep(
+          c.req.param("projectId"),
+          c.req.param("stepId"),
+          parsed.data.status,
+          parsed.data.actor,
+        ),
+      );
+    } catch (error) {
+      return c.text(
+        error instanceof Error ? error.message : "Planner step update failed.",
+        400,
+      );
+    }
+  });
+
+  app.patch(
+    "/api/projects/:projectId/reproducibility/findings/:findingId",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = findingDispositionBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          getWorkflowRepository().transitionFinding(
+            c.req.param("projectId"),
+            c.req.param("findingId"),
+            parsed.data,
+          ),
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error ? error.message : "Finding update failed.",
+          400,
+        );
+      }
+    },
+  );
+
+  app.patch(
+    "/api/projects/:projectId/research/sources/:sourceId/archive",
+    async (c) => {
+      const body = await readJson(c);
+      if (body.error) return body.error;
+      const parsed = sourceArchiveBodySchema.safeParse(body.data);
+      if (!parsed.success) return c.text(parsed.error.message, 400);
+      try {
+        return c.json(
+          getRepository().setSourceArchived(
+            c.req.param("projectId"),
+            c.req.param("sourceId"),
+            parsed.data.archived,
+          ),
+        );
+      } catch (error) {
+        return c.text(
+          error instanceof Error
+            ? error.message
+            : "Source archive update failed.",
+          400,
+        );
+      }
+    },
+  );
 
   app.get("/api/projects/:projectId/provenance", (c) => {
     const parsed = provenanceQuerySchema.safeParse({

@@ -1,0 +1,201 @@
+name: Cly Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version in package.json, without the v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cly-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Release quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: pnpm
+
+      - name: Validate release version
+        id: release
+        shell: bash
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_VERSION" != "$VERSION" ]; then
+            echo "Requested version $DISPATCH_VERSION does not match package.json ($VERSION)." >&2
+            exit 1
+          fi
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF_NAME" != "$TAG" ]; then
+            echo "Tag $REF_NAME does not match package.json ($VERSION)." >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install browser test runtime
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run release gates
+        run: |
+          pnpm doctor
+          pnpm lint
+          pnpm typecheck
+          pnpm capabilities:check
+          pnpm privacy:check
+          pnpm licenses:check
+          pnpm test
+          xvfb-run --auto-servernum pnpm test:e2e
+          pnpm vite:build
+
+  package:
+    name: Package ${{ matrix.label }}
+    needs: quality
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS
+            os: macos-14
+            command: pnpm exec electron-builder --mac dmg zip --arm64 --x64 --publish never
+            app: release/mac-arm64/Cly.app
+            smoke: pnpm package:smoke -- --app release/mac-arm64/Cly.app
+            artifact: cly-macos
+            metadata: release/latest-mac.yml
+            files: |
+              release/Cly-*-mac-arm64.dmg
+              release/Cly-*-mac-arm64.zip
+              release/Cly-*-mac-x64.dmg
+              release/Cly-*-mac-x64.zip
+              release/latest-mac.yml
+          - label: Windows x64
+            os: windows-latest
+            command: pnpm exec electron-builder --win nsis --x64 --publish never
+            app: release/win-unpacked
+            smoke: pnpm package:smoke -- --app release/win-unpacked
+            artifact: cly-windows-x64
+            metadata: release/latest.yml
+            files: |
+              release/Cly-*-windows-x64-setup.exe
+              release/Cly-*-windows-x64-setup.exe.blockmap
+              release/latest.yml
+          - label: Linux x64
+            os: ubuntu-latest
+            command: pnpm exec electron-builder --linux AppImage deb rpm --x64 --publish never
+            app: release/linux-unpacked
+            smoke: xvfb-run --auto-servernum pnpm package:smoke -- --app release/linux-unpacked
+            artifact: cly-linux-x64
+            metadata: release/latest-linux.yml
+            files: |
+              release/Cly-*-linux-x64.AppImage
+              release/Cly-*-linux-x64.deb
+              release/Cly-*-linux-x64.rpm
+              release/latest-linux.yml
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm vite:build
+
+      - name: Package application
+        run: ${{ matrix.command }}
+
+      - name: Verify packaged contents and permissions
+        run: pnpm package:verify:contents -- --app ${{ matrix.app }}
+
+      - name: Launch packaged application
+        run: ${{ matrix.smoke }}
+
+      - name: Verify update metadata
+        shell: bash
+        run: test -f "${{ matrix.metadata }}"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 30
+          path: ${{ matrix.files }}
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - quality
+      - package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packaged installers
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: release-assets
+
+      - name: Generate checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.quality.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.quality.outputs.version }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/* --target "$GITHUB_SHA" --generate-notes --title "Cly $RELEASE_VERSION"
+          fi

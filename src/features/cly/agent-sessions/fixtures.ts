@@ -12,7 +12,7 @@ const taskIdentity = ({
   title,
   branch,
   worktree,
-  model = "GPT-5",
+  model = "gpt-5.6-sol",
   reasoningLevel = "high",
   usedTokens = 58_200,
   usedCostMinorUnits = 284,
@@ -76,8 +76,8 @@ const agent = (
   patch: Partial<AgentIdentity> &
     Pick<AgentIdentity, "id" | "name" | "role" | "roleLabel" | "task">,
 ): AgentIdentity => ({
-  provider: "OpenAI",
-  model: "GPT-5",
+  provider: "openai",
+  model: "gpt-5.6-sol",
   reasoningLevel: "High",
   contextPackId: "pack-claim",
   contextPackName: "Claim Audit Pack",
@@ -93,7 +93,7 @@ const agent = (
   elapsed: "18m 42s",
   approvalPolicy: "Approve writes and network",
   maximumRuntime: "2 hours",
-  fallbackModel: "GPT-5 mini",
+  fallbackModel: "gpt-5.4-mini",
   reportingDestination: "Orchestrator",
   transcript: [
     "Mapped the current objective to three linked claims.",
@@ -242,7 +242,7 @@ const activeMessages: AgentMessage[] = [
     author: "Cly Orchestrator",
     body: "I’ll trace the claim through its experiments, implementation, and provenance. I’m delegating the implementation audit and an independent review in parallel, then I’ll reconcile their findings against the source evidence.",
     timestamp: "08:13",
-    metadata: ["GPT-5", "High reasoning", "Claim Audit Pack"],
+    metadata: ["GPT-5.6 Sol", "High reasoning", "Claim Audit Pack"],
   },
   {
     id: "message-04",
@@ -252,7 +252,7 @@ const activeMessages: AgentMessage[] = [
     title: "Implementation review delegated",
     body: "Reviewing changes in src/evaluation/ and tracing calibration behavior to the primary reliability claim.",
     timestamp: "08:14",
-    metadata: ["GPT-5", "High reasoning", "Working"],
+    metadata: ["GPT-5.6 Sol", "High reasoning", "Working"],
     actions: ["Open agent", "View task", "Steer"],
   },
   {
@@ -303,8 +303,8 @@ export const createAgentSessionFixtures = (): AgentSession[] => {
     role: "implementation",
     roleLabel: "Worker Agent",
     task: "Trace calibration semantics through code and tests",
-    provider: "OpenAI",
-    model: "GPT-5",
+    provider: "openai",
+    model: "gpt-5.6-sol",
     progress: 68,
     lastAction: "Editing calibration.py",
   });
@@ -314,8 +314,8 @@ export const createAgentSessionFixtures = (): AgentSession[] => {
     role: "review",
     roleLabel: "Reviewer Agent",
     task: "Independently challenge the implementation and evidence chain",
-    provider: "Anthropic",
-    model: "Claude Opus 4.6",
+    provider: "anthropic",
+    model: "opus",
     status: "reviewing",
     progress: 72,
     lastAction: "Reviewing new regression test",
@@ -611,7 +611,9 @@ export const createNewAgentSession = (
       branch: input.branchPreference,
       model: input.model,
       reasoningLevel:
-        input.reasoningLevel.toLowerCase() as ClyDevTaskIdentity["provider"]["reasoningLevel"],
+        input.reasoningLevel === "Extra High"
+          ? "xhigh"
+          : (input.reasoningLevel.toLowerCase() as ClyDevTaskIdentity["provider"]["reasoningLevel"]),
       usedTokens: 0,
       usedCostMinorUnits: 0,
       researchImpact: "Research impact has not been assessed yet.",

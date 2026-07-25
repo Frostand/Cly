@@ -53,7 +53,7 @@ const riskyNotebook = () => ({
         "import numpy as np\n",
         "import pandas as pd\n",
         "from missing_package import train\n",
-        "data = pd.read_csv('/Users/researcher/private/train.csv')\n",
+        "data = pd.read_csv('/Users/example/private/train.csv')\n",
         "def calibrate(model):\n    return model.fit(data)\n",
         "sample = np.random.rand(10)\n",
         "accuracy_score = 0.91\n",

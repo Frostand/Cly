@@ -1,9 +1,9 @@
-/** True only for the explicit deterministic demo runtime. */
-export const isClyExplicitDemoRuntime =
-  __CLY_INCLUDE_DEMOS__ &&
+/** True only when automated tests explicitly request deterministic fixtures. */
+export const isClyExplicitTestFixtureRuntime =
+  __CLY_INCLUDE_TEST_FIXTURES__ &&
   import.meta.env.DEV &&
-  import.meta.env.VITE_CLY_DEMO_MODE === "1";
+  import.meta.env.VITE_CLY_TEST_FIXTURES === "1";
 
-export const isClyDemoRuntime =
-  __CLY_INCLUDE_DEMOS__ &&
-  (isClyExplicitDemoRuntime || import.meta.env.MODE === "test");
+export const isClyTestFixtureRuntime =
+  __CLY_INCLUDE_TEST_FIXTURES__ &&
+  (isClyExplicitTestFixtureRuntime || import.meta.env.MODE === "test");

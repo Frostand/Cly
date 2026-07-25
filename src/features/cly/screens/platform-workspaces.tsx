@@ -9,7 +9,6 @@ import {
   FileCheck2,
   GitBranch,
   Laptop,
-  Link2,
   LockKeyhole,
   PackageCheck,
   Play,
@@ -31,31 +30,29 @@ import {
   Button,
   Dialog,
   EmptyState,
-  Metric,
   PageHeader,
   SearchInput,
   toneForStatus,
 } from "../components/primitives";
 import { ClySplitPane } from "../components/toolkit";
-import type { DevSection } from "../domain/types";
+import type { DevSection, ResearchProject } from "../domain/types";
 import { capabilityUnavailableMessage } from "../services/capabilities";
-import { isClyDemoRuntime } from "../services/runtime";
+import { projectServices } from "../services/project-services";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
-import { ClyDevBoardScreen } from "./dev-board";
 import { ReviewerCapsuleDialog } from "./research-workspaces";
 
-interface ObjectiveRecord {
-  id: string;
-  title: string;
-  description: string;
-  status: "Active" | "At risk" | "Planned";
-  progress: number;
-  owner: string;
-  method: string;
-  success: string;
-  linked: string[];
-  nextAction: string;
-}
+type ObjectiveDraft = Pick<
+  ResearchProject,
+  "name" | "question" | "hypothesis" | "description"
+>;
+
+const objectiveDraftFor = (project: ResearchProject): ObjectiveDraft => ({
+  name: project.name,
+  question: project.question,
+  hypothesis: project.hypothesis,
+  description: project.description,
+});
 
 export function ObjectivesScreen() {
   const data = useClyStore((state) => state.data);
@@ -64,209 +61,290 @@ export function ObjectivesScreen() {
   const project =
     data.projects.find((item) => item.id === activeProjectId) ??
     data.projects[0];
-  const objectives = useMemo<ObjectiveRecord[]>(
-    () =>
-      project
-        ? [
-            {
-              id: "O-01",
-              title: "Establish a defensible primary reliability claim",
-              description: project.question,
-              status: "Active",
-              progress: 72,
-              owner: "Research lead",
-              method: "Calibration-aware ensemble benchmark",
-              success:
-                "Current evidence supports a bounded, reproducible claim.",
-              linked: [
-                `${data.claims.length} claims`,
-                `${data.experiments.length} experiments`,
-                `${data.sources.length} sources`,
-              ],
-              nextAction: "Resolve the highest-risk contradictory evidence.",
-            },
-            {
-              id: "O-02",
-              title: "Map the out-of-distribution failure envelope",
-              description:
-                "Measure where calibration and ranking quality degrade under compound shift.",
-              status: "At risk",
-              progress: 46,
-              owner: "Evaluation team",
-              method: "Compound-shift stress grid",
-              success:
-                "Failure boundaries are reported with confidence intervals.",
-              linked: ["2 runs", "1 notebook", "2 open findings"],
-              nextAction: "Complete the missing high-shift baseline run.",
-            },
-            {
-              id: "O-03",
-              title: "Produce a reviewer-ready evidence package",
-              description:
-                "Package current claims, exact passages, lineage, and limitations for independent review.",
-              status: "Planned",
-              progress: 18,
-              owner: "Project lead",
-              method: "Reviewer capsule and reproducibility audit",
-              success:
-                "A reviewer can audit the conclusion without the original author.",
-              linked: ["1 audit", "3 figures", "0 exported capsules"],
-              nextAction:
-                "Select publication claims and preview the capsule manifest.",
-            },
-          ]
-        : [],
-    [data.claims.length, data.experiments.length, data.sources.length, project],
-  );
-  const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState("O-01");
-  const visible = objectives.filter((objective) =>
-    `${objective.id} ${objective.title} ${objective.description}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
-  const selected =
-    objectives.find((objective) => objective.id === selectedId) ??
-    objectives[0];
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [draft, setDraft] = useState<ObjectiveDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [validationAttempted, setValidationAttempted] = useState(false);
 
   if (!project) {
     return (
       <div className="cly-page">
         <EmptyState
-          title="No objectives yet"
-          description="Create a project question before planning research objectives."
+          title="No project selected"
+          description="Open or create a research project before defining its objective."
         />
       </div>
     );
   }
+
+  const questionRecorded = project.question.trim().length > 0;
+  const gates = [
+    {
+      label: "Sources added",
+      count: data.sources.length,
+      complete: data.sources.length > 0,
+    },
+    {
+      label: "Experiments recorded",
+      count: data.experiments.length,
+      complete: data.experiments.length > 0,
+    },
+    {
+      label: "Claims recorded",
+      count: data.claims.length,
+      complete: data.claims.length > 0,
+    },
+    {
+      label: "Reproducibility audits run",
+      count: data.audits.length,
+      complete: data.audits.length > 0,
+    },
+  ];
+  const completedGateCount = gates.filter((gate) => gate.complete).length;
+  const readiness = Math.round((completedGateCount / gates.length) * 100);
+
+  const beginEdit = () => {
+    setDraft(objectiveDraftFor(project));
+    setSaveError(null);
+    setValidationAttempted(false);
+    setEditorOpen(true);
+  };
+
+  const closeEditor = () => {
+    setEditorOpen(false);
+    setDraft(null);
+    setSaveError(null);
+    setValidationAttempted(false);
+  };
+
+  const saveObjective = async () => {
+    if (!draft) return;
+    setValidationAttempted(true);
+    const patch = {
+      name: draft.name.trim(),
+      question: draft.question.trim(),
+      hypothesis: draft.hypothesis.trim(),
+      description: draft.description.trim(),
+    };
+    if (!patch.name || !patch.question) return;
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await projectServices.projects.update(patch);
+      closeEditor();
+      notify(
+        "Research objective updated",
+        "The project question, hypothesis, and scope were saved.",
+      );
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "The research objective could not be saved.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="cly-page cly-page-wide cly-route-objectives">
       <PageHeader
         kicker="Cly Research"
         title="Objectives"
-        description="Connect research intent to methods, computation, evidence, and review."
+        description="Keep the active research question and its supporting work in view."
         actions={
-          <Button
-            variant="primary"
-            onClick={() =>
-              notify(
-                "Objective draft created",
-                "Define success criteria before linking methods and execution work.",
-              )
-            }
-          >
-            <Plus /> New objective
+          <Button variant="primary" onClick={beginEdit}>
+            {questionRecorded ? "Edit objective" : "Define objective"}
           </Button>
         }
       />
-      <div className="cly-metric-row">
-        <Metric label="Active" value="1" detail="Primary project direction" />
-        <Metric label="At risk" value="1" detail="Missing baseline evidence" />
-        <Metric label="Linked claims" value={data.claims.length} />
-        <Metric label="Linked experiments" value={data.experiments.length} />
-      </div>
-      <ClySplitPane
-        id="objectives-workspace"
-        className="cly-platform-split"
-        secondarySize={38}
-        primary={
-          <div className="cly-platform-list-pane">
-            <Toolbar label="Objective controls">
-              <SearchInput
-                value={query}
-                onChange={setQuery}
-                placeholder="Search objectives…"
-              />
-              <span className="cly-platform-count">
-                {visible.length} objectives
-              </span>
-            </Toolbar>
-            <div className="cly-objective-list">
-              {visible.map((objective) => (
-                <button
-                  type="button"
-                  key={objective.id}
-                  className="cly-objective-row"
-                  data-selected={objective.id === selected?.id}
-                  onClick={() => setSelectedId(objective.id)}
-                >
-                  <span className="cly-objective-index">{objective.id}</span>
-                  <span className="cly-objective-copy">
-                    <strong>{objective.title}</strong>
-                    <small>{objective.description}</small>
-                    <ProgressIndicator value={objective.progress} compact />
-                  </span>
-                  <StatusIndicator tone={toneForStatus(objective.status)}>
-                    {objective.status}
-                  </StatusIndicator>
-                </button>
-              ))}
+
+      {questionRecorded ? (
+        <div className="cly-objective-workspace">
+          <section
+            className="cly-objective-summary"
+            aria-labelledby="active-objective-heading"
+          >
+            <div className="cly-objective-summary-heading">
+              <div>
+                <span className="cly-eyebrow">Active research question</span>
+                <h2 id="active-objective-heading">{project.question}</h2>
+              </div>
+              <StatusIndicator tone="info">{project.phase}</StatusIndicator>
             </div>
-          </div>
-        }
-        secondary={
-          selected ? (
-            <article className="cly-platform-inspector">
-              <PaneHeader
-                title={`${selected.id} · ${selected.title}`}
-                detail={selected.description}
-                actions={
-                  <StatusIndicator tone={toneForStatus(selected.status)}>
-                    {selected.status}
+            <dl className="cly-objective-definition">
+              <div>
+                <dt>Working hypothesis</dt>
+                <dd>
+                  {project.hypothesis.trim() ||
+                    "No working hypothesis recorded."}
+                </dd>
+              </div>
+              <div>
+                <dt>Scope</dt>
+                <dd>
+                  {project.description.trim() || "No scope note recorded."}
+                </dd>
+              </div>
+              <div>
+                <dt>Phase</dt>
+                <dd>{project.phase || "Not set"}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section
+            className="cly-objective-readiness"
+            aria-labelledby="objective-readiness-heading"
+          >
+            <div className="cly-objective-readiness-heading">
+              <div>
+                <span className="cly-eyebrow">Evidence readiness</span>
+                <h2 id="objective-readiness-heading">
+                  {completedGateCount} of {gates.length} gates complete
+                </h2>
+                <p>
+                  Readiness reflects saved project records, not scientific
+                  completion or result quality.
+                </p>
+              </div>
+              <strong>{readiness}%</strong>
+            </div>
+            <ProgressIndicator value={readiness} />
+            <ul className="cly-objective-gates">
+              {gates.map((gate) => (
+                <li key={gate.label} data-complete={gate.complete}>
+                  {gate.complete ? (
+                    <CheckCircle2 aria-hidden="true" />
+                  ) : (
+                    <CircleDot aria-hidden="true" />
+                  )}
+                  <span>
+                    <strong>{gate.label}</strong>
+                    <small>
+                      {gate.count} {gate.count === 1 ? "record" : "records"}
+                    </small>
+                  </span>
+                  <StatusIndicator tone={gate.complete ? "success" : "neutral"}>
+                    {gate.complete ? "Complete" : "Not started"}
                   </StatusIndicator>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      ) : (
+        <EmptyState
+          title="Define the research objective"
+          description="Record a specific research question before adding evidence or experiments."
+          action={
+            <Button variant="primary" onClick={beginEdit}>
+              Define objective
+            </Button>
+          }
+        />
+      )}
+
+      <Dialog
+        open={editorOpen}
+        onClose={closeEditor}
+        title={
+          questionRecorded
+            ? "Edit research objective"
+            : "Define research objective"
+        }
+        description="These details are saved with the active project."
+        footer={
+          <>
+            <Button onClick={closeEditor} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => void saveObjective()}
+              disabled={saving}
+            >
+              {saving ? "Saving…" : "Save objective"}
+            </Button>
+          </>
+        }
+      >
+        {draft ? (
+          <div className="cly-stack">
+            <div className="cly-field">
+              <label htmlFor="objective-project-name">Project name</label>
+              <input
+                autoFocus
+                className="cly-input"
+                id="objective-project-name"
+                value={draft.name}
+                aria-invalid={validationAttempted && !draft.name.trim()}
+                onChange={(event) =>
+                  setDraft({ ...draft, name: event.target.value })
                 }
               />
-              <div className="cly-platform-inspector-body">
-                <section>
-                  <h3>Definition of success</h3>
-                  <p>{selected.success}</p>
-                </section>
-                <dl className="cly-platform-details">
-                  <div>
-                    <dt>Owner</dt>
-                    <dd>{selected.owner}</dd>
-                  </div>
-                  <div>
-                    <dt>Method</dt>
-                    <dd>{selected.method}</dd>
-                  </div>
-                  <div>
-                    <dt>Progress</dt>
-                    <dd>{selected.progress}%</dd>
-                  </div>
-                </dl>
-                <section>
-                  <h3>Connected research</h3>
-                  <div className="cly-platform-link-row">
-                    {selected.linked.map((link) => (
-                      <span key={link}>
-                        <Link2 /> {link}
-                      </span>
-                    ))}
-                  </div>
-                </section>
-                <section>
-                  <h3>Next action</h3>
-                  <button
-                    type="button"
-                    className="cly-platform-next-action"
-                    onClick={() =>
-                      useClyStore.getState().setScreen("next-steps")
-                    }
-                  >
-                    <span>
-                      <strong>{selected.nextAction}</strong>
-                      <small>Open the prioritized action plan</small>
-                    </span>
-                    <ArrowRight />
-                  </button>
-                </section>
+              {validationAttempted && !draft.name.trim() ? (
+                <span className="cly-field-error" role="alert">
+                  Enter a project name.
+                </span>
+              ) : null}
+            </div>
+            <div className="cly-field">
+              <label htmlFor="objective-question">Research question</label>
+              <textarea
+                className="cly-textarea"
+                id="objective-question"
+                rows={3}
+                value={draft.question}
+                aria-invalid={validationAttempted && !draft.question.trim()}
+                onChange={(event) =>
+                  setDraft({ ...draft, question: event.target.value })
+                }
+                placeholder="What are you trying to learn?"
+              />
+              {validationAttempted && !draft.question.trim() ? (
+                <span className="cly-field-error" role="alert">
+                  Enter a research question.
+                </span>
+              ) : null}
+            </div>
+            <div className="cly-field">
+              <label htmlFor="objective-hypothesis">Working hypothesis</label>
+              <textarea
+                className="cly-textarea"
+                id="objective-hypothesis"
+                rows={3}
+                value={draft.hypothesis}
+                onChange={(event) =>
+                  setDraft({ ...draft, hypothesis: event.target.value })
+                }
+                placeholder="What pattern do you expect, and why?"
+              />
+            </div>
+            <div className="cly-field">
+              <label htmlFor="objective-scope">Scope note</label>
+              <textarea
+                className="cly-textarea"
+                id="objective-scope"
+                rows={2}
+                value={draft.description}
+                onChange={(event) =>
+                  setDraft({ ...draft, description: event.target.value })
+                }
+                placeholder="Population, data boundaries, or intended use"
+              />
+            </div>
+            {saveError ? (
+              <div className="cly-inline-error" role="alert">
+                {saveError}
               </div>
-            </article>
-          ) : null
-        }
-      />
+            ) : null}
+          </div>
+        ) : null}
+      </Dialog>
     </div>
   );
 }
@@ -285,11 +363,11 @@ export function ReviewerCapsulesScreen() {
     <div className="cly-page cly-page-wide cly-route-capsules">
       <PageHeader
         kicker="Cly Research"
-        title="Reviewer Packages"
+        title="Reviewer Capsules"
         description="Create safe, read-only evidence packages that remain useful outside Cly."
         actions={
           <Button variant="primary" onClick={() => setDialogOpen(true)}>
-            <PackageCheck /> Build package
+            <PackageCheck /> Build capsule
           </Button>
         }
       />
@@ -400,7 +478,7 @@ export function ReviewerCapsulesScreen() {
       ) : (
         <EmptyState
           title="No claims are ready to package"
-          description="Create a claim and connect its evidence before building a reviewer package."
+          description="Create a claim and connect its evidence before building a reviewer capsule."
           action={
             <Button onClick={() => useClyStore.getState().setScreen("claims")}>
               Open claims
@@ -435,9 +513,9 @@ const DEV_SECTION_META: Record<
   { title: string; description: string; action: string }
 > = {
   board: {
-    title: "Board",
-    description: "Live agent work grouped by execution state.",
-    action: "Open Agent Sessions",
+    title: "Development board",
+    description: "Agent tasks organized by durable execution state.",
+    action: "Open task",
   },
   projects: {
     title: "Projects",
@@ -510,7 +588,6 @@ function useDevRecords(section: DevSection): DevRecord[] {
   const data = useClyStore((state) => state.data);
   const project = data.projects[0];
   return useMemo(() => {
-    if (section === "board") return [];
     if (section === "projects") {
       return data.projects.map((item) => ({
         id: item.id,
@@ -555,13 +632,12 @@ function useDevRecords(section: DevSection): DevRecord[] {
         impact: `${item.linkedIds.length} linked research objects`,
       }));
     }
+    if (!isClyTestFixtureRuntime) return [];
     const staticRecords: Record<
-      Exclude<
-        DevSection,
-        "board" | "projects" | "sessions" | "agents" | "context"
-      >,
+      Exclude<DevSection, "projects" | "sessions" | "agents" | "context">,
       DevRecord[]
     > = {
+      board: [],
       repositories: [
         {
           id: "repo-core",
@@ -762,7 +838,7 @@ export function DevWorkspaceScreen() {
     : "No development record is selected.";
 
   const openNewSession = () => {
-    if (!isClyDemoRuntime) return;
+    if (!isClyTestFixtureRuntime) return;
     const store = useClyStore.getState();
     store.setDevSection("sessions");
     store.setAgentSessionsMode("overview");
@@ -809,8 +885,6 @@ export function DevWorkspaceScreen() {
     }
   };
 
-  if (section === "board") return <ClyDevBoardScreen />;
-
   return (
     <div className="cly-page cly-page-wide cly-route-dev">
       <PageHeader
@@ -820,13 +894,16 @@ export function DevWorkspaceScreen() {
         actions={
           <>
             <StatusIndicator tone="success">
-              <Laptop /> Local Mac connected
+              <Laptop />{" "}
+              {isClyTestFixtureRuntime
+                ? "Local Mac connected"
+                : "Local workspace"}
             </StatusIndicator>
             <Button
               variant="primary"
-              disabled={!isClyDemoRuntime}
+              disabled={!isClyTestFixtureRuntime}
               title={
-                isClyDemoRuntime
+                isClyTestFixtureRuntime
                   ? "Create a new agent session"
                   : capabilityUnavailableMessage("agents.execute")
               }
@@ -837,20 +914,22 @@ export function DevWorkspaceScreen() {
           </>
         }
       />
-      <div className="cly-dev-statebar">
-        <span>
-          <CircleDot /> {activeSessions} active sessions
-        </span>
-        <span>
-          <GitBranch /> main · clean
-        </span>
-        <span>
-          <FileCheck2 /> 12 open changes
-        </span>
-        <span>
-          <ShieldCheck /> 1 approval waiting · 4 research links
-        </span>
-      </div>
+      {isClyTestFixtureRuntime ? (
+        <div className="cly-dev-statebar">
+          <span>
+            <CircleDot /> {activeSessions} active sessions
+          </span>
+          <span>
+            <GitBranch /> main · clean
+          </span>
+          <span>
+            <FileCheck2 /> 12 open changes
+          </span>
+          <span>
+            <ShieldCheck /> 1 approval waiting · 4 research links
+          </span>
+        </div>
+      ) : null}
       <ClySplitPane
         id={`dev-${section}`}
         className="cly-platform-split cly-dev-split"

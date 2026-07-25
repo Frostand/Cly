@@ -23,15 +23,6 @@ const createEmptyPersistedState = (): PersistedIdeState => ({
 
 const STATE_LOAD_TIMEOUT_MS = 8000;
 
-const requireDesktopApi = () => {
-  const desktopApi = getDesktopApi();
-  if (!desktopApi) {
-    throw new Error("Cly desktop API is unavailable.");
-  }
-
-  return desktopApi;
-};
-
 const withTimeout = async <T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -54,7 +45,10 @@ const withTimeout = async <T>(
 };
 
 export const loadPersistedIdeState = async (): Promise<PersistedIdeState> => {
-  const desktopApi = requireDesktopApi();
+  const desktopApi = getDesktopApi();
+  if (!desktopApi) {
+    return createEmptyPersistedState();
+  }
 
   try {
     const rawState = await withTimeout(
@@ -153,5 +147,5 @@ export const createPersistedIdeState = ({
 };
 
 export const savePersistedIdeState = (state: PersistedIdeState) => {
-  void requireDesktopApi().saveState(state);
+  void getDesktopApi()?.saveState(state);
 };

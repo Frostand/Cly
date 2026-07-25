@@ -1,8 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
+  authorizeClyDevSession,
   clampWindowBounds,
   createClyDevWorkspaceCore,
 } from "./cly-dev-windows.js";
+
+describe("Cly Dev IPC session ownership", () => {
+  it("allows agent windows to address sessions and confines workspaces to their binding", () => {
+    expect(
+      authorizeClyDevSession({ role: "agent", sessionId: null }, "session-2"),
+    ).toBe("session-2");
+    expect(
+      authorizeClyDevSession(
+        { role: "workspace", sessionId: "session-1" },
+        "session-1",
+      ),
+    ).toBe("session-1");
+    expect(
+      authorizeClyDevSession(
+        { role: "workspace", sessionId: "session-1" },
+        "session-2",
+      ),
+    ).toBeNull();
+    expect(
+      authorizeClyDevSession(
+        { role: "workspace", sessionId: "session-1" },
+        "session-1",
+        { agentOnly: true },
+      ),
+    ).toBeNull();
+  });
+});
 
 describe("Cly Dev workspace Core", () => {
   it("accepts an intent once and returns the same snapshot for a duplicate", () => {

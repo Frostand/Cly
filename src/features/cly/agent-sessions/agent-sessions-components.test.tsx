@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
+import { useIdeStore } from "../../../components/ide/ide-store";
 import { createFixtureRepository } from "../fixtures/repository";
 import { useClyStore } from "../store/cly-store";
 import { AgentSessionsScreen } from ".";
@@ -29,6 +30,60 @@ describe("Agent Sessions workspace", () => {
       agentDestructiveConfirmation: null,
       agentSessionLayouts: {},
       toasts: [],
+    });
+    useIdeStore.setState({
+      providerModels: {
+        fetchedAt: new Date().toISOString(),
+        openai: {
+          installed: true,
+          loading: false,
+          error: null,
+          source: "cli",
+          version: "1.0.0",
+          models: [
+            {
+              id: "gpt-5.6-sol",
+              label: "GPT-5.6 Sol",
+              reasoningEfforts: ["low", "medium", "high", "xhigh"],
+            },
+            {
+              id: "gpt-5.6-terra",
+              label: "GPT-5.6 Terra",
+              reasoningEfforts: ["low", "medium", "high", "xhigh"],
+            },
+          ],
+        },
+        anthropic: {
+          installed: true,
+          loading: false,
+          error: null,
+          source: "cli",
+          version: "1.0.0",
+          models: [
+            {
+              id: "opus",
+              label: "Claude Opus",
+              reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+            },
+          ],
+        },
+        opencode: {
+          installed: false,
+          loading: false,
+          error: null,
+          source: "unavailable",
+          version: null,
+          models: [],
+        },
+        cursor: {
+          installed: false,
+          loading: false,
+          error: null,
+          source: "unavailable",
+          version: null,
+          models: [],
+        },
+      },
     });
   });
 
@@ -72,8 +127,12 @@ describe("Agent Sessions workspace", () => {
       "Trace every claim to its source, run, and generated artifact.",
     );
     await user.selectOptions(
+      within(dialog).getByLabelText("Model"),
+      "openai:gpt-5.6-terra",
+    );
+    await user.selectOptions(
       within(dialog).getByLabelText("Reasoning level"),
-      "Medium",
+      "Extra High",
     );
     await user.click(
       within(dialog).getByRole("button", { name: /Start session/ }),
@@ -84,7 +143,10 @@ describe("Agent Sessions workspace", () => {
     expect(screen.getByText("Preparing a research-aware plan")).toBeVisible();
     expect(
       useClyStore.getState().data.agentSessions[0]?.orchestrator.reasoningLevel,
-    ).toBe("Medium");
+    ).toBe("Extra High");
+    expect(
+      useClyStore.getState().data.agentSessions[0]?.orchestrator.model,
+    ).toBe("gpt-5.6-terra");
   });
 
   it("keeps composer text visible and sends streamed fixture responses", async () => {
@@ -279,7 +341,7 @@ describe("Agent Sessions workspace", () => {
       within(identity).getByText("Neural Surrogate Reliability"),
     ).toBeVisible();
     expect(within(identity).getByText("agent/calibration-audit")).toBeVisible();
-    expect(within(identity).getByText(/GPT-5 · high/)).toBeVisible();
+    expect(within(identity).getByText(/GPT-5\.6 Sol · high/)).toBeVisible();
   });
 
   it("reveals complete compact identity values from the keyboard", async () => {

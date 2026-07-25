@@ -4,8 +4,23 @@
   "description": "Cly is an AI-native research operating system.",
   "version": "0.5.0",
   "private": true,
+  "packageManager": "pnpm@11.12.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "license": "Apache-2.0",
+  "author": "Cly contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Frostand/Cly.git"
+  },
+  "homepage": "https://github.com/Frostand/Cly#readme",
+  "bugs": {
+    "url": "https://github.com/Frostand/Cly/issues"
+  },
   "scripts": {
     "dev": "pnpm electron:dev",
+    "doctor": "node scripts/cly-doctor.mjs",
     "build": "pnpm package:dir",
     "vite:dev": "vite --host 127.0.0.1 --port 3210 --strictPort",
     "vite:build": "vite build",
@@ -17,11 +32,13 @@
     "postinstall": "node scripts/fix-node-pty-permissions.mjs && node scripts/prepare-electron-dev-app.mjs",
     "start": "node scripts/prepare-electron-dev-app.mjs && cross-env NODE_ENV=production electron electron/main.js",
     "package": "pnpm package:dir",
-    "package:dir": "pnpm vite:build && electron-builder --dir",
-    "package:mac": "pnpm vite:build && electron-builder --mac",
-    "package:win": "pnpm vite:build && cross-env HOME=.electron-home electron-builder --win",
+    "package:dir": "pnpm vite:build && electron-builder --dir --publish never",
+    "package:mac": "pnpm vite:build && electron-builder --mac --publish never",
+    "package:win": "pnpm vite:build && cross-env HOME=.electron-home electron-builder --win --publish never",
     "package:win:signed": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-win-signed.ps1",
-    "package:linux": "pnpm vite:build && cross-env HOME=.electron-home electron-builder --linux",
+    "package:linux": "pnpm vite:build && cross-env HOME=.electron-home electron-builder --linux --publish never",
+    "package:verify:contents": "node scripts/verify-packaged-contents.mjs",
+    "package:smoke": "node scripts/smoke-packaged-app.mjs",
     "dist": "pnpm package",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
@@ -33,6 +50,7 @@
     "storybook:build": "storybook build",
     "format": "biome format --write .",
     "licenses:check": "node scripts/check-production-licenses.mjs",
+    "privacy:check": "node scripts/check-repository-privacy.mjs",
     "capabilities:check": "node scripts/check-cly-capabilities.mjs",
     "companion-contract:check": "node scripts/check-companion-mode-contract.mjs"
   },

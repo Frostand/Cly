@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getDesktopApi } from "../../../lib/electron";
 import { Button, EmptyState, PageHeader } from "../components/primitives";
 import { apiClient } from "../services/api-client";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { DeviceSyncPanel } from "./device-sync-panel";
 import { LiveClyDevWorkbench } from "./live-workbench";
@@ -21,14 +21,14 @@ import {
   StartTaskDialog,
 } from "./start-task-dialog";
 
-const DemoAgentSessionsScreen =
-  __CLY_INCLUDE_DEMOS__ && isClyDemoRuntime
-    ? (await import("./demo-screen")).DemoAgentSessionsScreen
+const TestFixtureAgentSessionsScreen =
+  __CLY_INCLUDE_TEST_FIXTURES__ && isClyTestFixtureRuntime
+    ? (await import("./test-fixture-screen")).TestFixtureAgentSessionsScreen
     : null;
 
 export function AgentSessionsScreen() {
-  if (isClyDemoRuntime && DemoAgentSessionsScreen) {
-    return <DemoAgentSessionsScreen />;
+  if (isClyTestFixtureRuntime && TestFixtureAgentSessionsScreen) {
+    return <TestFixtureAgentSessionsScreen />;
   }
 
   return <ProductionAgentSessionsScreen />;

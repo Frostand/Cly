@@ -5,7 +5,7 @@ import { createAgentSessionFixtures } from "../agent-sessions/fixtures";
 import { createFixtureRepository } from "../fixtures/repository";
 import { useClyStore } from "../store/cly-store";
 import {
-  boardCardsFromDemoSessions,
+  boardCardsFromFixtureSessions,
   ClyDevBoardScreen,
   groupBoardCards,
 } from "./dev-board";
@@ -30,7 +30,7 @@ describe("Cly Dev board", () => {
 
   it("groups live sessions into active, attention, and finished lanes", () => {
     const grouped = groupBoardCards(
-      boardCardsFromDemoSessions(createAgentSessionFixtures()),
+      boardCardsFromFixtureSessions(createAgentSessionFixtures()),
     );
 
     expect(grouped.active.map((card) => card.id)).toEqual(["session-01"]);

@@ -1302,9 +1302,15 @@ describe("agent context repository", () => {
              max_runtime_ms, partial_failure_policy, revision, created_at, updated_at
       FROM agent_configurations WHERE id = 'configuration-1';
       INSERT INTO agent_role_configurations
+             (configuration_id, project_id, id, position, role,
+              instance_count, max_parallel, provider, model, reasoning_level,
+              reasoning_effort, max_input_tokens, max_output_tokens,
+              max_cost_minor_units, max_runtime_ms, allowed_tools_json,
+              allowed_context_sources_json, allowed_file_globs_json,
+              permissions_json, approval_checkpoints_json, fallback_model)
       SELECT 'configuration-2', project_id, 'other-role', position, role,
              instance_count, max_parallel, provider, model, reasoning_level,
-             max_input_tokens, max_output_tokens, max_cost_minor_units,
+             reasoning_effort, max_input_tokens, max_output_tokens, max_cost_minor_units,
              max_runtime_ms, allowed_tools_json, allowed_context_sources_json,
              allowed_file_globs_json, permissions_json, approval_checkpoints_json,
              fallback_model

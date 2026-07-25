@@ -22,7 +22,7 @@ try {
       CLY_E2E_USER_DATA_PATH: userDataPath,
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
       NODE_ENV: "production",
-      VITE_CLY_DEMO_MODE: "0",
+      VITE_CLY_TEST_FIXTURES: "0",
     },
     timeout: 45_000,
   });

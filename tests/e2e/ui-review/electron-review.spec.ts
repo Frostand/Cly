@@ -33,7 +33,7 @@ test("reviews the assembled Electron shell and core interaction states", async (
       ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
       ELECTRON_INTERNAL_PORT: "43740",
       ELECTRON_API_PORT: "43742",
-      VITE_CLY_DEMO_MODE: "1",
+      VITE_CLY_TEST_FIXTURES: "1",
     },
   });
 
@@ -258,7 +258,7 @@ test("automates the eight-scenario Cly Dev lifecycle", async () => {
     CLY_E2E: "1",
     CLY_E2E_USER_DATA_PATH: userDataPath,
     CLY_E2E_SESSION_DATA_PATH: path.join(userDataPath, "session-data"),
-    VITE_CLY_DEMO_MODE: "1",
+    VITE_CLY_TEST_FIXTURES: "1",
   };
 
   execFileSync(process.execPath, ["scripts/prepare-electron-dev-app.mjs"], {
@@ -460,7 +460,7 @@ test("completes the Cly Dev lifecycle using only the keyboard", async () => {
     CLY_E2E: "1",
     CLY_E2E_USER_DATA_PATH: userDataPath,
     CLY_E2E_SESSION_DATA_PATH: path.join(userDataPath, "session-data"),
-    VITE_CLY_DEMO_MODE: "1",
+    VITE_CLY_TEST_FIXTURES: "1",
   };
   let app = await electron.launch({
     args: [...electronArgs, path.join(root, "electron/main.js")],

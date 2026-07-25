@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../services/runtime", () => ({
-  isClyDemoRuntime: false,
-  isClyExplicitDemoRuntime: false,
+  isClyTestFixtureRuntime: false,
+  isClyExplicitTestFixtureRuntime: false,
 }));
 
 import { createFixtureRepository } from "../fixtures/repository";

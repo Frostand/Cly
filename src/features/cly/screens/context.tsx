@@ -257,6 +257,14 @@ export function ContextScreen() {
   };
 
   const savePack = async () => {
+    if (fixtureMode === "active") {
+      setError(null);
+      notify(
+        "Exact context pack saved",
+        `${legacyItems.filter((item) => item.included).length} test context items are ready for verification.`,
+      );
+      return;
+    }
     if (!configuration || !role) {
       setError(
         "Create an agent configuration and role before saving a context pack.",
@@ -507,7 +515,7 @@ export function ContextScreen() {
         </Panel>
       ) : snapshot.items.length === 0 && fixtureMode !== "empty" ? (
         <Panel>
-          <h2 className="cly-section-heading">Demo context selection</h2>
+          <h2 className="cly-section-heading">Test context selection</h2>
           <p className="cly-muted">
             Fixture selections are local previews. Production projects use the
             durable revision controls shown in this workspace.

@@ -7,7 +7,6 @@ describe("Cursor provider authority", () => {
     const args = buildCursorArgs({
       model: "cursor/test",
       modelSpeed: "standard",
-      prompt: "Inspect the project",
       projectPath: "/trusted/project",
       remoteConversationId: null,
       remoteConversationModel: null,
@@ -17,6 +16,7 @@ describe("Cursor provider authority", () => {
 
     expect(args).toContain("--trust");
     expect(args).toContain("--force");
+    expect(args).not.toContain("Inspect the project");
     expect(
       args.slice(args.indexOf("--mode"), args.indexOf("--mode") + 2),
     ).toEqual(["--mode", "plan"]);

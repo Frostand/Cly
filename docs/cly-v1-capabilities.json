@@ -243,21 +243,21 @@
     "id": "agents.execute",
     "route": "agent-sessions",
     "action": "Start, pause, stop, or approve an agent session",
-    "state": "unavailable",
-    "service": null,
-    "api": null,
-    "test": null,
-    "reason": "Process start, pause, stop, resume, and approval-gated tool execution remain unavailable until the CLY-76 runtime is connected."
+    "state": "production",
+    "service": "productionAgentSessionServices",
+    "api": "GET /api/cly-dev/providers; POST /api/projects/:projectId/cly-dev/session-launches; POST /api/projects/:projectId/cly-dev/sessions/:sessionId/execute; POST /api/projects/:projectId/cly-dev/sessions/:sessionId/resume; POST /api/projects/:projectId/cly-dev/sessions/:sessionId/cancel",
+    "test": "electron/api/cly-dev/runtime/production-composition.test.ts",
+    "reason": null
   },
   {
     "id": "agents.workbench",
     "route": "agent-sessions",
     "action": "Use browser, terminal, diff, and live-file workbench tabs",
-    "state": "read-only-preview",
+    "state": "unavailable",
     "service": null,
     "api": null,
     "test": null,
-    "reason": "Workbench content is preview-only and does not represent a live process."
+    "reason": "Browser, terminal, diff, and live-file tabs are hidden in production until they can display runtime-owned live state."
   },
   {
     "id": "exports.notebook-bundle",
@@ -268,15 +268,5 @@
     "api": null,
     "test": null,
     "reason": "Notebook bundles are unavailable until generated files pass obligation approval and are written durably."
-  },
-  {
-    "id": "fixtures.select",
-    "route": "settings",
-    "action": "Select deterministic fixture state",
-    "state": "demo-only",
-    "service": null,
-    "api": null,
-    "test": "tests/e2e/visual-system.spec.ts",
-    "reason": "Fixture controls are available only in explicit development demo mode."
   }
 ]

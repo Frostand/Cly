@@ -11,11 +11,12 @@ type SessionApi = Pick<
   | "fetchClyDevSessionEvents"
   | "createClyDevSessionAggregate"
   | "startClyDevSession"
+  | "respondToClyDevApproval"
   | "appendClyDevSessionEvent"
 >;
 
 interface ProductionServiceOptions {
-  api?: SessionApi;
+  api?: Partial<SessionApi>;
   now?: () => string;
   idempotencyKey?: () => string;
 }
@@ -23,10 +24,11 @@ interface ProductionServiceOptions {
 const defaultIdempotencyKey = () => crypto.randomUUID();
 
 export function createProductionAgentSessionServices({
-  api = apiClient,
+  api: apiOverrides,
   now = () => new Date().toISOString(),
   idempotencyKey = defaultIdempotencyKey,
 }: ProductionServiceOptions = {}) {
+  const api: SessionApi = { ...apiClient, ...apiOverrides };
   const append = (
     projectId: string,
     sessionId: string,
@@ -51,6 +53,7 @@ export function createProductionAgentSessionServices({
 
   return {
     async hydrate(projectId: string): Promise<ClyDevSessionOverview[]> {
+      if (!projectId.trim()) return [];
       const sessions: ClyDevSessionOverview[] = [];
       let offset = 0;
       while (true) {
@@ -101,18 +104,26 @@ export function createProductionAgentSessionServices({
       });
     },
 
-    resolveApproval(
+    async resolveApproval(
       projectId: string,
       sessionId: string,
       approvalId: string,
       state: "approved" | "rejected" | "canceled",
       actorId = "local-user",
     ) {
-      return append(projectId, sessionId, {
+      const broker = await api.respondToClyDevApproval({
+        approved: state === "approved",
+        id: approvalId,
+        reason: state === "approved" ? null : "Rejected by the user.",
+        scope: "once",
+      });
+      if (broker.handled) return broker;
+      await append(projectId, sessionId, {
         type: "approval.resolved",
         actor: { kind: "user", id: actorId },
         payload: { approvalId, state, resolvedBy: actorId },
       });
+      return broker;
     },
 
     listEvents(

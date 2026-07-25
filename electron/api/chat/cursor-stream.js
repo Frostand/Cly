@@ -5,6 +5,7 @@ import {
   normalizeCursorCliModel,
   resolveCursorCliLaunch,
 } from "../providers/cursor-cli.js";
+import { terminateProcessTree } from "../shared/process-tree.js";
 import {
   getLatestUserMessage,
   prepareCodexPromptAttachments,
@@ -308,7 +309,6 @@ const shouldResumeCursorSession = ({
 export const buildCursorArgs = ({
   model,
   modelSpeed,
-  prompt,
   projectPath,
   remoteConversationId,
   remoteConversationModel,
@@ -337,7 +337,6 @@ export const buildCursorArgs = ({
   args.push("--mode", "plan");
   args.push("--force");
 
-  args.push(prompt);
   return args;
 };
 
@@ -389,6 +388,8 @@ export const streamCursorResponse = ({
           finished = true;
           finishText();
           abortSignal?.removeEventListener("abort", handleAbort);
+          child?.stdout?.off?.("data", handleStdoutChunk);
+          child?.stderr?.off?.("data", handleStderrChunk);
           const attachments = preparedAttachments;
           preparedAttachments = null;
           attachments?.cleanup?.();
@@ -521,7 +522,12 @@ export const streamCursorResponse = ({
         };
 
         const handleEvent = (event) => {
-          if (!event || typeof event !== "object") {
+          if (
+            finished ||
+            abortSignal?.aborted ||
+            !event ||
+            typeof event !== "object"
+          ) {
             return;
           }
 
@@ -568,6 +574,7 @@ export const streamCursorResponse = ({
         };
 
         const handleStdoutChunk = (chunk) => {
+          if (finished || abortSignal?.aborted) return;
           stdoutBuffer += chunk.toString();
           const lines = stdoutBuffer.split(/\r?\n/);
           stdoutBuffer = lines.pop() ?? "";
@@ -586,8 +593,13 @@ export const streamCursorResponse = ({
           }
         };
 
+        const handleStderrChunk = (chunk) => {
+          if (finished || abortSignal?.aborted) return;
+          stderrBuffer += chunk.toString();
+        };
+
         const handleAbort = () => {
-          child?.kill("SIGTERM");
+          if (child) terminateProcessTree(child);
           finish(resolve);
         };
 
@@ -619,7 +631,7 @@ export const streamCursorResponse = ({
               );
             }
             const authorized = await authorizeHostAction({
-              action: `Start a plan-only Cursor Agent turn.\n\n${prompt}`,
+              action: "Start a plan-only Cursor Agent turn for this project.",
               projectId,
               provider: "cursor",
               root: projectPath,
@@ -642,7 +654,6 @@ export const streamCursorResponse = ({
             const args = buildCursorArgs({
               model,
               modelSpeed,
-              prompt,
               projectPath,
               remoteConversationId,
               remoteConversationModel,
@@ -654,14 +665,19 @@ export const streamCursorResponse = ({
               cwd: projectPath,
               env: process.env,
               shell: launch.shell ?? false,
-              stdio: ["ignore", "pipe", "pipe"],
+              stdio: ["pipe", "pipe", "pipe"],
               windowsHide: true,
             });
 
-            child.stdout.on("data", handleStdoutChunk);
-            child.stderr.on("data", (chunk) => {
-              stderrBuffer += chunk.toString();
+            child.stdin?.on?.("error", (error) => {
+              if (!finished && !abortSignal?.aborted) {
+                finish(() => reject(error));
+              }
             });
+            child.stdin.end(prompt);
+
+            child.stdout.on("data", handleStdoutChunk);
+            child.stderr.on("data", handleStderrChunk);
             child.on("error", (error) => {
               finish(() =>
                 reject(new Error(getCursorCliSpawnErrorMessage(error))),

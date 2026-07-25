@@ -286,7 +286,7 @@ export const getPreferredDefaultModel = (
 };
 
 const isReasoningEffort = (value: unknown): value is ReasoningEffort =>
-  ["low", "medium", "high", "xhigh", "max"].includes(value as string);
+  ["low", "medium", "high", "xhigh", "max", "ultra"].includes(value as string);
 
 export const resolveModelSpeedForModel = (
   value: unknown,

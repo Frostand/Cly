@@ -1,7 +1,7 @@
 # Cly UI/UX redesign audit
 
-Date: 2026-07-16  
-Branch: `redesign/cly-ui-ux-v2`  
+Date: 2026-07-16
+Branch: `redesign/cly-ui-ux-v2`
 Baseline screenshots: `artifacts/ui-review/cly-ui-v2-before/`
 
 ## Product and technical baseline

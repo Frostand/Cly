@@ -13,7 +13,7 @@ const agentNode = (
   id: string,
   role: string,
   mode: AgentNode["mode"],
-  model = "Codex · GPT-5",
+  model = "Automatic · detected model",
 ): AgentNode => ({
   id,
   role,
@@ -1889,7 +1889,7 @@ export const createFixtureRepository = (
       id: "activity-error",
       time: "Now",
       type: "system",
-      title: "Demo service error",
+      title: "Test fixture service error",
       detail:
         "The selected state simulates partial data and integration failures.",
       status: "warning",
@@ -1899,7 +1899,7 @@ export const createFixtureRepository = (
     if (session && failedAgent) {
       failedAgent.status = "failed";
       failedAgent.lastAction = "Process exited before returning a result";
-      failedAgent.currentResource = "Demo runtime log · exit code 1";
+      failedAgent.currentResource = "Test fixture runtime log · exit code 1";
       failedAgent.transcript.push(
         "The partial implementation result remains available for reassignment.",
       );

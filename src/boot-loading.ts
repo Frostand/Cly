@@ -22,7 +22,7 @@ const BOOT_SPARKLES: BootSparkleConfig = {
   sizeMul: 0.8,
   speed: 0.6,
   sway: 40,
-  syncKey: "dream-loading-sparkles",
+  syncKey: "cly-loading-sparkles",
 };
 
 const hash = (seed: string) => {
@@ -47,7 +47,12 @@ const seededRandom = (seed: string) => {
 
 const initBootLoadingSparkles = () => {
   const field = document.querySelector<HTMLDivElement>(".boot-sparkles-field");
-  if (!field || field.childElementCount > 0) return;
+  if (
+    !field ||
+    field.childElementCount > 0 ||
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  )
+    return;
 
   const {
     clockSync,
@@ -112,3 +117,25 @@ if (document.readyState === "loading") {
 } else {
   initBootLoadingSparkles();
 }
+
+window.addEventListener("cly:bootstrap-state", (event) => {
+  const loading = document.querySelector<HTMLElement>(".boot-loading");
+  if (!loading) return;
+  const state = (event as CustomEvent<{ state?: string }>).detail?.state;
+  if (state === "ready") {
+    loading.remove();
+    return;
+  }
+  loading.dataset.state = state === "failed" ? "failed" : "loading";
+  const message = loading.querySelector<HTMLElement>(".boot-message");
+  if (message) {
+    message.textContent =
+      state === "failed"
+        ? "Cly could not load your local research data. Your projects were not changed."
+        : "Loading your local research workspace…";
+  }
+});
+
+document.querySelector(".boot-retry")?.addEventListener("click", () => {
+  window.dispatchEvent(new Event("cly:bootstrap-retry"));
+});

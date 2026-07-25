@@ -1,7 +1,7 @@
 import { AppWindow, ArrowLeft } from "lucide-react";
 import { getDesktopApi } from "../../../lib/electron";
 import { Button, EmptyState } from "../components/primitives";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
 import { LiveClyDevWorkbench } from "./live-workbench";
@@ -10,7 +10,8 @@ import { useWorkspaceSnapshotSync } from "./use-window-sync";
 import { AgentWorkbench } from "./workbench";
 
 export function WorkspaceWindow({ sessionId }: { sessionId: string }) {
-  if (isClyDemoRuntime) return <DemoWorkspaceWindow sessionId={sessionId} />;
+  if (isClyTestFixtureRuntime)
+    return <TestFixtureWorkspaceWindow sessionId={sessionId} />;
   return <ProductionWorkspaceWindow sessionId={sessionId} />;
 }
 
@@ -46,7 +47,7 @@ function ProductionWorkspaceWindow({ sessionId }: { sessionId: string }) {
   );
 }
 
-function DemoWorkspaceWindow({ sessionId }: { sessionId: string }) {
+function TestFixtureWorkspaceWindow({ sessionId }: { sessionId: string }) {
   useClyDataBootstrap();
   const session = useClyStore((state) =>
     state.data.agentSessions.find((item) => item.id === sessionId),

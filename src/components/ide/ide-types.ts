@@ -65,6 +65,7 @@ export const REASONING_EFFORT_OPTIONS: Array<{
   { label: "High", value: "high" },
   { label: "Extra High", value: "xhigh" },
   { label: "Max", value: "max" },
+  { label: "Ultra", value: "ultra" },
 ];
 
 export const MODEL_SPEED_OPTIONS: Array<{

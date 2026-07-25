@@ -92,6 +92,7 @@ const severityTone = (severity: ObligationAlert["severity"]) =>
       : "info";
 
 export function DataObligationsScreen() {
+  const activeProjectId = useClyStore((state) => state.activeProjectId);
   const sources = useClyStore((state) => state.data.sources);
   const graphNodes = useClyStore((state) => state.data.graphNodes);
   const obligations = useClyStore((state) => state.datasetObligations);
@@ -129,8 +130,8 @@ export function DataObligationsScreen() {
   const [approvalRationale, setApprovalRationale] = useState("");
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (activeProjectId) void load(activeProjectId);
+  }, [activeProjectId, load]);
 
   useEffect(() => {
     if (!selectedDatasetId && datasets[0]) {
@@ -194,6 +195,26 @@ export function DataObligationsScreen() {
       );
     }
   };
+
+  if (!activeProjectId) {
+    return (
+      <div className="cly-page cly-page-wide cly-route-obligations">
+        <PageHeader
+          kicker="Integrity"
+          title="Research Data Obligations"
+          description="Review dataset terms and inherited workflow restrictions."
+        />
+        <EmptyState
+          icon={<Database size={24} />}
+          title="Choose a research project first"
+          description="Select a local project folder before reviewing dataset obligations."
+          action={
+            <Button onClick={() => setScreen("overview")}>Open overview</Button>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="cly-page cly-page-wide cly-route-obligations">

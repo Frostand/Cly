@@ -11,13 +11,11 @@ import {
   ProvenanceScreen,
   ReproducibilityScreen,
 } from "../screens/integrity";
+import { LiveDevWorkspaceScreen } from "../screens/live-dev-workspace";
 import { ObjectivesScreen } from "../screens/objectives";
 import { ClyOnboardingScreen } from "../screens/onboarding-route";
 import { OverviewScreen } from "../screens/overview";
-import {
-  DevWorkspaceScreen,
-  ReviewerCapsulesScreen,
-} from "../screens/platform-workspaces";
+import { ReviewerCapsulesScreen } from "../screens/platform-workspaces";
 import {
   ClaimsScreen,
   CodeLinkerScreen,
@@ -32,7 +30,7 @@ import {
   SettingsScreen,
 } from "../screens/system";
 import { loadOnboardingDraft } from "../services/onboarding-storage";
-import { isClyDemoRuntime } from "../services/runtime";
+import { isClyTestFixtureRuntime } from "../services/runtime";
 import { useClyStore } from "../store/cly-store";
 import { useClyDataBootstrap } from "../store/use-cly-data-bootstrap";
 import { ActivityDrawer, CommandPalette, Titlebar, Toasts } from "./chrome";
@@ -42,7 +40,7 @@ import { PrImpactReviewScreen } from "./pr-impact-review/pr-impact-review";
 import { LoadingState } from "./primitives";
 import { ClyMotionProvider, RouteTransition } from "./visuals";
 
-const screens: Record<ScreenId, () => React.JSX.Element> = {
+export const screens: Record<ScreenId, () => React.JSX.Element> = {
   overview: OverviewScreen,
   objectives: ObjectivesScreen,
   agents: AgentSessionsScreen,
@@ -62,7 +60,7 @@ const screens: Record<ScreenId, () => React.JSX.Element> = {
   decisions: DecisionsScreen,
   "next-steps": NextStepsScreen,
   "reviewer-capsules": ReviewerCapsulesScreen,
-  dev: DevWorkspaceScreen,
+  dev: LiveDevWorkspaceScreen,
   integrations: IntegrationsScreen,
   models: ModelsAgentsScreen,
   help: SetupHelpScreen,
@@ -164,7 +162,7 @@ export function ClyAppShell() {
     (project) => project.id === activeProjectId,
   );
   const onboardingRequired =
-    !isClyDemoRuntime &&
+    !isClyTestFixtureRuntime &&
     bootstrapStatus === "ready" &&
     (onboardingRequested !== null ||
       !activeProject ||
@@ -172,7 +170,7 @@ export function ClyAppShell() {
 
   useEffect(() => {
     if (
-      isClyDemoRuntime ||
+      isClyTestFixtureRuntime ||
       bootstrapStatus !== "ready" ||
       onboardingRequested !== null ||
       !activeProject
@@ -367,7 +365,7 @@ export function ClyAppShell() {
     return desktop?.onClyCommand?.(runMenuCommand);
   }, []);
 
-  if (!isClyDemoRuntime && bootstrapStatus === "loading") {
+  if (!isClyTestFixtureRuntime && bootstrapStatus === "loading") {
     return (
       <ClyMotionProvider>
         <main className="cly-app">
@@ -381,7 +379,7 @@ export function ClyAppShell() {
   }
 
   if (
-    !isClyDemoRuntime &&
+    !isClyTestFixtureRuntime &&
     bootstrapStatus === "ready" &&
     onboardingRequested === null &&
     activeProject &&
@@ -430,7 +428,8 @@ export function ClyAppShell() {
               textAlign: "center",
             }}
           >
-            Demo data · These are simulated records, not project research.
+            Test fixture data · These are simulated records, not project
+            research.
           </div>
         ) : null}
         <div

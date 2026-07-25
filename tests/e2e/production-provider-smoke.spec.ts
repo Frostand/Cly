@@ -56,7 +56,7 @@ test("signed-in Claude produces an approved diff and passing durable test result
 
   execFileSync(process.execPath, [viteCli, "build"], {
     cwd: root,
-    env: { ...process.env, VITE_CLY_DEMO_MODE: "0" },
+    env: { ...process.env, VITE_CLY_TEST_FIXTURES: "0" },
     stdio: "ignore",
   });
   const launch = () =>
@@ -70,7 +70,7 @@ test("signed-in Claude produces an approved diff and passing durable test result
         CLY_E2E_USER_DATA_PATH: userDataPath,
         CLY_E2E_PROJECT_PATH: canonicalProjectPath,
         ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
-        VITE_CLY_DEMO_MODE: "0",
+        VITE_CLY_TEST_FIXTURES: "0",
       },
     });
 

@@ -30,7 +30,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `cross-env VITE_CLY_DEMO_MODE=1 ELECTRON_API_PORT=${apiPort} pnpm exec vite --host 127.0.0.1 --port ${port} --strictPort`,
+    command: `cross-env VITE_CLY_TEST_FIXTURES=1 ELECTRON_API_PORT=${apiPort} pnpm exec vite --host 127.0.0.1 --port ${port} --strictPort`,
     port,
     reuseExistingServer: !process.env.CI,
     timeout: 45_000,

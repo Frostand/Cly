@@ -43,7 +43,7 @@ engineering, simulations, and data science.
 
 The renderer uses `ClyServices` contracts and a normalized store. Production
 bootstraps project-scoped API data; deterministic fixtures are limited to
-explicit demo/development and tests. The older UI-first documentation should
+explicit development and automated tests. The older UI-first documentation should
 not be read as a claim that all current persistence work is fixture-only.
 
 ## Current capability baseline
@@ -124,4 +124,3 @@ screen or fixture exists.
   and `electron/api/cly-dev/`.
 - Legacy editor/terminal/Git change: inspect `src/components/ide/README.md`
   and modify only the narrow adapter/composition boundary required.
-
