@@ -39,14 +39,14 @@ describe("onboarding storage", () => {
       }),
     };
     const draft = updateOnboardingDraft(createOnboardingDraft("project-a"), {
-      currentStep: "resources",
+      currentStep: "research",
       datasets: ["local/data.csv"],
     });
     await saveOnboardingDraft(draft, { cache: storage, desktop });
     expect(
       await loadOnboardingDraft("project-a", { cache: storage, desktop }),
     ).toMatchObject({
-      currentStep: "resources",
+      currentStep: "research",
       datasets: ["local/data.csv"],
     });
     expect(

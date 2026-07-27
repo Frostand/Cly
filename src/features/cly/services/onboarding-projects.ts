@@ -48,7 +48,7 @@ export async function chooseOnboardingProject(
   const desktop = getDesktopApi();
   if (!desktop)
     throw new Error("Project folders can be selected in the Cly desktop app.");
-  const selectedPath = await desktop.pickProjectDirectory();
+  const selectedPath = await desktop.pickProjectDirectory(mode);
   if (!selectedPath) return null;
   const persisted = mergePersistedState(await desktop.loadState());
   const key = normalizeProjectPathKey(selectedPath);

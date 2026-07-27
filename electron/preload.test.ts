@@ -60,6 +60,7 @@ describe("Electron preload API session authority", () => {
 
     const api = electronMocks.exposeInMainWorld.mock.calls[0]?.[1];
     await api.getWindowRole();
+    await api.pickProjectDirectory("create");
     await api.loadOnboardingDraft("project-1");
     await api.saveOnboardingDraft({ version: 1, projectId: "project-1" });
     await api.detachWorkspace({ sessionId: "session-1" });
@@ -72,6 +73,10 @@ describe("Electron preload API session authority", () => {
     });
     expect(electronMocks.invoke).toHaveBeenCalledWith(
       "cly-dev:get-window-role",
+    );
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      "projects:pick-directory",
+      { mode: "create" },
     );
     expect(electronMocks.invoke).toHaveBeenCalledWith("onboarding-draft:load", {
       projectId: "project-1",

@@ -124,6 +124,8 @@ jobs:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
       - run: pnpm package:mac
+      - name: Verify packaged contents
+        run: pnpm package:verify:contents
       - name: Verify signature, Gatekeeper, and notarization ticket
         run: |
           app_path="$(find release -type d -name 'Cly.app' -print -quit)"

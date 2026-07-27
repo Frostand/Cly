@@ -2,11 +2,8 @@ export const onboardingSteps = [
   "welcome",
   "project",
   "research",
-  "resources",
-  "people",
   "privacy",
   "readiness",
-  "lineage",
   "review",
   "finish",
 ] as const;
@@ -243,8 +240,7 @@ export function previousOnboardingStep(
 }
 
 export function skipOnboardingStep(draft: OnboardingDraft): OnboardingDraft {
-  if (["project", "privacy", "review", "finish"].includes(draft.currentStep))
-    return draft;
+  if (draft.currentStep !== "readiness") return draft;
   return updateOnboardingDraft(draft, {
     currentStep: nextOnboardingStep(draft.currentStep),
     skippedSteps: Array.from(

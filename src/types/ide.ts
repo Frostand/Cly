@@ -553,7 +553,7 @@ export interface DesktopApi {
     listener: (snapshot: WorkspaceSnapshot) => void,
   ) => () => void;
 
-  pickProjectDirectory: () => Promise<string | null>;
+  pickProjectDirectory: (mode?: "create" | "import") => Promise<string | null>;
 
   loadState: () => Promise<Partial<PersistedIdeState>>;
   saveState: (state: PersistedIdeState) => Promise<boolean>;

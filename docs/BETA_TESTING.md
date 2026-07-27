@@ -12,14 +12,14 @@ signed or notarized public macOS build.
 - Binary outcomes must contain exactly two non-empty values. Missing numeric
   predictor values are median-imputed inside each validation fold.
 
-Launch from the repository with `pnpm dev`, or launch the unpacked app produced
-by `pnpm package:dir`.
+For normal testing, install the desktop app from the [Releases page](https://github.com/Frostand/Cly/releases) and follow the [setup guide](./SETUP.md). `pnpm dev` and `pnpm package:dir` are contributor workflows, not end-user installation steps.
 
 ## Tester workflow
 
-1. Open the project switcher and choose **New local project**.
-2. In **Research Loop**, select the current **Question** step and enter the
-   project name, research question, working hypothesis, and scope note.
+1. On first launch, choose **Create a new project** to make a new folder, or
+   **Open an existing folder** for a repository you already have.
+2. Complete the guided setup with the project direction, research question,
+   local-only privacy setting, and optional readiness checks.
 3. Create a preliminary claim in **Claims** if the study has an expected result.
 4. In **Experiments**, create an experiment with its goal and hypothesis.
 5. Select **Run analysis**, choose the local CSV/TSV file, confirm the outcome,
