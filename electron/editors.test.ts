@@ -9,7 +9,12 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildEditorArguments, resolveEditorTarget } from "./editors.js";
+import {
+  buildEditorArguments,
+  createEditorLaunch,
+  isDirectEditorExecutable,
+  resolveEditorTarget,
+} from "./editors.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -47,6 +52,44 @@ describe("external editor targets", () => {
       "--goto",
       `${target.filePath}:12:4`,
     ]);
+  });
+
+  it("never crosses a Windows command shell to launch an editor", () => {
+    expect(isDirectEditorExecutable("C:\\tools\\code.cmd", "win32")).toBe(
+      false,
+    );
+    expect(isDirectEditorExecutable("C:\\tools\\code.exe", "win32")).toBe(true);
+    expect(
+      createEditorLaunch(
+        {
+          executable: "C:\\tools\\code.cmd",
+          args: ["C:\\repo & calc"],
+          repositoryPath: "C:\\repo & calc",
+        },
+        "win32",
+      ),
+    ).toBeNull();
+
+    expect(
+      createEditorLaunch(
+        {
+          executable: "C:\\tools\\code.exe",
+          args: ["C:\\repo & calc"],
+          repositoryPath: "C:\\repo & calc",
+        },
+        "win32",
+      ),
+    ).toEqual({
+      executable: "C:\\tools\\code.exe",
+      args: ["C:\\repo & calc"],
+      options: {
+        cwd: "C:\\repo & calc",
+        detached: true,
+        shell: false,
+        stdio: "ignore",
+        windowsHide: true,
+      },
+    });
   });
 
   it("rejects traversal, symlink escapes, control characters, and invalid lines", () => {

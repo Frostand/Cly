@@ -11,8 +11,6 @@ const getPreloadArgument = (prefix) => {
   }
 };
 
-const apiSessionToken = getPreloadArgument("--dream-api-session-token=");
-
 const BASE_COLORS = new Set(["neutral", "slate", "gray", "zinc", "stone"]);
 const ACCENT_COLORS = new Set([
   "black-white",
@@ -136,7 +134,6 @@ const subscribe = (channel, listener) => {
 
 contextBridge.exposeInMainWorld("dream", {
   isElectron: true,
-  ...(apiSessionToken ? { apiSessionToken } : {}),
   initialThemePreferences,
 
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", { url }),

@@ -31,6 +31,17 @@ enabled. These settings and the required branch rules are described in the
 but do not replace, a focused threat-model review whenever local-service, IPC,
 filesystem, command, network, provider, or repository capabilities change.
 
+## Security design and audit records
+
+- [Security architecture](security/SECURITY_ARCHITECTURE.md)
+- [Authorization matrix](security/AUTHORIZATION_MATRIX.md)
+- [Threat model](security/THREAT_MODEL.md)
+- [Defensive audit](security/SECURITY_AUDIT.md)
+- [Remediation log](security/SECURITY_FIXES.md)
+
+These documents describe a time-bounded review and known residual risks. They
+are not a certification or a guarantee that the application is vulnerability-free.
+
 ## Supported versions
 
 Until the first tagged release, security fixes target the current default branch.

@@ -50,6 +50,72 @@ export function getPrivilegedRendererId(
   return isRendererNavigation(event.sender.getURL?.() ?? "") ? senderId : null;
 }
 
+export function getPrivilegedRendererBinding(
+  event,
+  { isRendererNavigation, windowBindings, allowedRoles = ["agent"] },
+) {
+  const senderId = getPrivilegedRendererId(event, {
+    allowedRoles,
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (senderId === null) return null;
+  return windowBindings.get(senderId) ?? null;
+}
+
+export function getSessionBoundRenderer(
+  event,
+  {
+    isRendererNavigation,
+    windowBindings,
+    sessionId,
+    allowedRoles = ["agent", "workspace"],
+  },
+) {
+  const binding = getPrivilegedRendererBinding(event, {
+    allowedRoles,
+    isRendererNavigation,
+    windowBindings,
+  });
+  if (!binding) return null;
+  if (
+    binding.role === "workspace" &&
+    (typeof sessionId !== "string" || binding.sessionId !== sessionId)
+  ) {
+    return null;
+  }
+  return binding;
+}
+
+export function normalizeExternalHttpUrl(value) {
+  if (
+    typeof value !== "string" ||
+    !value ||
+    Array.from(value).some((character) =>
+      isSecurityDisplayControl(character.codePointAt(0)),
+    )
+  ) {
+    return null;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.username ||
+    parsed.password
+  ) {
+    return null;
+  }
+
+  return parsed.href;
+}
+
 const isProjectTerminalSession = (sessionId, projectId) => {
   if (sessionId === `${RUN_TERMINAL_SESSION_PREFIX}${projectId}`) return true;
   const prefix = `${PROJECT_TERMINAL_SESSION_PREFIX}${projectId}:`;

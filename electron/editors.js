@@ -212,6 +212,16 @@ function getPlatformEditorKey() {
       : "linux";
 }
 
+export const isDirectEditorExecutable = (
+  executable,
+  platform = process.platform,
+) =>
+  typeof executable === "string" &&
+  !(
+    platform === "win32" &&
+    new Set([".bat", ".cmd"]).has(path.extname(executable).toLowerCase())
+  );
+
 function resolveExecutable(name) {
   if (path.isAbsolute(name)) {
     return existsSync(name) ? name : null;
@@ -264,7 +274,7 @@ export function detectAvailableEditors() {
 
     for (const candidate of candidates) {
       const resolved = resolveExecutable(candidate);
-      if (resolved) {
+      if (resolved && isDirectEditorExecutable(resolved)) {
         results.push({
           id: editor.id,
           name: editor.name,
@@ -293,7 +303,7 @@ function resolveKnownEditor(editorId) {
 
   for (const candidate of candidates) {
     const resolved = resolveExecutable(candidate);
-    if (!resolved) {
+    if (!resolved || !isDirectEditorExecutable(resolved)) {
       continue;
     }
 
@@ -370,6 +380,24 @@ export function buildEditorArguments(editorId, target, fallbackArgs) {
   return fallbackArgs(target.repositoryPath);
 }
 
+export function createEditorLaunch(
+  { executable, args, repositoryPath },
+  platform = process.platform,
+) {
+  if (!isDirectEditorExecutable(executable, platform)) return null;
+  return {
+    executable,
+    args,
+    options: {
+      cwd: repositoryPath,
+      detached: true,
+      shell: false,
+      stdio: "ignore",
+      ...(platform === "win32" ? { windowsHide: true } : {}),
+    },
+  };
+}
+
 export function openProjectInEditor({
   editorId,
   projectPath,
@@ -401,40 +429,14 @@ export function openProjectInEditor({
       )
     : [target.repositoryPath];
 
-  if (process.platform === "win32" && editor.isTerminal) {
-    const launcher = WINDOWS_CMD_PATH ?? "cmd.exe";
-    spawnProcess(
-      launcher,
-      [
-        "/d",
-        "/s",
-        "/c",
-        "start",
-        "",
-        "/D",
-        target.repositoryPath,
-        editor.executable,
-        ...args,
-      ],
-      {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      },
-    ).unref();
+  const launch = createEditorLaunch({
+    executable: editor.executable,
+    args,
+    repositoryPath: target.repositoryPath,
+  });
+  if (!launch) return false;
 
-    return true;
-  }
-
-  const requiresShell =
-    process.platform === "win32" &&
-    [".bat", ".cmd"].includes(path.extname(editor.executable).toLowerCase());
-
-  spawnProcess(editor.executable, args, {
-    detached: true,
-    shell: requiresShell,
-    stdio: "ignore",
-  }).unref();
+  spawnProcess(launch.executable, launch.args, launch.options).unref();
 
   return true;
 }

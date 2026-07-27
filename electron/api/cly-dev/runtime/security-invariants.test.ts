@@ -198,6 +198,7 @@ describe("reviewed Cly Dev security invariants", () => {
     const pending = await gate.evaluate({
       projectId: request.projectId,
       sessionId: request.sessionId,
+      requestId: request.requestId,
       toolCall,
       contextHash: "context-hash",
     });
@@ -209,6 +210,7 @@ describe("reviewed Cly Dev security invariants", () => {
     const forged = await gate.evaluate({
       projectId: request.projectId,
       sessionId: request.sessionId,
+      requestId: request.requestId,
       toolCall,
       contextHash: "context-hash",
       approval: { ...pending.approval, state: "approved" },
@@ -224,6 +226,7 @@ describe("reviewed Cly Dev security invariants", () => {
     const approved = await gate.evaluate({
       projectId: request.projectId,
       sessionId: request.sessionId,
+      requestId: request.requestId,
       toolCall,
       contextHash: "context-hash",
       approval: { approvalId: pending.approval.approvalId, state: "rejected" },
@@ -231,6 +234,42 @@ describe("reviewed Cly Dev security invariants", () => {
     expect(approved).toMatchObject({
       type: "allow",
       approval: { approvalId: pending.approval.approvalId },
+    });
+  });
+
+  it("rejects approval replay across distinct execution requests", async () => {
+    const stored = new Map<string, Record<string, unknown>>();
+    const gate = createApprovalGate({
+      now: () => initialTime,
+      projectPolicy: { categories: { file_write: "approval" } },
+      loadApproval: async (approvalId) => stored.get(approvalId),
+    });
+    const pending = await gate.evaluate({
+      projectId: request.projectId,
+      sessionId: request.sessionId,
+      requestId: request.requestId,
+      toolCall,
+      contextHash: "context-hash",
+    });
+    stored.set(pending.approval.approvalId, {
+      ...pending.approval,
+      state: "approved",
+      resolvedBy: "user-1",
+    });
+
+    await expect(
+      gate.evaluate({
+        projectId: request.projectId,
+        sessionId: request.sessionId,
+        requestId: "request-2",
+        toolCall,
+        contextHash: "context-hash",
+        approval: { approvalId: pending.approval.approvalId },
+      }),
+    ).resolves.toMatchObject({
+      type: "deny",
+      code: "APPROVAL_SCOPE_MISMATCH",
+      reason: "Approval scope does not match requestId.",
     });
   });
 
@@ -485,6 +524,7 @@ describe("reviewed Cly Dev security invariants", () => {
       missingPolicy.evaluate({
         projectId: request.projectId,
         sessionId: request.sessionId,
+        requestId: request.requestId,
         toolCall,
         contextHash: "context-hash",
       }),

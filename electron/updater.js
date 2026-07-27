@@ -274,10 +274,14 @@ function disableUpdateStagingIdentifier(autoUpdater) {
 
 export function initializeAutoUpdater({
   app,
+  authorizeIpcEvent,
   getMainWindow,
   ipcMain,
   isDevelopment,
 }) {
+  if (typeof authorizeIpcEvent !== "function") {
+    throw new Error("Updater IPC authorization is required.");
+  }
   const devUpdatesEnabled =
     !app.isPackaged &&
     isDevelopment &&
@@ -376,9 +380,22 @@ export function initializeAutoUpdater({
     return status;
   };
 
-  ipcMain.handle("updates:get-status", () => status);
-  ipcMain.handle("updates:check", () => checkForUpdates({ manual: true }));
-  ipcMain.handle("updates:install", () => {
+  const requireAuthorizedIpcEvent = (event) => {
+    if (!authorizeIpcEvent(event)) {
+      throw new Error("Updater access is not allowed from this window.");
+    }
+  };
+
+  ipcMain.handle("updates:get-status", (event) => {
+    requireAuthorizedIpcEvent(event);
+    return status;
+  });
+  ipcMain.handle("updates:check", (event) => {
+    requireAuthorizedIpcEvent(event);
+    return checkForUpdates({ manual: true });
+  });
+  ipcMain.handle("updates:install", (event) => {
+    requireAuthorizedIpcEvent(event);
     if (status.state !== "downloaded") {
       return false;
     }

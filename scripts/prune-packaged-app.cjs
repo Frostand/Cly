@@ -1,5 +1,17 @@
+const { execFile } = require("node:child_process");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { promisify } = require("node:util");
+
+const execFileAsync = promisify(execFile);
+
+const UNUSED_MAC_PRIVACY_KEYS = [
+  "NSAudioCaptureUsageDescription",
+  "NSBluetoothAlwaysUsageDescription",
+  "NSBluetoothPeripheralUsageDescription",
+  "NSCameraUsageDescription",
+  "NSMicrophoneUsageDescription",
+];
 
 const ARCH_BY_NUMBER = {
   1: "x64",
@@ -196,6 +208,23 @@ async function ensureAppUpdateConfig(resourcesDir) {
   await fs.writeFile(updateConfigPath, appUpdateYml, "utf8");
 }
 
+async function removeUnusedMacPrivacyDescriptions(context) {
+  if (context.electronPlatformName !== "darwin") return;
+  const infoPlist = path.join(
+    context.appOutDir,
+    `${context.packager.appInfo.productFilename}.app`,
+    "Contents",
+    "Info.plist",
+  );
+  for (const key of UNUSED_MAC_PRIVACY_KEYS) {
+    try {
+      await execFileAsync("/usr/bin/plutil", ["-remove", key, infoPlist]);
+    } catch (error) {
+      if (!String(error?.stderr ?? "").includes("does not exist")) throw error;
+    }
+  }
+}
+
 function getResourcesDirectory(context) {
   if (context.electronPlatformName === "darwin") {
     return path.join(
@@ -215,6 +244,7 @@ exports.default = async function prunePackagedApp(context) {
   const resourcesDir = getResourcesDirectory(context);
 
   await ensureAppUpdateConfig(resourcesDir);
+  await removeUnusedMacPrivacyDescriptions(context);
 
   if (platform === "darwin" && isUniversalTempBuild(context)) {
     console.log(
@@ -230,6 +260,11 @@ exports.default = async function prunePackagedApp(context) {
   );
 
   await Promise.all([
+    removeIfExists(path.join(unpackedNodeModules, "node-pty", "scripts")),
+    removeIfExists(path.join(unpackedNodeModules, "node-pty", "src")),
+    removeIfExists(
+      path.join(unpackedNodeModules, "node-pty", "deps", ".editorconfig"),
+    ),
     prunePlatformVendorDirectory(
       path.join(
         unpackedNodeModules,
