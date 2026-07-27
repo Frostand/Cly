@@ -28,17 +28,17 @@ jobs:
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Check out release source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.12.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22.12.0
           cache: pnpm
@@ -131,15 +131,15 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - name: Check out release source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.12.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22.12.0
           cache: pnpm
@@ -164,7 +164,7 @@ jobs:
         run: test -f "${{ matrix.metadata }}"
 
       - name: Upload installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           if-no-files-found: error
@@ -179,7 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download packaged installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           path: release-assets
