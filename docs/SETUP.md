@@ -1,10 +1,17 @@
 # Install and set up Cly
 
-Cly is a desktop application. Downloading a release is the normal way to use
-it—you do **not** need to clone the repository, install Node.js, or run
-`pnpm dev`.
+Cly is a desktop application. End users do **not** need to clone the
+repository, install Node.js or pnpm, or run terminal commands.
 
-## macOS
+> **Release status:** A downloadable installer has not been published yet. It
+> still needs to be published as a tagged GitHub release. The desktop
+> application and production release workflow are ready for that. The source
+> commands at the end of this guide are only for developers and contributors.
+
+Once the first tagged release is published, downloading an installer will be
+the normal way to use Cly.
+
+## macOS (after the tagged release is published)
 
 1. Download the macOS build for your Mac from the [Cly Releases page](https://github.com/Frostand/Cly/releases).
    Choose `arm64` for Apple Silicon (M-series) Macs or `x64` for Intel Macs.
@@ -19,7 +26,7 @@ it—you do **not** need to clone the repository, install Node.js, or run
    finish the guided setup. Cly saves progress automatically; quitting and
    reopening resumes the same project.
 
-## Windows and Linux
+## Windows and Linux (after the tagged release is published)
 
 Download the platform installer from the [Cly Releases page](https://github.com/Frostand/Cly/releases), install it, then open Cly from the operating system's application launcher. The same blank first-run setup appears on the first launch.
 

@@ -46,13 +46,21 @@ Cly's research store and deterministic analysis run on the researcher's computer
 
 ## Install
 
-### Desktop releases
+### Desktop application
 
-When the current version has installer assets, download the build for your
-platform from the [Releases page](https://github.com/Frostand/Cly/releases) and
-launch Cly. You do not need to clone the repository or run `pnpm dev` to use a
-desktop release. If the latest release does not list an installer yet, use the
-source workflow below for the open beta.
+**The command-line instructions below are only for developers working from
+source. A downloadable installer still needs to be published as a tagged GitHub
+release; the desktop application and production release workflow are ready for
+that.**
+
+End users will not need to clone the repository, install Node.js or pnpm, or
+run terminal commands. Publishing a version tag such as `v1.0.0` from `main`
+starts the workflow that tests, packages, signs, notarizes, and publishes the
+platform installers.
+
+After that tagged release is published, download the build for your platform
+from the [Releases page](https://github.com/Frostand/Cly/releases), install it,
+and open Cly from the operating system's application launcher.
 
 On macOS, open the `.dmg`, drag **Cly** to **Applications**, then open it from
 Applications. Production macOS releases are signed and notarized by the release
@@ -64,7 +72,10 @@ regulated or sensitive data.
 See the [install and setup guide](./docs/SETUP.md) for platform-specific
 installation, local-data locations, backups, and the first project flow.
 
-### Run from source
+### Developer setup from source
+
+**The command-line instructions below are only for developers and contributors
+working from source. They are not the end-user installation path.**
 
 Requirements: [Git](https://git-scm.com/), Node.js 22.12 or newer, and pnpm 11.12. Python is not required for normal development or local analysis.
 
