@@ -1,7 +1,7 @@
 import "./load-env.js";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -482,7 +482,7 @@ async function configureRendererProxy(webContents) {
   }
 }
 
-async function pickDirectory(event) {
+async function pickDirectory(event, { mode } = {}) {
   const senderId = getPrivilegedRendererId(event, {
     allowedRoles: ["agent"],
     isRendererNavigation,
@@ -501,19 +501,38 @@ async function pickDirectory(event) {
     );
   }
 
-  const result = await dialog.showOpenDialog(owner, {
-    properties: ["openDirectory"],
-    title: "Select project folder",
-  });
+  const creatingProject = mode === "create";
+  const result = creatingProject
+    ? await dialog.showSaveDialog(owner, {
+        buttonLabel: "Create Project",
+        defaultPath: path.join(app.getPath("documents"), "Untitled Research"),
+        message: "Cly will create an empty folder and remember it.",
+        nameFieldLabel: "Project name",
+        properties: ["createDirectory", "showOverwriteConfirmation"],
+        title: "Create a new Cly project",
+      })
+    : await dialog.showOpenDialog(owner, {
+        properties: ["openDirectory"],
+        title: "Open an existing project folder",
+      });
 
-  if (result.canceled || result.filePaths.length === 0) {
+  const selectedPath = creatingProject
+    ? result.filePath
+    : result.filePaths?.[0];
+  if (result.canceled || !selectedPath) {
     return null;
   }
 
-  const selectedPath = result.filePaths[0];
-  return selectedPath
-    ? projectAuthorityRegistry.authorizePathForRegistration(selectedPath)
-    : null;
+  if (creatingProject) {
+    if (existsSync(selectedPath)) {
+      throw new Error(
+        "That folder already exists. Choose Open an existing folder instead.",
+      );
+    }
+    await mkdir(selectedPath);
+  }
+
+  return projectAuthorityRegistry.authorizePathForRegistration(selectedPath);
 }
 
 async function createMainWindow() {

@@ -8,7 +8,7 @@ const root = process.cwd();
 const viteCli = path.join(root, "node_modules", "vite", "bin", "vite.js");
 const electronArgs = process.platform === "linux" ? ["--no-sandbox"] : [];
 
-test("fresh local setup survives interruption, imports a repository, and completes local-only", async () => {
+test("fresh local setup has no preloaded project, survives interruption, imports a repository, and completes local-only", async () => {
   test.setTimeout(120_000);
   const userDataPath = mkdtempSync(path.join(tmpdir(), "cly-onboarding-e2e-"));
   const projectPath = path.join(userDataPath, "existing-research-repository");
@@ -41,18 +41,20 @@ test("fresh local setup survives interruption, imports a repository, and complet
     let window = await app.firstWindow();
     await expect(
       window.getByRole("heading", {
-        name: "Build your first trustworthy evidence chain",
+        name: "Your Cly workspace starts empty",
         level: 1,
       }),
     ).toBeVisible();
-    await expect(window.getByTestId("fixture-selector")).toHaveCount(0);
     await expect(
-      window.getByRole("radio", { name: /Continue locally/ }),
-    ).toBeChecked();
+      window.getByRole("button", { name: "Switch project" }),
+    ).toHaveCount(0);
+    await expect(window.getByTestId("fixture-selector")).toHaveCount(0);
+    await expect(window.getByText("No preloaded project")).toBeVisible();
+    await expect(window.getByText("Saved on this Mac")).toBeVisible();
 
     await window.getByRole("button", { name: /Continue/ }).click();
     await window
-      .getByRole("button", { name: /Import an existing folder/ })
+      .getByRole("button", { name: /Open an existing folder/ })
       .click();
     await expect(
       window.getByRole("heading", {
@@ -90,12 +92,6 @@ test("fresh local setup survives interruption, imports a repository, and complet
     );
 
     await window.getByRole("button", { name: /Continue/ }).click();
-    await expect(window.getByLabel("Repositories")).toHaveValue(
-      canonicalProjectPath,
-    );
-    await window.getByRole("button", { name: /Continue/ }).click();
-    await window.getByRole("button", { name: /Continue/ }).click();
-
     await expect(
       window.getByRole("radio", { name: /^Local-only/ }),
     ).toBeChecked();
@@ -104,17 +100,16 @@ test("fresh local setup survives interruption, imports a repository, and complet
     ).toBeVisible();
     await window.getByRole("button", { name: /Continue/ }).click();
     await window.getByRole("button", { name: "Skip for now" }).click();
-    await window.getByRole("button", { name: "Skip for now" }).click();
 
     await expect(
       window.getByRole("heading", {
-        name: "Confirm the project before Cly generates anything",
+        name: "Confirm your new workspace",
       }),
     ).toBeVisible();
     await expect(
-      window.getByText("Nothing has been generated yet."),
+      window.getByText("Empty project; no sample sources, claims, or runs"),
     ).toBeVisible();
-    await window.getByRole("button", { name: /Approve and generate/ }).click();
+    await window.getByRole("button", { name: /Prepare workspace/ }).click();
     await expect(
       window.getByRole("heading", { name: "Start the first evidence chain" }),
     ).toBeVisible();

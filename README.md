@@ -21,6 +21,7 @@
 
 <p align="center">
   <a href="#install">Install</a> ·
+  <a href="./docs/SETUP.md">Setup guide</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#ai-harnesses">AI harnesses</a> ·
   <a href="#development">Development</a> ·
@@ -45,9 +46,27 @@ Cly's research store and deterministic analysis run on the researcher's computer
 
 ## Install
 
-### Open beta: run from source
+### Desktop releases
 
-Requirements: [Git](https://git-scm.com/), Node.js 22.12 or newer, and pnpm 11.12.
+When the current version has installer assets, download the build for your
+platform from the [Releases page](https://github.com/Frostand/Cly/releases) and
+launch Cly. You do not need to clone the repository or run `pnpm dev` to use a
+desktop release. If the latest release does not list an installer yet, use the
+source workflow below for the open beta.
+
+On macOS, open the `.dmg`, drag **Cly** to **Applications**, then open it from
+Applications. Production macOS releases are signed and notarized by the release
+workflow; an older prerelease or locally built app may require **Control-click →
+Open** on first launch. A clean install opens a blank guided setup: create a new
+project folder or open a folder you already own. Cly does not yet support
+regulated or sensitive data.
+
+See the [install and setup guide](./docs/SETUP.md) for platform-specific
+installation, local-data locations, backups, and the first project flow.
+
+### Run from source
+
+Requirements: [Git](https://git-scm.com/), Node.js 22.12 or newer, and pnpm 11.12. Python is not required for normal development or local analysis.
 
 For macOS or Linux, the complete setup can be run as one command:
 
@@ -69,15 +88,11 @@ pnpm dev
 
 `pnpm doctor` checks the local toolchain and reports which optional AI harnesses are installed and signed in. Cly Research works without an AI harness.
 
-### Desktop packages
-
-Signed desktop installers for macOS, Windows, and Linux will be listed on the [Releases page](https://github.com/Frostand/Cly/releases) after the production signing and public-distribution checks pass. Until then, the source installation above is the supported public beta path. Cly does not yet support regulated or sensitive data.
-
 ## Quickstart
 
 ### Finish a research question
 
-1. Create a local project and open **Research Loop**.
+1. On first launch, select **Create a new project** or **Open an existing folder** and complete the local setup guide.
 2. Enter the research question, working hypothesis, and scope.
 3. Add sources and connect them to a preliminary claim.
 4. Create an experiment and choose **Run analysis**.
@@ -109,6 +124,52 @@ Install and authenticate at least one harness to use Cly Dev chat. Provider acco
 | Cursor | Install Cursor Agent CLI (`agent` or `cursor-agent`) | `<detected executable> login` | [Cursor Agent CLI](https://cursor.com/docs/cli/installation) |
 
 Cly checks both CLI availability and authentication. For Cursor it accepts only an `agent` executable whose help identifies it as Cursor, or `cursor-agent`, and checks `<detected executable> status`; installation alone is not treated as connected. Models come from each signed-in CLI's live discovery output. Provider/model failures and any labelled last-known catalog are surfaced in **AI Providers**, where setup commands can be copied and status refreshed.
+
+## Command line and configuration
+
+Cly does not install a standalone `cly` command. End users launch the desktop
+application normally. Contributors use the repository's pnpm scripts, and Cly
+Dev optionally calls a provider CLI that is already installed and authenticated
+on the same computer.
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm doctor` | Verify Node.js, pnpm, Git, and optional provider CLI status. |
+| `pnpm dev` | Start Electron and its Vite renderer in development mode. |
+| `pnpm vite:build` | Build the renderer into `dist/`. |
+| `pnpm start` | Run the source checkout in production mode; run `pnpm vite:build` first. |
+| `pnpm test` | Run the Vitest unit and integration suite. |
+| `pnpm test:e2e` | Run the Playwright Electron end-to-end suite. |
+| `pnpm package:dir` | Build an unpacked application for the current platform. |
+| `pnpm package:mac` | Build macOS `.dmg` and `.zip` artifacts on macOS. |
+
+No `.env` file, API key, hosted database, or external service is required for
+Cly Research or the normal source-development path. Provider credentials stay
+in the provider's own CLI session. Release signing, notarization, update-feed,
+and CI-only environment variables are configured by the production release
+workflow and are not needed for local use.
+
+Example production-mode source run:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm doctor
+pnpm vite:build
+pnpm start
+```
+
+Example local packaged-app check:
+
+```bash
+pnpm package:dir
+pnpm package:verify:contents
+pnpm package:smoke -- --app release/mac-arm64/Cly.app
+```
+
+The content check discovers the current platform's default `release/` output.
+The smoke check requires the unpacked application path; replace the macOS path
+above with `release/win-unpacked/Cly.exe` or the executable inside
+`release/linux-unpacked/` on those platforms.
 
 ## How it is organized
 
@@ -155,6 +216,28 @@ Useful commands:
 ```bash
 pnpm package:mac   # platform installer targets also exist for win and linux
 ```
+
+## Troubleshooting
+
+- **`pnpm` is missing or the version is wrong:** run `corepack enable`, then
+  `corepack prepare pnpm@11.12.0 --activate`, and confirm with `pnpm --version`.
+- **A provider is not detected or signed in:** run `pnpm doctor`, complete the
+  provider's sign-in command from the table above, and restart Cly so the app
+  receives the updated shell `PATH`.
+- **`pnpm start` opens without the current interface:** run `pnpm vite:build`
+  first. Production mode serves the existing `dist/` directory.
+- **Create reports that the folder already exists:** choose **Open an existing
+  folder** instead. Create intentionally makes a brand-new empty directory.
+- **An earlier beta project still appears:** saved projects are preserved by
+  design. Create another project for a blank workspace; reinstalling the app
+  does not delete application data.
+- **A locally built macOS app is blocked:** local builds are not automatically
+  Developer ID signed or notarized. Use a published release, or Control-click
+  the local app and choose **Open** for development testing.
+
+For data locations, backups, and first-launch behavior, see the
+[setup guide](./docs/SETUP.md). For reproducible bug reports, use **Settings →
+Diagnostics → Copy diagnostics** and open a [GitHub issue](https://github.com/Frostand/Cly/issues).
 
 See [Contributing](./CONTRIBUTING.md), [Security](./SECURITY.md), the [architecture](./docs/architecture.md), and the [product roadmap](./docs/roadmap.md).
 

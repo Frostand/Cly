@@ -308,16 +308,15 @@ describe("first-run onboarding", () => {
     expect(props.onComplete).toHaveBeenCalledBefore(props.onOpenDestination);
   });
 
-  it("starts with a clear local-first next action and no fixture project", () => {
+  it("starts empty with a clear local persistence boundary", () => {
     renderOnboarding();
     expect(
       screen.getByRole("heading", {
-        name: "Build your first trustworthy evidence chain",
+        name: "Your Cly workspace starts empty",
       }),
     ).toBeVisible();
-    expect(
-      screen.getByRole("radio", { name: /Continue locally/ }),
-    ).toBeChecked();
+    expect(screen.getByText("No preloaded project")).toBeVisible();
+    expect(screen.getByText("Saved on this Mac")).toBeVisible();
     expect(screen.getByRole("button", { name: /Continue/ })).toBeEnabled();
     expect(
       screen.queryByText("Neural surrogate reliability"),
@@ -332,7 +331,7 @@ describe("first-run onboarding", () => {
       }),
     );
     await user.click(
-      screen.getByRole("button", { name: /Import an existing folder/ }),
+      screen.getByRole("button", { name: /Open an existing folder/ }),
     );
     await waitFor(() =>
       expect(props.onProjectSelected).toHaveBeenCalledWith(project),
@@ -349,13 +348,13 @@ describe("first-run onboarding", () => {
     const user = userEvent.setup();
     renderOnboarding(
       updateOnboardingDraft(createOnboardingDraft("project-onboarding"), {
-        currentStep: "resources",
+        currentStep: "research",
         topic: "Persisted topic",
-        datasets: ["data/measurements.csv"],
+        primaryQuestion: "Does the local draft survive?",
       }),
     );
-    expect(screen.getByLabelText("Datasets")).toHaveValue(
-      "data/measurements.csv",
+    expect(screen.getByLabelText("Research topic")).toHaveValue(
+      "Persisted topic",
     );
     await user.click(screen.getByRole("button", { name: "Restart" }));
     await user.click(screen.getByRole("button", { name: /Continue/ }));
@@ -404,9 +403,7 @@ describe("first-run onboarding", () => {
     expect(
       screen.queryByText("Objective", { exact: true }),
     ).not.toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: /Approve and generate/ }),
-    );
+    await user.click(screen.getByRole("button", { name: /Prepare workspace/ }));
     expect(screen.getByText("Objective", { exact: true })).toBeVisible();
     expect(screen.getAllByText(/Which method stays calibrated/)).toHaveLength(
       2,

@@ -6,18 +6,14 @@ import {
   CheckCircle2,
   Circle,
   CloudOff,
-  Code2,
   Database,
   FolderInput,
   FolderPlus,
-  GitBranch,
   HardDrive,
   LoaderCircle,
-  LockKeyhole,
   Network,
   RefreshCcw,
   RotateCcw,
-  Search,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
@@ -52,16 +48,13 @@ import {
 } from "../services/onboarding-storage";
 
 const stepCopy: Record<OnboardingStepId, { label: string; detail: string }> = {
-  welcome: { label: "Welcome", detail: "How Cly works" },
-  project: { label: "Project", detail: "Create or import" },
-  research: { label: "Research", detail: "Question and outputs" },
-  resources: { label: "Resources", detail: "Code, data, and tools" },
-  people: { label: "Planning", detail: "People and deadline" },
-  privacy: { label: "Privacy", detail: "Before transmission" },
-  readiness: { label: "Readiness", detail: "Local environment checks" },
-  lineage: { label: "Lineage", detail: "Recover existing work" },
-  review: { label: "Review", detail: "Confirm before generation" },
-  finish: { label: "First chain", detail: "Guided next steps" },
+  welcome: { label: "Welcome", detail: "A clean local workspace" },
+  project: { label: "Project", detail: "Create new or open existing" },
+  research: { label: "Research", detail: "Name the first question" },
+  privacy: { label: "Privacy", detail: "Set the local boundary" },
+  readiness: { label: "Readiness", detail: "Optional local checks" },
+  review: { label: "Review", detail: "Confirm your workspace" },
+  finish: { label: "Ready", detail: "Open the empty project" },
 };
 
 const emptyDiagnostics: OnboardingDiagnostics = {
@@ -413,64 +406,41 @@ export function OnboardingScreen({
               <span className="cly-onboarding-mark">
                 <Sparkles />
               </span>
-              <p className="cly-onboarding-eyebrow">
-                Local-first research workspace
-              </p>
-              <h1>Build your first trustworthy evidence chain</h1>
+              <p className="cly-onboarding-eyebrow">Your first launch</p>
+              <h1>Your Cly workspace starts empty</h1>
               <p className="cly-onboarding-lede">
-                Cly Research connects sources, claims, experiments, and
-                provenance. Cly Dev connects that research context to
-                coding-agent work. Your project stays on this device by default.
+                There is no sample project and no test research to clean up.
+                Create a new folder or open work you already have; Cly restores
+                it the next time you launch the app.
               </p>
               <div className="cly-onboarding-product-lines">
                 <div>
-                  <Search />
+                  <FolderPlus />
                   <span>
-                    <strong>Cly Research</strong>
+                    <strong>No preloaded project</strong>
                     <small>
-                      Turn sources into reviewable claims and evidence.
-                    </small>
-                  </span>
-                </div>
-                <div>
-                  <Code2 />
-                  <span>
-                    <strong>Cly Dev</strong>
-                    <small>
-                      Build and test code with the project’s research context.
+                      Begin with a blank workspace that belongs to you.
                     </small>
                   </span>
                 </div>
                 <div>
                   <HardDrive />
                   <span>
-                    <strong>Local first</strong>
+                    <strong>Saved on this Mac</strong>
                     <small>
-                      No account is required. Network use is opt-in and reviewed
-                      later.
+                      Projects and setup return when Cly is reopened.
                     </small>
                   </span>
                 </div>
-              </div>
-              <div
-                role="radiogroup"
-                aria-label="Account mode"
-                className="cly-onboarding-choices"
-              >
-                <Choice
-                  checked={draft.accountMode === "guest"}
-                  title="Continue locally"
-                  detail="Recommended · guest mode, no account or sync"
-                  icon={<LockKeyhole />}
-                  onChange={() => patch({ accountMode: "guest" })}
-                />
-                <Choice
-                  checked={draft.accountMode === "optional-account"}
-                  title="Consider account sync later"
-                  detail="Optional · setup remains local until you approve transmission"
-                  icon={<Network />}
-                  onChange={() => patch({ accountMode: "optional-account" })}
-                />
+                <div>
+                  <ShieldCheck />
+                  <span>
+                    <strong>Local by default</strong>
+                    <small>
+                      No account or external connection is required.
+                    </small>
+                  </span>
+                </div>
               </div>
             </div>
           ) : null}
@@ -492,7 +462,9 @@ export function OnboardingScreen({
                   <FolderPlus />
                   <span>
                     <strong>Create a new project</strong>
-                    <small>Choose an empty or new folder for this work.</small>
+                    <small>
+                      Name a new empty folder. Cly creates it and remembers it.
+                    </small>
                   </span>
                   <ArrowRight />
                 </button>
@@ -503,9 +475,10 @@ export function OnboardingScreen({
                 >
                   <FolderInput />
                   <span>
-                    <strong>Import an existing folder</strong>
+                    <strong>Open an existing folder</strong>
                     <small>
-                      Open a repository or research directory without moving it.
+                      Open a repository or research directory without moving or
+                      copying it.
                     </small>
                   </span>
                   <ArrowRight />
@@ -562,88 +535,6 @@ export function OnboardingScreen({
                   placeholder="Paper\nDataset\nReproducible benchmark"
                   onChange={(value) =>
                     patch({ expectedOutputs: splitLines(value) })
-                  }
-                />
-              </div>
-            </div>
-          ) : null}
-
-          {draft.currentStep === "resources" ? (
-            <div className="cly-onboarding-content">
-              <p className="cly-onboarding-eyebrow">Resources</p>
-              <h1>Connect what already exists</h1>
-              <p className="cly-onboarding-lede">
-                Paths are recorded locally. Nothing is uploaded during this
-                step.
-              </p>
-              <div className="cly-onboarding-form-grid">
-                <Field
-                  multiline
-                  label="Repositories"
-                  value={draft.repositories.join("\n")}
-                  placeholder="One local path or repository per line"
-                  onChange={(value) =>
-                    patch({ repositories: splitLines(value) })
-                  }
-                />
-                <Field
-                  multiline
-                  label="Datasets"
-                  value={draft.datasets.join("\n")}
-                  placeholder="Local datasets, manifests, or approved URLs"
-                  onChange={(value) => patch({ datasets: splitLines(value) })}
-                />
-                <Field
-                  multiline
-                  label="Tools"
-                  value={draft.tools.join("\n")}
-                  placeholder="Python, R, Jupyter, MATLAB…"
-                  onChange={(value) => patch({ tools: splitLines(value) })}
-                />
-                <Field
-                  multiline
-                  label="Provider preferences"
-                  value={draft.providerPreferences.join("\n")}
-                  placeholder="Optional local/provider CLIs"
-                  onChange={(value) =>
-                    patch({ providerPreferences: splitLines(value) })
-                  }
-                />
-              </div>
-            </div>
-          ) : null}
-
-          {draft.currentStep === "people" ? (
-            <div className="cly-onboarding-content">
-              <p className="cly-onboarding-eyebrow">Planning</p>
-              <h1>Capture collaborators and constraints</h1>
-              <div className="cly-onboarding-form-grid">
-                <Field
-                  multiline
-                  label="Collaborators"
-                  value={draft.collaborators.join("\n")}
-                  placeholder="Names, roles, or teams"
-                  onChange={(value) =>
-                    patch({ collaborators: splitLines(value) })
-                  }
-                />
-                <label className="cly-onboarding-field">
-                  <span>Deadline</span>
-                  <input
-                    type="date"
-                    value={draft.deadline}
-                    onChange={(event) =>
-                      patch({ deadline: event.target.value })
-                    }
-                  />
-                </label>
-                <Field
-                  multiline
-                  label="Optional integrations"
-                  value={draft.optionalIntegrations.join("\n")}
-                  placeholder="GitHub, Zotero, cloud storage…"
-                  onChange={(value) =>
-                    patch({ optionalIntegrations: splitLines(value) })
                   }
                 />
               </div>
@@ -807,42 +698,10 @@ export function OnboardingScreen({
             </div>
           ) : null}
 
-          {draft.currentStep === "lineage" ? (
-            <div className="cly-onboarding-content">
-              <p className="cly-onboarding-eyebrow">Existing work</p>
-              <h1>Reconstruct research lineage?</h1>
-              <p className="cly-onboarding-lede">
-                Cly can propose links among existing sources, notebooks, code,
-                runs, figures, and claims. Every inferred link stays unapproved
-                until you review it.
-              </p>
-              <div
-                role="radiogroup"
-                aria-label="Lineage reconstruction"
-                className="cly-onboarding-choices"
-              >
-                <Choice
-                  checked={draft.reconstructLineage}
-                  title="Offer retrospective reconstruction"
-                  detail="Scan locally and review every inferred relationship"
-                  icon={<GitBranch />}
-                  onChange={() => patch({ reconstructLineage: true })}
-                />
-                <Choice
-                  checked={!draft.reconstructLineage}
-                  title="Start with new evidence"
-                  detail="Skip reconstruction for now; it remains available later"
-                  icon={<Sparkles />}
-                  onChange={() => patch({ reconstructLineage: false })}
-                />
-              </div>
-            </div>
-          ) : null}
-
           {draft.currentStep === "review" ? (
             <div className="cly-onboarding-content">
               <p className="cly-onboarding-eyebrow">Review</p>
-              <h1>Confirm the project before Cly generates anything</h1>
+              <h1>Confirm your new workspace</h1>
               <dl className="cly-onboarding-review">
                 <div>
                   <dt>Project</dt>
@@ -862,14 +721,6 @@ export function OnboardingScreen({
                   </dd>
                 </div>
                 <div>
-                  <dt>Resources</dt>
-                  <dd>
-                    {draft.repositories.length} repositories ·{" "}
-                    {draft.datasets.length} datasets · {draft.tools.length}{" "}
-                    tools
-                  </dd>
-                </div>
-                <div>
                   <dt>Privacy</dt>
                   <dd>
                     {draft.privacyMode === "local-only"
@@ -878,24 +729,18 @@ export function OnboardingScreen({
                   </dd>
                 </div>
                 <div>
-                  <dt>Existing work</dt>
-                  <dd>
-                    {draft.reconstructLineage
-                      ? "Offer retrospective lineage reconstruction"
-                      : "Start with a new evidence chain"}
-                  </dd>
+                  <dt>Starting state</dt>
+                  <dd>Empty project; no sample sources, claims, or runs</dd>
                 </div>
               </dl>
               <div className="cly-onboarding-generation-note">
                 <Sparkles />
                 <span>
                   <strong>
-                    Next: generate a starter objective, hypothesis, and three
-                    tasks
+                    Next: prepare a private starter plan for this project
                   </strong>
                   <small>
-                    Nothing has been generated yet. Continuing records this
-                    review first.
+                    Cly records this review before creating the local plan.
                   </small>
                 </span>
               </div>
@@ -980,9 +825,7 @@ export function OnboardingScreen({
             minute: "2-digit",
           })}
         </span>
-        {!(
-          ["project", "privacy", "review", "finish"] as OnboardingStepId[]
-        ).includes(draft.currentStep) ? (
+        {draft.currentStep === "readiness" ? (
           <Button
             variant="ghost"
             onClick={() => setDraft((current) => skipOnboardingStep(current))}
@@ -1005,9 +848,7 @@ export function OnboardingScreen({
             disabled={!canContinue || selectingProject}
             onClick={goNext}
           >
-            {draft.currentStep === "review"
-              ? "Approve and generate"
-              : "Continue"}{" "}
+            {draft.currentStep === "review" ? "Prepare workspace" : "Continue"}{" "}
             <ArrowRight size={13} />
           </Button>
         )}

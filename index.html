@@ -72,7 +72,13 @@
         inset: 0;
         justify-items: center;
         position: fixed;
+        transition: opacity 180ms ease-out;
         z-index: 50;
+      }
+
+      .boot-loading[data-state="ready"] {
+        opacity: 0;
+        pointer-events: none;
       }
 
       .boot-logo-wrap {
@@ -92,11 +98,17 @@
         align-items: center;
         display: flex;
         flex-direction: column;
-        gap: 0.75rem;
+        gap: 0.625rem;
         margin-top: -4rem;
         max-width: 28rem;
         padding: 0 1.5rem;
         text-align: center;
+      }
+
+      .boot-title {
+        font: 650 1.125rem/1.25 var(--font-inter);
+        letter-spacing: -0.02em;
+        margin: 0;
       }
 
       .boot-message {
@@ -104,6 +116,47 @@
         font: 0.875rem/1.5 var(--font-inter);
         margin: 0;
       }
+
+      .boot-steps {
+        display: grid;
+        gap: 0;
+        list-style: none;
+        margin: 0.5rem 0 0;
+        padding: 0;
+        text-align: left;
+        width: min(20rem, 78vw);
+      }
+
+      .boot-step {
+        align-items: center;
+        border-top: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+        color: inherit;
+        display: grid;
+        font: 0.75rem/1.2 var(--font-inter);
+        gap: 0.625rem;
+        grid-template-columns: 0.75rem minmax(0, 1fr) auto;
+        min-height: 2rem;
+        opacity: 0.42;
+      }
+
+      .boot-step-dot {
+        border: 1px solid currentColor;
+        border-radius: 50%;
+        height: 0.45rem;
+        width: 0.45rem;
+      }
+
+      .boot-step-state { font-size: 0.6875rem; }
+      .boot-step[data-status="active"] { opacity: 0.82; }
+      .boot-step[data-status="active"] .boot-step-dot {
+        animation: boot-stage-pulse 1.2s ease-in-out infinite;
+        background: currentColor;
+      }
+      .boot-step[data-status="active"] .boot-step-state::after { content: "Starting"; }
+      .boot-step[data-status="complete"] { opacity: 0.7; }
+      .boot-step[data-status="complete"] .boot-step-dot { background: currentColor; }
+      .boot-step[data-status="complete"] .boot-step-state::after { content: "Ready"; }
+      .boot-step[data-status="pending"] .boot-step-state::after { content: "Waiting"; }
 
       .boot-retry {
         background: currentColor;
@@ -274,8 +327,16 @@
         }
       }
 
+      @keyframes boot-stage-pulse {
+        0%, 100% { opacity: 0.45; transform: scale(0.82); }
+        50% { opacity: 1; transform: scale(1); }
+      }
+
       @media (prefers-reduced-motion: reduce) {
-        .boot-loading .boot-spark, .boot-loading .boot-sparkles-field::after { animation: none; }
+        .boot-loading,
+        .boot-loading .boot-spark,
+        .boot-loading .boot-sparkles-field::after,
+        .boot-loading .boot-step-dot { animation: none; transition: none; }
       }
     </style>
     <script type="module" src="/src/boot-theme.ts"></script>
@@ -299,7 +360,25 @@
         </div>
       </div>
       <div class="boot-copy">
-        <p class="boot-message">Loading your local research workspace…</p>
+        <h1 class="boot-title">Preparing your workspace</h1>
+        <p class="boot-message" aria-live="polite">Starting Cly on this device…</p>
+        <ol class="boot-steps" aria-label="Startup progress">
+          <li class="boot-step" data-stage="local" data-status="active">
+            <span class="boot-step-dot" aria-hidden="true"></span>
+            <span>Start local workspace</span>
+            <span class="boot-step-state"></span>
+          </li>
+          <li class="boot-step" data-stage="projects" data-status="pending">
+            <span class="boot-step-dot" aria-hidden="true"></span>
+            <span>Restore saved projects</span>
+            <span class="boot-step-state"></span>
+          </li>
+          <li class="boot-step" data-stage="workspace" data-status="pending">
+            <span class="boot-step-dot" aria-hidden="true"></span>
+            <span>Open Cly</span>
+            <span class="boot-step-state"></span>
+          </li>
+        </ol>
         <button class="boot-retry" type="button">Retry</button>
       </div>
     </div>

@@ -163,7 +163,8 @@ contextBridge.exposeInMainWorld("dream", {
   onWorkspaceSnapshot: (listener) =>
     subscribe("cly-dev:workspace-snapshot", listener),
 
-  pickProjectDirectory: () => ipcRenderer.invoke("projects:pick-directory"),
+  pickProjectDirectory: (mode) =>
+    ipcRenderer.invoke("projects:pick-directory", { mode }),
 
   loadState: () => ipcRenderer.invoke("state:load"),
   saveState: (state) => ipcRenderer.invoke("state:save", state),

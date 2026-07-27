@@ -42,14 +42,14 @@ describe("onboarding", () => {
     );
   });
 
-  it("supports skip and restart while preserving entered data", () => {
+  it("only skips optional readiness and restart preserves entered data", () => {
     let draft = updateOnboardingDraft(createOnboardingDraft(), {
-      currentStep: "research",
+      currentStep: "readiness",
       topic: "Durable topic",
     });
     draft = skipOnboardingStep(draft);
-    expect(draft.currentStep).toBe("resources");
-    expect(draft.skippedSteps).toContain("research");
+    expect(draft.currentStep).toBe("review");
+    expect(draft.skippedSteps).toContain("readiness");
     const restarted = restartOnboarding(draft);
     expect(restarted.currentStep).toBe("welcome");
     expect(restarted.topic).toBe("Durable topic");

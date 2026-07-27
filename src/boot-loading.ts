@@ -118,21 +118,64 @@ if (document.readyState === "loading") {
   initBootLoadingSparkles();
 }
 
+type BootstrapDetail = {
+  firstRun?: boolean;
+  projectCount?: number;
+  stage?: "local" | "projects" | "workspace";
+  state?: "loading" | "ready" | "failed";
+};
+
+const bootStages = ["local", "projects", "workspace"] as const;
+
+const updateBootStages = (activeStage: BootstrapDetail["stage"]) => {
+  const activeIndex = activeStage ? bootStages.indexOf(activeStage) : -1;
+  for (const [index, stage] of bootStages.entries()) {
+    const row = document.querySelector<HTMLElement>(
+      `.boot-step[data-stage="${stage}"]`,
+    );
+    if (!row) continue;
+    row.dataset.status =
+      activeIndex < 0 || index < activeIndex
+        ? "complete"
+        : index === activeIndex
+          ? "active"
+          : "pending";
+  }
+};
+
 window.addEventListener("cly:bootstrap-state", (event) => {
   const loading = document.querySelector<HTMLElement>(".boot-loading");
   if (!loading) return;
-  const state = (event as CustomEvent<{ state?: string }>).detail?.state;
+  const detail = (event as CustomEvent<BootstrapDetail>).detail ?? {};
+  const { state } = detail;
   if (state === "ready") {
-    loading.remove();
+    updateBootStages(undefined);
+    const message = loading.querySelector<HTMLElement>(".boot-message");
+    if (message) {
+      message.textContent = detail.firstRun
+        ? "Workspace ready. Opening first-time setup…"
+        : `Restored ${detail.projectCount ?? 0} saved project${detail.projectCount === 1 ? "" : "s"}.`;
+    }
+    loading.dataset.state = "ready";
+    // Keep the completed initializer through React's first content paint. A
+    // clean profile still has to hydrate its unscoped onboarding draft after
+    // the project catalog is ready; removing the overlay immediately exposes
+    // a brief empty workspace on fast Macs.
+    window.setTimeout(() => loading.remove(), detail.firstRun ? 1_100 : 320);
     return;
   }
   loading.dataset.state = state === "failed" ? "failed" : "loading";
+  if (state !== "failed") updateBootStages(detail.stage ?? "local");
   const message = loading.querySelector<HTMLElement>(".boot-message");
   if (message) {
     message.textContent =
       state === "failed"
         ? "Cly could not load your local research data. Your projects were not changed."
-        : "Loading your local research workspace…";
+        : detail.stage === "projects"
+          ? "Restoring saved projects…"
+          : detail.stage === "workspace"
+            ? "Opening your local workspace…"
+            : "Starting Cly on this device…";
   }
 });
 

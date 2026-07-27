@@ -4,7 +4,6 @@ const path = require("node:path");
 const { promisify } = require("node:util");
 
 const execFileAsync = promisify(execFile);
-
 const UNUSED_MAC_PRIVACY_KEYS = [
   "NSAudioCaptureUsageDescription",
   "NSBluetoothAlwaysUsageDescription",
@@ -194,6 +193,39 @@ async function pruneSharpOptionalDependencies(parentPath, platform, arch) {
   }
 }
 
+async function pruneScopedNativePackages(parentPath, keepNames) {
+  const names = await readDirectoryNames(parentPath);
+  for (const name of names) {
+    if (!keepNames.has(name)) {
+      await removeIfExists(path.join(parentPath, name));
+    }
+  }
+}
+
+function nativePackageKeepNames(platform, arch) {
+  const architectures = arch === "universal" ? ["arm64", "x64"] : [arch];
+  const anthropic = new Set();
+  const parcel = new Set();
+  const swc = new Set();
+
+  for (const targetArch of architectures) {
+    if (platform === "darwin") {
+      anthropic.add(`claude-agent-sdk-darwin-${targetArch}`);
+      parcel.add(`watcher-darwin-${targetArch}`);
+      swc.add(`core-darwin-${targetArch}`);
+    } else if (platform === "linux") {
+      anthropic.add(`claude-agent-sdk-linux-${targetArch}`);
+      parcel.add(`watcher-linux-${targetArch}-glibc`);
+      swc.add(`core-linux-${targetArch}-gnu`);
+    } else if (platform === "win32") {
+      parcel.add(`watcher-win32-${targetArch}`);
+      swc.add(`core-win32-${targetArch}-msvc`);
+    }
+  }
+
+  return { anthropic, parcel, swc };
+}
+
 async function ensureAppUpdateConfig(resourcesDir) {
   const updateConfigPath = path.join(resourcesDir, "app-update.yml");
   const appUpdateYml = getAppUpdateYml();
@@ -258,13 +290,9 @@ exports.default = async function prunePackagedApp(context) {
     "app.asar.unpacked",
     "node_modules",
   );
+  const nativePackages = nativePackageKeepNames(platform, arch);
 
   await Promise.all([
-    removeIfExists(path.join(unpackedNodeModules, "node-pty", "scripts")),
-    removeIfExists(path.join(unpackedNodeModules, "node-pty", "src")),
-    removeIfExists(
-      path.join(unpackedNodeModules, "node-pty", "deps", ".editorconfig"),
-    ),
     prunePlatformVendorDirectory(
       path.join(
         unpackedNodeModules,
@@ -307,6 +335,23 @@ exports.default = async function prunePackagedApp(context) {
       path.join(unpackedNodeModules, "@img"),
       platform,
       arch,
+    ),
+    pruneScopedNativePackages(
+      path.join(unpackedNodeModules, "@anthropic-ai"),
+      nativePackages.anthropic,
+    ),
+    pruneScopedNativePackages(
+      path.join(unpackedNodeModules, "@parcel"),
+      nativePackages.parcel,
+    ),
+    pruneScopedNativePackages(
+      path.join(unpackedNodeModules, "@swc"),
+      nativePackages.swc,
+    ),
+    removeIfExists(path.join(unpackedNodeModules, "node-pty", "scripts")),
+    removeIfExists(path.join(unpackedNodeModules, "node-pty", "src")),
+    removeIfExists(
+      path.join(unpackedNodeModules, "node-pty", "deps", ".editorconfig"),
     ),
   ]);
 
