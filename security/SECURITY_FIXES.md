@@ -72,12 +72,23 @@ Files: `electron/privileged-ipc.js`, `electron/main.js`, and tests.
   all reachable Hono lines to 4.12.32.
 - DOMPurify override: 3.4.12.
 - Mermaid override: 11.16.0.
-- Current brace-expansion 5.x override: 5.0.8.
+- All packaging dependency paths now resolve brace-expansion 5.0.8.
+- Updated `@electron/asar` to 4.2.1, `@electron/universal` to 3.0.6, and
+  Jake to 12.10.1 so their glob implementations are compatible with the
+  patched brace-expansion major.
+- Removed app-builder-lib's unused optional Squirrel-Windows peer. Cly's
+  Windows target is NSIS, and the removed peer was not part of that path.
 - tar override: 7.5.21.
 - Regenerated `pnpm-lock.yaml` through pnpm; production license policy passed.
 
 The two remaining `pnpm audit --prod` advisories and the reason they were not
 force-overridden are recorded in `SECURITY_AUDIT.md`.
+
+The public-repository scheduled scan later reported a new high-severity
+brace-expansion advisory. The dependency changes above reduce the installed
+graph from three brace-expansion versions to the single patched 5.0.8 release;
+`pnpm audit --audit-level high`, the macOS directory package, packaged-content
+verification, and the packaged-app startup smoke test all pass.
 
 ## SEC-007 — minimize and verify packaged contents
 
@@ -92,6 +103,17 @@ force-overridden are recorded in `SECURITY_AUDIT.md`.
   files.
 
 Files: `package.json`, `scripts/prune-packaged-app.cjs`.
+
+## Post-public secret-scan triage
+
+The first scheduled full-history gitleaks run reported ten historical matches.
+Manual review without disclosing matched values classified them as two
+synthetic credential fixtures, six occurrences of a public native OAuth client
+identifier, and two occurrences of a public provider beta-version header.
+
+`.gitleaksignore` records only the exact commit/path/rule/line fingerprints for
+those verified false positives. It does not exclude a path, rule, commit, or
+future match, so newly introduced credentials remain detectable.
 
 ## Verification commands
 
@@ -113,8 +135,10 @@ pnpm capabilities:check
 pnpm companion-contract:check
 pnpm test
 pnpm audit --prod --json
+pnpm audit --audit-level high
 pnpm package:dir
 pnpm package:verify:contents
+pnpm package:smoke release/mac-arm64/Cly.app/Contents/MacOS/Cly
 ```
 
 Loopback tests require permission to bind ephemeral `127.0.0.1` ports. The
