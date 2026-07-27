@@ -70,7 +70,7 @@
     "get-port": "^7.2.0",
     "hast-util-to-html": "9.0.5",
     "hast-util-whitespace": "3.0.0",
-    "hono": "^4.12.25",
+    "hono": "^4.12.27",
     "html-void-elements": "3.0.0",
     "next-intl": "^4.13.4",
     "node-pty": "^1.1.0",
