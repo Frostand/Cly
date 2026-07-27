@@ -9,7 +9,7 @@ const electronMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   on: vi.fn(),
   removeListener: vi.fn(),
-  sendSync: vi.fn(() => "production-session-token"),
+  sendSync: vi.fn(),
 }));
 
 afterEach(() => {
@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe("Electron preload API session authority", () => {
-  it("exposes the per-launch API token in production", async () => {
+  it("does not expose the main-process API token to the renderer", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const source = await readFile(
       path.join(process.cwd(), "electron/preload.cjs"),
@@ -28,11 +28,7 @@ describe("Electron preload API session authority", () => {
       console,
       document,
       process: {
-        argv: [
-          process.execPath,
-          "electron/preload.cjs",
-          "--dream-api-session-token=production-session-token",
-        ],
+        argv: [process.execPath, "electron/preload.cjs"],
       },
       require: (specifier: string) => {
         expect(specifier).toBe("electron");
@@ -55,10 +51,12 @@ describe("Electron preload API session authority", () => {
     expect(electronMocks.exposeInMainWorld).toHaveBeenCalledWith(
       "dream",
       expect.objectContaining({
-        apiSessionToken: "production-session-token",
         isElectron: true,
       }),
     );
+    expect(
+      electronMocks.exposeInMainWorld.mock.calls[0]?.[1],
+    ).not.toHaveProperty("apiSessionToken");
 
     const api = electronMocks.exposeInMainWorld.mock.calls[0]?.[1];
     await api.getWindowRole();

@@ -123,15 +123,19 @@ export function createApprovalGate({
   const createRequest = ({
     projectId,
     sessionId,
+    requestId,
     toolCall,
     contextHash,
     expiresAt,
   }) => {
     const classification = classify(toolCall);
-    if (!classification) return null;
+    if (!classification || typeof requestId !== "string" || !requestId.trim()) {
+      return null;
+    }
     const scope = {
       projectId,
       sessionId,
+      requestId,
       toolCallId: toolCall.toolCallId,
       tool: classification.tool,
       category: classification.category,
@@ -152,6 +156,7 @@ export function createApprovalGate({
   const evaluate = async ({
     projectId,
     sessionId,
+    requestId,
     toolCall,
     contextHash,
     approval,
@@ -192,9 +197,17 @@ export function createApprovalGate({
       });
     }
 
+    if (typeof requestId !== "string" || !requestId.trim()) {
+      return decision("deny", classification.category, {
+        code: "INVALID_APPROVAL_SCOPE",
+        reason: "An execution request id is required for approval binding.",
+      });
+    }
+
     const request = createRequest({
       projectId,
       sessionId,
+      requestId,
       toolCall,
       contextHash,
     });
@@ -233,6 +246,7 @@ export function createApprovalGate({
     const exactFields = [
       "projectId",
       "sessionId",
+      "requestId",
       "toolCallId",
       "tool",
       "category",

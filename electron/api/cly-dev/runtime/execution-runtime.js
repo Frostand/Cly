@@ -644,6 +644,7 @@ export function createClyDevExecutionRuntime(options = {}) {
           approvalGate.evaluate({
             projectId: request.projectId,
             sessionId: request.sessionId,
+            requestId: request.requestId,
             toolCall: event,
             contextHash: outbound.egressSha256,
             approval,
@@ -1014,6 +1015,7 @@ export function createClyDevExecutionRuntime(options = {}) {
             const gateDecision = await approvalGate.evaluate({
               projectId: request.projectId,
               sessionId: request.sessionId,
+              requestId: request.requestId,
               toolCall: event,
               contextHash: outbound.egressSha256,
               approval,

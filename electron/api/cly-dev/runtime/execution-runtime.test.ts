@@ -90,6 +90,7 @@ describe("Cly Dev approval gate", () => {
     const pending = await gate.evaluate({
       projectId: "project-1",
       sessionId: "session-1",
+      requestId: "request-1",
       toolCall,
       contextHash,
     });
@@ -103,6 +104,7 @@ describe("Cly Dev approval gate", () => {
       gate.evaluate({
         projectId: "project-1",
         sessionId: "session-1",
+        requestId: "request-1",
         toolCall,
         contextHash,
         approval: {
@@ -122,6 +124,7 @@ describe("Cly Dev approval gate", () => {
       gate.evaluate({
         projectId: "project-1",
         sessionId: "session-1",
+        requestId: "request-1",
         toolCall: call("mysteryTool"),
         contextHash,
       }),
@@ -135,6 +138,7 @@ describe("Cly Dev approval gate", () => {
       denied.evaluate({
         projectId: "project-1",
         sessionId: "session-1",
+        requestId: "request-1",
         toolCall: call("runCommand", { command: "rm -rf output" }),
         contextHash,
       }),
@@ -147,6 +151,7 @@ describe("Cly Dev approval gate", () => {
     ["approved", { expiresAt: "2026-07-16T11:59:59.000Z" }, "deny"],
     ["approved", { projectId: "other-project" }, "deny"],
     ["approved", { sessionId: "other-session" }, "deny"],
+    ["approved", { requestId: "other-request" }, "deny"],
     ["approved", { tool: "writeFile" }, "deny"],
     ["approved", { argumentsHash: "wrong" }, "deny"],
     ["approved", { contextHash: "wrong" }, "deny"],
@@ -159,6 +164,7 @@ describe("Cly Dev approval gate", () => {
       ...gate.createRequest({
         projectId: "project-1",
         sessionId: "session-1",
+        requestId: "request-1",
         toolCall,
         contextHash,
       }),
@@ -171,6 +177,7 @@ describe("Cly Dev approval gate", () => {
       gate.evaluate({
         projectId: "project-1",
         sessionId: "session-1",
+        requestId: "request-1",
         toolCall,
         contextHash,
         approval: { approvalId: approval.approvalId },

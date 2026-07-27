@@ -520,7 +520,6 @@ export interface ClyDevWindowLayoutV1 {
 
 export interface DesktopApi {
   isElectron: true;
-  apiSessionToken?: string;
   initialThemePreferences?: {
     accentColor?: string;
     baseColor?: string;

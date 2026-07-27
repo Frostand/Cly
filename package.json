@@ -55,7 +55,7 @@
     "companion-contract:check": "node scripts/check-companion-mode-contract.mjs"
   },
   "dependencies": {
-    "@hono/node-server": "^2.0.5",
+    "@hono/node-server": "^2.0.10",
     "@opencode-ai/sdk": "1.17.11",
     "@pierre/diffs": "^1.2.10",
     "ai": "^6.0.206",
@@ -70,7 +70,7 @@
     "get-port": "^7.2.0",
     "hast-util-to-html": "9.0.5",
     "hast-util-whitespace": "3.0.0",
-    "hono": "^4.12.25",
+    "hono": "^4.12.27",
     "html-void-elements": "3.0.0",
     "next-intl": "^4.13.4",
     "node-pty": "^1.1.0",
@@ -173,7 +173,13 @@
       "electron/**/*",
       "dist/**/*",
       "public/**/*",
-      "package.json"
+      "package.json",
+      "!electron/**/*.ts",
+      "!electron/**/*.{test,spec}.{js,cjs,mjs,jsx,tsx}",
+      "!node_modules/**/*.map",
+      "!node_modules/**/*.{ts,tsx}",
+      "!node_modules/**/*.{test,spec}.{js,cjs,mjs,jsx,ts,tsx}",
+      "!node_modules/**/{test,tests,__tests__,mock,mocks,__mocks__}/**/*"
     ],
     "extraResources": [
       {

@@ -39,17 +39,20 @@ import {
   savePersistedThemePreference,
 } from "./persisted-state.js";
 import {
-  getBoundRendererId,
   getHostCommandApprovalOptions,
+  getPrivilegedRendererBinding,
   getPrivilegedRendererId,
   getProviderHostActionApprovalOptions,
+  getSessionBoundRenderer,
   getTerminalLaunchApprovalOptions,
   isTerminalSessionOwner,
+  normalizeExternalHttpUrl,
   resolveTerminalLaunch,
 } from "./privileged-ipc.js";
 import { createProcessSessionManager } from "./process-sessions.js";
 import { projectAuthorityRegistry } from "./project-authority-registry.js";
 import { canBypassNativeCommandConfirmationForReleaseSmoke } from "./release-provider-smoke.js";
+import { installRendererRequestAuthorization } from "./renderer-request-authorization.js";
 import { createRendererServerManager } from "./renderer-server.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
 import { initializeAutoUpdater } from "./updater.js";
@@ -188,12 +191,6 @@ function applyWindowThemeBackground(theme, baseColor) {
       window.setBackgroundColor(getWindowBackground(theme, baseColor));
     }
   }
-}
-
-function getApiSessionTokenPreloadArgument() {
-  const token = rendererServerManager?.getApiSessionToken();
-  if (!token) return "";
-  return `--dream-api-session-token=${encodeURIComponent(token)}`;
 }
 
 function getThemePreferencePreloadArgument() {
@@ -407,10 +404,6 @@ async function createStartupRendererServerManager() {
   });
 }
 
-function isHttpUrl(value) {
-  return /^https?:\/\//i.test(value.trim());
-}
-
 function getUrlOrigin(value) {
   try {
     return new URL(value).origin;
@@ -433,6 +426,44 @@ function isRendererNavigation(url) {
 
   return targetOrigin === rendererOrigin;
 }
+
+const getAuthorizedRenderer = (event, allowedRoles = ["agent", "workspace"]) =>
+  getPrivilegedRendererBinding(event, {
+    allowedRoles,
+    isRendererNavigation,
+    windowBindings,
+  });
+
+const requireAuthorizedRenderer = (
+  event,
+  allowedRoles = ["agent", "workspace"],
+) => {
+  const binding = getAuthorizedRenderer(event, allowedRoles);
+  if (!binding) throw new Error("This renderer action is not allowed.");
+  return binding;
+};
+
+const requireAuthorizedSessionRenderer = (
+  event,
+  sessionId,
+  allowedRoles = ["agent", "workspace"],
+) => {
+  const binding = getSessionBoundRenderer(event, {
+    allowedRoles,
+    isRendererNavigation,
+    sessionId,
+    windowBindings,
+  });
+  if (!binding) throw new Error("This session action is not allowed.");
+  return binding;
+};
+
+const openExternalHttpUrl = (value) => {
+  const normalizedUrl = normalizeExternalHttpUrl(value);
+  if (!normalizedUrl) return false;
+  void shell.openExternal(normalizedUrl);
+  return true;
+};
 
 async function configureRendererProxy(webContents) {
   try {
@@ -503,10 +534,7 @@ async function createMainWindow() {
       process.platform === "darwin" ? { x: 14, y: 14 } : undefined,
     webPreferences: {
       contextIsolation: true,
-      additionalArguments: [
-        getThemePreferencePreloadArgument(),
-        getApiSessionTokenPreloadArgument(),
-      ],
+      additionalArguments: [getThemePreferencePreloadArgument()],
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,
@@ -530,9 +558,7 @@ async function createMainWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isHttpUrl(url)) {
-      shell.openExternal(url);
-    }
+    openExternalHttpUrl(url);
     return { action: "deny" };
   });
 
@@ -555,9 +581,7 @@ async function createMainWindow() {
 
     event.preventDefault();
 
-    if (isHttpUrl(url)) {
-      shell.openExternal(url);
-    }
+    openExternalHttpUrl(url);
   });
 
   mainWindow.webContents.on(
@@ -613,6 +637,11 @@ async function createMainWindow() {
   });
 
   await configureRendererProxy(mainWindow.webContents);
+  installRendererRequestAuthorization({
+    apiToken: rendererServerManager.getApiSessionToken(),
+    rendererOrigin: rendererServerManager.getUrl(),
+    session: mainWindow.webContents.session,
+  });
 
   mainWindow.loadURL(rendererServerManager.getUrl()).catch((error) => {
     console.error("Failed to load renderer:", error);
@@ -707,10 +736,7 @@ async function createWorkspaceWindow(sessionId) {
       process.platform === "darwin" ? { x: 14, y: 14 } : undefined,
     webPreferences: {
       contextIsolation: true,
-      additionalArguments: [
-        getThemePreferencePreloadArgument(),
-        getApiSessionTokenPreloadArgument(),
-      ],
+      additionalArguments: [getThemePreferencePreloadArgument()],
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,
@@ -730,13 +756,13 @@ async function createWorkspaceWindow(sessionId) {
     if (persisted?.maximized) createdWorkspaceWindow.maximize();
   });
   createdWorkspaceWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isHttpUrl(url)) shell.openExternal(url);
+    openExternalHttpUrl(url);
     return { action: "deny" };
   });
   createdWorkspaceWindow.webContents.on("will-navigate", (event, url) => {
     if (isRendererNavigation(url)) return;
     event.preventDefault();
-    if (isHttpUrl(url)) shell.openExternal(url);
+    openExternalHttpUrl(url);
   });
   createdWorkspaceWindow.on("moved", () =>
     saveWorkspaceWindowLayoutFor(createdWorkspaceWindow, sessionId),
@@ -806,27 +832,6 @@ ipcMain.handle("onboarding-draft:load", (event, { projectId } = {}) => {
     throw new Error("Onboarding state access is not allowed.");
   return loadOnboardingDraft(projectId ?? null);
 });
-ipcMain.on("api:get-session-token", (event) => {
-  const senderId = getBoundRendererId(event, {
-    allowedRoles: ["agent", "workspace"],
-    windowBindings,
-  });
-  if (senderId === null) {
-    event.returnValue = "";
-    return;
-  }
-  const apiSessionToken = rendererServerManager?.getApiSessionToken();
-  if (!apiSessionToken) {
-    console.error(
-      "API session token requested before renderer server startup.",
-    );
-    event.returnValue = "";
-    return;
-  }
-
-  event.returnValue = apiSessionToken;
-});
-
 // All writes share the main process's single SQLite connection. The queue
 // coalesces bursts and schedules the full rewrite on the next event-loop turn.
 let stateSaveQueue = null;
@@ -868,21 +873,26 @@ ipcMain.handle("onboarding-draft:save", (event, draft) => {
 });
 
 ipcMain.handle("cly-dev:get-window-role", (event) => {
-  return windowBindings.get(event.sender.id)?.role ?? "agent";
+  return requireAuthorizedRenderer(event).role;
 });
 ipcMain.handle("cly-dev:get-session-id", (event) => {
-  return windowBindings.get(event.sender.id)?.sessionId ?? null;
+  return requireAuthorizedRenderer(event).sessionId ?? null;
 });
-ipcMain.handle("cly-dev:get-workspace-snapshot", (_event, { sessionId } = {}) =>
-  clyDevWorkspaceCore.getSnapshot(sessionId),
+ipcMain.handle(
+  "cly-dev:get-workspace-snapshot",
+  (event, { sessionId } = {}) => {
+    requireAuthorizedSessionRenderer(event, sessionId);
+    return clyDevWorkspaceCore.getSnapshot(sessionId);
+  },
 );
 ipcMain.handle("cly-dev:dispatch-workspace-intent", (event, intent) => {
-  const role = windowBindings.get(event.sender.id)?.role ?? "agent";
-  return clyDevWorkspaceCore.dispatchIntent(role, intent);
+  const binding = requireAuthorizedSessionRenderer(event, intent?.sessionId);
+  return clyDevWorkspaceCore.dispatchIntent(binding.role, intent);
 });
 ipcMain.handle(
   "cly-dev:detach-workspace",
-  async (_event, { sessionId } = {}) => {
+  async (event, { sessionId } = {}) => {
+    requireAuthorizedSessionRenderer(event, sessionId, ["agent"]);
     const current = clyDevWorkspaceCore.getSnapshot(sessionId);
     if (!current) throw new Error("A valid session is required to detach.");
     const result = clyDevWorkspaceCore.dispatchIntent("agent", {
@@ -897,7 +907,8 @@ ipcMain.handle(
     await createWorkspaceWindow(sessionId);
   },
 );
-ipcMain.handle("cly-dev:reattach-workspace", (_event, { sessionId } = {}) => {
+ipcMain.handle("cly-dev:reattach-workspace", (event, { sessionId } = {}) => {
+  requireAuthorizedSessionRenderer(event, sessionId);
   const current = clyDevWorkspaceCore.getSnapshot(sessionId);
   if (!current) throw new Error("A valid session is required to reattach.");
   const result = clyDevWorkspaceCore.dispatchIntent("agent", {
@@ -920,31 +931,39 @@ ipcMain.handle("cly-dev:reattach-workspace", (_event, { sessionId } = {}) => {
     targetWorkspaceWindow.close();
   }
 });
-ipcMain.handle("cly-dev:focus-agent-window", () => {
+ipcMain.handle("cly-dev:focus-agent-window", (event) => {
+  requireAuthorizedRenderer(event, ["workspace"]);
   mainWindow?.show();
   mainWindow?.focus();
 });
-ipcMain.handle("cly-dev:focus-workspace-window", () => {
+ipcMain.handle("cly-dev:focus-workspace-window", (event) => {
+  requireAuthorizedRenderer(event, ["agent"]);
   workspaceWindow?.show();
   workspaceWindow?.focus();
 });
 
-ipcMain.handle("theme:set", (_event, { theme } = {}) => {
+ipcMain.handle("theme:set", (event, { theme } = {}) => {
+  requireAuthorizedRenderer(event);
   const normalizedTheme = normalizeThemePreference(theme);
   saveThemePreference(normalizedTheme);
   applyWindowThemeBackground(normalizedTheme);
   return true;
 });
 
-ipcMain.handle("theme:get-preferences", () => loadThemePreference());
+ipcMain.handle("theme:get-preferences", (event) => {
+  requireAuthorizedRenderer(event);
+  return loadThemePreference();
+});
 
-ipcMain.handle("theme:set-base-color", (_event, { baseColor } = {}) => {
+ipcMain.handle("theme:set-base-color", (event, { baseColor } = {}) => {
+  requireAuthorizedRenderer(event);
   saveThemePreference(null, baseColor);
   applyWindowThemeBackground(null, baseColor);
   return true;
 });
 
-ipcMain.handle("theme:set-accent-color", (_event, { accentColor } = {}) => {
+ipcMain.handle("theme:set-accent-color", (event, { accentColor } = {}) => {
+  requireAuthorizedRenderer(event);
   saveThemePreference(null, null, accentColor);
   return true;
 });
@@ -955,13 +974,11 @@ nativeTheme.on("updated", () => {
 
 // Window controls (Windows/Linux frameless window)
 ipcMain.handle("window:minimize", (event) => {
-  const senderId = getBoundRendererId(event, { windowBindings });
-  if (senderId === null) return;
+  requireAuthorizedRenderer(event);
   BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
 ipcMain.handle("window:maximize", (event) => {
-  const senderId = getBoundRendererId(event, { windowBindings });
-  if (senderId === null) return;
+  requireAuthorizedRenderer(event);
   const target = BrowserWindow.fromWebContents(event.sender);
   if (target?.isMaximized()) {
     target.unmaximize();
@@ -970,18 +987,13 @@ ipcMain.handle("window:maximize", (event) => {
   }
 });
 ipcMain.handle("window:close", (event) => {
-  const senderId = getBoundRendererId(event, { windowBindings });
-  if (senderId === null) return;
+  requireAuthorizedRenderer(event);
   BrowserWindow.fromWebContents(event.sender)?.close();
 });
 
-ipcMain.handle("shell:open-external", (_event, { url }) => {
-  if (!url || typeof url !== "string" || !isHttpUrl(url)) {
-    return false;
-  }
-
-  shell.openExternal(url);
-  return true;
+ipcMain.handle("shell:open-external", (event, { url } = {}) => {
+  requireAuthorizedRenderer(event);
+  return openExternalHttpUrl(url);
 });
 
 const PROVIDER_LOGIN_COMMANDS = {
@@ -1033,15 +1045,18 @@ const launchProviderLogin = (provider) => {
   }
 };
 
-ipcMain.handle("providers:launch-login", (_event, { provider } = {}) => {
+ipcMain.handle("providers:launch-login", (event, { provider } = {}) => {
+  requireAuthorizedRenderer(event);
   return launchProviderLogin(provider);
 });
 
-ipcMain.handle("terminal:get-default-shell", () => {
+ipcMain.handle("terminal:get-default-shell", (event) => {
+  requireAuthorizedRenderer(event);
   return processSessionManager.getDefaultTerminalShellCommand();
 });
 
-ipcMain.handle("clipboard:write-text", (_event, { text }) => {
+ipcMain.handle("clipboard:write-text", (event, { text } = {}) => {
+  requireAuthorizedRenderer(event);
   if (typeof text !== "string") {
     return false;
   }
@@ -1052,12 +1067,15 @@ ipcMain.handle("clipboard:write-text", (_event, { text }) => {
 
 ipcMain.handle(
   "files:save-text",
-  async (_event, { contents, defaultPath, title = "Save file" }) => {
+  async (event, { contents, defaultPath, title = "Save file" } = {}) => {
+    requireAuthorizedRenderer(event);
     if (typeof contents !== "string") {
       return false;
     }
 
-    const result = await dialog.showSaveDialog(mainWindow, {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    if (!owner || owner.isDestroyed()) return false;
+    const result = await dialog.showSaveDialog(owner, {
       defaultPath:
         typeof defaultPath === "string" && defaultPath.trim()
           ? defaultPath.trim()
@@ -1074,7 +1092,8 @@ ipcMain.handle(
   },
 );
 
-ipcMain.handle("editors:detect", () => {
+ipcMain.handle("editors:detect", (event) => {
+  requireAuthorizedRenderer(event);
   return detectAvailableEditors();
 });
 
@@ -1241,6 +1260,7 @@ ipcMain.handle("terminal:stop", (event, { sessionId } = {}) => {
 });
 
 ipcMain.on("browser:update", (event, payload) => {
+  if (!getAuthorizedRenderer(event, ["agent"])) return;
   browserSessionManager.update(payload, event.sender);
 });
 
@@ -1291,6 +1311,7 @@ app.whenReady().then(async () => {
 
   updateManager = initializeAutoUpdater({
     app,
+    authorizeIpcEvent: (event) => Boolean(getAuthorizedRenderer(event)),
     getMainWindow: () => mainWindow,
     ipcMain,
     isDevelopment,

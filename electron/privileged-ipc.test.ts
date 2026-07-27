@@ -6,8 +6,10 @@ import {
   getHostCommandApprovalOptions,
   getPrivilegedRendererId,
   getProviderHostActionApprovalOptions,
+  getSessionBoundRenderer,
   getTerminalLaunchApprovalOptions,
   isTerminalSessionOwner,
+  normalizeExternalHttpUrl,
   resolveTerminalLaunch,
 } from "./privileged-ipc.js";
 
@@ -76,6 +78,48 @@ describe("privileged renderer IPC", () => {
           windowBindings: fixture.windowBindings,
         },
       ),
+    ).toBeNull();
+  });
+
+  it("binds workspace IPC authority to its own session", () => {
+    const fixture = createEvent({ role: "workspace" });
+    fixture.windowBindings.set(1, {
+      role: "workspace",
+      sessionId: "session-1",
+    });
+    const options = {
+      allowedRoles: ["agent", "workspace"],
+      isRendererNavigation: () => true,
+      windowBindings: fixture.windowBindings,
+    };
+
+    expect(
+      getSessionBoundRenderer(fixture.event, {
+        ...options,
+        sessionId: "session-1",
+      }),
+    ).toMatchObject({ role: "workspace", sessionId: "session-1" });
+    expect(
+      getSessionBoundRenderer(fixture.event, {
+        ...options,
+        sessionId: "session-2",
+      }),
+    ).toBeNull();
+  });
+
+  it("normalizes only credential-free HTTP(S) external URLs", () => {
+    expect(normalizeExternalHttpUrl("https://example.com/docs?q=1")).toBe(
+      "https://example.com/docs?q=1",
+    );
+    expect(
+      normalizeExternalHttpUrl("https://user:secret@example.com/"),
+    ).toBeNull();
+    expect(normalizeExternalHttpUrl("javascript:alert(1)")).toBeNull();
+    expect(
+      normalizeExternalHttpUrl("https://example.com/\nmalicious"),
+    ).toBeNull();
+    expect(
+      normalizeExternalHttpUrl("https://example.com\u202e.evil.test"),
     ).toBeNull();
   });
 

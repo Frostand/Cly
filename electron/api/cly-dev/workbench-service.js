@@ -169,6 +169,7 @@ export function createClyDevWorkbenchService({
       const decision = await gate.evaluate({
         projectId,
         sessionId,
+        requestId,
         toolCall,
         contextHash,
       });
@@ -226,6 +227,7 @@ export function createClyDevWorkbenchService({
       const decision = await gate.evaluate({
         projectId,
         sessionId,
+        requestId,
         toolCall,
         contextHash,
         approval: approvalId,

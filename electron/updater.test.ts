@@ -70,9 +70,11 @@ afterEach(async () => {
 });
 
 async function createHarness({
+  authorizeIpcEvent = () => true,
   isDevelopment,
   isPackaged,
 }: {
+  authorizeIpcEvent?: (event?: unknown) => boolean;
   isDevelopment: boolean;
   isPackaged: boolean;
 }) {
@@ -90,6 +92,7 @@ async function createHarness({
   };
   const manager = initializeAutoUpdater({
     app,
+    authorizeIpcEvent,
     getMainWindow: () => null,
     installId: "stable-install-id-that-must-not-be-sent",
     ipcMain,
@@ -99,6 +102,21 @@ async function createHarness({
 }
 
 describe("auto-updater feed security", () => {
+  it("rejects update IPC from an unauthorized renderer", async () => {
+    const { handlers } = await createHarness({
+      authorizeIpcEvent: () => false,
+      isDevelopment: false,
+      isPackaged: true,
+    });
+
+    expect(() => handlers.get("updates:get-status")?.({} as never)).toThrow(
+      "Updater access is not allowed",
+    );
+    expect(() => handlers.get("updates:check")?.({} as never)).toThrow(
+      "Updater access is not allowed",
+    );
+  });
+
   it("does not add the persistent install ID to feed queries or headers", async () => {
     process.env.CLY_UPDATE_FEED_URL = "https://updates.example.com/releases";
     const { handlers, manager } = await createHarness({
