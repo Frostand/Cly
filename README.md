@@ -45,15 +45,17 @@ Cly's research store and deterministic analysis run on the researcher's computer
 
 ## Install
 
-### Desktop builds
-
-Tagged releases produce installers for macOS (Apple Silicon and Intel), Windows x64, and Linux x64 on the [Releases page](https://github.com/Frostand/Cly/releases). Download the installer for your platform and launch Cly.
-
-The current macOS beta is intentionally unsigned. macOS may require **Control-click → Open** on first launch. Cly does not yet support regulated or sensitive data.
-
-### Run from source
+### Open beta: run from source
 
 Requirements: [Git](https://git-scm.com/), Node.js 22.12 or newer, and pnpm 11.12.
+
+For macOS or Linux, the complete setup can be run as one command:
+
+```bash
+git clone https://github.com/Frostand/Cly.git && cd Cly && corepack enable && corepack prepare pnpm@11.12.0 --activate && pnpm install --frozen-lockfile && pnpm doctor && pnpm dev
+```
+
+Or run the same setup step by step:
 
 ```bash
 git clone https://github.com/Frostand/Cly.git
@@ -66,6 +68,10 @@ pnpm dev
 ```
 
 `pnpm doctor` checks the local toolchain and reports which optional AI harnesses are installed and signed in. Cly Research works without an AI harness.
+
+### Desktop packages
+
+Signed desktop installers for macOS, Windows, and Linux will be listed on the [Releases page](https://github.com/Frostand/Cly/releases) after the production signing and public-distribution checks pass. Until then, the source installation above is the supported public beta path. Cly does not yet support regulated or sensitive data.
 
 ## Quickstart
 
@@ -142,7 +148,7 @@ pnpm package:verify:contents -- --app release/<platform-unpacked-path>
 pnpm package:smoke -- --app release/<platform-unpacked-path>
 ```
 
-Tagged release jobs run the privacy, license, capability, unit, end-to-end, packaged-content, permission-metadata, and unpacked-application launch checks on macOS, Windows, and Linux before publishing installers.
+Production release jobs run the privacy, license, capability, unit, end-to-end, packaged-content, permission-metadata, signing, and unpacked-application launch checks on macOS, Windows, and Linux before publishing installers.
 
 Useful commands:
 
