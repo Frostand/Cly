@@ -62,7 +62,9 @@ builds have been independently validated.
 On macOS, open the `.dmg`, drag **Cly** to **Applications**, then open it from
 Applications. Current open-beta builds are not Developer ID signed or notarized,
 so use **Control-click Cly → Open** the first time and confirm that you want to
-open it. A clean install opens a blank guided setup: create a new project folder
+open it. A clean install opens a blank guided setup with no demo projects. Use
+Cly locally without signing in, or connect an existing Codex, Claude Code,
+OpenCode, or Cursor account for agent features; then create a new project folder
 or open a folder you already own. Cly does not yet support regulated or
 sensitive data.
 
@@ -100,7 +102,7 @@ pnpm dev
 
 ### Finish a research question
 
-1. On first launch, select **Create a new project** or **Open an existing folder** and complete the local setup guide.
+1. On first launch, choose local-only use or an optional AI provider, then select **Create a new project** or **Open an existing folder** and complete the setup guide.
 2. Enter the research question, working hypothesis, and scope.
 3. Add sources and connect them to a preliminary claim.
 4. Create an experiment and choose **Run analysis**.

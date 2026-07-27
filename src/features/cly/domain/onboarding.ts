@@ -1,5 +1,6 @@
 export const onboardingSteps = [
   "welcome",
+  "access",
   "project",
   "research",
   "privacy",
@@ -213,6 +214,7 @@ export function updateOnboardingDraft(
     "tools",
     "collaborators",
     "deadline",
+    "accountMode",
     "privacyMode",
     "externalTransmissionApproved",
     "providerPreferences",

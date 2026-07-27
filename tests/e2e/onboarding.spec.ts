@@ -53,6 +53,15 @@ test("fresh local setup has no preloaded project, survives interruption, imports
     await expect(window.getByText("Saved on this Mac")).toBeVisible();
 
     await window.getByRole("button", { name: /Continue/ }).click();
+    await expect(
+      window.getByRole("heading", {
+        name: "Choose local-only use or connect an AI provider",
+      }),
+    ).toBeVisible();
+    await expect(
+      window.getByRole("radio", { name: /^Use Cly locally/ }),
+    ).toBeChecked();
+    await window.getByRole("button", { name: /Continue/ }).click();
     await window
       .getByRole("button", { name: /Open an existing folder/ })
       .click();

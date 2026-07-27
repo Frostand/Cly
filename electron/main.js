@@ -17,6 +17,7 @@ import {
 import getPort from "get-port";
 import { createProjectAuthorityResolver } from "./api/project-git/authority.js";
 import { resolveRegisteredProjectWorktree } from "./api/project-git/worktree-authority.js";
+import { resolveClyUserDataPath } from "./app-data-path.js";
 import {
   configureApplicationMenu,
   toggleWebContentsDevToolsDetached,
@@ -82,21 +83,22 @@ const rendererStartupTimeoutMs = Number(
 const rendererProbeIntervalMs = 300;
 const APP_NAME = "Cly";
 const APP_ID = "ai.cly.cly";
-const APP_USER_DATA_DIR_NAME = "cly";
 const isolatedE2eUserDataPath =
   process.env.CLY_E2E === "1" ? process.env.CLY_E2E_USER_DATA_PATH?.trim() : "";
 const isolatedE2eSessionDataPath =
   process.env.CLY_E2E === "1"
     ? process.env.CLY_E2E_SESSION_DATA_PATH?.trim()
     : "";
-const APP_USER_DATA_PATH =
-  isolatedE2eUserDataPath ||
-  path.join(app.getPath("appData"), APP_USER_DATA_DIR_NAME);
+const APP_USER_DATA_PATH = resolveClyUserDataPath({
+  appDataPath: app.getPath("appData"),
+  isPackaged: app.isPackaged,
+  isolatedE2eUserDataPath,
+});
 const APP_SESSION_DATA_PATH =
   isolatedE2eSessionDataPath ||
   path.join(
     app.getPath("temp"),
-    APP_USER_DATA_DIR_NAME,
+    path.basename(APP_USER_DATA_PATH),
     `session-${process.pid}`,
   );
 const LIGHT_WINDOW_BACKGROUND = "#ffffff";
