@@ -1,0 +1,15 @@
+# Verified synthetic credential examples used by handoff redaction tests.
+ef0b681e535ed8e94dc9878b066fcbab422f95fb:electron/api/cly-dev/handoff/handoff-service.test.ts:generic-api-key:243
+ef0b681e535ed8e94dc9878b066fcbab422f95fb:electron/api/cly-dev/handoff/handoff-schema.test.ts:generic-api-key:125
+
+# Public OAuth client identifier embedded by the historical upstream desktop client.
+e8917c17c780ac9abdad44749ab7f95eb2061f0b:electron/api/providers/usage-limits.js:generic-api-key:14
+ca1f0fd005e1fac13d48d0fea7217a0cf1263f10:electron/api/providers/usage-limits.js:generic-api-key:10
+f9a697b2c3e64227bc33bcedf02f7d3e59745887:electron/api-server.js:generic-api-key:561
+fa76cde29ee048a074db510a886de70438885010:electron/api/app.js:generic-api-key:504
+30a951fc559f153828ab718ed66a232844618150:electron/api-server.js:generic-api-key:26
+4f06c464b6fc62a80609073001df6b2e6f1ca122:src/lib/anthropic-oauth.ts:generic-api-key:3
+
+# Public provider beta-version header, not a credential.
+30a951fc559f153828ab718ed66a232844618150:electron/api-server.js:generic-api-key:33
+4f06c464b6fc62a80609073001df6b2e6f1ca122:src/lib/anthropic-oauth.ts:generic-api-key:11
