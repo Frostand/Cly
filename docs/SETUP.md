@@ -3,22 +3,21 @@
 Cly is a desktop application. End users do **not** need to clone the
 repository, install Node.js or pnpm, or run terminal commands.
 
-> **Release status:** A downloadable installer has not been published yet. It
-> still needs to be published as a tagged GitHub release. The desktop
-> application and production release workflow are ready for that. The source
-> commands at the end of this guide are only for developers and contributors.
+Download the installer for your platform from the [Cly Releases
+page](https://github.com/Frostand/Cly/releases). Do **not** download GitHub's
+automatic **Source code (zip)** or **Source code (tar.gz)** files unless you are
+a developer; those archives contain project folders, not an installable app.
 
-Once the first tagged release is published, downloading an installer will be
-the normal way to use Cly.
-
-## macOS (after the tagged release is published)
+## macOS
 
 1. Download the macOS build for your Mac from the [Cly Releases page](https://github.com/Frostand/Cly/releases).
-   Choose `arm64` for Apple Silicon (M-series) Macs or `x64` for Intel Macs.
+   The first desktop beta supports Apple Silicon (M-series) Macs; choose the
+   `.dmg` ending in `arm64`.
 2. Open the downloaded `.dmg` and drag **Cly** to **Applications**.
-3. Open **Cly** from Applications. Production releases are signed and
-   notarized. An older prerelease or locally built app may require
-   **Control-click → Open** the first time.
+3. Current open-beta builds are not Developer ID signed or notarized. In
+   Applications, **Control-click Cly → Open**, then confirm **Open** the first
+   time. After that, launch Cly normally from Applications, Spotlight, or the
+   Dock.
 4. Cly opens to a blank first-run setup. Select **Create a new project** to
    make a folder in the macOS picker, or **Open an existing folder** to use a
    repository or research directory already on your Mac.
@@ -26,9 +25,11 @@ the normal way to use Cly.
    finish the guided setup. Cly saves progress automatically; quitting and
    reopening resumes the same project.
 
-## Windows and Linux (after the tagged release is published)
+## Windows and Linux
 
-Download the platform installer from the [Cly Releases page](https://github.com/Frostand/Cly/releases), install it, then open Cly from the operating system's application launcher. The same blank first-run setup appears on the first launch.
+Intel Mac, Windows, and Linux installers are not included in the first
+downloadable desktop beta. They will be added after their packaged builds have
+been independently validated.
 
 ## Where Cly keeps data
 

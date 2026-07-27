@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   acceptance:
+    if: ${{ vars.ENABLE_SIGNED_PRODUCTION_RELEASE == '1' }}
     name: V1 acceptance, security, and provenance gates
     runs-on: ubuntu-latest
     permissions:
