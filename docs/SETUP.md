@@ -18,11 +18,15 @@ a developer; those archives contain project folders, not an installable app.
    Applications, **Control-click Cly → Open**, then confirm **Open** the first
    time. After that, launch Cly normally from Applications, Spotlight, or the
    Dock.
-4. Cly opens to a blank first-run setup. Select **Create a new project** to
-   make a folder in the macOS picker, or **Open an existing folder** to use a
-   repository or research directory already on your Mac.
-5. Give the project a research question, choose the local-only default, and
-   finish the guided setup. Cly saves progress automatically; quitting and
+4. Cly opens to a blank first-run setup with no demo projects. Choose **Use Cly
+   locally** with no sign-in, or **Connect an AI provider** to use an existing
+   local Codex, Claude Code, OpenCode, or Cursor account for agent features.
+   Cly does not require a separate Cly cloud account.
+5. Select **Create a new project** to make a folder in the macOS picker, or
+   **Open an existing folder** to use a repository or research directory
+   already on your Mac.
+6. Give the project a research question, review the local-only privacy default,
+   and finish the guided setup. Cly saves progress automatically; quitting and
    reopening resumes the same project.
 
 ## Windows and Linux
@@ -38,22 +42,26 @@ system's application-data directory, not inside the downloaded app bundle:
 
 | Platform | Default location |
 | --- | --- |
-| macOS | `~/Library/Application Support/cly/` |
-| Windows | `%APPDATA%\\cly\\` |
-| Linux | `~/.config/cly/` |
+| macOS | `~/Library/Application Support/cly-desktop/` |
+| Windows | `%APPDATA%\\cly-desktop\\` |
+| Linux | `~/.config/cly-desktop/` |
 
 Your project folder stays where you chose it. Cly's local database retains the
 project record, sources, claims, experiments, run metadata, and setup state
 between launches. Back up projects from **Settings → Privacy → Export project**
 before testing a new beta build.
 
+Cly 0.6.1 gives the packaged application its own clean `cly-desktop` profile so
+development fixtures cannot appear in a public install. Data from older beta or
+source-built profiles is left untouched and is not imported automatically.
+
 ## What the guided setup does
 
 The setup guide is available on first launch and later from **Setup & Help** in
-the left sidebar. It records the project folder, research direction and
-question, privacy choice, and optional readiness checks before preparing the
-empty workspace. Nothing is uploaded during local setup. External actions
-remain off unless you explicitly approve them.
+the left sidebar. It records the optional AI-provider choice, project folder,
+research direction and question, privacy choice, and optional readiness checks
+before preparing the empty workspace. Nothing is uploaded during local setup.
+External actions remain off unless you explicitly approve them.
 
 ## Developers and contributors
 

@@ -6,11 +6,13 @@ import {
   CheckCircle2,
   Circle,
   CloudOff,
+  Code2,
   Database,
   FolderInput,
   FolderPlus,
   HardDrive,
   LoaderCircle,
+  LogIn,
   Network,
   RefreshCcw,
   RotateCcw,
@@ -18,11 +20,20 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { useIdeStore } from "../../../components/ide/ide-store";
+import type { ProviderModelState } from "../../../components/ide/ide-types";
+import type { AiProvider } from "../../../types/ide";
 import {
   ProgressIndicator,
   StatusIndicator,
 } from "../components/design-system";
-import { Button, ErrorState, LoadingState } from "../components/primitives";
+import {
+  Badge,
+  Button,
+  ErrorState,
+  LoadingState,
+  Panel,
+} from "../components/primitives";
 import {
   canTransmitExternally,
   createOnboardingDraft,
@@ -42,6 +53,11 @@ import {
 } from "../domain/onboarding";
 import type { ResearchProject, ScreenId } from "../domain/types";
 import {
+  getLocalProviderStatus,
+  localIntegrationService,
+  localProviderDefinitions,
+} from "../services/local-integrations";
+import {
   loadOnboardingDraft,
   saveOnboardingDraft,
   scopeOnboardingDraftToProject,
@@ -49,6 +65,7 @@ import {
 
 const stepCopy: Record<OnboardingStepId, { label: string; detail: string }> = {
   welcome: { label: "Welcome", detail: "A clean local workspace" },
+  access: { label: "AI access", detail: "Local-only or provider sign-in" },
   project: { label: "Project", detail: "Create new or open existing" },
   research: { label: "Research", detail: "Name the first question" },
   privacy: { label: "Privacy", detail: "Set the local boundary" },
@@ -62,6 +79,8 @@ const emptyDiagnostics: OnboardingDiagnostics = {
   checks: [],
   repositorySize: "unknown",
 };
+
+type ProviderStateMap = Record<AiProvider, ProviderModelState>;
 
 const splitLines = (value: string) =>
   value
@@ -183,6 +202,10 @@ export function OnboardingScreen({
   const [error, setError] = useState<string | null>(null);
   const [selectingProject, setSelectingProject] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [providerLoginErrors, setProviderLoginErrors] = useState<
+    Partial<Record<AiProvider, string>>
+  >({});
+  const providerModels = useIdeStore((state) => state.providerModels);
   const stepIndex = onboardingSteps.indexOf(draft.currentStep);
   const patch = (value: Partial<OnboardingDraft>) =>
     setDraft((current) => updateOnboardingDraft(current, value));
@@ -225,6 +248,35 @@ export function OnboardingScreen({
   }, [draft, draftLoaded]);
 
   useEffect(() => setDiagnostics(initialDiagnostics), [initialDiagnostics]);
+
+  useEffect(() => {
+    if (draft.currentStep !== "access") return;
+    void localIntegrationService.refreshProvider();
+  }, [draft.currentStep]);
+
+  const launchProviderLogin = async (provider: AiProvider, name: string) => {
+    setProviderLoginErrors((current) => ({
+      ...current,
+      [provider]: undefined,
+    }));
+    patch({
+      accountMode: "optional-account",
+      providerPreferences: Array.from(
+        new Set([...draft.providerPreferences, provider]),
+      ),
+    });
+    try {
+      await localIntegrationService.launchProviderLogin(provider);
+    } catch (cause) {
+      setProviderLoginErrors((current) => ({
+        ...current,
+        [provider]:
+          cause instanceof Error
+            ? cause.message
+            : `Cly could not open ${name} sign-in.`,
+      }));
+    }
+  };
 
   const chooseProject = async (mode: OnboardingProjectMode) => {
     setSelectingProject(true);
@@ -442,6 +494,125 @@ export function OnboardingScreen({
                   </span>
                 </div>
               </div>
+            </div>
+          ) : null}
+
+          {draft.currentStep === "access" ? (
+            <div className="cly-onboarding-content">
+              <p className="cly-onboarding-eyebrow">AI access</p>
+              <h1>Choose local-only use or connect an AI provider</h1>
+              <p className="cly-onboarding-lede">
+                Cly does not require a cloud account. If you want agent
+                features, Cly uses an authenticated local Codex, Claude Code,
+                OpenCode, or Cursor installation and never stores provider API
+                keys.
+              </p>
+              <div
+                role="radiogroup"
+                aria-label="Cly access mode"
+                className="cly-onboarding-choices"
+              >
+                <Choice
+                  name="access-mode"
+                  checked={draft.accountMode === "guest"}
+                  title="Use Cly locally"
+                  detail="No sign-in required · connect a provider later in Settings"
+                  icon={<HardDrive />}
+                  onChange={() =>
+                    patch({
+                      accountMode: "guest",
+                      providerPreferences: [],
+                    })
+                  }
+                />
+                <Choice
+                  name="access-mode"
+                  checked={draft.accountMode === "optional-account"}
+                  title="Connect an AI provider"
+                  detail="Use an existing local provider account for agent features"
+                  icon={<Code2 />}
+                  onChange={() => patch({ accountMode: "optional-account" })}
+                />
+              </div>
+              {draft.accountMode === "optional-account" ? (
+                <Panel className="cly-local-integration-list cly-onboarding-provider-list">
+                  {localProviderDefinitions.map((definition) => {
+                    const state = (providerModels as ProviderStateMap)[
+                      definition.provider
+                    ];
+                    const status = getLocalProviderStatus(
+                      state,
+                      providerModels.fetchedAt !== null,
+                    );
+                    return (
+                      <div
+                        className="cly-local-integration-row"
+                        key={definition.provider}
+                      >
+                        <div className="cly-local-integration-identity">
+                          <Code2 size={14} aria-hidden="true" />
+                          <div>
+                            <strong>{definition.name}</strong>
+                            <span>{definition.runtime}</span>
+                          </div>
+                        </div>
+                        <div className="cly-local-integration-status">
+                          <Badge tone={status.tone}>{status.label}</Badge>
+                          <span>{status.detail}</span>
+                          {providerLoginErrors[definition.provider] ? (
+                            <small
+                              className="cly-local-integration-error"
+                              role="alert"
+                            >
+                              {providerLoginErrors[definition.provider]}
+                            </small>
+                          ) : null}
+                        </div>
+                        <code className="cly-local-integration-command">
+                          {definition.loginCommand}
+                        </code>
+                        <div className="cly-local-integration-actions">
+                          {status.kind === "signed-out" ? (
+                            <Button
+                              variant="primary"
+                              onClick={() =>
+                                void launchProviderLogin(
+                                  definition.provider,
+                                  definition.name,
+                                )
+                              }
+                            >
+                              <LogIn size={13} aria-hidden="true" /> Sign in
+                            </Button>
+                          ) : null}
+                          {status.kind === "not-installed" ? (
+                            <Button
+                              onClick={() =>
+                                void localIntegrationService.openDocumentation(
+                                  definition.docsUrl,
+                                )
+                              }
+                            >
+                              Install
+                            </Button>
+                          ) : null}
+                          <Button
+                            variant="ghost"
+                            disabled={state.loading}
+                            onClick={() =>
+                              void localIntegrationService.refreshProvider(
+                                definition.provider,
+                              )
+                            }
+                          >
+                            <RefreshCcw size={13} aria-hidden="true" /> Refresh
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </Panel>
+              ) : null}
             </div>
           ) : null}
 
@@ -703,6 +874,16 @@ export function OnboardingScreen({
               <p className="cly-onboarding-eyebrow">Review</p>
               <h1>Confirm your new workspace</h1>
               <dl className="cly-onboarding-review">
+                <div>
+                  <dt>AI access</dt>
+                  <dd>
+                    {draft.accountMode === "guest"
+                      ? "Local-only; no provider connected"
+                      : draft.providerPreferences.length
+                        ? draft.providerPreferences.join(", ")
+                        : "Provider sign-in selected"}
+                  </dd>
+                </div>
                 <div>
                   <dt>Project</dt>
                   <dd>

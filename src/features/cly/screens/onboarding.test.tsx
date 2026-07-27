@@ -7,6 +7,7 @@ import {
   type OnboardingDraft,
   updateOnboardingDraft,
 } from "../domain/onboarding";
+import { localIntegrationService } from "../services/local-integrations";
 import { OnboardingScreen, onboardingTestFixtures } from "./onboarding";
 
 const project = {
@@ -47,8 +48,12 @@ const renderOnboarding = (
 };
 
 describe("first-run onboarding", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    vi.spyOn(localIntegrationService, "refreshProvider").mockResolvedValue();
+  });
   afterEach(() => {
+    vi.restoreAllMocks();
     Object.defineProperty(window, "dream", {
       configurable: true,
       value: undefined,
@@ -323,6 +328,29 @@ describe("first-run onboarding", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("offers local use or an explicit provider sign-in during setup", async () => {
+    const user = userEvent.setup();
+    renderOnboarding();
+
+    await user.click(screen.getByRole("button", { name: /Continue/ }));
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Choose local-only use or connect an AI provider",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("radio", { name: /^Use Cly locally/ }),
+    ).toBeChecked();
+    expect(screen.getByText(/does not require a cloud account/i)).toBeVisible();
+
+    await user.click(
+      screen.getByRole("radio", { name: /^Connect an AI provider/ }),
+    );
+    expect(screen.getByText("Codex CLI")).toBeVisible();
+    expect(screen.getByText("Claude Code CLI")).toBeVisible();
+  });
+
   it("imports a repository and scopes the interrupted setup", async () => {
     const user = userEvent.setup();
     const props = renderOnboarding(
@@ -357,6 +385,12 @@ describe("first-run onboarding", () => {
       "Persisted topic",
     );
     await user.click(screen.getByRole("button", { name: "Restart" }));
+    await user.click(screen.getByRole("button", { name: /Continue/ }));
+    expect(
+      screen.getByRole("heading", {
+        name: "Choose local-only use or connect an AI provider",
+      }),
+    ).toBeVisible();
     await user.click(screen.getByRole("button", { name: /Continue/ }));
     expect(screen.getByRole("heading", { name: /Where should/ })).toBeVisible();
     expect(

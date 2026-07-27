@@ -583,6 +583,15 @@
     padding-block: var(--cly-space-3);
   }
 
+  .cly-onboarding-provider-list .cly-local-integration-row {
+    grid-template-columns: minmax(140px, 0.6fr) minmax(260px, 1fr) auto;
+    min-height: 68px;
+  }
+
+  .cly-onboarding-provider-list .cly-local-integration-command {
+    display: none;
+  }
+
   .cly-onboarding-project-actions > button {
     border: 0;
     border-radius: var(--cly-radius-sm);

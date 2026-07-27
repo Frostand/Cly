@@ -134,7 +134,7 @@ function runMenuCommand(command: string) {
     if (command === "documentation") store.setScreen("help");
     if (command === "shortcuts" || command === "diagnostics")
       store.setScreen("settings");
-    if (command === "about") store.notify("Cly 0.5.0");
+    if (command === "about") store.notify("Cly 0.6.1");
   }
 }
 
