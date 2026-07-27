@@ -48,26 +48,23 @@ Cly's research store and deterministic analysis run on the researcher's computer
 
 ### Desktop application
 
-**The command-line instructions below are only for developers working from
-source. A downloadable installer still needs to be published as a tagged GitHub
-release; the desktop application and production release workflow are ready for
-that.**
+**Download Cly from the [Releases page](https://github.com/Frostand/Cly/releases).**
+Under the latest release's **Assets**, choose the installer for your platform;
+the automatic **Source code** archives are for developers and do not contain an
+installable application.
 
-End users will not need to clone the repository, install Node.js or pnpm, or
-run terminal commands. Publishing a version tag such as `v1.0.0` from `main`
-starts the workflow that tests, packages, signs, notarizes, and publishes the
-platform installers.
+- Apple Silicon Mac: `Cly-<version>-mac-arm64.dmg`
 
-After that tagged release is published, download the build for your platform
-from the [Releases page](https://github.com/Frostand/Cly/releases), install it,
-and open Cly from the operating system's application launcher.
+The first downloadable desktop beta is for Apple Silicon (M-series) Macs.
+Intel Mac, Windows, and Linux installers will be added after their packaged
+builds have been independently validated.
 
 On macOS, open the `.dmg`, drag **Cly** to **Applications**, then open it from
-Applications. Production macOS releases are signed and notarized by the release
-workflow; an older prerelease or locally built app may require **Control-click →
-Open** on first launch. A clean install opens a blank guided setup: create a new
-project folder or open a folder you already own. Cly does not yet support
-regulated or sensitive data.
+Applications. Current open-beta builds are not Developer ID signed or notarized,
+so use **Control-click Cly → Open** the first time and confirm that you want to
+open it. A clean install opens a blank guided setup: create a new project folder
+or open a folder you already own. Cly does not yet support regulated or
+sensitive data.
 
 See the [install and setup guide](./docs/SETUP.md) for platform-specific
 installation, local-data locations, backups, and the first project flow.

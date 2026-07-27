@@ -85,7 +85,7 @@ describe("Literature workspace", () => {
     );
     await user.click(
       screen.getByRole("checkbox", {
-        name: "Approve sending this project’s search queries to all four destinations",
+        name: "Approve sending this project’s search queries to both destinations",
       }),
     );
     await user.click(screen.getByRole("button", { name: "Search papers" }));
@@ -108,8 +108,6 @@ describe("Literature workspace", () => {
     expect(lastProjectBody.metadata.externalTransmissionApprovals).toEqual([
       "arxiv",
       "semantic-scholar",
-      "crossref",
-      "pubmed",
     ]);
 
     await user.click(screen.getByRole("button", { name: "Save to project" }));
