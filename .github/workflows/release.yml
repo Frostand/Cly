@@ -22,17 +22,17 @@ jobs:
       release_tag: ${{ steps.release.outputs.release_tag }}
       version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6.0.9
         with:
           version: 11.12.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
@@ -59,7 +59,7 @@ jobs:
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level high
       - name: Scan the exact release commit for secrets
-        uses: gitleaks/gitleaks-action@v2.3.9
+        uses: gitleaks/gitleaks-action@v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm test
@@ -82,11 +82,11 @@ jobs:
     env:
       CLY_RELEASE_PROVIDER_SMOKE: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
         with:
           version: 11.12.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -112,15 +112,15 @@ jobs:
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       CSC_LINK: ${{ secrets.CSC_LINK }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
         with:
           version: 11.12.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
@@ -141,7 +141,7 @@ jobs:
           app_path="$(find release -type d -name 'Cly.app' -print -quit)"
           test -n "$app_path"
           CLY_PACKAGED_APP_EXECUTABLE="$app_path/Contents/MacOS/Cly" pnpm exec playwright test tests/e2e/production-evidence-loop.spec.ts
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cly-release-macos
           path: |
@@ -152,7 +152,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Retain notarization evidence separately from public downloads
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cly-notarization-evidence
           path: macos-package-logs/**
@@ -175,15 +175,15 @@ jobs:
       SSL_COM_TOTP_SECRET: ${{ secrets.SSL_COM_TOTP_SECRET }}
       SSL_COM_USERNAME: ${{ secrets.SSL_COM_USERNAME }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
         with:
           version: 11.12.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
@@ -210,7 +210,7 @@ jobs:
           $env:CLY_PACKAGED_APP_EXECUTABLE = $app.FullName
           pnpm exec playwright test tests/e2e/production-evidence-loop.spec.ts
           if ($LASTEXITCODE -ne 0) { throw "Packaged Windows evidence loop failed." }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cly-release-windows
           path: |
@@ -231,15 +231,15 @@ jobs:
       CLY_RELEASE_VERSION: ${{ needs.acceptance.outputs.release_tag }}
       CLY_UPDATE_FEED_URL: ${{ vars.CLY_UPDATE_FEED_URL }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
         with:
           version: 11.12.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
@@ -252,7 +252,7 @@ jobs:
           xvfb-run --auto-servernum node scripts/smoke-packaged-app.mjs "$app_path"
           CLY_PACKAGED_APP_EXECUTABLE="$app_path" xvfb-run --auto-servernum pnpm exec playwright test tests/e2e/production-evidence-loop.spec.ts
           node scripts/rewrite-update-metadata-urls.mjs release/latest-linux.yml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cly-release-linux
           path: |
@@ -276,11 +276,11 @@ jobs:
       CLY_UPDATE_FEED_URL: ${{ vars.CLY_UPDATE_FEED_URL }}
       RELEASE_VERSION: ${{ needs.acceptance.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: cly-release-*
           path: release-bundle
@@ -308,7 +308,7 @@ jobs:
           node scripts/verify-public-release.mjs
           release-bundle "$CLY_UPDATE_FEED_URL" "$CLY_RELEASE_VERSION"
       - name: Create the GitHub release from the verified bundle
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: false
           fail_on_unmatched_files: true
