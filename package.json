@@ -78,7 +78,7 @@
     "sirv": "^3.0.2",
     "space-separated-tokens": "2.0.2",
     "stringify-entities": "4.0.4",
-    "zod": "^4.4.3",
+    "zod": "^4.6.6",
     "zwitch": "2.0.4"
   },
   "devDependencies": {
